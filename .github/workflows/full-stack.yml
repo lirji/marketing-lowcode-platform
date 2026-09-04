@@ -19,9 +19,9 @@ jobs:
     env:
       DEV_INFRA_ROOT: ${{ github.workspace }}/dev-infra
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check out shared development infrastructure
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ github.repository_owner }}/dev-infra
           path: dev-infra
