@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/marketing/journey-signal/1-0-0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tenantId", "enrollmentId", "subjectToken", "signal"],
+  "properties": {
+    "tenantId": {"type": "string", "minLength": 1},
+    "enrollmentId": {"type": "string", "minLength": 1},
+    "subjectToken": {"type": "string"},
+    "planReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactId", "generation", "activationSequence", "journeyId", "journeyVersion"],
+      "properties": {
+        "artifactId": {"type": "string", "minLength": 1},
+        "generation": {"type": "integer", "minimum": 1},
+        "activationSequence": {"type": "integer", "minimum": 1},
+        "journeyId": {"type": "string", "minLength": 1},
+        "journeyVersion": {"type": "integer", "minimum": 1}
+      }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "signalId", "occurredAtEpochMillis", "attributes"],
+      "properties": {
+        "type": {"enum": ["START", "EVENT", "TIMER"]},
+        "signalId": {"type": "string", "minLength": 1},
+        "eventType": {"type": "string"},
+        "timerKey": {"type": "string"},
+        "occurredAtEpochMillis": {"type": "integer", "minimum": 1},
+        "attributes": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    }
+  },
+  "allOf": [
+    {"if": {"properties": {"signal": {"properties": {"type": {"const": "START"}}}}}, "then": {"required": ["planReference"]}},
+    {"if": {"properties": {"signal": {"properties": {"type": {"enum": ["EVENT", "TIMER"]}}}}}, "then": {"not": {"required": ["planReference"]}}}
+  ]
+}

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>com.acme.marketing</groupId><artifactId>marketing-lowcode-platform</artifactId><version>1.0.0-SNAPSHOT</version><relativePath>../pom.xml</relativePath></parent>
+  <artifactId>jobs</artifactId><packaging>pom</packaging>
+  <modules>
+    <module>flink-job-support</module>
+    <module>audience-flink-job</module>
+    <module>journey-runtime-flink-job</module>
+    <module>measurement-flink-job</module>
+  </modules>
+  <dependencies>
+    <dependency><groupId>com.acme.marketing</groupId><artifactId>platform-common</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>org.apache.flink</groupId><artifactId>flink-datastream-api</artifactId><scope>provided</scope></dependency>
+    <dependency><groupId>org.apache.flink</groupId><artifactId>flink-datastream</artifactId><scope>provided</scope></dependency>
+    <dependency><groupId>org.apache.flink</groupId><artifactId>flink-streaming-java</artifactId><scope>provided</scope></dependency>
+    <dependency><groupId>org.apache.flink</groupId><artifactId>flink-connector-base</artifactId><scope>provided</scope></dependency>
+    <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+  </dependencies>
+</project>

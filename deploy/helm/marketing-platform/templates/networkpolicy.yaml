@@ -1,0 +1,24 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: marketing-default-deny-ingress
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/part-of: marketing-platform}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/part-of: marketing-platform}}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ingress-nginx}}
+      ports:
+        - {protocol: TCP, port: 8080}
+        - {protocol: TCP, port: 8081}
+        - {protocol: TCP, port: 8082}
+        - {protocol: TCP, port: 8083}
+        - {protocol: TCP, port: 8084}
+        - {protocol: TCP, port: 8085}
+        - {protocol: TCP, port: 8086}
+        - {protocol: TCP, port: 8087}
+        - {protocol: TCP, port: 8088}
+        - {protocol: TCP, port: 8089}
+{{- end }}

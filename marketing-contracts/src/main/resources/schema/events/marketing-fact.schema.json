@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/marketing/fact/1-0-0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["eventId", "tenantId", "type", "businessKey", "subjectToken", "occurredAt", "ingestedAt", "schemaVersion", "attributes", "correctionOf", "correctionRootId"],
+  "properties": {
+    "eventId": {"type": "string"},
+    "tenantId": {"type": "string"},
+    "type": {"enum": ["DECISION", "OFFER_SHOWN", "PROMOTION_APPLIED", "BENEFIT_GRANTED", "CONTACT_SENT", "CONTACT_DELIVERED", "CLICK", "CONVERSION", "REFUND", "COST", "EXPOSURE"]},
+    "businessKey": {"type": "string"},
+    "subjectToken": {"type": "string"},
+    "occurredAt": {"type": "string", "format": "date-time"},
+    "ingestedAt": {"type": "string", "format": "date-time"},
+    "schemaVersion": {"type": "string"},
+    "attributes": {"type": "object", "additionalProperties": {"type": "string"}},
+    "correctionOf": {"type": "string"},
+    "correctionRootId": {"type": "string"}
+  }
+}

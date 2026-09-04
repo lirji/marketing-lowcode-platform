@@ -1,0 +1,523 @@
+openapi: 3.1.0
+info:
+  title: Marketing Low-code Platform API
+  version: 1.0.0
+  description: R1 edge contract. Tenant and organization scope come from the verified identity in OIDC mode.
+servers:
+  - {url: http://localhost:8080, description: Local edge gateway}
+security: [{oidc: []}]
+tags:
+  - {name: Control}
+  - {name: Release}
+  - {name: Compiler}
+  - {name: Audience}
+  - {name: Decision}
+  - {name: Benefit}
+  - {name: Event}
+  - {name: Journey}
+  - {name: Engagement}
+  - {name: Measurement}
+x-response-templates:
+  ok: &ok
+    '200': {$ref: '#/components/responses/JsonObject'}
+    default: {$ref: '#/components/responses/Problem'}
+  list: &list
+    '200': {$ref: '#/components/responses/JsonArray'}
+    default: {$ref: '#/components/responses/Problem'}
+  created: &created
+    '201': {$ref: '#/components/responses/JsonObject'}
+    default: {$ref: '#/components/responses/Problem'}
+  accepted: &accepted
+    '202': {$ref: '#/components/responses/JsonObject'}
+    default: {$ref: '#/components/responses/Problem'}
+paths:
+  /api/v1/campaigns:
+    get: {tags: [Control], operationId: listCampaigns, responses: *list}
+    post:
+      tags: [Control]
+      operationId: createCampaign
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {$ref: '#/components/requestBodies/CreateCampaign'}
+      responses: *created
+  /api/v1/definitions:
+    post:
+      tags: [Control]
+      operationId: saveDefinition
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {$ref: '#/components/requestBodies/SaveDefinition'}
+      responses: *created
+  /api/v1/definitions/latest:
+    get:
+      tags: [Control]
+      operationId: getLatestDefinition
+      parameters:
+        - {in: query, name: campaignId, required: true, schema: {type: string}}
+        - {in: query, name: dialect, required: true, schema: {type: string, enum: [OFFER_DECISION_DAG, AUDIENCE_EXPRESSION, JOURNEY_STATE_MACHINE, DMN_DECISION_TABLE, BENEFIT_POLICY]}}
+      responses: *ok
+  /api/v1/definitions/{definitionId}/versions/{version}:
+    get:
+      tags: [Control]
+      operationId: getDefinitionVersion
+      parameters: [{$ref: '#/components/parameters/DefinitionId'}, {$ref: '#/components/parameters/Version'}]
+      responses: *ok
+  /api/v1/definitions/{definitionId}/versions/{version}:validate:
+    post:
+      tags: [Control]
+      operationId: validateDefinition
+      parameters: [{$ref: '#/components/parameters/DefinitionId'}, {$ref: '#/components/parameters/Version'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      responses: *ok
+  /api/v1/definitions/{definitionId}/versions/{version}:simulate:
+    post:
+      tags: [Control]
+      operationId: simulateDefinition
+      parameters: [{$ref: '#/components/parameters/DefinitionId'}, {$ref: '#/components/parameters/Version'}]
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses: *ok
+  /api/v1/definitions/{definitionId}/versions/{version}:submit:
+    post:
+      tags: [Control]
+      operationId: submitDefinition
+      parameters: [{$ref: '#/components/parameters/DefinitionId'}, {$ref: '#/components/parameters/Version'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      responses: *ok
+  /api/v1/definitions/{definitionId}/versions/{version}/terms:
+    get:
+      tags: [Control]
+      operationId: getDefinitionTerms
+      parameters: [{$ref: '#/components/parameters/DefinitionId'}, {$ref: '#/components/parameters/Version'}]
+      responses: *ok
+  /api/v1/approvals:
+    get: {tags: [Control], operationId: listApprovals, responses: *list}
+  /api/v1/approvals/{caseId}/decisions:
+    post:
+      tags: [Control]
+      operationId: decideApproval
+      parameters: [{$ref: '#/components/parameters/CaseId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {$ref: '#/components/requestBodies/ApprovalDecision'}
+      responses: *ok
+  /api/v1/registries/nodes:
+    get: {tags: [Control], operationId: listNodeDefinitions, responses: *list}
+  /api/v1/releases:
+    get: {tags: [Release], operationId: listReleases, responses: *list}
+    post:
+      tags: [Release]
+      operationId: stageRelease
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {$ref: '#/components/requestBodies/StageRelease'}
+      responses: *created
+  /api/v1/releases/{manifestId}:ack:
+    post:
+      tags: [Release]
+      operationId: acknowledgeRelease
+      parameters: [{$ref: '#/components/parameters/ManifestId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses: *ok
+  /api/v1/releases/{manifestId}:activate:
+    post:
+      tags: [Release]
+      operationId: activateRelease
+      parameters: [{$ref: '#/components/parameters/ManifestId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      responses: *ok
+  /api/v1/releases/{manifestId}:rollback:
+    post:
+      tags: [Release]
+      operationId: rollbackRelease
+      parameters: [{$ref: '#/components/parameters/ManifestId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses: *ok
+  /api/v1/releases/desired:
+    get:
+      tags: [Release]
+      operationId: getDesiredRelease
+      parameters:
+        - {in: query, name: environment, required: true, schema: {type: string}}
+        - {in: query, name: cell, required: true, schema: {type: string}}
+        - {in: query, name: runtime, required: true, schema: {type: string}}
+        - {in: query, name: namespace, required: true, schema: {type: string}}
+      responses: *ok
+  /api/v1/releases/kill-switches/{namespace}:
+    put:
+      tags: [Release]
+      operationId: setKillSwitch
+      parameters: [{in: path, name: namespace, required: true, schema: {type: string}}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses: *ok
+  /api/v1/compile:
+    post: {tags: [Compiler], operationId: compileArtifact, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /api/v1/artifacts/{artifactId}:
+    get: {tags: [Compiler], operationId: getArtifact, parameters: [{$ref: '#/components/parameters/ArtifactId'}], responses: *ok}
+  /api/v1/fields:
+    get: {tags: [Audience], operationId: listAudienceFields, responses: *list}
+    post: {tags: [Audience], operationId: registerAudienceField, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
+  /api/v1/audiences:
+    get: {tags: [Audience], operationId: listAudiences, responses: *list}
+    post: {tags: [Audience], operationId: createAudience, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
+  /api/v1/audiences/{segmentId}/versions/{version}:preview:
+    post:
+      tags: [Audience]
+      operationId: previewAudience
+      parameters: [{$ref: '#/components/parameters/SegmentId'}, {$ref: '#/components/parameters/Version'}]
+      requestBody: {$ref: '#/components/requestBodies/JsonArray'}
+      responses: *ok
+  /api/v1/audiences/{segmentId}/versions/{version}/snapshots:
+    post:
+      tags: [Audience]
+      operationId: createAudienceSnapshot
+      parameters: [{$ref: '#/components/parameters/SegmentId'}, {$ref: '#/components/parameters/Version'}]
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses: *created
+  /api/v1/audiences/snapshots/{snapshotId}/memberships:
+    put: {tags: [Audience], operationId: updateAudienceMembership, parameters: [{$ref: '#/components/parameters/SnapshotId'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /api/v1/audiences/snapshots/{snapshotId}/memberships/{subjectToken}:
+    get:
+      tags: [Audience]
+      operationId: getAudienceMembership
+      parameters:
+        - {$ref: '#/components/parameters/SnapshotId'}
+        - {$ref: '#/components/parameters/SubjectToken'}
+        - {in: query, name: usedAt, required: true, schema: {type: string, format: date-time}}
+        - {in: query, name: stalePolicy, required: true, schema: {type: string, enum: [REJECT_CANDIDATE, USE_LAST_GOOD, GENERIC_PATH]}}
+      responses: *ok
+  /api/v1/decisions:evaluate:
+    post: {tags: [Decision], operationId: evaluateDecision, requestBody: {$ref: '#/components/requestBodies/Decision'}, responses: *ok}
+  /api/v1/decisions:batch-evaluate:
+    post:
+      tags: [Decision]
+      operationId: batchEvaluateDecision
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: array, minItems: 1, maxItems: 50, items: {$ref: '#/components/schemas/DecisionRequest'}}}}
+      responses: *list
+  /api/v1/decisions/runtime/manifest:
+    put: {tags: [Decision], operationId: warmDecisionRuntime, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /api/v1/decisions/runtime/activation:
+    put: {tags: [Decision], operationId: activateDecisionRuntime, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /api/v1/decisions/runtime/ack:
+    post: {tags: [Decision], operationId: refreshDecisionRuntimeAck, responses: *ok}
+  /api/v1/decisions/runtime/audience-membership:
+    put: {tags: [Decision], operationId: updateDecisionAudienceProjection, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /api/v1/funding/accounts:
+    get: {tags: [Benefit], operationId: listFundingAccounts, responses: *list}
+    post: {tags: [Benefit], operationId: createFundingAccount, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
+  /api/v1/benefits:
+    get: {tags: [Benefit], operationId: listBenefits, responses: *list}
+  /api/v1/benefits/{benefitId}:
+    get:
+      tags: [Benefit]
+      operationId: getBenefit
+      parameters: [{$ref: '#/components/parameters/BenefitId'}]
+      responses: *ok
+    put:
+      tags: [Benefit]
+      operationId: putBenefit
+      parameters: [{$ref: '#/components/parameters/BenefitId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses: *ok
+  /api/v1/funding/accounts/{resourceKey}:advance-fence:
+    post: {tags: [Benefit], operationId: advanceFundingFence, parameters: [{$ref: '#/components/parameters/ResourceKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /api/v1/promotion-applications:
+    post:
+      tags: [Benefit]
+      operationId: reservePromotion
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {$ref: '#/components/requestBodies/ReservePromotion'}
+      responses: *created
+  /api/v1/promotion-applications/{applicationId}:confirm:
+    post: {tags: [Benefit], operationId: confirmPromotion, parameters: [{$ref: '#/components/parameters/ApplicationId'}, {$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /api/v1/promotion-applications/{applicationId}:cancel:
+    post: {tags: [Benefit], operationId: cancelPromotion, parameters: [{$ref: '#/components/parameters/ApplicationId'}, {$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /api/v1/promotion-applications/{applicationId}:refund:
+    post: {tags: [Benefit], operationId: refundPromotion, parameters: [{$ref: '#/components/parameters/ApplicationId'}, {$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /api/v1/promotion-applications/{applicationId}:reverse:
+    post: {tags: [Benefit], operationId: reversePromotion, parameters: [{$ref: '#/components/parameters/ApplicationId'}, {$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /api/v1/promotion-applications:expire:
+    post: {tags: [Benefit], operationId: expirePromotions, parameters: [{in: query, name: limit, required: false, schema: {type: integer, default: 100, minimum: 1}}], responses: *ok}
+  /api/v1/funding/reconciliation:
+    get: {tags: [Benefit], operationId: reconcileFunding, responses: *ok}
+  /api/v1/events/sources:
+    post: {tags: [Event], operationId: registerEventSource, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
+  /api/v1/events:
+    post: {tags: [Event], operationId: ingestEvent, requestBody: {$ref: '#/components/requestBodies/InboundEvent'}, responses: *accepted}
+  /api/v1/quarantine:
+    get: {tags: [Event], operationId: listQuarantine, responses: *list}
+  /api/v1/quarantine/{quarantineId}:replay:
+    post: {tags: [Event], operationId: replayQuarantinedEvent, parameters: [{$ref: '#/components/parameters/QuarantineId'}], responses: *ok}
+  /api/v1/journey-runtime/manifest:
+    put: {tags: [Journey], operationId: warmJourneyRuntime, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /api/v1/journey-runtime/activation:
+    put: {tags: [Journey], operationId: activateJourneyRuntime, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /api/v1/journeys/{journeyId}/versions/{version}:
+    put:
+      tags: [Journey]
+      operationId: registerJourneyForDevelopment
+      description: DEV only; production installs a signed artifact through the runtime manifest endpoint.
+      parameters: [{$ref: '#/components/parameters/JourneyId'}, {$ref: '#/components/parameters/Version'}]
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses: *ok
+  /api/v1/enrollments:
+    get:
+      tags: [Journey]
+      operationId: listJourneyEnrollments
+      parameters:
+        - {in: query, name: status, required: false, schema: {type: string, enum: [RUNNING, WAITING, COMPLETED, FAILED]}}
+        - {in: query, name: journeyId, required: false, schema: {type: string}}
+        - {in: query, name: limit, required: false, schema: {type: integer, default: 50, minimum: 1, maximum: 200}}
+      responses: *list
+    post:
+      tags: [Journey]
+      operationId: enrollJourneyForDevelopment
+      description: DIRECT/DEV only; production submits a JOURNEY_SIGNAL START envelope to POST /api/v1/events.
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses: *created
+  /api/v1/enrollments/{enrollmentId}/signals:
+    post:
+      tags: [Journey]
+      operationId: signalJourneyForDevelopment
+      description: DIRECT/DEV only; production uses POST /api/v1/events so Flink is the only state writer.
+      parameters: [{$ref: '#/components/parameters/EnrollmentId'}]
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses: *ok
+  /api/v1/enrollments/{enrollmentId}:
+    get: {tags: [Journey], operationId: getJourneyEnrollment, parameters: [{$ref: '#/components/parameters/EnrollmentId'}], responses: *ok}
+  /api/v1/journeys/{journeyId}:migrate:
+    post:
+      tags: [Journey]
+      operationId: migrateJourneyForDevelopment
+      description: DIRECT/DEV only; production stream state stays version-pinned and is migrated with savepoints.
+      parameters: [{$ref: '#/components/parameters/JourneyId'}]
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses: *ok
+  /api/v1/consents:
+    put: {tags: [Engagement], operationId: setConsent, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /api/v1/consents/suppressions:
+    put: {tags: [Engagement], operationId: setSuppression, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /api/v1/contacts/frequency-policies:
+    put: {tags: [Engagement], operationId: setFrequencyPolicy, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /api/v1/templates:
+    get: {tags: [Engagement], operationId: listTemplates, responses: *list}
+    post: {tags: [Engagement], operationId: createTemplate, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
+  /api/v1/contacts:
+    get:
+      tags: [Engagement]
+      operationId: listContacts
+      parameters:
+        - {in: query, name: state, required: false, schema: {type: string, enum: [PENDING, RETRY_PENDING, ACCEPTED, SENT, DELIVERED, FAILED, CLICKED, UNSUBSCRIBED]}}
+        - {in: query, name: limit, required: false, schema: {type: integer, default: 50, minimum: 1, maximum: 200}}
+      responses: *list
+    post: {tags: [Engagement], operationId: sendContact, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *accepted}
+  /api/v1/contacts/{contactKey}:
+    get: {tags: [Engagement], operationId: getContact, parameters: [{$ref: '#/components/parameters/ContactKey'}], responses: *ok}
+  /api/v1/providers/callbacks:
+    post:
+      tags: [Engagement]
+      operationId: receiveProviderCallback
+      parameters:
+        - {in: header, name: X-Marketing-Provider-Request-Id, required: true, schema: {type: string}}
+        - {in: header, name: X-Marketing-Timestamp, required: true, schema: {type: string, format: date-time}}
+        - {in: header, name: X-Marketing-Signature, required: true, schema: {type: string, pattern: '^[a-f0-9]{64}$'}}
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses: *ok
+  /api/v1/experiments:
+    post: {tags: [Measurement], operationId: createExperiment, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
+  /api/v1/experiments/{experimentId}/versions/{version}:assign:
+    post: {tags: [Measurement], operationId: assignExperiment, parameters: [{$ref: '#/components/parameters/ExperimentId'}, {$ref: '#/components/parameters/StringVersion'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /api/v1/experiments/{experimentId}/versions/{version}:check-srm:
+    post: {tags: [Measurement], operationId: checkExperimentSrm, parameters: [{$ref: '#/components/parameters/ExperimentId'}, {$ref: '#/components/parameters/StringVersion'}], responses: *ok}
+  /api/v1/measurements/facts:
+    post: {tags: [Measurement], operationId: ingestMeasurementFact, requestBody: {$ref: '#/components/requestBodies/MarketingFact'}, responses: *accepted}
+  /api/v1/measurements/watermarks:
+    post: {tags: [Measurement], operationId: advanceMeasurementWatermark, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /api/v1/measurements/dashboard:
+    get:
+      tags: [Measurement]
+      operationId: getMeasurementDashboard
+      parameters: [{in: query, name: from, required: true, schema: {type: string, format: date-time}}, {in: query, name: to, required: true, schema: {type: string, format: date-time}}]
+      responses: *ok
+  /api/v1/measurements/series:
+    get:
+      tags: [Measurement]
+      operationId: getMeasurementSeries
+      parameters:
+        - {in: query, name: from, required: true, schema: {type: string, format: date-time}}
+        - {in: query, name: to, required: true, schema: {type: string, format: date-time}}
+        - {in: query, name: granularity, required: true, schema: {type: string, enum: [hour, day]}}
+      responses: *ok
+  /api/v1/measurements/attribution:recompute:
+    post:
+      tags: [Measurement]
+      operationId: recomputeAttribution
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      responses: *ok
+  /api/v1/measurements/attribution/{conversionEventId}:
+    get:
+      tags: [Measurement]
+      operationId: getAttribution
+      parameters:
+        - {in: path, name: conversionEventId, required: true, schema: {type: string}}
+        - {in: query, name: policy, required: true, schema: {type: string, enum: [FIRST_TOUCH, LAST_TOUCH, LINEAR]}}
+        - {in: query, name: windowSeconds, required: true, schema: {type: integer, format: int64, minimum: 1}}
+      responses: *ok
+  /api/v1/traces:
+    post: {tags: [Measurement], operationId: recordDecisionTrace, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
+  /api/v1/traces/requests/{requestId}:
+    get: {tags: [Measurement], operationId: getTraceByRequest, parameters: [{$ref: '#/components/parameters/RequestId'}], responses: *ok}
+  /api/v1/traces/orders/{orderId}:
+    get: {tags: [Measurement], operationId: getTraceByOrder, parameters: [{$ref: '#/components/parameters/OrderId'}], responses: *ok}
+components:
+  securitySchemes:
+    oidc: {type: openIdConnect, openIdConnectUrl: https://identity.example.invalid/.well-known/openid-configuration}
+  parameters:
+    IdempotencyKey: {in: header, name: Idempotency-Key, required: true, schema: {type: string, minLength: 1, maxLength: 128}}
+    DefinitionId: {in: path, name: definitionId, required: true, schema: {type: string}}
+    Version: {in: path, name: version, required: true, schema: {type: integer, format: int64, minimum: 1}}
+    StringVersion: {in: path, name: version, required: true, schema: {type: string}}
+    CaseId: {in: path, name: caseId, required: true, schema: {type: string}}
+    ManifestId: {in: path, name: manifestId, required: true, schema: {type: string}}
+    ArtifactId: {in: path, name: artifactId, required: true, schema: {type: string}}
+    SegmentId: {in: path, name: segmentId, required: true, schema: {type: string}}
+    SnapshotId: {in: path, name: snapshotId, required: true, schema: {type: string}}
+    SubjectToken: {in: path, name: subjectToken, required: true, schema: {type: string}}
+    ResourceKey: {in: path, name: resourceKey, required: true, schema: {type: string}}
+    BenefitId: {in: path, name: benefitId, required: true, schema: {type: string}}
+    ApplicationId: {in: path, name: applicationId, required: true, schema: {type: string}}
+    QuarantineId: {in: path, name: quarantineId, required: true, schema: {type: string}}
+    JourneyId: {in: path, name: journeyId, required: true, schema: {type: string}}
+    EnrollmentId: {in: path, name: enrollmentId, required: true, schema: {type: string}}
+    ContactKey: {in: path, name: contactKey, required: true, schema: {type: string, minLength: 1}}
+    ExperimentId: {in: path, name: experimentId, required: true, schema: {type: string}}
+    RequestId: {in: path, name: requestId, required: true, schema: {type: string}}
+    OrderId: {in: path, name: orderId, required: true, schema: {type: string}}
+  requestBodies:
+    JsonObject: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}
+    JsonArray: {required: true, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/JsonObject'}}}}}
+    CreateCampaign: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CreateCampaign'}}}}
+    SaveDefinition: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SaveDefinition'}}}}
+    ApprovalDecision: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalDecision'}}}}
+    StageRelease: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/StageReleaseRequest'}}}}
+    Decision: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DecisionRequest'}}}}
+    ReservePromotion: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ReservePromotionRequest'}}}}
+    InboundEvent: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/InboundEvent'}}}}
+    MarketingFact: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/MeasurementFactRequest'}}}}
+  responses:
+    JsonObject: {description: Successful response, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}
+    JsonArray: {description: Successful collection, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/JsonObject'}}}}}
+    Problem: {description: RFC 9457 problem response, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+  schemas:
+    JsonObject: {type: object, additionalProperties: true}
+    CreateCampaign:
+      type: object
+      additionalProperties: false
+      required: [name, objective, organizationId]
+      properties: {name: {type: string, minLength: 1}, objective: {type: string, minLength: 1}, organizationId: {type: string, minLength: 1}, shopId: {type: [string, 'null']}}
+    SaveDefinition:
+      type: object
+      additionalProperties: false
+      required: [campaignId, graph]
+      properties: {campaignId: {type: string, minLength: 1}, graph: {$ref: '../schema/graph/graph-definition.schema.json'}}
+    ApprovalDecision:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role: {type: string, enum: [BUSINESS, FINANCE, COMPLIANCE, MERCHANT]}
+        decision: {type: string, enum: [APPROVE, REJECT], default: APPROVE}
+        comment: {type: string, maxLength: 128}
+    StageReleaseRequest:
+      type: object
+      additionalProperties: false
+      required: [definitionId, definitionVersion, environment, cell, runtime, namespace, artifacts, schemaVersions, canaryBasisPoints, activationAt, approvalCaseIds]
+      properties:
+        definitionId: {type: string}
+        definitionVersion: {type: integer, format: int64, minimum: 1}
+        environment: {type: string}
+        cell: {type: string}
+        runtime: {type: string}
+        namespace: {type: string}
+        artifacts: {type: array, items: {$ref: '#/components/schemas/JsonObject'}}
+        schemaVersions: {type: object, additionalProperties: {type: string}}
+        canaryBasisPoints: {type: integer, minimum: 0, maximum: 10000}
+        activationAt: {type: string, format: date-time}
+        approvalCaseIds: {type: array, items: {type: string}}
+    DecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [requestId, idempotencyKey, organizationId, subjectToken, channel, occurredAt, cart]
+      properties:
+        requestId: {type: string}
+        idempotencyKey: {type: string}
+        organizationId: {type: string}
+        orderId: {type: string}
+        subjectToken: {type: string}
+        channel: {type: string}
+        occurredAt: {type: string, format: date-time}
+        cart: {$ref: '#/components/schemas/Cart'}
+        audienceSnapshotIds: {type: array, uniqueItems: true, items: {type: string}}
+    Cart:
+      type: object
+      additionalProperties: false
+      required: [currency, lines]
+      properties: {currency: {type: string, pattern: '^[A-Z]{3}$'}, lines: {type: array, minItems: 1, maxItems: 100, items: {$ref: '#/components/schemas/CartLine'}}}
+    CartLine:
+      type: object
+      additionalProperties: false
+      required: [lineId, skuId, shopId, quantity, unitPrice, floorUnitPrice, shippingLine]
+      properties:
+        lineId: {type: string}
+        skuId: {type: string}
+        shopId: {type: string}
+        categoryId: {type: string}
+        brandId: {type: string}
+        quantity: {type: integer, minimum: 1, maximum: 100000}
+        unitPrice: {$ref: '#/components/schemas/Money'}
+        floorUnitPrice: {$ref: '#/components/schemas/Money'}
+        shippingLine: {type: boolean}
+    Money:
+      type: object
+      additionalProperties: false
+      required: [currency, minorUnits]
+      properties: {currency: {type: string, pattern: '^[A-Z]{3}$'}, minorUnits: {type: integer, format: int64, minimum: 0}}
+    ReservePromotionRequest:
+      type: object
+      additionalProperties: false
+      required: [offerToken, cartDigest, expectedFencingEpochs]
+      properties: {offerToken: {type: string}, cartDigest: {type: string}, orderId: {type: string}, expectedFencingEpochs: {type: object, additionalProperties: {type: integer, format: int64, minimum: 1}}}
+    InboundEvent:
+      type: object
+      additionalProperties: false
+      required: [eventId, sourceId, eventType, businessKey, subjectToken, occurredAt, schemaVersion, data]
+      properties:
+        eventId: {type: string}
+        sourceId: {type: string}
+        eventType: {type: string}
+        businessKey: {type: string}
+        subjectToken: {type: string}
+        occurredAt: {type: string, format: date-time}
+        schemaVersion: {type: string}
+        aggregateVersion: {type: [integer, 'null'], format: int64}
+        data: {type: object, additionalProperties: true}
+    MeasurementFactRequest:
+      type: object
+      additionalProperties: false
+      required: [eventId, type, businessKey, subjectToken, occurredAt, ingestedAt, schemaVersion, attributes, correctionOf]
+      properties:
+        eventId: {type: string}
+        type: {type: string}
+        businessKey: {type: string}
+        subjectToken: {type: string}
+        occurredAt: {type: string, format: date-time}
+        ingestedAt: {type: string, format: date-time}
+        schemaVersion: {type: string}
+        attributes: {type: object, additionalProperties: {type: string}}
+        correctionOf: {type: string}
+    Problem:
+      type: object
+      required: [type, title, status, code, traceId, retryable]
+      properties:
+        type: {type: string, format: uri-reference}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+        instance: {type: string, format: uri-reference}
+        code: {type: string}
+        traceId: {type: string}
+        retryable: {type: boolean}
+        violations: {type: array, items: {$ref: '#/components/schemas/JsonObject'}}

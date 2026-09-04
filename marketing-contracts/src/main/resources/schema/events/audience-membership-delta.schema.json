@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/marketing/audience-membership-delta/1-0-0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["eventType", "tenantId", "subjectToken", "segmentId", "member", "membershipVersion", "sourceVersion", "occurredAtEpochMillis"],
+  "properties": {
+    "eventType": {"const": "AUDIENCE_MEMBERSHIP_DELTA"},
+    "tenantId": {"type": "string", "minLength": 1},
+    "subjectToken": {"type": "string", "minLength": 1},
+    "segmentId": {"type": "string", "minLength": 1},
+    "member": {"type": "boolean"},
+    "membershipVersion": {"type": "integer", "minimum": 1},
+    "sourceVersion": {"type": "integer", "minimum": 1},
+    "occurredAtEpochMillis": {"type": "integer", "minimum": 1}
+  }
+}

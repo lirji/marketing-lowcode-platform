@@ -1,0 +1,19 @@
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /
+    schedule: {interval: weekly, day: monday}
+    groups:
+      java-runtime: {patterns: ["org.springframework*", "org.apache.flink*", "org.drools*", "org.kie*"]}
+  - package-ecosystem: npm
+    directory: /
+    schedule: {interval: weekly, day: monday}
+    groups:
+      frontend-runtime: {dependency-type: production}
+      frontend-tooling: {dependency-type: development}
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: {interval: weekly, day: monday}
+  - package-ecosystem: docker
+    directory: /deploy/docker
+    schedule: {interval: weekly, day: monday}

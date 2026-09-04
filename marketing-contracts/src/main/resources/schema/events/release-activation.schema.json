@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/marketing/release-activation/1-0-0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["directiveId", "tenantId", "manifestId", "environment", "cell", "runtime", "namespace", "activationSequence", "generation", "stableGeneration", "canaryBasisPoints", "manifestSignature", "activatedAt", "expiresAt", "activatedBy", "signatureKeyId", "signature"],
+  "properties": {
+    "directiveId": {"type": "string", "minLength": 1},
+    "tenantId": {"type": "string", "minLength": 1},
+    "manifestId": {"type": "string", "minLength": 1},
+    "environment": {"type": "string", "minLength": 1},
+    "cell": {"type": "string", "minLength": 1},
+    "runtime": {"type": "string", "minLength": 1},
+    "namespace": {"type": "string", "minLength": 1},
+    "activationSequence": {"type": "integer", "minimum": 1},
+    "generation": {"type": "integer", "minimum": 1},
+    "stableGeneration": {"type": "integer", "minimum": 0},
+    "canaryBasisPoints": {"type": "integer", "minimum": 0, "maximum": 10000},
+    "manifestSignature": {"type": "string", "minLength": 1},
+    "activatedAt": {"type": "string", "format": "date-time"},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "activatedBy": {"type": "string", "minLength": 1},
+    "signatureKeyId": {"type": "string", "minLength": 1},
+    "signature": {"type": "string", "minLength": 1}
+  }
+}

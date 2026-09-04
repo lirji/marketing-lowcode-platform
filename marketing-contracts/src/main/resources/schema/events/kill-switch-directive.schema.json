@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/marketing/kill-switch-directive/1-0-0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["directiveId", "tenantId", "namespace", "switchSequence", "enabled", "reason", "activatedAt", "activatedBy", "signatureKeyId", "signature"],
+  "properties": {
+    "directiveId": {"type": "string", "minLength": 1},
+    "tenantId": {"type": "string", "minLength": 1},
+    "namespace": {"type": "string", "minLength": 1},
+    "switchSequence": {"type": "integer", "minimum": 1},
+    "enabled": {"type": "boolean"},
+    "reason": {"type": "string", "minLength": 1},
+    "activatedAt": {"type": "string", "format": "date-time"},
+    "activatedBy": {"type": "string", "minLength": 1},
+    "signatureKeyId": {"type": "string", "minLength": 1},
+    "signature": {"type": "string", "minLength": 1}
+  }
+}

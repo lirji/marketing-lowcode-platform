@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.acme.marketing</groupId><artifactId>marketing-lowcode-platform</artifactId>
+    <version>1.0.0-SNAPSHOT</version><relativePath>../pom.xml</relativePath>
+  </parent>
+  <artifactId>runtime-spi</artifactId><packaging>pom</packaging>
+  <modules>
+    <module>lowcode-language-core</module>
+    <module>decision-runtime-spi</module>
+    <module>provider-connector-spi</module>
+    <module>journey-runtime-spi</module>
+    <module>drools-runtime-adapter</module>
+    <module>dmn-runtime-adapter</module>
+  </modules>
+</project>

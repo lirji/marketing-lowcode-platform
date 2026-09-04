@@ -1,0 +1,12 @@
+{
+  "name": "marketing-lowcode-platform",
+  "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "frontend:dev": "pnpm --filter @marketing/console dev",
+    "frontend:build": "pnpm --filter @marketing/console build",
+    "frontend:test": "pnpm --filter @marketing/console test",
+    "frontend:lint": "pnpm --filter @marketing/console lint",
+    "frontend:e2e": "pnpm --filter @marketing/console e2e"
+  }
+}

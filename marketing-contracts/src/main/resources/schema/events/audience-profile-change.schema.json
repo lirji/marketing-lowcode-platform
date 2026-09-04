@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/marketing/audience-profile-change/1-0-0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tenantId", "subjectToken", "profileVersion", "segmentIds", "occurredAtEpochMillis"],
+  "properties": {
+    "tenantId": {"type": "string", "minLength": 1},
+    "subjectToken": {"type": "string", "minLength": 1},
+    "profileVersion": {"type": "integer", "minimum": 1},
+    "segmentIds": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "occurredAtEpochMillis": {"type": "integer", "minimum": 1}
+  }
+}

@@ -1,0 +1,37 @@
+server.port: ${PORT:8081}
+spring:
+  application.name: marketing-control-service
+  datasource:
+    url: "${MARKETING_DB_URL:jdbc:mysql://127.0.0.1:43306/marketing_control?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}"
+    username: ${MARKETING_DB_USER:control_app}
+    password: ${CONTROL_DB_PASSWORD:${MARKETING_DB_PASSWORD:}}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    user: ${SPRING_FLYWAY_USER:control_migrator}
+    password: ${SPRING_FLYWAY_PASSWORD:${CONTROL_MIGRATION_DB_PASSWORD:}}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+marketing.release-outbox:
+  enabled: ${MARKETING_RELEASE_OUTBOX_ENABLED:false}
+  topic: ${MARKETING_RELEASE_ACTIVATION_TOPIC:mk.release.activation.v1}
+  kill-switch-topic: ${MARKETING_RELEASE_KILL_SWITCH_TOPIC:mk.release.kill-switch.v1}
+  send-timeout-ms: ${MARKETING_RELEASE_OUTBOX_SEND_TIMEOUT_MS:10000}
+marketing.compiler.trusted-public-keys: ${MARKETING_COMPILER_TRUSTED_PUBLIC_KEYS:}
+marketing.runtime-ack.trusted-public-keys: ${MARKETING_RUNTIME_ACK_TRUSTED_PUBLIC_KEYS:}
+marketing.release-policy:
+  max-ready-capacity-per-runtime: ${MARKETING_RELEASE_MAX_READY_CAPACITY_PER_RUNTIME:1000}
+  allowed-runtime-build-digest: ${MARKETING_RELEASE_ALLOWED_RUNTIME_BUILD_DIGEST:}
+marketing.security:
+  mode: ${MARKETING_SECURITY_MODE:DEV}
+  dev-headers-enabled: ${MARKETING_DEV_HEADERS_ENABLED:true}
+management:
+  endpoints.web.exposure.include: health,info,prometheus
+  endpoint.health.probes.enabled: true
+server.shutdown: graceful
+spring.lifecycle.timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
+management.tracing.sampling.probability: ${TRACING_SAMPLE_PROBABILITY:0.05}
+management.opentelemetry.tracing.limits.max-attributes: 64
+management.opentelemetry.tracing.limits.max-attribute-value-length: 256
+management.opentelemetry.tracing.export.max-queue-size: 2048
+management.opentelemetry.tracing.export.max-batch-size: 256

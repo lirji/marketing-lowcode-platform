@@ -1,0 +1,38 @@
+server.port: ${PORT:8085}
+spring:
+  application.name: benefit-funding-service
+  datasource:
+    url: "${MARKETING_DB_URL:jdbc:mysql://127.0.0.1:43306/marketing_benefit?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}"
+    username: ${MARKETING_DB_USER:benefit_app}
+    password: ${BENEFIT_DB_PASSWORD:${MARKETING_DB_PASSWORD:}}
+  flyway:
+    locations: classpath:db/migration
+    user: ${SPRING_FLYWAY_USER:benefit_migrator}
+    password: ${SPRING_FLYWAY_PASSWORD:${BENEFIT_MIGRATION_DB_PASSWORD:}}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+      properties:
+        isolation.level: read_committed
+    listener:
+      ack-mode: record
+marketing.kafka.consumers-enabled: ${MARKETING_KAFKA_CONSUMERS_ENABLED:false}
+marketing.benefit.outbox-enabled: ${MARKETING_BENEFIT_OUTBOX_ENABLED:false}
+marketing.offer.trusted-public-keys: ${MARKETING_OFFER_TRUSTED_PUBLIC_KEYS:}
+marketing.security:
+  mode: ${MARKETING_SECURITY_MODE:DEV}
+  dev-headers-enabled: ${MARKETING_DEV_HEADERS_ENABLED:true}
+management.endpoints.web.exposure.include: health,info,prometheus
+server.shutdown: graceful
+spring.lifecycle.timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
+management.endpoint.health.probes.enabled: true
+management.tracing.sampling.probability: ${TRACING_SAMPLE_PROBABILITY:0.05}
+management.opentelemetry.tracing.limits.max-attributes: 64
+management.opentelemetry.tracing.limits.max-attribute-value-length: 256
+management.opentelemetry.tracing.export.max-queue-size: 2048
+management.opentelemetry.tracing.export.max-batch-size: 256
+marketing.expiration:
+  enabled: ${MARKETING_EXPIRATION_ENABLED:true}
+  fixed-delay-ms: ${MARKETING_EXPIRATION_FIXED_DELAY_MS:1000}

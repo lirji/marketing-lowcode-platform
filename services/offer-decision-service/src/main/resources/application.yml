@@ -1,0 +1,43 @@
+server.port: ${PORT:8084}
+spring:
+  application.name: offer-decision-service
+  datasource:
+    url: "${MARKETING_DB_URL:jdbc:mysql://127.0.0.1:43306/marketing_decision?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}"
+    username: ${MARKETING_DB_USER:decision_app}
+    password: ${DECISION_DB_PASSWORD:${MARKETING_DB_PASSWORD:}}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    user: ${SPRING_FLYWAY_USER:decision_migrator}
+    password: ${SPRING_FLYWAY_PASSWORD:${DECISION_MIGRATION_DB_PASSWORD:}}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ${DECISION_AUDIENCE_CONSUMER_GROUP:mk-decision-audience-projection-v1}
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+      properties:
+        isolation.level: read_committed
+    listener:
+      ack-mode: record
+  data.redis.url: ${REDIS_URL:redis://localhost:6379}
+marketing.security:
+  mode: ${MARKETING_SECURITY_MODE:DEV}
+  dev-headers-enabled: ${MARKETING_DEV_HEADERS_ENABLED:true}
+marketing.runtime:
+  environment: ${MARKETING_RUNTIME_ENVIRONMENT:local}
+  cell: ${MARKETING_RUNTIME_CELL:cell-a}
+  namespace: ${MARKETING_RUNTIME_NAMESPACE:main}
+marketing.kafka.consumers-enabled: ${MARKETING_KAFKA_CONSUMERS_ENABLED:false}
+marketing.decision.idempotency-store: ${MARKETING_DECISION_IDEMPOTENCY_STORE:JDBC}
+marketing.release.trusted-public-keys: ${MARKETING_RELEASE_TRUSTED_PUBLIC_KEYS:}
+marketing.compiler.trusted-public-keys: ${MARKETING_COMPILER_TRUSTED_PUBLIC_KEYS:}
+management.endpoints.web.exposure.include: health,info,prometheus
+server.shutdown: graceful
+spring.lifecycle.timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
+management.endpoint.health.probes.enabled: true
+management.tracing.sampling.probability: ${TRACING_SAMPLE_PROBABILITY:0.01}
+management.opentelemetry.tracing.limits.max-attributes: 64
+management.opentelemetry.tracing.limits.max-attribute-value-length: 256
+management.opentelemetry.tracing.export.max-queue-size: 2048
+management.opentelemetry.tracing.export.max-batch-size: 256

@@ -1,0 +1,60 @@
+server:
+  port: ${PORT:8080}
+spring:
+  application:
+    name: edge-gateway
+  cloud:
+    gateway:
+      server:
+        webmvc:
+          routes:
+            - id: control
+              uri: ${CONTROL_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - "Path=/api/v1/campaigns/**,/api/v1/definitions/**,/api/v1/approvals/**,/api/v1/releases/**,/api/v1/registries/**"
+            - id: compiler
+              uri: ${COMPILER_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - "Path=/api/v1/compile/**,/api/v1/artifacts/**"
+            - id: audience
+              uri: ${AUDIENCE_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - "Path=/api/v1/audiences/**,/api/v1/fields/**"
+            - id: decision
+              uri: ${DECISION_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - "Path=/api/v1/decisions/**,/api/v1/decisions:evaluate,/api/v1/decisions:batch-evaluate"
+            - id: benefit
+              uri: ${BENEFIT_SERVICE_URL:http://localhost:8085}
+              predicates:
+                - "Path=/api/v1/benefits/**,/api/v1/promotion-applications/**,/api/v1/promotion-applications:expire,/api/v1/funding/**"
+            - id: events
+              uri: ${EVENT_SERVICE_URL:http://localhost:8086}
+              predicates:
+                - "Path=/api/v1/events/**,/api/v1/quarantine/**"
+            - id: journey
+              uri: ${JOURNEY_SERVICE_URL:http://localhost:8087}
+              predicates:
+                - "Path=/api/v1/journey-runtime/**,/api/v1/journeys/**,/api/v1/enrollments/**"
+            - id: engagement
+              uri: ${ENGAGEMENT_SERVICE_URL:http://localhost:8088}
+              predicates:
+                - "Path=/api/v1/consents/**,/api/v1/templates/**,/api/v1/contacts/**,/api/v1/providers/**"
+            - id: measurement
+              uri: ${MEASUREMENT_SERVICE_URL:http://localhost:8089}
+              predicates:
+                - "Path=/api/v1/measurements/**,/api/v1/traces/**,/api/v1/experiments/**"
+marketing:
+  security:
+    mode: ${MARKETING_SECURITY_MODE:DEV}
+    dev-headers-enabled: ${MARKETING_DEV_HEADERS_ENABLED:true}
+management:
+  endpoints.web.exposure.include: health,info,prometheus
+  endpoint.health.probes.enabled: true
+server.shutdown: graceful
+spring.lifecycle.timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
+management.tracing.sampling.probability: ${TRACING_SAMPLE_PROBABILITY:0.05}
+management.opentelemetry.tracing.limits.max-attributes: 64
+management.opentelemetry.tracing.limits.max-attribute-value-length: 256
+management.opentelemetry.tracing.export.max-queue-size: 2048
+management.opentelemetry.tracing.export.max-batch-size: 256

@@ -1,0 +1,35 @@
+server.port: ${PORT:8086}
+spring:
+  application.name: event-gateway-service
+  datasource:
+    url: "${MARKETING_DB_URL:jdbc:mysql://127.0.0.1:43306/marketing_events?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}"
+    username: ${MARKETING_DB_USER:events_app}
+    password: ${EVENTS_DB_PASSWORD:${MARKETING_DB_PASSWORD:}}
+  flyway:
+    locations: classpath:db/migration
+    user: ${SPRING_FLYWAY_USER:events_migrator}
+    password: ${SPRING_FLYWAY_PASSWORD:${EVENTS_MIGRATION_DB_PASSWORD:}}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+marketing.security:
+  mode: ${MARKETING_SECURITY_MODE:DEV}
+  dev-headers-enabled: ${MARKETING_DEV_HEADERS_ENABLED:true}
+management.endpoints.web.exposure.include: health,info,prometheus
+server.shutdown: graceful
+spring.lifecycle.timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
+management.endpoint.health.probes.enabled: true
+management.tracing.sampling.probability: ${TRACING_SAMPLE_PROBABILITY:0.05}
+management.opentelemetry.tracing.limits.max-attributes: 64
+management.opentelemetry.tracing.limits.max-attribute-value-length: 256
+management.opentelemetry.tracing.export.max-queue-size: 2048
+management.opentelemetry.tracing.export.max-batch-size: 256
+marketing.outbox:
+  enabled: ${MARKETING_OUTBOX_ENABLED:false}
+  fixed-delay-ms: ${MARKETING_OUTBOX_FIXED_DELAY_MS:250}
+  send-timeout-ms: ${MARKETING_OUTBOX_SEND_TIMEOUT_MS:10000}
+  max-attempts: ${MARKETING_OUTBOX_MAX_ATTEMPTS:10}

@@ -1,0 +1,11 @@
+# Integration tests inherit an isolated MySQL 8.4 container from the shared
+# test base. Messaging and background workers stay disabled unless a test
+# explicitly enables them.
+marketing:
+  kafka.consumers-enabled: false
+  release-outbox.enabled: false
+  benefit.outbox-enabled: false
+  engagement.outbox-enabled: false
+  outbox.enabled: false
+  journey.dispatch-enabled: false
+  expiration.enabled: false

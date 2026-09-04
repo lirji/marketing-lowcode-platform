@@ -1,0 +1,10 @@
+apiVersion: v2
+name: marketing-platform
+description: Production chart for the marketing low-code R1 stateless services and Flink jobs
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+kubeVersion: ">=1.30.0-0"
+annotations:
+  artifacthub.io/containsSecurityUpdates: "false"
+  artifacthub.io/license: Apache-2.0

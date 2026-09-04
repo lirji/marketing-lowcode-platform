@@ -1,0 +1,436 @@
+name: ${COMPOSE_PROJECT_NAME:-marketing-r1}
+
+x-java-environment: &java-environment
+  TZ: UTC
+  MARKETING_SECURITY_MODE: ${MARKETING_SECURITY_MODE:-DEV}
+  MARKETING_DEV_HEADERS_ENABLED: ${MARKETING_DEV_HEADERS_ENABLED:-true}
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${OIDC_ISSUER_URI:-http://host.docker.internal:8180/realms/marketing}
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_AUDIENCES: marketing-api
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://infra-marketing-otel-collector:4318/v1/traces}
+  # Metrics are scraped from /actuator/prometheus; avoid a second OTLP push
+  # registry and its default localhost endpoint.
+  MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: "false"
+  MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT: ${MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_ENDPOINT:-http://infra-marketing-otel-collector:4318/v1/logs}
+  MANAGEMENT_LOGGING_EXPORT_OTLP_ENABLED: ${MARKETING_OBSERVABILITY_ENABLED:-false}
+  OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=local,service.namespace=marketing
+  TRACING_SAMPLE_PROBABILITY: ${TRACING_SAMPLE_PROBABILITY:-0.00}
+  LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${DB_POOL_SIZE:-12}
+  SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: 2
+  SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: 2000
+  SPRING_DATASOURCE_HIKARI_VALIDATION_TIMEOUT: 1000
+  MANAGEMENT_METRICS_DISTRIBUTION_PERCENTILESHISTOGRAM_HTTP_SERVER_REQUESTS: "true"
+
+x-java-service: &java-service
+  restart: unless-stopped
+  init: true
+  read_only: true
+  user: "10001:0"
+  tmpfs:
+    - /tmp/marketing:rw,noexec,nosuid,size=128m,uid=10001,gid=0
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  stop_grace_period: 40s
+  extra_hosts:
+    - host.docker.internal:host-gateway
+  environment: *java-environment
+  networks: [backend, dev-infra]
+  deploy:
+    resources:
+      limits: { cpus: "1.0", memory: 1G }
+      reservations: { cpus: "0.10", memory: 256M }
+
+services:
+  marketing-control-service:
+    <<: *java-service
+    image: marketing/marketing-control-service:${IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.jvm
+      target: service
+      args: { SERVICE: marketing-control-service, SERVICE_PORT: 8081 }
+    environment:
+      <<: *java-environment
+      PORT: 8081
+      MARKETING_RELEASE_SIGNING_KEY_ID: ${RELEASE_SIGNING_KEY_ID:-}
+      MARKETING_RELEASE_PRIVATE_KEY_BASE64: ${RELEASE_SIGNING_PRIVATE_KEY_BASE64:-}
+      MARKETING_RELEASE_PUBLIC_KEY_BASE64: ${RELEASE_SIGNING_PUBLIC_KEY_BASE64:-}
+      MARKETING_COMPILER_TRUSTED_KEY_ID: ${COMPILER_SIGNING_KEY_ID:-}
+      MARKETING_COMPILER_PUBLIC_KEY_BASE64: ${COMPILER_SIGNING_PUBLIC_KEY_BASE64:-}
+      MARKETING_COMPILER_TRUSTED_PUBLIC_KEYS: ${COMPILER_TRUSTED_PUBLIC_KEYS:-}
+      MARKETING_RUNTIME_ACK_TRUSTED_KEY_ID: ${RUNTIME_ACK_SIGNING_KEY_ID:-}
+      MARKETING_RUNTIME_ACK_PUBLIC_KEY_BASE64: ${RUNTIME_ACK_SIGNING_PUBLIC_KEY_BASE64:-}
+      MARKETING_RUNTIME_ACK_TRUSTED_PUBLIC_KEYS: ${RUNTIME_ACK_TRUSTED_PUBLIC_KEYS:-}
+      MARKETING_RELEASE_MAX_READY_CAPACITY_PER_RUNTIME: 1000
+      MARKETING_RELEASE_ALLOWED_RUNTIME_BUILD_DIGEST: local
+      MARKETING_DB_URL: jdbc:mysql://${MARKETING_MYSQL_HOST:-infra-mysql84}:3306/marketing_control?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      MARKETING_DB_USER: control_app
+      MARKETING_DB_PASSWORD: ${CONTROL_DB_PASSWORD}
+      SPRING_FLYWAY_USER: control_migrator
+      SPRING_FLYWAY_PASSWORD: ${CONTROL_MIGRATION_DB_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: ${MARKETING_KAFKA_BOOTSTRAP_SERVERS:-infra-kafka38:9092}
+      MARKETING_RELEASE_OUTBOX_ENABLED: "true"
+
+  rule-compiler-worker:
+    <<: *java-service
+    image: marketing/rule-compiler-worker:${IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.jvm
+      target: service
+      args: { SERVICE: rule-compiler-worker, SERVICE_PORT: 8082 }
+    environment:
+      <<: *java-environment
+      PORT: 8082
+      MARKETING_DB_URL: jdbc:mysql://${MARKETING_MYSQL_HOST:-infra-mysql84}:3306/marketing_compiler?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      MARKETING_DB_USER: compiler_app
+      MARKETING_DB_PASSWORD: ${COMPILER_DB_PASSWORD}
+      SPRING_FLYWAY_USER: compiler_migrator
+      SPRING_FLYWAY_PASSWORD: ${COMPILER_MIGRATION_DB_PASSWORD}
+      MARKETING_COMPILER_SIGNING_KEY_ID: ${COMPILER_SIGNING_KEY_ID:-}
+      MARKETING_COMPILER_PRIVATE_KEY_BASE64: ${COMPILER_SIGNING_PRIVATE_KEY_BASE64:-}
+      MARKETING_COMPILER_PUBLIC_KEY_BASE64: ${COMPILER_SIGNING_PUBLIC_KEY_BASE64:-}
+
+  audience-service:
+    <<: *java-service
+    image: marketing/audience-service:${IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.jvm
+      target: service
+      args: { SERVICE: audience-service, SERVICE_PORT: 8083 }
+    environment:
+      <<: *java-environment
+      PORT: 8083
+      MARKETING_DB_URL: jdbc:mysql://${MARKETING_MYSQL_HOST:-infra-mysql84}:3306/marketing_audience?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      MARKETING_DB_USER: audience_app
+      MARKETING_DB_PASSWORD: ${AUDIENCE_DB_PASSWORD}
+      SPRING_FLYWAY_USER: audience_migrator
+      SPRING_FLYWAY_PASSWORD: ${AUDIENCE_MIGRATION_DB_PASSWORD}
+
+  offer-decision-service:
+    <<: *java-service
+    image: marketing/offer-decision-service:${IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.jvm
+      target: service
+      args: { SERVICE: offer-decision-service, SERVICE_PORT: 8084 }
+    environment:
+      <<: *java-environment
+      PORT: 8084
+      TRACING_SAMPLE_PROBABILITY: ${DECISION_TRACING_SAMPLE_PROBABILITY:-0.00}
+      MARKETING_OFFER_SIGNING_KEY_ID: ${OFFER_SIGNING_KEY_ID:-}
+      MARKETING_OFFER_PRIVATE_KEY_BASE64: ${OFFER_SIGNING_PRIVATE_KEY_BASE64:-}
+      MARKETING_OFFER_PUBLIC_KEY_BASE64: ${OFFER_SIGNING_PUBLIC_KEY_BASE64:-}
+      MARKETING_RELEASE_TRUSTED_KEY_ID: ${RELEASE_SIGNING_KEY_ID:-}
+      MARKETING_RELEASE_PUBLIC_KEY_BASE64: ${RELEASE_SIGNING_PUBLIC_KEY_BASE64:-}
+      MARKETING_RELEASE_TRUSTED_PUBLIC_KEYS: ${RELEASE_TRUSTED_PUBLIC_KEYS:-}
+      MARKETING_COMPILER_TRUSTED_KEY_ID: ${COMPILER_SIGNING_KEY_ID:-}
+      MARKETING_COMPILER_PUBLIC_KEY_BASE64: ${COMPILER_SIGNING_PUBLIC_KEY_BASE64:-}
+      MARKETING_COMPILER_TRUSTED_PUBLIC_KEYS: ${COMPILER_TRUSTED_PUBLIC_KEYS:-}
+      MARKETING_ROUTING_SECRET: ${MARKETING_ROUTING_SECRET:-}
+      MARKETING_RUNTIME_ENVIRONMENT: local
+      MARKETING_RUNTIME_CELL: cell-a
+      MARKETING_RUNTIME_NAMESPACE: main
+      KAFKA_BOOTSTRAP_SERVERS: ${MARKETING_KAFKA_BOOTSTRAP_SERVERS:-infra-kafka38:9092}
+      MARKETING_KAFKA_CONSUMERS_ENABLED: "true"
+      MARKETING_DECISION_IDEMPOTENCY_STORE: REDIS
+      REDIS_URL: ${DEV_INFRA_REDIS_URL:?Use scripts/bootstrap.sh or export the shared dev-infra Redis URL}
+      MARKETING_DB_URL: jdbc:mysql://${MARKETING_MYSQL_HOST:-infra-mysql84}:3306/marketing_decision?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      MARKETING_DB_USER: decision_app
+      MARKETING_DB_PASSWORD: ${DECISION_DB_PASSWORD}
+      SPRING_FLYWAY_USER: decision_migrator
+      SPRING_FLYWAY_PASSWORD: ${DECISION_MIGRATION_DB_PASSWORD}
+      MARKETING_RUNTIME_ACK_SIGNING_KEY_ID: ${RUNTIME_ACK_SIGNING_KEY_ID:-}
+      MARKETING_RUNTIME_ACK_PRIVATE_KEY_BASE64: ${RUNTIME_ACK_SIGNING_PRIVATE_KEY_BASE64:-}
+      MARKETING_RUNTIME_ACK_PUBLIC_KEY_BASE64: ${RUNTIME_ACK_SIGNING_PUBLIC_KEY_BASE64:-}
+      MARKETING_RUNTIME_ID: decision-compose-1
+      MARKETING_RUNTIME_BUILD_DIGEST: local
+      MARKETING_RUNTIME_CAPACITY: 1000
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 2G }
+        reservations: { cpus: "0.25", memory: 512M }
+
+  benefit-funding-service:
+    <<: *java-service
+    image: marketing/benefit-funding-service:${IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.jvm
+      target: service
+      args: { SERVICE: benefit-funding-service, SERVICE_PORT: 8085 }
+    environment:
+      <<: *java-environment
+      PORT: 8085
+      MARKETING_DB_URL: jdbc:mysql://${MARKETING_MYSQL_HOST:-infra-mysql84}:3306/marketing_benefit?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      MARKETING_DB_USER: benefit_app
+      MARKETING_DB_PASSWORD: ${BENEFIT_DB_PASSWORD}
+      SPRING_FLYWAY_USER: benefit_migrator
+      SPRING_FLYWAY_PASSWORD: ${BENEFIT_MIGRATION_DB_PASSWORD}
+      MARKETING_OFFER_TRUSTED_KEY_ID: ${OFFER_SIGNING_KEY_ID:-}
+      MARKETING_OFFER_PUBLIC_KEY_BASE64: ${OFFER_SIGNING_PUBLIC_KEY_BASE64:-}
+      MARKETING_OFFER_TRUSTED_PUBLIC_KEYS: ${OFFER_TRUSTED_PUBLIC_KEYS:-}
+      KAFKA_BOOTSTRAP_SERVERS: ${MARKETING_KAFKA_BOOTSTRAP_SERVERS:-infra-kafka38:9092}
+      MARKETING_KAFKA_CONSUMERS_ENABLED: "true"
+      MARKETING_BENEFIT_OUTBOX_ENABLED: "true"
+
+  event-gateway-service:
+    <<: *java-service
+    image: marketing/event-gateway-service:${IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.jvm
+      target: service
+      args: { SERVICE: event-gateway-service, SERVICE_PORT: 8086 }
+    environment:
+      <<: *java-environment
+      PORT: 8086
+      MARKETING_DB_URL: jdbc:mysql://${MARKETING_MYSQL_HOST:-infra-mysql84}:3306/marketing_events?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      MARKETING_DB_USER: events_app
+      MARKETING_DB_PASSWORD: ${EVENTS_DB_PASSWORD}
+      SPRING_FLYWAY_USER: events_migrator
+      SPRING_FLYWAY_PASSWORD: ${EVENTS_MIGRATION_DB_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: ${MARKETING_KAFKA_BOOTSTRAP_SERVERS:-infra-kafka38:9092}
+      MARKETING_OUTBOX_ENABLED: "true"
+
+  journey-service:
+    <<: *java-service
+    image: marketing/journey-service:${IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.jvm
+      target: service
+      args: { SERVICE: journey-service, SERVICE_PORT: 8087 }
+    environment:
+      <<: *java-environment
+      PORT: 8087
+      MARKETING_DB_URL: jdbc:mysql://${MARKETING_MYSQL_HOST:-infra-mysql84}:3306/marketing_journey?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      MARKETING_DB_USER: journey_app
+      MARKETING_DB_PASSWORD: ${JOURNEY_DB_PASSWORD}
+      SPRING_FLYWAY_USER: journey_migrator
+      SPRING_FLYWAY_PASSWORD: ${JOURNEY_MIGRATION_DB_PASSWORD}
+      MARKETING_RELEASE_TRUSTED_KEY_ID: ${RELEASE_SIGNING_KEY_ID:-}
+      MARKETING_RELEASE_PUBLIC_KEY_BASE64: ${RELEASE_SIGNING_PUBLIC_KEY_BASE64:-}
+      MARKETING_RELEASE_TRUSTED_PUBLIC_KEYS: ${RELEASE_TRUSTED_PUBLIC_KEYS:-}
+      MARKETING_COMPILER_TRUSTED_KEY_ID: ${COMPILER_SIGNING_KEY_ID:-}
+      MARKETING_COMPILER_PUBLIC_KEY_BASE64: ${COMPILER_SIGNING_PUBLIC_KEY_BASE64:-}
+      MARKETING_COMPILER_TRUSTED_PUBLIC_KEYS: ${COMPILER_TRUSTED_PUBLIC_KEYS:-}
+      MARKETING_RUNTIME_ACK_SIGNING_KEY_ID: ${RUNTIME_ACK_SIGNING_KEY_ID:-}
+      MARKETING_RUNTIME_ACK_PRIVATE_KEY_BASE64: ${RUNTIME_ACK_SIGNING_PRIVATE_KEY_BASE64:-}
+      MARKETING_RUNTIME_ACK_PUBLIC_KEY_BASE64: ${RUNTIME_ACK_SIGNING_PUBLIC_KEY_BASE64:-}
+      MARKETING_RUNTIME_ENVIRONMENT: local
+      MARKETING_RUNTIME_CELL: cell-a
+      MARKETING_RUNTIME_NAMESPACE: main
+      MARKETING_RUNTIME_ID: journey-compose-1
+      MARKETING_RUNTIME_BUILD_DIGEST: local
+      MARKETING_RUNTIME_CAPACITY: 1000
+      KAFKA_BOOTSTRAP_SERVERS: ${MARKETING_KAFKA_BOOTSTRAP_SERVERS:-infra-kafka38:9092}
+      MARKETING_KAFKA_CONSUMERS_ENABLED: "true"
+      MARKETING_JOURNEY_DISPATCH_ENABLED: "true"
+      MARKETING_JOURNEY_EXECUTION_MODE: STREAM
+
+  engagement-service:
+    <<: *java-service
+    image: marketing/engagement-service:${IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.jvm
+      target: service
+      args: { SERVICE: engagement-service, SERVICE_PORT: 8088 }
+    environment:
+      <<: *java-environment
+      PORT: 8088
+      MARKETING_DB_URL: jdbc:mysql://${MARKETING_MYSQL_HOST:-infra-mysql84}:3306/marketing_engagement?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      MARKETING_DB_USER: engagement_app
+      MARKETING_DB_PASSWORD: ${ENGAGEMENT_DB_PASSWORD}
+      SPRING_FLYWAY_USER: engagement_migrator
+      SPRING_FLYWAY_PASSWORD: ${ENGAGEMENT_MIGRATION_DB_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: ${MARKETING_KAFKA_BOOTSTRAP_SERVERS:-infra-kafka38:9092}
+      MARKETING_KAFKA_CONSUMERS_ENABLED: "true"
+      MARKETING_ENGAGEMENT_OUTBOX_ENABLED: "true"
+
+  measurement-service:
+    <<: *java-service
+    image: marketing/measurement-service:${IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.jvm
+      target: service
+      args: { SERVICE: measurement-service, SERVICE_PORT: 8089 }
+    environment:
+      <<: *java-environment
+      PORT: 8089
+      MARKETING_DB_URL: jdbc:mysql://${MARKETING_MYSQL_HOST:-infra-mysql84}:3306/marketing_measurement?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      MARKETING_DB_USER: measurement_app
+      MARKETING_DB_PASSWORD: ${MEASUREMENT_DB_PASSWORD}
+      SPRING_FLYWAY_USER: measurement_migrator
+      SPRING_FLYWAY_PASSWORD: ${MEASUREMENT_MIGRATION_DB_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: ${MARKETING_KAFKA_BOOTSTRAP_SERVERS:-infra-kafka38:9092}
+      MARKETING_KAFKA_CONSUMERS_ENABLED: "true"
+
+  edge-gateway:
+    <<: *java-service
+    image: marketing/edge-gateway:${IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.jvm
+      target: service
+      args: { SERVICE: edge-gateway, SERVICE_PORT: 8080 }
+    environment:
+      <<: *java-environment
+      PORT: 8080
+      CONTROL_SERVICE_URL: http://marketing-control-service:8081
+      COMPILER_SERVICE_URL: http://rule-compiler-worker:8082
+      AUDIENCE_SERVICE_URL: http://audience-service:8083
+      DECISION_SERVICE_URL: http://offer-decision-service:8084
+      BENEFIT_SERVICE_URL: http://benefit-funding-service:8085
+      EVENT_SERVICE_URL: http://event-gateway-service:8086
+      JOURNEY_SERVICE_URL: http://journey-service:8087
+      ENGAGEMENT_SERVICE_URL: http://engagement-service:8088
+      MEASUREMENT_SERVICE_URL: http://measurement-service:8089
+    ports: ["127.0.0.1:${GATEWAY_PORT:-8080}:8080"]
+    networks: [ingress, backend, dev-infra]
+    depends_on:
+      marketing-control-service: { condition: service_healthy }
+      rule-compiler-worker: { condition: service_healthy }
+      audience-service: { condition: service_healthy }
+      offer-decision-service: { condition: service_healthy }
+      benefit-funding-service: { condition: service_healthy }
+      event-gateway-service: { condition: service_healthy }
+      journey-service: { condition: service_healthy }
+      engagement-service: { condition: service_healthy }
+      measurement-service: { condition: service_healthy }
+
+  console:
+    image: marketing/console:${IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.console
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - "/tmp:rw,noexec,nosuid,size=32m"
+      - "/etc/marketing-console:rw,noexec,nosuid,size=1m,uid=101,gid=101,mode=0750"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      CONSOLE_API_BASE_URL: ${CONSOLE_API_BASE_URL:-}
+      CONSOLE_DEMO_MODE: ${CONSOLE_DEMO_MODE:-false}
+      CONSOLE_AUTH_MODE: ${CONSOLE_AUTH_MODE:-DEV}
+      CONSOLE_ALLOW_DEV_AUTH: ${CONSOLE_ALLOW_DEV_AUTH:-true}
+      CONSOLE_OIDC_AUTHORITY: ${CONSOLE_OIDC_AUTHORITY:-http://host.docker.internal:8180/realms/marketing}
+      CONSOLE_OIDC_CLIENT_ID: ${CONSOLE_OIDC_CLIENT_ID:-marketing-console}
+      CONSOLE_OIDC_SCOPE: ${CONSOLE_OIDC_SCOPE:-openid profile email}
+      CONSOLE_OIDC_ORIGIN: ${CONSOLE_OIDC_ORIGIN:-http://host.docker.internal:8180}
+      CONSOLE_HSTS_LINE: ${CONSOLE_HSTS_LINE:-}
+    ports: ["127.0.0.1:${CONSOLE_PORT:-3000}:8080"]
+    networks: [ingress]
+    depends_on:
+      edge-gateway: { condition: service_healthy }
+
+  flink-jobmanager:
+    image: marketing/flink-jobs:${IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.jvm
+      target: flink-jobs
+    restart: unless-stopped
+    command: jobmanager
+    environment: &flink-environment
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        rest.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 6
+        parallelism.default: 2
+        state.checkpoints.dir: file:///opt/flink/checkpoints
+        execution.checkpointing.savepoint-dir: file:///opt/flink/savepoints
+        execution.checkpointing.interval: 30s
+        execution.checkpointing.timeout: 2min
+        restart-strategy.type: exponential-delay
+        restart-strategy.exponential-delay.initial-backoff: 1s
+        restart-strategy.exponential-delay.max-backoff: 1min
+        web.cancel.enable: false
+        metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+        metrics.reporter.prom.port: 9249
+    ports: ["127.0.0.1:${FLINK_UI_PORT:-8081}:8081"]
+    volumes:
+      - flink-checkpoints:/opt/flink/checkpoints
+      - flink-savepoints:/opt/flink/savepoints
+    # The REST/UI port is bound to loopback, so the JobManager also needs one
+    # non-internal network for Docker Desktop to install the host port mapping.
+    networks: [dev-infra, ingress]
+    deploy:
+      resources:
+        limits: { memory: 1536M }
+
+  flink-taskmanager:
+    image: marketing/flink-jobs:${IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.jvm
+      target: flink-jobs
+    restart: unless-stopped
+    command: taskmanager
+    environment: *flink-environment
+    volumes:
+      - flink-checkpoints:/opt/flink/checkpoints
+      - flink-savepoints:/opt/flink/savepoints
+    networks: [dev-infra]
+    depends_on:
+      flink-jobmanager: { condition: service_started }
+    deploy:
+      resources:
+        limits: { memory: 3G }
+
+  flink-job-submit:
+    image: marketing/flink-jobs:${IMAGE_TAG:-local}
+    restart: "no"
+    # Preserve the upstream entrypoint so FLINK_PROPERTIES is materialized in
+    # config.yaml before the CLI submits the jobs.
+    entrypoint: [/docker-entrypoint.sh]
+    command:
+      - /bin/bash
+      - -ec
+      - |
+        until curl -fsS http://flink-jobmanager:8081/overview >/dev/null; do sleep 2; done
+        flink run -d /opt/flink/usrlib/audience.jar
+        flink run -d /opt/flink/usrlib/journey.jar
+        flink run -d /opt/flink/usrlib/measurement.jar
+    environment:
+      <<: *flink-environment
+      KAFKA_BOOTSTRAP_SERVERS: ${MARKETING_KAFKA_BOOTSTRAP_SERVERS:-infra-kafka38:9092}
+      DEPLOYMENT_ID: compose-r1
+      FLINK_PARALLELISM: 2
+      FLINK_CHECKPOINT_INTERVAL_MS: 30000
+      FLINK_CHECKPOINT_TIMEOUT_MS: 120000
+      KAFKA_TRANSACTION_TIMEOUT_MS: 900000
+      JOURNEY_RELEASE_TRUSTED_KEY_ID: ${RELEASE_SIGNING_KEY_ID:-}
+      JOURNEY_RELEASE_PUBLIC_KEY_BASE64: ${RELEASE_SIGNING_PUBLIC_KEY_BASE64:-}
+      JOURNEY_RELEASE_TRUSTED_PUBLIC_KEYS: ${RELEASE_TRUSTED_PUBLIC_KEYS:-}
+      JOURNEY_COMPILER_TRUSTED_KEY_ID: ${COMPILER_SIGNING_KEY_ID:-}
+      JOURNEY_COMPILER_PUBLIC_KEY_BASE64: ${COMPILER_SIGNING_PUBLIC_KEY_BASE64:-}
+      JOURNEY_COMPILER_TRUSTED_PUBLIC_KEYS: ${COMPILER_TRUSTED_PUBLIC_KEYS:-}
+      JOURNEY_RUNTIME_ENVIRONMENT: local
+      JOURNEY_RUNTIME_CELL: cell-a
+      JOURNEY_RUNTIME_NAMESPACE: main
+      JOURNEY_RUNTIME_DB_URL: jdbc:mysql://${MARKETING_MYSQL_HOST:-infra-mysql84}:3306/marketing_journey?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      JOURNEY_RUNTIME_DB_USER: journey_app
+      JOURNEY_RUNTIME_DB_PASSWORD: ${JOURNEY_DB_PASSWORD}
+    networks: [dev-infra]
+    depends_on:
+      flink-jobmanager: { condition: service_started }
+      flink-taskmanager: { condition: service_started }
+
+networks:
+  ingress: {}
+  backend:
+    internal: true
+  dev-infra:
+    external: true
+    name: ${DEV_INFRA_NETWORK:-dev-infra}
+
+volumes:
+  flink-checkpoints: {}
+  flink-savepoints: {}

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/marketing/measurement-projection-delta/1-0-0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["eventType", "deltaId", "tenantId", "rootEventId", "sourceEventId", "revision", "operation", "factType", "businessKey", "campaignId", "experimentId", "variantId", "subjectHash", "countDelta", "revenueDeltaMinor", "costDeltaMinor", "occurredAtEpochMillis", "ingestedAtEpochMillis"],
+  "properties": {
+    "eventType": {"const": "MEASUREMENT_PROJECTION_DELTA"},
+    "deltaId": {"type": "string", "minLength": 1},
+    "tenantId": {"type": "string", "minLength": 1},
+    "rootEventId": {"type": "string", "minLength": 1},
+    "sourceEventId": {"type": "string", "minLength": 1},
+    "revision": {"type": "integer", "minimum": 1},
+    "operation": {"enum": ["APPLY", "REVERSE"]},
+    "factType": {"type": "string"},
+    "businessKey": {"type": "string", "minLength": 1},
+    "campaignId": {"type": "string"},
+    "experimentId": {"type": "string"},
+    "variantId": {"type": "string"},
+    "subjectHash": {"type": "string", "minLength": 1},
+    "countDelta": {"enum": [-1, 1]},
+    "revenueDeltaMinor": {"type": "integer"},
+    "costDeltaMinor": {"type": "integer"},
+    "occurredAtEpochMillis": {"type": "integer", "minimum": 1},
+    "ingestedAtEpochMillis": {"type": "integer", "minimum": 1}
+  }
+}

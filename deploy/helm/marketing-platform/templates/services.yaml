@@ -1,0 +1,281 @@
+{{- range $name, $service := .Values.services }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "marketing.labels" $ | nindent 4 }}
+    app.kubernetes.io/name: {{ $name }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+  ports:
+    - name: http
+      port: {{ $service.port }}
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "marketing.labels" $ | nindent 4 }}
+    app.kubernetes.io/name: {{ $name }}
+spec:
+  replicas: {{ $service.replicas }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $name }}
+        app.kubernetes.io/instance: {{ $.Release.Name }}
+        app.kubernetes.io/part-of: marketing-platform
+      annotations:
+        checksum/config: {{ toJson $.Values.external | sha256sum }}
+        {{- with $.Values.global.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "marketing.serviceAccountName" $ }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ $.Values.defaults.terminationGracePeriodSeconds }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      {{- with $.Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: {{ include "marketing.image" (dict "root" $ "name" $name) | quote }}
+          imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
+          ports:
+            - {name: http, containerPort: {{ $service.port }}, protocol: TCP}
+          env:
+            - {name: PORT, value: {{ $service.port | quote }}}
+            - {name: MARKETING_SECURITY_MODE, value: OIDC}
+            - {name: MARKETING_DEV_HEADERS_ENABLED, value: "false"}
+            - {name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI, value: {{ $.Values.global.security.issuerUri | quote }}}
+            - {name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_AUDIENCES, value: {{ $.Values.global.security.audience | quote }}}
+            - {name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT, value: {{ $.Values.global.otlpEndpoint | quote }}}
+            - {name: MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED, value: "false"}
+            - {name: TRACING_SAMPLE_PROBABILITY, value: {{ default $.Values.global.tracingSampleProbability $service.tracingSampleProbability | quote }}}
+            - {name: LOGGING_STRUCTURED_FORMAT_CONSOLE, value: ecs}
+            - {name: MANAGEMENT_METRICS_DISTRIBUTION_PERCENTILESHISTOGRAM_HTTP_SERVER_REQUESTS, value: "true"}
+            {{- if has $name (list "marketing-control-service" "offer-decision-service" "benefit-funding-service" "event-gateway-service" "journey-service" "engagement-service" "measurement-service") }}
+            - {name: KAFKA_BOOTSTRAP_SERVERS, value: {{ $.Values.external.kafka.bootstrapServers | quote }}}
+            - {name: SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL, value: {{ $.Values.external.kafka.securityProtocol | quote }}}
+            - {name: SPRING_KAFKA_PROPERTIES_SASL_MECHANISM, value: {{ $.Values.external.kafka.saslMechanism | quote }}}
+            - name: SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: kafka-sasl-jaas-config}}
+            {{- end }}
+            {{- if eq $name "offer-decision-service" }}
+            - {name: REDIS_URL, value: {{ $.Values.external.redis.url | quote }}}
+            {{- end }}
+            {{- if $service.database }}
+            - name: MARKETING_DB_URL
+              value: {{ printf "jdbc:mysql://%s:%v/%s?%s" $.Values.external.mysql.host $.Values.external.mysql.port $service.database $.Values.external.mysql.parameters | quote }}
+            - name: MARKETING_DB_USER
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: {{ printf "%s-database-username" $name }}}}
+            - name: MARKETING_DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: {{ printf "%s-database-password" $name }}}}
+            - name: SPRING_FLYWAY_USER
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: {{ printf "%s-migration-username" $name }}}}
+            - name: SPRING_FLYWAY_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: {{ printf "%s-migration-password" $name }}}}
+            {{- end }}
+            {{- if eq $name "edge-gateway" }}
+            - {name: CONTROL_SERVICE_URL, value: http://marketing-control-service:8081}
+            - {name: COMPILER_SERVICE_URL, value: http://rule-compiler-worker:8082}
+            - {name: AUDIENCE_SERVICE_URL, value: http://audience-service:8083}
+            - {name: DECISION_SERVICE_URL, value: http://offer-decision-service:8084}
+            - {name: BENEFIT_SERVICE_URL, value: http://benefit-funding-service:8085}
+            - {name: EVENT_SERVICE_URL, value: http://event-gateway-service:8086}
+            - {name: JOURNEY_SERVICE_URL, value: http://journey-service:8087}
+            - {name: ENGAGEMENT_SERVICE_URL, value: http://engagement-service:8088}
+            - {name: MEASUREMENT_SERVICE_URL, value: http://measurement-service:8089}
+            {{- end }}
+            {{- if eq $name "marketing-control-service" }}
+            - {name: MARKETING_RELEASE_OUTBOX_ENABLED, value: "true"}
+            - {name: MARKETING_RELEASE_ACTIVATION_TOPIC, value: mk.release.activation.v1}
+            - {name: MARKETING_RELEASE_KILL_SWITCH_TOPIC, value: mk.release.kill-switch.v1}
+            - name: MARKETING_RELEASE_SIGNING_KEY_ID
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: release-signing-key-id}}
+            - name: MARKETING_RELEASE_PRIVATE_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: release-signing-private-key-base64}}
+            - name: MARKETING_RELEASE_PUBLIC_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: release-signing-public-key-base64}}
+            - name: MARKETING_COMPILER_TRUSTED_KEY_ID
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: compiler-signing-key-id}}
+            - name: MARKETING_COMPILER_PUBLIC_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: compiler-signing-public-key-base64}}
+            - name: MARKETING_COMPILER_TRUSTED_PUBLIC_KEYS
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: compiler-trusted-public-keys, optional: true}}
+            - name: MARKETING_RUNTIME_ACK_TRUSTED_KEY_ID
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: runtime-ack-signing-key-id}}
+            - name: MARKETING_RUNTIME_ACK_PUBLIC_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: runtime-ack-signing-public-key-base64}}
+            - name: MARKETING_RUNTIME_ACK_TRUSTED_PUBLIC_KEYS
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: runtime-ack-trusted-public-keys, optional: true}}
+            - {name: MARKETING_RELEASE_MAX_READY_CAPACITY_PER_RUNTIME, value: {{ $.Values.releasePolicy.maxReadyCapacityPerRuntime | quote }}}
+            - {name: MARKETING_RELEASE_ALLOWED_RUNTIME_BUILD_DIGEST, value: {{ $.Values.global.imageTag | quote }}}
+            {{- end }}
+            {{- if eq $name "rule-compiler-worker" }}
+            - name: MARKETING_COMPILER_SIGNING_KEY_ID
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: compiler-signing-key-id}}
+            - name: MARKETING_COMPILER_PRIVATE_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: compiler-signing-private-key-base64}}
+            - name: MARKETING_COMPILER_PUBLIC_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: compiler-signing-public-key-base64}}
+            {{- end }}
+            {{- if eq $name "offer-decision-service" }}
+            - {name: MARKETING_KAFKA_CONSUMERS_ENABLED, value: "true"}
+            - {name: MARKETING_DECISION_IDEMPOTENCY_STORE, value: REDIS}
+            - name: MARKETING_OFFER_SIGNING_KEY_ID
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: offer-signing-key-id}}
+            - name: MARKETING_OFFER_PRIVATE_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: offer-signing-private-key-base64}}
+            - name: MARKETING_OFFER_PUBLIC_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: offer-signing-public-key-base64}}
+            - name: MARKETING_RELEASE_TRUSTED_KEY_ID
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: release-signing-key-id}}
+            - name: MARKETING_RELEASE_PUBLIC_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: release-signing-public-key-base64}}
+            - name: MARKETING_RELEASE_TRUSTED_PUBLIC_KEYS
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: release-trusted-public-keys, optional: true}}
+            - name: MARKETING_COMPILER_TRUSTED_KEY_ID
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: compiler-signing-key-id}}
+            - name: MARKETING_COMPILER_PUBLIC_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: compiler-signing-public-key-base64}}
+            - name: MARKETING_COMPILER_TRUSTED_PUBLIC_KEYS
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: compiler-trusted-public-keys, optional: true}}
+            - name: MARKETING_ROUTING_SECRET
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: routing-secret}}
+            - {name: MARKETING_RUNTIME_ENVIRONMENT, value: {{ $.Values.global.runtimeSlot.environment | quote }}}
+            - {name: MARKETING_RUNTIME_CELL, value: {{ $.Values.global.runtimeSlot.cell | quote }}}
+            - {name: MARKETING_RUNTIME_NAMESPACE, value: {{ $.Values.global.runtimeSlot.namespace | quote }}}
+            - name: MARKETING_RUNTIME_ACK_SIGNING_KEY_ID
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: runtime-ack-signing-key-id}}
+            - name: MARKETING_RUNTIME_ACK_PRIVATE_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: runtime-ack-signing-private-key-base64}}
+            - name: MARKETING_RUNTIME_ACK_PUBLIC_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: runtime-ack-signing-public-key-base64}}
+            - {name: MARKETING_RUNTIME_ID, valueFrom: {fieldRef: {fieldPath: metadata.name}}}
+            - {name: MARKETING_RUNTIME_BUILD_DIGEST, value: {{ $.Values.global.imageTag | quote }}}
+            - {name: MARKETING_RUNTIME_CAPACITY, value: "1000"}
+            {{- end }}
+            {{- if eq $name "benefit-funding-service" }}
+            - {name: MARKETING_KAFKA_CONSUMERS_ENABLED, value: "true"}
+            - {name: MARKETING_BENEFIT_OUTBOX_ENABLED, value: "true"}
+            - name: MARKETING_OFFER_TRUSTED_KEY_ID
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: offer-signing-key-id}}
+            - name: MARKETING_OFFER_PUBLIC_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: offer-signing-public-key-base64}}
+            - name: MARKETING_OFFER_TRUSTED_PUBLIC_KEYS
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: offer-trusted-public-keys, optional: true}}
+            {{- end }}
+            {{- if eq $name "journey-service" }}
+            - {name: MARKETING_KAFKA_CONSUMERS_ENABLED, value: "true"}
+            - {name: MARKETING_JOURNEY_DISPATCH_ENABLED, value: "true"}
+            - {name: MARKETING_JOURNEY_EXECUTION_MODE, value: STREAM}
+            - name: MARKETING_RELEASE_TRUSTED_KEY_ID
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: release-signing-key-id}}
+            - name: MARKETING_RELEASE_PUBLIC_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: release-signing-public-key-base64}}
+            - name: MARKETING_RELEASE_TRUSTED_PUBLIC_KEYS
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: release-trusted-public-keys, optional: true}}
+            - name: MARKETING_COMPILER_TRUSTED_KEY_ID
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: compiler-signing-key-id}}
+            - name: MARKETING_COMPILER_PUBLIC_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: compiler-signing-public-key-base64}}
+            - name: MARKETING_COMPILER_TRUSTED_PUBLIC_KEYS
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: compiler-trusted-public-keys, optional: true}}
+            - name: MARKETING_RUNTIME_ACK_SIGNING_KEY_ID
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: runtime-ack-signing-key-id}}
+            - name: MARKETING_RUNTIME_ACK_PRIVATE_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: runtime-ack-signing-private-key-base64}}
+            - name: MARKETING_RUNTIME_ACK_PUBLIC_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: runtime-ack-signing-public-key-base64}}
+            - {name: MARKETING_RUNTIME_ENVIRONMENT, value: {{ $.Values.global.runtimeSlot.environment | quote }}}
+            - {name: MARKETING_RUNTIME_CELL, value: {{ $.Values.global.runtimeSlot.cell | quote }}}
+            - {name: MARKETING_RUNTIME_NAMESPACE, value: {{ $.Values.global.runtimeSlot.namespace | quote }}}
+            - {name: MARKETING_RUNTIME_ID, valueFrom: {fieldRef: {fieldPath: metadata.name}}}
+            - {name: MARKETING_RUNTIME_BUILD_DIGEST, value: {{ $.Values.global.imageTag | quote }}}
+            {{- end }}
+            {{- if eq $name "event-gateway-service" }}
+            - {name: MARKETING_OUTBOX_ENABLED, value: "true"}
+            {{- end }}
+            {{- if eq $name "engagement-service" }}
+            - {name: MARKETING_KAFKA_CONSUMERS_ENABLED, value: "true"}
+            - {name: MARKETING_ENGAGEMENT_OUTBOX_ENABLED, value: "true"}
+            - {name: MARKETING_PROVIDER_MODE, value: HTTP}
+            - {name: MARKETING_PROVIDER_ENDPOINT, value: {{ $.Values.external.provider.endpoint | quote }}}
+            - name: MARKETING_PROVIDER_HMAC_SECRET
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: provider-hmac-secret}}
+            {{- end }}
+            {{- if eq $name "measurement-service" }}
+            - {name: MARKETING_KAFKA_CONSUMERS_ENABLED, value: "true"}
+            {{- end }}
+          startupProbe:
+            httpGet: {path: /actuator/health/readiness, port: http}
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet: {path: /actuator/health/readiness, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /actuator/health/liveness, port: http}
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop: {exec: {command: ["/bin/sh", "-c", "sleep 10"]}}
+          resources:
+            {{- toYaml (default $.Values.defaults.resources $service.resources) | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp/marketing}
+      volumes:
+        - name: tmp
+          emptyDir: {medium: Memory, sizeLimit: 128Mi}
+      {{- with $.Values.global.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.global.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.global.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      topologySpreadConstraints:
+        {{- range $.Values.global.topologySpreadConstraints }}
+        - maxSkew: {{ .maxSkew }}
+          topologyKey: {{ .topologyKey }}
+          whenUnsatisfiable: {{ .whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ $name }}
+              app.kubernetes.io/instance: {{ $.Release.Name }}
+        {{- end }}
+{{- end }}

@@ -1,0 +1,49 @@
+{{- range $name, $service := .Values.services }}
+{{- $hpa := default $.Values.defaults.hpa $service.hpa }}
+{{- if $hpa.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "marketing.labels" $ | nindent 4 }}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: {{ $name }}}
+  minReplicas: {{ $hpa.minReplicas }}
+  maxReplicas: {{ $hpa.maxReplicas }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies: [{type: Percent, value: 100, periodSeconds: 60}, {type: Pods, value: 4, periodSeconds: 60}]
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies: [{type: Percent, value: 25, periodSeconds: 60}]
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: {type: Utilization, averageUtilization: {{ $hpa.cpuUtilization }}}
+    - type: Resource
+      resource:
+        name: memory
+        target: {type: Utilization, averageUtilization: {{ $hpa.memoryUtilization }}}
+{{- end }}
+{{- $pdb := default $.Values.defaults.pdb $service.pdb }}
+{{- if $pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "marketing.labels" $ | nindent 4 }}
+spec:
+  maxUnavailable: {{ $pdb.maxUnavailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+{{- end }}
+{{- end }}

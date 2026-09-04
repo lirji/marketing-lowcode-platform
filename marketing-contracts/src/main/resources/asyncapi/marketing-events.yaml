@@ -1,0 +1,160 @@
+asyncapi: 3.0.0
+info:
+  title: Marketing Platform Event Contracts
+  version: 1.0.0
+  description: R1 Kafka contracts. Delivery is at-least-once; partition identity and domain idempotency are mandatory.
+defaultContentType: application/json
+servers:
+  production:
+    host: kafka.example.invalid:9093
+    protocol: kafka-secure
+channels:
+  profileChanges:
+    address: mk.profile.change.v1
+    messages: {profileChanged: {$ref: '#/components/messages/ProfileChanged'}}
+  audienceMembership:
+    address: mk.audience.membership.v1
+    messages: {membershipChanged: {$ref: '#/components/messages/AudienceMembershipChanged'}}
+  journeySignals:
+    address: mk.journey.signal.v1
+    messages: {journeySignal: {$ref: '#/components/messages/JourneySignal'}}
+  journeyOutput:
+    address: mk.journey.output.v1
+    messages:
+      stateChanged: {$ref: '#/components/messages/JourneyStateChanged'}
+      effectCommand: {$ref: '#/components/messages/JourneyEffectCommand'}
+  engagementCommands:
+    address: mk.engagement.command.v1
+    messages: {engagementCommand: {$ref: '#/components/messages/JourneyEffectCommand'}}
+  benefitCommands:
+    address: mk.benefit.command.v1
+    messages: {benefitCommand: {$ref: '#/components/messages/JourneyEffectCommand'}}
+  engagementEvents:
+    address: mk.engagement.event.v1
+    messages: {engagementEvent: {$ref: '#/components/messages/DomainLifecycleEvent'}}
+  benefitEvents:
+    address: mk.benefit.event.v1
+    messages: {benefitEvent: {$ref: '#/components/messages/DomainLifecycleEvent'}}
+  marketingFacts:
+    address: mk.marketing.fact.v1
+    messages: {marketingFact: {$ref: '#/components/messages/MarketingFact'}}
+  measurementProjection:
+    address: mk.measurement.projection.v1
+    messages: {projectionDelta: {$ref: '#/components/messages/MeasurementProjectionDelta'}}
+  platformEvents:
+    address: mk.platform.events.v1
+    messages: {platformEvent: {$ref: '#/components/messages/PlatformEvent'}}
+  releaseActivation:
+    address: mk.release.activation.v1
+    messages: {activationDirective: {$ref: '#/components/messages/ActivationDirective'}}
+  releaseKillSwitch:
+    address: mk.release.kill-switch.v1
+    messages: {killSwitchDirective: {$ref: '#/components/messages/KillSwitchDirective'}}
+operations:
+  projectAudience:
+    action: receive
+    channel: {$ref: '#/channels/profileChanges'}
+  consumeAudienceMembership:
+    action: receive
+    channel: {$ref: '#/channels/audienceMembership'}
+  executeJourney:
+    action: receive
+    channel: {$ref: '#/channels/journeySignals'}
+  materializeJourneyOutput:
+    action: receive
+    channel: {$ref: '#/channels/journeyOutput'}
+  executeEngagement:
+    action: receive
+    channel: {$ref: '#/channels/engagementCommands'}
+  executeBenefit:
+    action: receive
+    channel: {$ref: '#/channels/benefitCommands'}
+  projectMeasurement:
+    action: receive
+    channel: {$ref: '#/channels/marketingFacts'}
+  materializeMeasurement:
+    action: receive
+    channel: {$ref: '#/channels/measurementProjection'}
+  convergeRelease:
+    action: receive
+    channel: {$ref: '#/channels/releaseActivation'}
+  enforceKillSwitch:
+    action: receive
+    channel: {$ref: '#/channels/releaseKillSwitch'}
+components:
+  messages:
+    ProfileChanged:
+      name: AudienceProfileChange
+      x-owner: event-gateway-service
+      x-partition-key: tenantId:subjectToken
+      x-delivery: at-least-once-monotonic-profileVersion
+      payload: {$ref: '../schema/events/audience-profile-change.schema.json'}
+    AudienceMembershipChanged:
+      name: AudienceMembershipDelta
+      x-owner: audience-flink-job
+      x-partition-key: tenantId:segmentId:subjectToken
+      x-delivery: at-least-once-monotonic-membershipVersion
+      payload: {$ref: '../schema/events/audience-membership-delta.schema.json'}
+    JourneySignal:
+      name: JourneyJobInput
+      x-owner: event-gateway-service
+      x-partition-key: tenantId:enrollmentId
+      x-delivery: at-least-once-idempotent-by-signalId
+      payload: {$ref: '../schema/events/journey-signal.schema.json'}
+    JourneyStateChanged:
+      name: JourneyStateChangedEvent
+      x-owner: journey-runtime-flink-job
+      x-partition-key: tenantId:enrollmentId
+      x-delivery: checkpointed-state-with-idempotent-materialization
+      payload:
+        type: object
+        additionalProperties: false
+        required: [eventType, snapshot, sourceSignalId, duplicate, projectedAtEpochMillis, expiresAtEpochMillis]
+        properties:
+          eventType: {const: JOURNEY_STATE_CHANGED}
+          snapshot: {type: object, additionalProperties: true}
+          sourceSignalId: {type: string, minLength: 1}
+          duplicate: {type: boolean}
+          projectedAtEpochMillis: {type: integer, minimum: 1}
+          expiresAtEpochMillis: {type: integer, minimum: 1}
+    JourneyEffectCommand:
+      name: JourneyEffectCommand
+      x-owner: journey-runtime-flink-job
+      x-partition-key: tenantId:enrollmentId
+      x-delivery: at-least-once-idempotent-by-commandId
+      payload: {$ref: '../schema/events/journey-effect-command.schema.json'}
+    DomainLifecycleEvent:
+      name: DomainLifecycleEvent
+      x-owner: benefit-funding-service-or-engagement-service
+      x-partition-key: tenantId:aggregateId
+      x-delivery: transactional-outbox-at-least-once
+      payload: {$ref: '../schema/events/domain-lifecycle-event.schema.json'}
+    MarketingFact:
+      name: MeasurementFactMessage
+      x-owner: event-gateway-service
+      x-partition-key: tenantId:correctionRootId
+      x-delivery: at-least-once-event-time-correction-aware
+      payload: {$ref: '../schema/events/marketing-fact.schema.json'}
+    MeasurementProjectionDelta:
+      name: MeasurementProjectionDelta
+      x-owner: measurement-flink-job
+      x-partition-key: tenantId:rootEventId
+      x-delivery: at-least-once-idempotent-by-deltaId
+      payload: {$ref: '../schema/events/measurement-projection-delta.schema.json'}
+    PlatformEvent:
+      name: PlatformEvent
+      x-owner: event-gateway-service
+      x-partition-key: tenantId:businessKey
+      payload: {type: object, additionalProperties: true}
+    ActivationDirective:
+      name: ActivationDirective
+      x-owner: marketing-control-service
+      x-partition-key: tenantId:environment:cell:runtime:namespace
+      x-delivery: signed-monotonic-desired-state-notification
+      payload: {$ref: '../schema/events/release-activation.schema.json'}
+    KillSwitchDirective:
+      name: KillSwitchDirective
+      x-owner: marketing-control-service
+      x-partition-key: tenantId:namespace
+      x-delivery: signed-monotonic-high-priority-notification
+      payload: {$ref: '../schema/events/kill-switch-directive.schema.json'}

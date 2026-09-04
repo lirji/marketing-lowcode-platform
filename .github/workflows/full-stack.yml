@@ -1,0 +1,58 @@
+name: Full stack acceptance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 18 * * 1-5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: full-stack-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compose-acceptance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      DEV_INFRA_ROOT: ${{ github.workspace }}/dev-infra
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out shared development infrastructure
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/dev-infra
+          path: dev-infra
+          persist-credentials: false
+      - name: Prepare ephemeral dev-infra credentials
+        run: |
+          cp dev-infra/.env.example dev-infra/.env
+          sed -i 's/=change-me/=ci-/g' dev-infra/.env
+      - name: Build and start complete R1
+        run: ./scripts/bootstrap.sh --skip-verify
+      - name: Repeat smoke to prove idempotent reads
+        run: ./scripts/smoke.sh
+      - name: Capture diagnostics
+        if: always()
+        run: |
+          mkdir -p artifacts
+          docker compose --env-file .env -f deploy/compose.yaml ps --all > artifacts/compose-ps.txt
+          docker compose --env-file .env -f deploy/compose.yaml logs --no-color > artifacts/compose.log 2>&1
+          ./dev-infra/bin/marketing-infra status .env > artifacts/infra-ps.txt
+          docker compose --env-file dev-infra/.env -f dev-infra/compose.yaml logs --no-color mysql84 redis7 kafka38 minio > artifacts/shared-infra.log 2>&1
+          docker compose --env-file dev-infra/.env --env-file .env -f dev-infra/marketing/compose.yaml logs --no-color > artifacts/marketing-infra.log 2>&1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: full-stack-diagnostics
+          path: artifacts
+          retention-days: 7
+      - name: Tear down
+        if: always()
+        run: |
+          if [[ -f .env ]]; then
+            CONFIRM_PURGE=marketing-r1 ./scripts/dev-down.sh --purge
+          fi
+          docker compose --env-file dev-infra/.env -f dev-infra/compose.yaml down --remove-orphans

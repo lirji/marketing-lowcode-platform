@@ -1,0 +1,16 @@
+.git
+.github
+.idea
+.vscode
+**/target
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+data
+backups
+artifacts
+checkpoints
+playwright-report
+test-results
+.env
+CODEX_PROGRESS.md

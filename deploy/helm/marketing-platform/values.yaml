@@ -1,0 +1,156 @@
+global:
+  imageRegistry: ghcr.io/example/marketing
+  imageTag: "1.0.0"
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  security:
+    mode: OIDC
+    issuerUri: https://id.example.invalid/realms/marketing
+    audience: marketing-api
+  externalSecretName: marketing-platform-secrets
+  otlpEndpoint: http://otel-collector.observability.svc:4318/v1/traces
+  tracingSampleProbability: "0.05"
+  runtimeSlot:
+    environment: production
+    cell: cell-a
+    namespace: main
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector: {}
+
+external:
+  mysql:
+    host: mysql.example.invalid
+    port: 3306
+    parameters: useSSL=true&requireSSL=true&serverTimezone=UTC
+  kafka:
+    bootstrapServers: kafka.example.invalid:9093
+    securityProtocol: SASL_SSL
+    saslMechanism: SCRAM-SHA-512
+  redis:
+    url: rediss://redis.example.invalid:6379
+  s3:
+    endpoint: https://s3.example.invalid
+    region: ap-east-1
+    artifactBucket: marketing-artifacts
+    rawEventBucket: marketing-raw-events
+  clickhouse:
+    url: https://clickhouse.example.invalid:8443/marketing
+  provider:
+    endpoint: https://provider.example.invalid/v1/messages
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+services:
+  marketing-control-service:
+    port: 8081
+    database: marketing_control
+    replicas: 2
+  rule-compiler-worker:
+    port: 8082
+    database: marketing_compiler
+    replicas: 2
+  audience-service:
+    port: 8083
+    database: marketing_audience
+    replicas: 2
+  offer-decision-service:
+    port: 8084
+    database: marketing_decision
+    replicas: 3
+    tracingSampleProbability: "0.01"
+  benefit-funding-service:
+    port: 8085
+    database: marketing_benefit
+    replicas: 3
+  event-gateway-service:
+    port: 8086
+    database: marketing_events
+    replicas: 3
+  journey-service:
+    port: 8087
+    database: marketing_journey
+    replicas: 2
+  engagement-service:
+    port: 8088
+    database: marketing_engagement
+    replicas: 2
+  measurement-service:
+    port: 8089
+    database: marketing_measurement
+    replicas: 2
+  edge-gateway:
+    port: 8080
+    database: ""
+    replicas: 3
+
+defaults:
+  resources:
+    requests: {cpu: 200m, memory: 384Mi}
+    limits: {cpu: "2", memory: 1536Mi}
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 12
+    cpuUtilization: 65
+    memoryUtilization: 75
+  pdb:
+    enabled: true
+    maxUnavailable: 1
+  terminationGracePeriodSeconds: 45
+
+releasePolicy:
+  maxReadyCapacityPerRuntime: 1000
+
+console:
+  enabled: true
+  replicas: 2
+  image: console
+  port: 8080
+  apiBaseUrl: ""
+  oidcClientId: marketing-console
+  oidcScope: openid profile email
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+  ingress:
+    enabled: true
+    className: nginx
+    host: marketing.example.invalid
+    tlsSecretName: marketing-console-tls
+    annotations: {}
+
+networkPolicy:
+  enabled: true
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  labels: {}
+
+flink:
+  enabled: false
+  image: flink-jobs
+  createServiceAccount: true
+  serviceAccount: marketing-flink
+  serviceAccountAnnotations: {}
+  parallelism: 4
+  taskManagerReplicas: 2
+  taskSlots: 4
+  checkpointInterval: 30s
+  checkpointStorage: s3://marketing-flink/checkpoints
+  savepointStorage: s3://marketing-flink/savepoints
+  highAvailabilityStorage: s3://marketing-flink/ha
+  jobs:
+    audience: /opt/flink/usrlib/audience.jar
+    journey: /opt/flink/usrlib/journey.jar
+    measurement: /opt/flink/usrlib/measurement.jar

@@ -1,0 +1,33 @@
+server.port: ${PORT:8089}
+spring:
+  application.name: measurement-service
+  datasource:
+    url: "${MARKETING_DB_URL:jdbc:mysql://127.0.0.1:43306/marketing_measurement?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}"
+    username: ${MARKETING_DB_USER:measurement_app}
+    password: ${MEASUREMENT_DB_PASSWORD:${MARKETING_DB_PASSWORD:}}
+  flyway:
+    locations: classpath:db/migration
+    user: ${SPRING_FLYWAY_USER:measurement_migrator}
+    password: ${SPRING_FLYWAY_PASSWORD:${MEASUREMENT_MIGRATION_DB_PASSWORD:}}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+      properties:
+        isolation.level: read_committed
+    listener:
+      ack-mode: record
+marketing.kafka.consumers-enabled: ${MARKETING_KAFKA_CONSUMERS_ENABLED:false}
+marketing.security:
+  mode: ${MARKETING_SECURITY_MODE:DEV}
+  dev-headers-enabled: ${MARKETING_DEV_HEADERS_ENABLED:true}
+management.endpoints.web.exposure.include: health,info,prometheus
+server.shutdown: graceful
+spring.lifecycle.timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
+management.endpoint.health.probes.enabled: true
+management.tracing.sampling.probability: ${TRACING_SAMPLE_PROBABILITY:0.05}
+management.opentelemetry.tracing.limits.max-attributes: 64
+management.opentelemetry.tracing.limits.max-attribute-value-length: 256
+management.opentelemetry.tracing.export.max-queue-size: 2048
+management.opentelemetry.tracing.export.max-batch-size: 256

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/marketing/journey-effect-command/1-0-0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["eventType", "tenantId", "enrollmentId", "subjectToken", "journeyId", "journeyVersion", "commandId", "effectType", "nodeId", "payload", "createdAtEpochMillis"],
+  "properties": {
+    "eventType": {"const": "JOURNEY_EFFECT_COMMAND"},
+    "tenantId": {"type": "string", "minLength": 1},
+    "enrollmentId": {"type": "string", "minLength": 1},
+    "subjectToken": {"type": "string", "minLength": 1},
+    "journeyId": {"type": "string", "minLength": 1},
+    "journeyVersion": {"type": "integer", "minimum": 1},
+    "commandId": {"type": "string", "minLength": 1},
+    "effectType": {"enum": ["SEND", "GRANT", "WEBHOOK"]},
+    "nodeId": {"type": "string", "minLength": 1},
+    "payload": {"type": "object", "additionalProperties": {"type": "string"}},
+    "createdAtEpochMillis": {"type": "integer", "minimum": 1}
+  }
+}

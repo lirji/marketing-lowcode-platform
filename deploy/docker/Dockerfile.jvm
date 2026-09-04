@@ -1,0 +1,59 @@
+# syntax=docker/dockerfile:1.7
+ARG JAVA_BUILD_IMAGE=eclipse-temurin:21.0.12_8-jdk-jammy
+FROM ${JAVA_BUILD_IMAGE} AS build-source
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y unzip \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY .mvn .mvn
+COPY mvnw pom.xml ./
+COPY platform-common platform-common
+COPY platform-web platform-web
+COPY marketing-contracts marketing-contracts
+COPY runtime-spi runtime-spi
+COPY services services
+COPY jobs jobs
+COPY architecture-tests architecture-tests
+
+FROM build-source AS selected-service
+ARG SERVICE
+RUN --mount=type=cache,target=/root/.m2 test -n "${SERVICE}" \
+    && ./mvnw --batch-mode --no-transfer-progress -DskipTests \
+       -pl "services/${SERVICE}" -am package \
+    && test -f "services/${SERVICE}/target/${SERVICE}-1.0.0-SNAPSHOT-exec.jar" \
+    && cp "services/${SERVICE}/target/${SERVICE}-1.0.0-SNAPSHOT-exec.jar" /workspace/app.jar
+
+FROM eclipse-temurin:21.0.12_8-jre-ubi9-minimal AS service
+ARG SERVICE
+ARG SERVICE_PORT=8080
+LABEL org.opencontainers.image.title="marketing-${SERVICE}" \
+      org.opencontainers.image.description="Marketing low-code R1 service" \
+      org.opencontainers.image.version="1.0.0" \
+      org.opencontainers.image.source="https://example.invalid/marketing-lowcode-platform"
+RUN microdnf install -y curl-minimal && microdnf clean all \
+    && mkdir -p /opt/marketing /tmp/marketing \
+    && chown -R 10001:0 /opt/marketing /tmp/marketing
+WORKDIR /opt/marketing
+COPY --from=selected-service --chown=10001:0 /workspace/app.jar ./app.jar
+ENV PORT=${SERVICE_PORT} \
+    JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:InitialRAMPercentage=25 -XX:+ExitOnOutOfMemoryError -Djava.io.tmpdir=/tmp/marketing"
+USER 10001
+EXPOSE ${SERVICE_PORT}
+HEALTHCHECK --interval=15s --timeout=4s --start-period=45s --retries=10 \
+  CMD curl --fail --silent --show-error "http://127.0.0.1:${PORT}/actuator/health/readiness" >/dev/null || exit 1
+ENTRYPOINT ["java", "-jar", "/opt/marketing/app.jar"]
+
+FROM build-source AS build-flink-jobs
+RUN --mount=type=cache,target=/root/.m2 ./mvnw --batch-mode --no-transfer-progress -DskipTests \
+    -pl jobs/audience-flink-job,jobs/journey-runtime-flink-job,jobs/measurement-flink-job \
+    -am package
+
+FROM flink:2.2.1-scala_2.12-java21 AS flink-jobs
+USER root
+RUN mkdir -p /opt/flink/usrlib /opt/flink/checkpoints /opt/flink/savepoints /opt/flink/plugins/s3-fs-hadoop \
+    && ln -s /opt/flink/opt/flink-s3-fs-hadoop-*.jar /opt/flink/plugins/s3-fs-hadoop/ \
+    && chown -R flink:flink /opt/flink/usrlib /opt/flink/checkpoints /opt/flink/savepoints
+COPY --from=build-flink-jobs --chown=flink:flink /workspace/jobs/audience-flink-job/target/audience-flink-job-1.0.0-SNAPSHOT.jar /opt/flink/usrlib/audience.jar
+COPY --from=build-flink-jobs --chown=flink:flink /workspace/jobs/journey-runtime-flink-job/target/journey-runtime-flink-job-1.0.0-SNAPSHOT.jar /opt/flink/usrlib/journey.jar
+COPY --from=build-flink-jobs --chown=flink:flink /workspace/jobs/measurement-flink-job/target/measurement-flink-job-1.0.0-SNAPSHOT.jar /opt/flink/usrlib/measurement.jar
+USER flink

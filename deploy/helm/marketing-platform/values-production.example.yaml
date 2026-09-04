@@ -1,0 +1,54 @@
+global:
+  imageRegistry: registry.example.com/marketing
+  imageTag: "sha-REPLACE_WITH_IMMUTABLE_DIGEST_TAG"
+  externalSecretName: marketing-platform-prod
+  security:
+    mode: OIDC
+    issuerUri: https://id.company.example/realms/marketing
+    audience: marketing-api
+  otlpEndpoint: http://otel-collector.observability.svc:4318/v1/traces
+  runtimeSlot:
+    environment: production
+    cell: ap-east-cell-a
+    namespace: main
+
+external:
+  mysql:
+    host: marketing-mysql.internal.example
+    port: 3306
+    parameters: useSSL=true&requireSSL=true&verifyServerCertificate=true&serverTimezone=UTC
+  kafka:
+    bootstrapServers: marketing-kafka-bootstrap.internal.example:9093
+  redis:
+    url: rediss://marketing-redis.internal.example:6379
+  s3:
+    endpoint: https://s3.ap-east-1.example
+    region: ap-east-1
+    artifactBucket: marketing-prod-artifacts
+    rawEventBucket: marketing-prod-raw-events
+  clickhouse:
+    url: https://marketing-clickhouse.internal.example:8443/marketing
+  provider:
+    endpoint: https://messaging-provider.company.example/v1/messages
+
+console:
+  ingress:
+    host: marketing.company.example
+    tlsSecretName: marketing-company-example-tls
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  labels:
+    release: kube-prometheus-stack
+
+flink:
+  enabled: true
+  createServiceAccount: true
+  serviceAccount: marketing-flink
+  serviceAccountAnnotations:
+    # Replace with the workload-identity annotation for the target cloud.
+    iam.example.invalid/role: marketing-flink-production
+  checkpointStorage: s3://marketing-prod-flink/checkpoints
+  savepointStorage: s3://marketing-prod-flink/savepoints
+  highAvailabilityStorage: s3://marketing-prod-flink/ha

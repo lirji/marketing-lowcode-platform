@@ -1,0 +1,18 @@
+{{- if ne .Values.global.security.mode "OIDC" -}}
+{{- fail "production chart requires global.security.mode=OIDC; DEV headers are forbidden" -}}
+{{- end -}}
+{{- if not .Values.global.security.issuerUri -}}
+{{- fail "global.security.issuerUri is required" -}}
+{{- end -}}
+{{- if not .Values.global.externalSecretName -}}
+{{- fail "global.externalSecretName must name a pre-provisioned Secret" -}}
+{{- end -}}
+{{- if and .Values.flink.enabled (not .Values.flink.serviceAccount) -}}
+{{- fail "flink.serviceAccount is required when Flink is enabled" -}}
+{{- end -}}
+{{- if and .Values.flink.enabled (not .Values.flink.checkpointStorage) -}}
+{{- fail "flink.checkpointStorage is required when Flink is enabled" -}}
+{{- end -}}
+{{- if lt (int .Values.releasePolicy.maxReadyCapacityPerRuntime) 1 -}}
+{{- fail "releasePolicy.maxReadyCapacityPerRuntime must be positive" -}}
+{{- end -}}

@@ -1,0 +1,23 @@
+server.port: ${PORT:8083}
+spring:
+  application.name: audience-service
+  datasource:
+    url: "${MARKETING_DB_URL:jdbc:mysql://127.0.0.1:43306/marketing_audience?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}"
+    username: ${MARKETING_DB_USER:audience_app}
+    password: ${AUDIENCE_DB_PASSWORD:${MARKETING_DB_PASSWORD:}}
+  flyway:
+    locations: classpath:db/migration
+    user: ${SPRING_FLYWAY_USER:audience_migrator}
+    password: ${SPRING_FLYWAY_PASSWORD:${AUDIENCE_MIGRATION_DB_PASSWORD:}}
+marketing.security:
+  mode: ${MARKETING_SECURITY_MODE:DEV}
+  dev-headers-enabled: ${MARKETING_DEV_HEADERS_ENABLED:true}
+management.endpoints.web.exposure.include: health,info,prometheus
+server.shutdown: graceful
+spring.lifecycle.timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
+management.endpoint.health.probes.enabled: true
+management.tracing.sampling.probability: ${TRACING_SAMPLE_PROBABILITY:0.05}
+management.opentelemetry.tracing.limits.max-attributes: 64
+management.opentelemetry.tracing.limits.max-attribute-value-length: 256
+management.opentelemetry.tracing.export.max-queue-size: 2048
+management.opentelemetry.tracing.export.max-batch-size: 256
