@@ -9,7 +9,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm config set store-dir /pnp
     && pnpm install --frozen-lockfile \
     && pnpm frontend:build
 
-FROM nginxinc/nginx-unprivileged:1.28.0-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:1.31.5-alpine AS runtime
 LABEL org.opencontainers.image.title="marketing-console" \
       org.opencontainers.image.description="Governed marketing low-code operations console" \
       org.opencontainers.image.version="1.0.0"
