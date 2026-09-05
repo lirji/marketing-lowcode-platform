@@ -18,6 +18,12 @@ if [[ -f "${ENV_FILE}" ]]; then
   set +a
 fi
 
+PLATFORM_PORTS_LOADER="${PLATFORM_PORTS_LOADER:-${PROJECT_ROOT}/../auth-platform/deploy/load-platform-ports.sh}"
+if [[ -r "${PLATFORM_PORTS_LOADER}" ]]; then
+  # shellcheck source=/dev/null
+  . "${PLATFORM_PORTS_LOADER}"
+fi
+
 if [[ -f "${DEV_INFRA_ENV_FILE}" ]]; then
   DEV_INFRA_MYSQL_ROOT_PASSWORD="$(
     set -a
@@ -38,14 +44,18 @@ if [[ -f "${DEV_INFRA_ENV_FILE}" ]]; then
 fi
 
 export GATEWAY_URL="${GATEWAY_URL:-http://127.0.0.1:${GATEWAY_PORT:-8080}}"
-export CONSOLE_URL="${CONSOLE_URL:-http://127.0.0.1:${CONSOLE_PORT:-3000}}"
+export CONSOLE_URL="${CONSOLE_URL:-http://127.0.0.1:${MARKETING_UI_PORT:-${CONSOLE_PORT:-3000}}}"
 export FLINK_URL="${FLINK_URL:-http://127.0.0.1:${FLINK_UI_PORT:-8081}}"
 export KEYCLOAK_URL="${KEYCLOAK_URL:-http://127.0.0.1:${KEYCLOAK_PORT:-8180}}"
 export PROMETHEUS_URL="${PROMETHEUS_URL:-http://127.0.0.1:${PROMETHEUS_PORT:-9090}}"
 export GRAFANA_URL="${GRAFANA_URL:-http://127.0.0.1:${GRAFANA_PORT:-3001}}"
 
 compose() {
-  docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
+  local args=(--env-file "${ENV_FILE}" -f "${COMPOSE_FILE}")
+  if [[ -n "${PLATFORM_PORTS_FILE:-}" && -r "${PLATFORM_PORTS_FILE}" ]]; then
+    args+=(--env-file "${PLATFORM_PORTS_FILE}")
+  fi
+  docker compose "${args[@]}" "$@"
 }
 
 infra_compose() {

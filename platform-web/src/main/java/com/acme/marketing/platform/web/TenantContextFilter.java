@@ -9,10 +9,12 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 public final class TenantContextFilter extends OncePerRequestFilter {
@@ -49,14 +51,25 @@ public final class TenantContextFilter extends OncePerRequestFilter {
     }
 
     private TenantScope resolveScope(HttpServletRequest request) {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.isAuthenticated() && authentication.getPrincipal() instanceof Jwt jwt) {
+        Jwt jwt = currentJwt();
+        if (jwt != null) {
+            String tenant = firstNonBlank(claimString(jwt, "tenant_id"), claimString(jwt, "owner"));
+            if (tenant == null) {
+                return null;
+            }
+            Set<String> organizations = claimSet(jwt, "org_ids");
+            if (organizations.isEmpty()) {
+                String owner = claimString(jwt, "owner");
+                if (owner != null) {
+                    organizations = Set.of(owner);
+                }
+            }
             return new TenantScope(
-                    new TenantId(jwt.getClaimAsString("tenant_id")),
-                    claimSet(jwt, "org_ids"),
+                    new TenantId(tenant),
+                    organizations,
                     claimSet(jwt, "shop_ids"),
                     jwt.getSubject(),
-                    claimSet(jwt, "permissions"));
+                    permissionSet(jwt.getClaims().get("permissions")));
         }
         if (properties.mode() == MarketingSecurityProperties.Mode.DEV && properties.devHeadersEnabled()) {
             String tenant = request.getHeader("X-Dev-Tenant-Id");
@@ -74,14 +87,81 @@ public final class TenantContextFilter extends OncePerRequestFilter {
         return null;
     }
 
+    private static Jwt currentJwt() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return null;
+        }
+        if (authentication instanceof JwtAuthenticationToken jwtAuthentication) {
+            return jwtAuthentication.getToken();
+        }
+        return authentication.getPrincipal() instanceof Jwt jwt ? jwt : null;
+    }
+
     private static Set<String> claimSet(Jwt jwt, String claim) {
-        Object value = jwt.getClaims().get(claim);
+        return claimValues(jwt.getClaims().get(claim));
+    }
+
+    private static Set<String> permissionSet(Object value) {
+        Set<String> names = new LinkedHashSet<>();
+        for (String name : claimValues(value)) {
+            names.add(toMarketingPermission(name));
+        }
+        if (names.contains("marketing.admin") || names.contains("*")) {
+            return Set.of("*");
+        }
+        return Set.copyOf(names);
+    }
+
+    private static String toMarketingPermission(String name) {
+        if ("marketing.admin".equals(name) || "*".equals(name) || name.contains(":")) {
+            return name;
+        }
+        int separator = name.lastIndexOf('.');
+        return separator > 0 ? name.substring(0, separator) + ":" + name.substring(separator + 1) : name;
+    }
+
+    private static Set<String> claimValues(Object value) {
         if (value instanceof Collection<?> collection) {
             Set<String> result = new LinkedHashSet<>();
-            collection.forEach(item -> result.add(String.valueOf(item)));
+            for (Object item : collection) {
+                if (item instanceof Map<?, ?> map) {
+                    Object name = map.get("name");
+                    if (name != null && !String.valueOf(name).isBlank()) {
+                        result.add(String.valueOf(name).trim());
+                    }
+                } else if (item != null && !String.valueOf(item).isBlank()) {
+                    result.add(String.valueOf(item).trim());
+                }
+            }
             return Set.copyOf(result);
         }
         return value instanceof String text ? csv(text) : Set.of();
+    }
+
+    private static String claimString(Jwt jwt, String name) {
+        String typed = jwt.getClaimAsString(name);
+        if (typed != null && !typed.isBlank()) {
+            return typed.trim();
+        }
+        Object raw = jwt.getClaim(name);
+        if (raw == null) {
+            return null;
+        }
+        String text = String.valueOf(raw).trim();
+        return text.isEmpty() || "null".equals(text) ? null : text;
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return null;
     }
 
     private static Set<String> csv(String value) {

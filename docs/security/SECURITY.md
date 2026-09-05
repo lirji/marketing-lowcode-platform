@@ -7,6 +7,7 @@
 ## 身份与授权
 
 - 用户使用 OIDC Authorization Code + PKCE；禁止 implicit/password grant。控制台不持久化 refresh token 到 localStorage，生产 CSP 不允许任意脚本。
+- 接入统一能力平台时，Casdoor 是身份提供方：`sub` 为稳定用户 ID，`owner` 为租户，`permissions` 为粗粒度 scope。本地默认仍为 DEV headers。
 - 服务到服务使用短期 workload identity/mTLS token；不得复用人的 token 或静态共享 API key。
 - 权限是 `resource:action`，同时受 tenant → organization → shop scope 和资源 ownership/状态 ABAC 约束。
 - submitter 不能审批自己的版本；release、kill switch、资金策略和 PII export 需要独立角色或双人批准。

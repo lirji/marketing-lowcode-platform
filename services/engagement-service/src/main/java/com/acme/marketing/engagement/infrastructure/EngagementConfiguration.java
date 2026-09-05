@@ -20,9 +20,10 @@ public class EngagementConfiguration {
     public ProviderConnector providerConnector(Clock clock,
             @Value("${marketing.provider.mode:SANDBOX}") String mode,
             @Value("${marketing.provider.hmac-secret:}") String hmacSecret,
-            @Value("${marketing.security.mode:DEV}") String securityMode) {
+            @Value("${marketing.security.mode:DEV}") String securityMode,
+            @Value("${marketing.provider.allow-sandbox:false}") boolean allowSandbox) {
         if ("SANDBOX".equalsIgnoreCase(mode)) {
-            if ("OIDC".equalsIgnoreCase(securityMode)) {
+            if ("OIDC".equalsIgnoreCase(securityMode) && !allowSandbox) {
                 throw new IllegalStateException("sandbox provider is forbidden in OIDC mode");
             }
             return new SandboxProviderConnector(clock);

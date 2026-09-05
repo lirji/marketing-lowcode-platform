@@ -1,6 +1,7 @@
 package com.acme.marketing.platform.web;
 
 import com.acme.marketing.platform.error.ConflictException;
+import com.acme.marketing.platform.error.DependencyUnavailableException;
 import com.acme.marketing.platform.error.DomainException;
 import com.acme.marketing.platform.error.ForbiddenException;
 import com.acme.marketing.platform.error.NotFoundException;
@@ -25,6 +26,9 @@ public final class ApiExceptionHandler {
             case ConflictException ignored -> HttpStatus.CONFLICT;
             case ForbiddenException ignored -> HttpStatus.FORBIDDEN;
             case ValidationException ignored -> HttpStatus.UNPROCESSABLE_CONTENT;
+            // 风控不可用是调用链明确约定的 fail-closed 503；其它依赖失败继续保持现有 502 语义。
+            case DependencyUnavailableException dependency -> "RISK_UNAVAILABLE".equals(dependency.code())
+                    ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.BAD_GATEWAY;
             default -> HttpStatus.BAD_REQUEST;
         };
         ProblemDetail problem = base(status, exception.code(), exception.getMessage(), exception.retryable(), request);

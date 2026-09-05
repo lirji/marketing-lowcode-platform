@@ -33,7 +33,7 @@ export function AssetsPage() {
     </>)}
     {current === '权益与券' && (api.demoMode ? <Panel><PanelHeader eyebrow="BENEFIT CATALOG" title="权益定义" /><AssetTable rows={[['家电满500减80券', 'coupon-ha-80 · v9', '预算 ¥20M', '库存 731K', 'DRAFT']]} /></Panel> : <>
       {benefits.isError && <StateBanner tone="error" title="权益加载失败" detail={problemDetail(benefits.error)} />}
-      <Panel><PanelHeader eyebrow="BENEFIT CATALOG" title="权益定义" />{(benefits.data ?? []).length === 0 ? <EmptyState title="没有权益定义" detail="GET /api/v1/benefits 为空。" /> : <AssetTable rows={(benefits.data ?? []).map((item) => [item.name, `${item.benefitId} · v${item.version}`, item.resourceKey ?? '—', item.createdAt ?? '', item.status])} />}</Panel>
+      <Panel><PanelHeader eyebrow="BENEFIT CATALOG" title="权益定义" />{(benefits.data ?? []).length === 0 ? <EmptyState title="没有权益定义" detail="GET /api/v1/benefits 为空。" /> : <AssetTable rows={(benefits.data ?? []).map((item) => [item.name, `${item.benefitId} · v${item.version}`, item.benefitSkuId ?? '未绑定 SKU', item.createdAt ?? '', item.status])} />}</Panel>
     </>)}
     {current === '消息模板' && (api.demoMode ? <Panel><PanelHeader eyebrow="ENGAGEMENT TEMPLATES" title="渠道模板" /><AssetTable rows={[['加购召回 Push', 'tpl-cart-push · v11', 'PUSH', '变量 4/4', 'ACTIVE']]} /></Panel> : <>
       {templates.isError && <StateBanner tone="error" title="模板加载失败" detail={problemDetail(templates.error)} />}

@@ -51,6 +51,17 @@
 .test-row strong { color:var(--ink-800); font-size:10px; }
 .benefit-layout { display:grid; grid-template-columns:minmax(0,1.55fr) minmax(300px,.68fr); gap:16px; align-items:start; }
 .benefit-main,.benefit-layout > aside { display:grid; gap:16px; }
+.sku-bind { min-width:0; }
+.sku-bind select { max-width:100%; }
+.sku-bind .empty-state { min-height:0; padding:18px 0 8px; }
+.sku-bind .skeleton-list { padding:0; }
+.sku-bind .skeleton-list i { height:38px; margin:0; }
+.template-summary { display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; margin-top:14px; min-width:0; }
+.template-summary div { min-width:0; }
+.template-summary span,.template-summary strong { display:block; }
+.template-summary span { color:var(--ink-400); font-size:8px; font-weight:700; }
+.template-summary strong { margin-top:4px; font-size:11px; overflow-wrap:anywhere; }
+.field input:read-only,.field select:disabled { background:#f4f7f6; color:var(--ink-600); }
 .funding-slider { display:grid; grid-template-columns:1fr 1fr; gap:28px; }
 .funding-slider label { display:grid; grid-template-columns:1fr auto; gap:7px; font-size:8px; }
 .funding-slider input,.funding-slider progress { grid-column:span 2; width:100%; height:6px; accent-color:var(--teal); }
@@ -173,6 +184,21 @@
 .ops-list strong { font-size:9px; }
 .ops-list small { margin-top:3px; color:var(--ink-400); font-size:7px; }
 .ops-list code,.ops-list > button > span:last-child { color:var(--ink-600); font-size:8px; }
+.award-campaign-field { max-width:min(520px,100%); margin:4px 0 16px; }
+.award-intent-list { display:grid; gap:10px; min-width:0; }
+.award-intent-card { min-width:0; padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+.award-intent-card header { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap; }
+.award-intent-card strong,.award-intent-card small { display:block; overflow-wrap:anywhere; }
+.award-intent-card strong { font-size:12px; }
+.award-intent-card small { margin-top:4px; color:var(--ink-400); font-size:8px; }
+.award-intent-meta { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:12px 0 0; }
+.award-intent-meta div { min-width:0; padding:8px; border-radius:8px; background:#f5f8f7; }
+.award-intent-meta dt { color:var(--ink-400); font-size:7px; font-weight:700; }
+.award-intent-meta dd { margin:4px 0 0; font-size:10px; overflow-wrap:anywhere; }
+.award-intent-card footer { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:12px; }
+.award-intent-card footer button,.award-intent-card footer a { display:inline-flex; align-items:center; gap:6px; border:0; background:transparent; color:var(--teal); font-size:10px; font-weight:700; text-decoration:none; }
+.award-intent-card footer span { color:var(--ink-400); font-size:8px; }
+.award-intent-more { margin-top:14px; }
 .reconcile-grid { display:grid; grid-template-columns:1.25fr .75fr; gap:16px; }
 .reconcile-hero { display:grid; grid-template-columns:42px repeat(3,1fr); gap:12px; align-items:center; margin:10px 0 15px; }
 .reconcile-hero > svg { color:var(--teal); }
@@ -236,7 +262,7 @@
   .global-search kbd { display:none; }
   .workspace { padding:22px 13px 40px; }
   .page-heading { margin-bottom:20px; }
-  .form-grid,.funding-slider,.policy-grid { grid-template-columns:1fr; }
+  .form-grid,.funding-slider,.policy-grid,.template-summary,.award-intent-meta { grid-template-columns:1fr; }
   .span-2,.funding-slider input,.funding-slider progress { grid-column:auto; }
   .condition-group { grid-template-columns:1fr; }
   .group-rail { justify-content:flex-start; margin-bottom:7px; }

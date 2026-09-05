@@ -27,11 +27,12 @@ public final class ProviderCallbackAuthenticator {
     public ProviderCallbackAuthenticator(ObjectMapper mapper, Clock clock,
             @Value("${marketing.provider.mode:SANDBOX}") String mode,
             @Value("${marketing.provider.hmac-secret:}") String hmacSecret,
-            @Value("${marketing.security.mode:DEV}") String securityMode) {
+            @Value("${marketing.security.mode:DEV}") String securityMode,
+            @Value("${marketing.provider.allow-sandbox:false}") boolean allowSandbox) {
         this.mapper = mapper;
         this.clock = clock;
         this.verificationRequired = "HTTP".equalsIgnoreCase(mode);
-        if ("OIDC".equalsIgnoreCase(securityMode) && !verificationRequired) {
+        if ("OIDC".equalsIgnoreCase(securityMode) && !verificationRequired && !allowSandbox) {
             throw new IllegalStateException("OIDC provider callbacks require HTTP mode and HMAC verification");
         }
         if (verificationRequired && hmacSecret.length() < 32) {

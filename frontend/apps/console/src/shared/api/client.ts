@@ -1,5 +1,6 @@
 import type { ProblemDetail } from '@marketing/contracts'
 import { runtimeConfig } from '../config/runtime'
+import { getDevTenantId } from '../auth/devTenant'
 import { reportClientError } from '../observability/report'
 import {
   accountViewSchema,
@@ -7,6 +8,8 @@ import {
   audiencePreviewSchema,
   audienceSnapshotSchema,
   audienceViewSchema,
+  awardIntentViewSchema,
+  benefitSkuSchema,
   benefitViewSchema,
   campaignSchema,
   contactViewSchema,
@@ -69,8 +72,8 @@ function identityHeaders(): Record<string, string> {
     return token ? { Authorization: `Bearer ${token}` } : {}
   }
   return {
-    'X-Dev-Tenant-Id': 'retail-cn',
-    'X-Dev-Organization-Ids': 'retail-business',
+    'X-Dev-Tenant-Id': getDevTenantId(),
+    'X-Dev-Organization-Ids': getDevTenantId() === 'retail-cn' ? 'retail-business' : getDevTenantId(),
     'X-Dev-Shop-Ids': 'all-shops',
     'X-Dev-Actor-Id': 'console-admin',
     'X-Dev-Permissions': '*',
@@ -187,9 +190,18 @@ export const api = {
   benefits: () => request('/api/v1/benefits', undefined, (value) => zArray(benefitViewSchema, value)),
   benefit: (benefitId: string) =>
     request(`/api/v1/benefits/${encodeURIComponent(benefitId)}`, undefined, (value) => parseWith(benefitViewSchema, value)),
-  putBenefit: (benefitId: string, payload: { name: string; status: string; resourceKey: string; policy: Record<string, unknown> }) =>
+  benefitSkus: (status = 'ACTIVE') =>
+    request(`/api/v1/benefit-skus?status=${encodeURIComponent(status)}`, undefined, (value) => zArray(benefitSkuSchema, value)),
+  putBenefit: (benefitId: string, payload: { name: string; status: string; resourceKey: string; benefitSkuId: string | null; policy: Record<string, unknown> }) =>
     request(`/api/v1/benefits/${encodeURIComponent(benefitId)}`, { method: 'PUT', headers: commandHeaders(), body: JSON.stringify(payload) }, (value) => parseWith(benefitViewSchema, value)),
   fundingAccounts: () => request('/api/v1/funding/accounts', undefined, (value) => zArray(accountViewSchema, value)),
+  awardIntents: (campaignId: string, query?: { limit?: number; cursor?: string }) => {
+    const params = new URLSearchParams()
+    params.set('campaignId', campaignId)
+    params.set('limit', String(query?.limit ?? 20))
+    if (query?.cursor) params.set('cursor', query.cursor)
+    return request(`/api/v1/award-intents?${params}`, undefined, (value) => zArray(awardIntentViewSchema, value))
+  },
   traceByRequest: (requestId: string) =>
     request(`/api/v1/traces/requests/${encodeURIComponent(requestId)}`, undefined, (value) => parseWith(traceViewSchema, value)),
   traceByOrder: (orderId: string) =>

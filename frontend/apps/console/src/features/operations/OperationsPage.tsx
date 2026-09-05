@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, CircleDot, Copy, DatabaseZap, RefreshCw, Search, ShieldCheck, TriangleAlert } from 'lucide-react'
 import { api } from '../../shared/api/client'
@@ -6,24 +7,39 @@ import { Badge, Button, DemoBanner, EmptyState, Modal, PageHeader, Panel, PanelH
 import { problemDetail } from '../../shared/api/problem'
 import { useAuth } from '../../shared/auth/useAuth'
 import type { ContactView, EnrollmentView, QuarantineView, TraceView } from '../../shared/api/schemas'
+import { AwardIntentsPanel } from './AwardIntentsPanel'
 
-const tabs = ['全链路查询', 'Journey 实例', '触达记录', 'DLQ / 隔离区', '资金对账'] as const
+const tabs = ['全链路查询', 'Journey 实例', '触达记录', '发放', 'DLQ / 隔离区', '资金对账'] as const
+
+function tabFromQuery(tab: string | null): (typeof tabs)[number] | undefined {
+  if (tab === 'awards') return '发放'
+  return undefined
+}
 
 export function OperationsPage() {
   const auth = useAuth()
-  const [active, setActive] = useState<(typeof tabs)[number]>('全链路查询')
+  const [params, setParams] = useSearchParams()
+  const [active, setActive] = useState<(typeof tabs)[number]>(tabFromQuery(params.get('tab')) ?? '全链路查询')
   const visibleTabs = tabs.filter((tab) => {
-    if (tab === '全链路查询') return auth.hasPermission('trace:read')
+    if (tab === '全链路查询' || tab === '发放') return auth.hasPermission('trace:read')
     if (tab === 'Journey 实例') return auth.hasPermission('journey:read')
     if (tab === '触达记录') return auth.hasPermission('contact:read')
     if (tab === 'DLQ / 隔离区') return auth.hasPermission('event:read')
     return auth.hasPermission('funding:reconcile')
   })
   const current = visibleTabs.includes(active) ? active : visibleTabs[0]
-  return <div className="workspace operations-page"><PageHeader eyebrow="运营与客服" title="沿同一业务键还原营销决策。" description="决策、报价、权益预占、旅程、触达与转化轨迹默认脱敏，并保留稳定原因码。" actions={<Button disabled title="敏感字段访问需独立工单接口"><ShieldCheck size={15} />敏感字段访问</Button>} /><DemoBanner /><div className="page-tabs" role="tablist">{visibleTabs.map((tab) => <button role="tab" aria-selected={current === tab} aria-controls={`tab-${tab}`} className={current === tab ? 'active' : ''} onClick={() => setActive(tab)} key={tab}>{tab}</button>)}</div>
+  const selectTab = (tab: (typeof tabs)[number]) => {
+    setActive(tab)
+    const next = new URLSearchParams(params)
+    if (tab === '发放') next.set('tab', 'awards')
+    else next.delete('tab')
+    setParams(next, { replace: true })
+  }
+  return <div className="workspace operations-page"><PageHeader eyebrow="运营与客服" title="沿同一业务键还原营销决策。" description="决策、报价、权益预占、旅程、触达与转化轨迹默认脱敏，并保留稳定原因码。" actions={<Button disabled title="敏感字段访问需独立工单接口"><ShieldCheck size={15} />敏感字段访问</Button>} /><DemoBanner /><div className="page-tabs" role="tablist">{visibleTabs.map((tab) => <button role="tab" aria-selected={current === tab} aria-controls={`tab-${tab}`} className={current === tab ? 'active' : ''} onClick={() => selectTab(tab)} key={tab}>{tab}</button>)}</div>
     {current === '全链路查询' && <TraceSearch />}
     {current === 'Journey 实例' && <JourneyInstances />}
     {current === '触达记录' && <ContactAttempts />}
+    {current === '发放' && <AwardIntentsPanel />}
     {current === 'DLQ / 隔离区' && <DeadLetters />}
     {current === '资金对账' && <ReconciliationPanel />}
   </div>

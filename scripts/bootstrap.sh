@@ -78,6 +78,7 @@ if [[ ! -f "${ENV_FILE}" ]]; then
     printf 'CONSOLE_API_BASE_URL=\n'
     printf 'CONSOLE_OIDC_AUTHORITY=http://host.docker.internal:8180/realms/marketing\n'
     printf 'CONSOLE_OIDC_CLIENT_ID=marketing-console\n'
+    printf 'CONSOLE_OIDC_ORGANIZATION=\n'
     printf 'CONSOLE_OIDC_SCOPE="openid profile email"\n'
     printf 'DEV_INFRA_NETWORK=dev-infra\n'
     printf 'MARKETING_DB_PASSWORD=%s\n' "$(random_secret)"

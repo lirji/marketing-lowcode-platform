@@ -35,6 +35,9 @@ channels:
   benefitEvents:
     address: mk.benefit.event.v1
     messages: {benefitEvent: {$ref: '#/components/messages/DomainLifecycleEvent'}}
+  awardExpected:
+    address: marketing.award-expected.v1
+    messages: {awardExpected: {$ref: '#/components/messages/AwardExpected'}}
   marketingFacts:
     address: mk.marketing.fact.v1
     messages: {marketingFact: {$ref: '#/components/messages/MarketingFact'}}
@@ -69,6 +72,9 @@ operations:
   executeBenefit:
     action: receive
     channel: {$ref: '#/channels/benefitCommands'}
+  emitAwardExpected:
+    action: send
+    channel: {$ref: '#/channels/awardExpected'}
   projectMeasurement:
     action: receive
     channel: {$ref: '#/channels/marketingFacts'}
@@ -129,6 +135,12 @@ components:
       x-partition-key: tenantId:aggregateId
       x-delivery: transactional-outbox-at-least-once
       payload: {$ref: '../schema/events/domain-lifecycle-event.schema.json'}
+    AwardExpected:
+      name: MarketingAwardExpected
+      x-owner: benefit-funding-service
+      x-partition-key: tenantId:sourceRequestId
+      x-delivery: transactional-outbox-at-least-once-idempotent-by-eventId
+      payload: {$ref: '../schema/events/award-expected.schema.json'}
     MarketingFact:
       name: MeasurementFactMessage
       x-owner: event-gateway-service

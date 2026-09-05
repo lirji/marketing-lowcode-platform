@@ -2,6 +2,7 @@ package com.acme.marketing.platform.web;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.acme.marketing.platform.error.DependencyUnavailableException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
@@ -34,6 +35,24 @@ class ApiExceptionHandlerTest {
         String generated = String.valueOf(handler.invalidArgument(
                 new IllegalArgumentException("invalid"), unsafe).getProperties().get("traceId"));
         org.junit.jupiter.api.Assertions.assertNotEquals("<script>alert(1)</script>", generated);
+    }
+
+    @Test
+    void dependencyFailureIsRetryableBadGateway() {
+        var problem = handler.domainException(
+                new DependencyUnavailableException("BENEFIT_CATALOG_UNAVAILABLE", "upstream failed"), request());
+        assertEquals(502, problem.getStatus());
+        assertEquals("BENEFIT_CATALOG_UNAVAILABLE", problem.getProperties().get("code"));
+        assertEquals(true, problem.getProperties().get("retryable"));
+    }
+
+    @Test
+    void riskUnavailableIsRetryableServiceUnavailable() {
+        var problem = handler.domainException(
+                new DependencyUnavailableException("RISK_UNAVAILABLE", "risk evaluation is unavailable"), request());
+        assertEquals(503, problem.getStatus());
+        assertEquals("RISK_UNAVAILABLE", problem.getProperties().get("code"));
+        assertEquals(true, problem.getProperties().get("retryable"));
     }
 
     private static MockHttpServletRequest request() {

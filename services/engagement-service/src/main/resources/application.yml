@@ -1,3 +1,4 @@
+server.max-http-request-header-size: 64KB
 server.port: ${PORT:8088}
 spring:
   application.name: engagement-service
@@ -23,6 +24,9 @@ marketing.engagement.outbox-enabled: ${MARKETING_ENGAGEMENT_OUTBOX_ENABLED:false
 marketing.security:
   mode: ${MARKETING_SECURITY_MODE:DEV}
   dev-headers-enabled: ${MARKETING_DEV_HEADERS_ENABLED:true}
+marketing.provider:
+  mode: ${MARKETING_PROVIDER_MODE:SANDBOX}
+  allow-sandbox: ${MARKETING_PROVIDER_ALLOW_SANDBOX:false}
 management.endpoints.web.exposure.include: health,info,prometheus
 server.shutdown: graceful
 spring.lifecycle.timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}

@@ -16,7 +16,10 @@ data:
       ALLOW_DEV_AUTH: false,
       OIDC_AUTHORITY: {{ .Values.global.security.issuerUri | quote }},
       OIDC_CLIENT_ID: {{ .Values.console.oidcClientId | quote }},
-      OIDC_SCOPE: {{ .Values.console.oidcScope | quote }}
+      OIDC_ORGANIZATION: {{ .Values.console.oidcOrganization | quote }},
+      OIDC_SCOPE: {{ .Values.console.oidcScope | quote }},
+      BENEFIT_CONSOLE_ORIGIN: {{ .Values.console.benefitConsoleOrigin | default "" | quote }},
+      RISK_CONSOLE_ORIGIN: {{ .Values.console.riskConsoleOrigin | default "" | quote }}
     });
   security-headers.conf: |
     add_header X-Content-Type-Options "nosniff" always;

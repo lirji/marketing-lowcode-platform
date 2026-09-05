@@ -180,6 +180,19 @@ spec:
             {{- if eq $name "benefit-funding-service" }}
             - {name: MARKETING_KAFKA_CONSUMERS_ENABLED, value: "true"}
             - {name: MARKETING_BENEFIT_OUTBOX_ENABLED, value: "true"}
+            - {name: BENEFIT_CENTER_BASE_URL, value: {{ $service.benefitCenterBaseUrl | quote }}}
+            - {name: RISK_PLATFORM_BASE_URL, value: {{ $service.riskPlatformBaseUrl | quote }}}
+            - {name: MARKETING_AWARD_DEFAULT_MODE, value: {{ $service.awardDefaultMode | quote }}}
+            - {name: MARKETING_AWARD_TENANT_MODES, value: {{ $service.awardTenantModes | quote }}}
+            - {name: MARKETING_AWARD_RELAY_ENABLED, value: {{ $service.awardRelayEnabled | quote }}}
+            - {name: MARKETING_AWARD_BULKHEAD_PERMITS, value: {{ $service.awardBulkheadPermits | quote }}}
+            - {name: MARKETING_AWARD_RELAY_TENANT_BATCH_SIZE, value: {{ $service.awardRelayTenantBatchSize | quote }}}
+            - {name: MARKETING_AWARD_RELAY_CIRCUIT_FAILURE_THRESHOLD, value: {{ $service.awardRelayCircuitFailureThreshold | quote }}}
+            - {name: MARKETING_AWARD_RELAY_CIRCUIT_OPEN_MS, value: {{ $service.awardRelayCircuitOpenMs | quote }}}
+            - name: BENEFIT_CENTER_BEARER_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: benefit-center-bearer-token, optional: true}}
+            - name: RISK_PLATFORM_BEARER_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: risk-platform-bearer-token}}
             - name: MARKETING_OFFER_TRUSTED_KEY_ID
               valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: offer-signing-key-id}}
             - name: MARKETING_OFFER_PUBLIC_KEY_BASE64

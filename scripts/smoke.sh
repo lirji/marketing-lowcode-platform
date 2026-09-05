@@ -45,7 +45,7 @@ flink_jobs="$(curl -fsS "${FLINK_URL}/jobs/overview")"
 python3 -c 'import json,sys; jobs=json.load(sys.stdin).get("jobs",[]); assert len(jobs) == 3, f"expected 3 Flink jobs, got {len(jobs)}"' <<<"${flink_jobs}"
 
 infra_compose exec -T kafka38 /opt/kafka/bin/kafka-topics.sh --bootstrap-server infra-kafka38:9092 --list \
-  | python3 -c 'import sys; topics=set(line.strip() for line in sys.stdin); required={"mk.profile.change.v1","mk.journey.signal.v1","mk.marketing.fact.v1"}; missing=required-topics; assert not missing, f"missing topics: {missing}"'
+  | python3 -c 'import sys; topics=set(line.strip() for line in sys.stdin); required={"mk.profile.change.v1","mk.journey.signal.v1","mk.marketing.fact.v1","marketing.award-expected.v1"}; missing=required-topics; assert not missing, f"missing topics: {missing}"'
 
 python3 "${PROJECT_ROOT}/scripts/acceptance-r1.py"
 

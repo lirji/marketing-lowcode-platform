@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import App from './App'
 import { AuthProvider } from './shared/auth/AuthContext'
 import { permits } from './shared/auth/auth-context'
-import { decodeJwtPayload, splitClaim } from './shared/auth/claims'
+import { decodeJwtPayload, permissionNames, splitClaim } from './shared/auth/claims'
 
 function renderApp(path = '/') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -55,5 +55,11 @@ describe('identity helpers', () => {
     expect(splitClaim('business, finance')).toEqual(['business', 'finance'])
     const payload = decodeJwtPayload(`header.${btoa(JSON.stringify({ tenant_id: 'retail-cn', permissions: 'campaign:read' }))}.sig`)
     expect(payload.tenant_id).toBe('retail-cn')
+    expect(permissionNames([{ name: 'campaign.read' }, { name: 'audience-field.read' }])).toEqual([
+      'campaign:read',
+      'audience-field:read',
+    ])
+    expect(permissionNames([{ name: 'campaign:read' }, { name: 'marketing.admin' }])).toEqual(['*'])
+    expect(splitClaim([{ name: 'campaign:read' }, 'audience:read'])).toEqual(['campaign:read', 'audience:read'])
   })
 })

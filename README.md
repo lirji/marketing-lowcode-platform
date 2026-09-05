@@ -28,14 +28,29 @@ cd ../marketing-lowcode-platform
 
 | 入口 | 地址 | 说明 |
 | --- | --- | --- |
-| 营销控制台 | http://localhost:3000 | 默认 DEV 身份，完整菜单与设计器 |
+| 营销控制台 | http://localhost:8084 | 默认 DEV 身份；门户入口为 `/login`（端口来自中央注册表 `MARKETING_UI_PORT`） |
+| 能力门户 | http://localhost:5274 | 同级 `auth-platform` 的公开目录；卡片进入本控制台登录页 |
 | API Gateway | http://localhost:8080 | REST 统一入口 |
 | Flink Dashboard | http://localhost:8081 | 3 个流作业 |
-| Keycloak | http://localhost:8180 | 本地 OIDC；管理员密码见 `.env` |
+| Keycloak | http://localhost:8180 | 本地独立 OIDC（可选）；管理员密码见 `.env` |
+| Casdoor | http://localhost:8000 | 统一能力平台 SSO；`--secure` 叠加后使用 |
 | Grafana | http://localhost:3001 | 可选；使用 `--observability` 启动 |
 | Prometheus | http://localhost:9090 | 可选；使用 `--observability` 启动 |
 
-开发模式的参考租户是 `retail-cn`，组织为 `retail-business`。Keycloak realm 预置操作员 `operator` / `local-operator-change-me`，仅用于本地演示，绝不可用于共享或生产环境。
+开发模式的参考租户是 `retail-cn`，组织为 `retail-business`。默认 Compose 走 DEV headers，不强制 Casdoor。接入同级统一能力门户时：
+
+```bash
+# 在 auth-platform 开通组织 / 角色 / 权限（密码由调用方注入，不会写入仓库）
+MARKETING_USER=marketing PASSWORD='本地强口令' \
+  bash ../auth-platform/deploy/marketing-platform-provision.sh
+
+# 叠加 Casdoor OIDC 后重建控制台与网关
+bash deploy/compose.sh --secure up -d --build
+```
+
+门户正式入口是 `http://localhost:8084/login?returnTo=%2F`。OIDC 只接受组织 `marketing-platform`，并校验派生 clientId；未知组织不会跳转 Casdoor。生产 catalog 在域名与 Casdoor 回调登记完成前保持 `coming-soon`。
+
+Keycloak realm 预置操作员 `operator` / `local-operator-change-me` 仅用于未接 Casdoor 的本地演示，绝不可用于共享或生产环境。
 
 ```bash
 ./scripts/smoke.sh                 # 完整黑盒业务闭环与 3 个 Flink pipeline 验收
@@ -116,3 +131,16 @@ python3 scripts/capacity.py --help
 - “exactly-once”只描述 Flink 状态与兼容 sink 的处理保证。任何真实发券、资金或渠道副作用仍以业务幂等键、账本和补偿实现。
 - 决策只报价，不直接扣预算或发权益；资金和权益状态只由 Benefit/Funding 上下文改变。
 - DEV headers 默认仅允许本地 Compose。生产 Helm 在模板阶段拒绝非 OIDC 模式。
+
+### 权益中台跨系统键
+
+- `tenantId` 来自已验证 token owner，拒绝客户端 header 覆盖。
+- `subjectRef` 是用户稳定引用，与 Casdoor `sub` 或营销 subject token 的映射由 crosswalk 管理。
+- 营销版本键为 `campaignId + definitionVersion`，权益资产键为 `benefitSkuId + skuVersion`。
+- `sourceRequestId` 是营销到权益中台的跨系统幂等键。
+- Benefit/Funding 通过 `BENEFIT_CENTER_BASE_URL` 查询 tenant 隔离的 SKU 目录；发布 ACTIVE 权益时实时校验模板仍为 ACTIVE。
+- AwardIntent 使用服务端签名 OfferToken 重建资格、SKU 与金额；内部触发接口不接受金额字段，运营侧仅通过 `GET /api/v1/award-intents?campaignId=` 查看状态。
+- AwardIntent 在落 outbox 前以 `sourceId=MARKETING_AWARD` 调用 risk-platform；CASH 使用服务端组装后的最小单位金额，非 CASH/LEGACY 使用 `amount=1,currency=XXX`。业务拦截写 `mk_award_intent_block` 并返回 202，超时、5xx 或降级挑战写 `UNAVAILABLE` 后返回可重试的 `RISK_UNAVAILABLE` 503，均不会写 outbox 或应发事实。
+- 发放路由默认 `LEGACY`（也可设 `SHADOW`）；只有 `MARKETING_AWARD_TENANT_MODES=tenant-a=CENTER` 显式命中的租户才进入中台 outbox，且还需开启 `MARKETING_AWARD_RELAY_ENABLED`。模式在首次入队时固化，切换配置不会让旧请求改道。
+- 迁移期营销与 drools 都使用稳定的 `sourceSystem=drools-activity` 配合相同 `sourceRequestId`，即便交接误重叠，权益中台仍会按同一幂等身份拒绝第二份不同 payload；正常切流仍必须先关旧租户 authority，再开 CENTER。
+- CENTER 入队与 `marketing.award-expected.v1` 应发事实同事务提交；Relay 用租约版本 fencing、单租户批量上限、熔断和原幂等键重试，成功后回填 `benefitOrderNo`。回滚时先清空对应租户的 CENTER 映射，再关闭 Relay，保留 PENDING/DEAD 行供审计和恢复。

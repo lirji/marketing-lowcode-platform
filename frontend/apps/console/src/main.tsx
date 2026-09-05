@@ -15,6 +15,7 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 15_000,
+      refetchOnWindowFocus: false,
       retry: (count, error) => error instanceof ApiProblem && (error.status === 401 || error.status === 403) ? false : count < 1,
     },
     mutations: {

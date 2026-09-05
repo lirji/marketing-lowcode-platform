@@ -1,3 +1,4 @@
+server.max-http-request-header-size: 64KB
 server.port: ${PORT:8085}
 spring:
   application.name: benefit-funding-service
@@ -20,6 +21,38 @@ spring:
       ack-mode: record
 marketing.kafka.consumers-enabled: ${MARKETING_KAFKA_CONSUMERS_ENABLED:false}
 marketing.benefit.outbox-enabled: ${MARKETING_BENEFIT_OUTBOX_ENABLED:false}
+marketing.benefit-center:
+  base-url: ${BENEFIT_CENTER_BASE_URL:http://127.0.0.1:8183}
+  bearer-token: ${BENEFIT_CENTER_BEARER_TOKEN:}
+  connect-timeout-ms: ${BENEFIT_CENTER_CONNECT_TIMEOUT_MS:2000}
+  request-timeout-ms: ${BENEFIT_CENTER_REQUEST_TIMEOUT_MS:3000}
+  cache-ttl-seconds: ${BENEFIT_CENTER_CACHE_TTL_SECONDS:20}
+marketing.award:
+  # fail-safe：默认旧链路；仅 tenant-modes 中显式配置 tenant=CENTER 才会真实调用权益中台。
+  default-mode: ${MARKETING_AWARD_DEFAULT_MODE:LEGACY}
+  tenant-modes: ${MARKETING_AWARD_TENANT_MODES:}
+  relay-enabled: ${MARKETING_AWARD_RELAY_ENABLED:false}
+  bulkhead-permits: ${MARKETING_AWARD_BULKHEAD_PERMITS:64}
+  bulkhead-wait-ms: ${MARKETING_AWARD_BULKHEAD_WAIT_MS:5}
+  relay-batch-size: ${MARKETING_AWARD_RELAY_BATCH_SIZE:100}
+  relay-tenant-batch-size: ${MARKETING_AWARD_RELAY_TENANT_BATCH_SIZE:10}
+  relay-max-attempts: ${MARKETING_AWARD_RELAY_MAX_ATTEMPTS:10}
+  relay-circuit-failure-threshold: ${MARKETING_AWARD_RELAY_CIRCUIT_FAILURE_THRESHOLD:5}
+  relay-circuit-open-ms: ${MARKETING_AWARD_RELAY_CIRCUIT_OPEN_MS:30000}
+  relay-delay-ms: ${MARKETING_AWARD_RELAY_DELAY_MS:5000}
+  relay-initial-delay-ms: ${MARKETING_AWARD_RELAY_INITIAL_DELAY_MS:5000}
+  relay-lease-ms: ${MARKETING_AWARD_RELAY_LEASE_MS:30000}
+marketing.risk:
+  base-url: ${RISK_PLATFORM_BASE_URL:http://127.0.0.1:8082}
+  bearer-token: ${RISK_PLATFORM_BEARER_TOKEN:}
+  connect-timeout-ms: ${RISK_CONNECT_TIMEOUT_MS:500}
+  request-timeout-ms: ${RISK_REQUEST_TIMEOUT_MS:1000}
+  bulkhead-permits: ${RISK_BULKHEAD_PERMITS:16}
+  bulkhead-wait-ms: ${RISK_BULKHEAD_WAIT_MS:5}
+  thread-count: ${RISK_THREAD_COUNT:16}
+  queue-capacity: ${RISK_QUEUE_CAPACITY:64}
+  circuit-failure-threshold: ${RISK_CIRCUIT_FAILURE_THRESHOLD:5}
+  circuit-open-ms: ${RISK_CIRCUIT_OPEN_MS:30000}
 marketing.offer.trusted-public-keys: ${MARKETING_OFFER_TRUSTED_PUBLIC_KEYS:}
 marketing.security:
   mode: ${MARKETING_SECURITY_MODE:DEV}

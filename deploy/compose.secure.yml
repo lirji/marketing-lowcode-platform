@@ -1,0 +1,54 @@
+# Casdoor 统一登录叠加层。复用 auth-platform 共享 Casdoor（宿主 http://localhost:8000）。
+# 开通（密码由调用方注入，不要写入仓库）：
+#   MARKETING_USER=marketing PASSWORD='...' \
+#     bash ../auth-platform/deploy/marketing-platform-provision.sh
+#
+# 用法（在 marketing-lowcode-platform 仓库）：
+#   bash deploy/compose.sh --secure up -d --build
+# 或从 auth-platform：
+#   ./deploy/platform-compose.sh marketing -f compose.secure.yml up -d --build
+#
+# 本叠加只切身份（Casdoor JWT）。本地仍走 SANDBOX 投放通道；生产 Helm 保持 HTTP+HMAC。
+
+x-secure-java: &secure-java
+  environment:
+    MARKETING_SECURITY_MODE: OIDC
+    MARKETING_DEV_HEADERS_ENABLED: "false"
+    MARKETING_PROVIDER_ALLOW_SANDBOX: "true"
+    # token.iss / 浏览器 authority 是 localhost:8000；容器内用 host.docker.internal 拉 JWKS。
+    # 只设 issuer-uri=host.docker.internal 时，Casdoor discovery 的 issuer 对不上，JwtDecoder 起不来，API 全 401。
+    SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:8000
+    SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://host.docker.internal:8000/.well-known/jwks
+    SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_AUDIENCES: ragshared0client00000001-org-marketing-platform
+
+services:
+  marketing-control-service:
+    <<: *secure-java
+  rule-compiler-worker:
+    <<: *secure-java
+  audience-service:
+    <<: *secure-java
+  offer-decision-service:
+    <<: *secure-java
+  benefit-funding-service:
+    <<: *secure-java
+  event-gateway-service:
+    <<: *secure-java
+  journey-service:
+    <<: *secure-java
+  engagement-service:
+    <<: *secure-java
+  measurement-service:
+    <<: *secure-java
+  edge-gateway:
+    <<: *secure-java
+  console:
+    environment:
+      CONSOLE_AUTH_MODE: OIDC
+      CONSOLE_ALLOW_DEV_AUTH: "false"
+      # 不用 CONSOLE_OIDC_* 做 Compose 替换：项目 .env 里是 Keycloak 默认值，会盖掉 Casdoor。
+      CONSOLE_OIDC_AUTHORITY: http://localhost:8000
+      CONSOLE_OIDC_CLIENT_ID: ragshared0client00000001-org-marketing-platform
+      CONSOLE_OIDC_ORGANIZATION: marketing-platform
+      CONSOLE_OIDC_SCOPE: openid profile offline_access
+      CONSOLE_OIDC_ORIGIN: http://localhost:8000

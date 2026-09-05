@@ -1,8 +1,12 @@
 import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './app/AppShell'
+import { RequireAuth } from './app/RequireAuth'
 import { RequirePermission } from './app/RequirePermission'
 import { runtimeConfigError } from './shared/config/runtime'
+
+const LoginPage = lazy(() => import('./features/auth/LoginPage').then((module) => ({ default: module.LoginPage })))
+const AuthCallbackPage = lazy(() => import('./features/auth/AuthCallbackPage').then((module) => ({ default: module.AuthCallbackPage })))
 
 const DashboardPage = lazy(() => import('./features/dashboard/DashboardPage').then((module) => ({ default: module.DashboardPage })))
 const CampaignsPage = lazy(() => import('./features/campaign/CampaignsPage').then((module) => ({ default: module.CampaignsPage })))
@@ -30,8 +34,9 @@ export default function App() {
   return (
     <Suspense fallback={<div className="route-loading" role="status">正在加载工作台…</div>}>
       <Routes>
-        <Route path="auth/callback" element={<div className="route-loading" role="status">正在完成登录…</div>} />
-        <Route element={<AppShell />}>
+        <Route path="login" element={<LoginPage />} />
+        <Route path="auth/callback" element={<AuthCallbackPage />} />
+        <Route element={<RequireAuth><AppShell /></RequireAuth>}>
           <Route index element={<RequirePermission anyOf={['campaign:read', 'measurement:read']}><DashboardPage /></RequirePermission>} />
           <Route path="campaigns" element={<RequirePermission anyOf={['campaign:read']}><CampaignsPage /></RequirePermission>} />
           <Route path="designers/offer" element={<RequirePermission anyOf={['definition:read', 'definition:write']}><OfferDesignerPage /></RequirePermission>} />

@@ -10,6 +10,8 @@ window.__MARKETING_CONFIG__ = {
   OIDC_AUTHORITY: 'http://localhost:8180/realms/marketing',
   OIDC_CLIENT_ID: 'marketing-console',
   OIDC_SCOPE: 'openid profile email',
+  BENEFIT_CONSOLE_ORIGIN: '',
+  RISK_CONSOLE_ORIGIN: '',
 }
 
 afterEach(cleanup)

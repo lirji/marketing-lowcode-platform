@@ -1,6 +1,8 @@
 package com.acme.marketing.benefit.interfaces;
 
 import com.acme.marketing.benefit.application.BenefitFundingService;
+import com.acme.marketing.benefit.application.BenefitSkuCatalog.BenefitSkuView;
+import com.acme.marketing.benefit.application.BenefitSkuCatalog.SkuStatus;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -10,6 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -41,6 +44,13 @@ public class BenefitController {
     @GetMapping("/benefits/{benefitId}")
     public BenefitFundingService.BenefitView benefit(@PathVariable String benefitId) {
         return service.benefit(benefitId);
+    }
+
+    /** 返回租户隔离的权益中台 SKU 只读目录，默认只查询 ACTIVE 模板。 */
+    @GetMapping("/benefit-skus")
+    public List<BenefitSkuView> benefitSkus(
+            @RequestParam(defaultValue = "ACTIVE") SkuStatus status) {
+        return service.benefitSkus(status);
     }
 
     @PutMapping("/benefits/{benefitId}")

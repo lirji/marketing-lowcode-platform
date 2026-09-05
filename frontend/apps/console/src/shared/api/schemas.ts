@@ -281,12 +281,56 @@ export const templateViewSchema = z.object({
 })
 export type TemplateView = z.infer<typeof templateViewSchema>
 
+export const benefitSkuStatusSchema = z.enum(['DRAFT', 'PENDING_APPROVAL', 'ACTIVE', 'PAUSED', 'RETIRED'])
+export const benefitSkuSchema = z.object({
+  skuId: z.string(),
+  benefitType: z.enum(['COUPON', 'CASH', 'CODE', 'PHYSICAL']),
+  faceValueMinor: z.number().nullable().optional(),
+  currency: z.string().nullable().optional(),
+  status: benefitSkuStatusSchema,
+  enabled: z.boolean(),
+  validityType: z.enum(['ABSOLUTE', 'RELATIVE']),
+  validFrom: z.string().nullable().optional(),
+  validTo: z.string().nullable().optional(),
+  relativeDays: z.number().nullable().optional(),
+  usableWeekdays: z.array(z.number()).default([]),
+  dailyQuota: z.number().nullable().optional(),
+  userLimitPerDay: z.number().nullable().optional(),
+  userLimitTotal: z.number().nullable().optional(),
+  equivalentSkuId: z.string().nullable().optional(),
+  version: z.number(),
+})
+export type BenefitSku = z.infer<typeof benefitSkuSchema>
+
+export const awardIntentViewSchema = z.object({
+  intentId: z.string(),
+  sourceSystem: z.string(),
+  sourceRequestId: z.string(),
+  campaignId: z.string(),
+  definitionVersion: z.number(),
+  subjectHash: z.string(),
+  deliveryMode: z.enum(['LEGACY', 'SHADOW', 'CENTER']),
+  status: z.enum(['PENDING', 'SENT', 'DEAD', 'RISK_BLOCKED']),
+  deliveryResult: z.enum(['LEGACY_OWNED', 'SHADOW_RECORDED', 'CENTER_ENQUEUED', 'CENTER_ACCEPTED']).nullable(),
+  riskAction: z.enum(['CHALLENGE', 'REVIEW', 'REJECT', 'UNAVAILABLE']).optional(),
+  riskReason: z.string().optional(),
+  riskDecisionId: z.string().nullable().optional(),
+  attempts: z.number(),
+  benefitOrderNo: z.string().nullable().optional(),
+  lastError: z.string().optional().default(''),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  sentAt: z.string().nullable().optional(),
+})
+export type AwardIntentView = z.infer<typeof awardIntentViewSchema>
+
 export const benefitViewSchema = z.object({
   benefitId: z.string(),
   version: z.number(),
   name: z.string(),
   status: z.string(),
   resourceKey: z.string().optional(),
+  benefitSkuId: z.string().nullable().optional(),
   policy: z.record(z.string(), z.unknown()).default({}),
   createdBy: z.string().optional(),
   createdAt: z.string().optional(),

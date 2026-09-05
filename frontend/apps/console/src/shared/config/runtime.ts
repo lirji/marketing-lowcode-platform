@@ -7,7 +7,10 @@ export type RuntimeConfig = {
   allowDevAuth: boolean
   oidcAuthority: string
   oidcClientId: string
+  oidcOrganization: string
   oidcScope: string
+  benefitConsoleOrigin: string
+  riskConsoleOrigin: string
   requestTimeoutMs: number
 }
 
@@ -33,6 +36,12 @@ function originFromAuthority(authority: string): string {
   } catch {
     return ''
   }
+}
+
+function optionalOrigin(value: string | undefined): string {
+  const trimmed = value?.trim() ?? ''
+  if (!trimmed) return ''
+  return originFromAuthority(trimmed)
 }
 
 function parseConfig(): RuntimeConfig {
@@ -65,7 +74,10 @@ function parseConfig(): RuntimeConfig {
     allowDevAuth,
     oidcAuthority: injected?.OIDC_AUTHORITY ?? import.meta.env.VITE_OIDC_AUTHORITY ?? 'http://localhost:8180/realms/marketing',
     oidcClientId: injected?.OIDC_CLIENT_ID ?? import.meta.env.VITE_OIDC_CLIENT_ID ?? 'marketing-console',
+    oidcOrganization: injected?.OIDC_ORGANIZATION ?? import.meta.env.VITE_OIDC_ORGANIZATION ?? '',
     oidcScope: injected?.OIDC_SCOPE ?? 'openid profile email',
+    benefitConsoleOrigin: optionalOrigin(injected?.BENEFIT_CONSOLE_ORIGIN ?? (import.meta.env.DEV ? import.meta.env.VITE_BENEFIT_CONSOLE_ORIGIN : undefined)),
+    riskConsoleOrigin: optionalOrigin(injected?.RISK_CONSOLE_ORIGIN ?? (import.meta.env.DEV ? import.meta.env.VITE_RISK_CONSOLE_ORIGIN : undefined)),
     requestTimeoutMs: 30_000,
   })
 }
@@ -77,7 +89,10 @@ const placeholder: RuntimeConfig = Object.freeze({
   allowDevAuth: false,
   oidcAuthority: '',
   oidcClientId: '',
+  oidcOrganization: '',
   oidcScope: 'openid',
+  benefitConsoleOrigin: '',
+  riskConsoleOrigin: '',
   requestTimeoutMs: 30_000,
 })
 

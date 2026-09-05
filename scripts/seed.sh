@@ -3,21 +3,28 @@ set -Eeuo pipefail
 # shellcheck source=scripts/_lib.sh
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 
-header_args=(
-  -H 'Content-Type: application/json'
-  -H 'X-Dev-Tenant-Id: retail-cn'
-  -H 'X-Dev-Organization-Ids: retail-business'
-  -H 'X-Dev-Shop-Ids: all-shops'
-  -H 'X-Dev-Actor-Id: r1-seed'
-  -H 'X-Dev-Permissions: *'
-)
+require_command docker
 
-existing="$(curl -fsS "${header_args[@]}" "${GATEWAY_URL}/api/v1/campaigns")"
-if python3 -c 'import json,sys; raise SystemExit(0 if any(x.get("name")=="R1 全域家电演示" for x in json.load(sys.stdin)) else 1)' <<<"${existing}"; then
-  echo "seed already present"
-  exit 0
+seed_file="${PROJECT_ROOT}/scripts/seed-data/system-mock.sql"
+[[ -r "${seed_file}" ]] || { echo "Missing seed file: ${seed_file}" >&2; exit 1; }
+
+mysql_container="$(COMPOSE_PROJECT_NAME=dev-infra infra_compose ps -q mysql84)"
+if [[ -z "${mysql_container}" ]]; then
+  mysql_container="$(docker ps --quiet \
+    --filter 'label=com.docker.compose.project=dev-infra' \
+    --filter 'label=com.docker.compose.service=mysql84' | head -n 1)"
+fi
+[[ -n "${mysql_container}" ]] || {
+  echo "Local mysql84 is not running. Start dev-infra before seeding." >&2
+  exit 1
+}
+
+if [[ "$(docker inspect --format '{{.State.Running}}' "${mysql_container}")" != "true" ]]; then
+  echo "Local mysql84 container is not running: ${mysql_container}" >&2
+  exit 1
 fi
 
-payload='{"name":"R1 全域家电演示","objective":"验证从低代码定义到发布、决策、履约和衡量的完整闭环","organizationId":"retail-business","shopId":"all-shops"}'
-created="$(curl -fsS "${header_args[@]}" -H 'Idempotency-Key: seed-campaign-r1' -d "${payload}" "${GATEWAY_URL}/api/v1/campaigns")"
-python3 -c 'import json,sys; value=json.load(sys.stdin); assert value["name"]=="R1 全域家电演示"; print("seeded campaign", value["id"])' <<<"${created}"
+echo "seeding system mock data into local MySQL..."
+docker exec --interactive --env MYSQL_PWD="${DEV_INFRA_MYSQL_ROOT_PASSWORD:-}" "${mysql_container}" \
+  mysql --batch --raw --default-character-set=utf8mb4 --host=127.0.0.1 --user=root < "${seed_file}"
+echo "system mock data ready (tenant=marketing-platform, campaign=mock-cmp-ha-2026)"

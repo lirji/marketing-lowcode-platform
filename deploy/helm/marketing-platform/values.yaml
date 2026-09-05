@@ -72,6 +72,15 @@ services:
     port: 8085
     database: marketing_benefit
     replicas: 3
+    benefitCenterBaseUrl: http://benefit-center:8083
+    riskPlatformBaseUrl: http://fraud-gateway.risk-platform.svc:8082
+    awardDefaultMode: LEGACY
+    awardTenantModes: ""
+    awardRelayEnabled: false
+    awardBulkheadPermits: 64
+    awardRelayTenantBatchSize: 10
+    awardRelayCircuitFailureThreshold: 5
+    awardRelayCircuitOpenMs: 30000
   event-gateway-service:
     port: 8086
     database: marketing_events
@@ -118,7 +127,10 @@ console:
   port: 8080
   apiBaseUrl: ""
   oidcClientId: marketing-console
+  oidcOrganization: ""
   oidcScope: openid profile email
+  benefitConsoleOrigin: ""
+  riskConsoleOrigin: ""
   resources:
     requests: {cpu: 50m, memory: 64Mi}
     limits: {cpu: 500m, memory: 256Mi}

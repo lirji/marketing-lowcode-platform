@@ -2,6 +2,8 @@ package com.acme.marketing.benefit.application;
 
 import static com.acme.marketing.platform.time.SqlTime.format;
 
+import com.acme.marketing.benefit.application.BenefitSkuCatalog.BenefitSkuView;
+import com.acme.marketing.benefit.application.BenefitSkuCatalog.SkuStatus;
 import com.acme.marketing.benefit.domain.ResourceAccount;
 import com.acme.marketing.contracts.event.JourneyEffectCommand;
 import com.acme.marketing.contracts.offer.FundingShareClaim;
@@ -42,14 +44,16 @@ public class BenefitFundingService {
     private final ObjectMapper mapper;
     private final Clock clock;
     private final OfferTokenTrust tokenTrust;
+    private final BenefitSkuCatalog benefitSkuCatalog;
     private final TransactionTemplate isolatedTransactions;
 
     public BenefitFundingService(JdbcTemplate jdbc, ObjectMapper mapper, Clock clock, OfferTokenTrust tokenTrust,
-            PlatformTransactionManager transactionManager) {
+            BenefitSkuCatalog benefitSkuCatalog, PlatformTransactionManager transactionManager) {
         this.jdbc = jdbc;
         this.mapper = mapper;
         this.clock = clock;
         this.tokenTrust = tokenTrust;
+        this.benefitSkuCatalog = benefitSkuCatalog;
         this.isolatedTransactions = new TransactionTemplate(transactionManager);
         this.isolatedTransactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -80,7 +84,7 @@ public class BenefitFundingService {
     public List<BenefitView> benefits() {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("benefit:read");
-        return jdbc.query("select benefit_id,version_no,name_text,status_name,resource_key,policy_json,created_by,created_at from mk_benefit_definition current where tenant_id=? and version_no=(select max(latest.version_no) from mk_benefit_definition latest where latest.tenant_id=current.tenant_id and latest.benefit_id=current.benefit_id) order by name_text,benefit_id",
+        return jdbc.query("select benefit_id,version_no,name_text,status_name,resource_key,benefit_sku_id,policy_json,created_by,created_at from mk_benefit_definition current where tenant_id=? and version_no=(select max(latest.version_no) from mk_benefit_definition latest where latest.tenant_id=current.tenant_id and latest.benefit_id=current.benefit_id) order by name_text,benefit_id",
                 (rs, rowNum) -> benefitView(rs), scope.tenantId().value());
     }
 
@@ -88,7 +92,7 @@ public class BenefitFundingService {
     public BenefitView benefit(String benefitId) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("benefit:read");
-        List<BenefitView> rows = jdbc.query("select benefit_id,version_no,name_text,status_name,resource_key,policy_json,created_by,created_at from mk_benefit_definition where tenant_id=? and benefit_id=? order by version_no desc limit 1",
+        List<BenefitView> rows = jdbc.query("select benefit_id,version_no,name_text,status_name,resource_key,benefit_sku_id,policy_json,created_by,created_at from mk_benefit_definition where tenant_id=? and benefit_id=? order by version_no desc limit 1",
                 (rs, rowNum) -> benefitView(rs), scope.tenantId().value(), benefitId);
         if (rows.isEmpty()) throw new NotFoundException("BENEFIT_NOT_FOUND", "benefit not found");
         return rows.getFirst();
@@ -103,7 +107,17 @@ public class BenefitFundingService {
         }
         String payloadHash = Digests.sha256Hex("BENEFIT_PUT|" + benefitId + '|' + json(request));
         return command(scope.tenantId().value(), commandId, payloadHash, BenefitView.class,
-                () -> putBenefitNow(scope.tenantId().value(), scope.actorId(), benefitId, request));
+                () -> {
+                    // 只让首次幂等命令执行发布校验；成功命令回放必须返回原响应，不受后续模板暂停影响。
+                    if (request.status() == BenefitStatus.ACTIVE) {
+                        if (request.benefitSkuId() == null) {
+                            throw new ConflictException("SKU_NOT_ACTIVE",
+                                    "ACTIVE benefit must bind an ACTIVE benefit SKU");
+                        }
+                        benefitSkuCatalog.requireActive(scope.tenantId().value(), request.benefitSkuId());
+                    }
+                    return putBenefitNow(scope.tenantId().value(), scope.actorId(), benefitId, request);
+                });
     }
 
     private BenefitView putBenefitNow(String tenantId, String actorId, String benefitId, BenefitRequest request) {
@@ -121,13 +135,20 @@ public class BenefitFundingService {
             }
         }
         Instant now = clock.instant();
-        jdbc.update("insert into mk_benefit_definition(tenant_id,benefit_id,version_no,name_text,status_name,resource_key,policy_json,created_by,created_at) values(?,?,?,?,?,?,?,?,?)",
+        jdbc.update("insert into mk_benefit_definition(tenant_id,benefit_id,version_no,name_text,status_name,resource_key,benefit_sku_id,policy_json,created_by,created_at) values(?,?,?,?,?,?,?,?,?,?)",
                 tenantId, benefitId, version, request.name(), request.status().name(), request.resourceKey(),
-                json(request.policy()), actorId, format(now));
+                request.benefitSkuId(), json(request.policy()), actorId, format(now));
         jdbc.update("update mk_benefit_definition_head set latest_version=? where tenant_id=? and benefit_id=?",
                 version, tenantId, benefitId);
         return new BenefitView(benefitId, version, request.name(), request.status(), request.resourceKey(),
-                request.policy(), actorId, now);
+                request.benefitSkuId(), request.policy(), actorId, now);
+    }
+
+    /** 查询权益中台模板；状态缺省为 ACTIVE，供营销编辑器选择可投放 SKU。 */
+    public List<BenefitSkuView> benefitSkus(SkuStatus status) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("benefit:read");
+        return benefitSkuCatalog.list(scope.tenantId().value(), status == null ? SkuStatus.ACTIVE : status);
     }
 
     @Transactional
@@ -579,10 +600,10 @@ public class BenefitFundingService {
 
     private BenefitView benefitView(java.sql.ResultSet rs) throws java.sql.SQLException {
         @SuppressWarnings("unchecked")
-        Map<String, Object> policy = read(rs.getString(6), Map.class);
+        Map<String, Object> policy = read(rs.getString(7), Map.class);
         return new BenefitView(rs.getString(1), rs.getLong(2), rs.getString(3),
-                BenefitStatus.valueOf(rs.getString(4)), rs.getString(5), policy, rs.getString(7),
-                Instant.parse(rs.getString(8)));
+                BenefitStatus.valueOf(rs.getString(4)), rs.getString(5), rs.getString(6), policy, rs.getString(8),
+                Instant.parse(rs.getString(9)));
     }
 
     private void saveAccount(String tenantId, ResourceAccount account) {
@@ -829,7 +850,8 @@ public class BenefitFundingService {
     private record StoredCommand(String payloadHash, String state, String responseJson) { }
     public record CreateAccountRequest(String resourceKey, ResourceAccount.Type type, String currency,
             long authorized, long fencingEpoch) { }
-    public record BenefitRequest(String name, BenefitStatus status, String resourceKey, Map<String, Object> policy) {
+    public record BenefitRequest(String name, BenefitStatus status, String resourceKey, String benefitSkuId,
+            Map<String, Object> policy) {
         public BenefitRequest {
             if (name == null || name.isBlank() || name.length() > 256) {
                 throw new IllegalArgumentException("benefit name is invalid");
@@ -837,11 +859,15 @@ public class BenefitFundingService {
             status = status == null ? BenefitStatus.DRAFT : status;
             resourceKey = resourceKey == null ? "" : resourceKey;
             if (resourceKey.length() > 256) throw new IllegalArgumentException("benefit resource key is invalid");
+            benefitSkuId = benefitSkuId == null || benefitSkuId.isBlank() ? null : benefitSkuId.trim();
+            if (benefitSkuId != null && benefitSkuId.length() > 128) {
+                throw new IllegalArgumentException("benefit SKU id is invalid");
+            }
             policy = Map.copyOf(policy == null ? Map.of() : policy);
         }
     }
     public record BenefitView(String benefitId, long version, String name, BenefitStatus status,
-            String resourceKey, Map<String, Object> policy, String createdBy, Instant createdAt) {
+            String resourceKey, String benefitSkuId, Map<String, Object> policy, String createdBy, Instant createdAt) {
         public BenefitView { policy = Map.copyOf(policy); }
     }
     public record FencingLeaseRequest(long expectedEpoch, ResourceAccount.State state) {

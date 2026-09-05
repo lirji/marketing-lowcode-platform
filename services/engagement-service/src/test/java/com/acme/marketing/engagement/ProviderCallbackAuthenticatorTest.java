@@ -22,6 +22,14 @@ class ProviderCallbackAuthenticatorTest {
             .getBytes(StandardCharsets.UTF_8);
 
     @Test
+    void oidcForbidsSandboxUnlessExplicitlyAllowed() {
+        assertThrows(IllegalStateException.class, () -> new ProviderCallbackAuthenticator(
+                new ObjectMapper(), Clock.fixed(NOW, ZoneOffset.UTC), "SANDBOX", "", "OIDC", false));
+        new ProviderCallbackAuthenticator(
+                new ObjectMapper(), Clock.fixed(NOW, ZoneOffset.UTC), "SANDBOX", "", "OIDC", true);
+    }
+
+    @Test
     void verifiesExactBytesTimestampAndProviderIdentity() {
         ProviderCallbackAuthenticator authenticator = authenticator();
         String signature = new HmacRequestSigner(SECRET.getBytes(StandardCharsets.UTF_8))
@@ -41,6 +49,6 @@ class ProviderCallbackAuthenticatorTest {
 
     private static ProviderCallbackAuthenticator authenticator() {
         return new ProviderCallbackAuthenticator(new ObjectMapper(),
-                Clock.fixed(NOW, ZoneOffset.UTC), "HTTP", SECRET, "OIDC");
+                Clock.fixed(NOW, ZoneOffset.UTC), "HTTP", SECRET, "OIDC", false);
     }
 }

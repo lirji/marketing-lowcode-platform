@@ -24,23 +24,25 @@ export function AppShell() {
   const navigate = useNavigate()
   const location = useLocation()
   const auth = useAuth()
+  const permissions = auth.permissions
+  const authenticated = auth.authenticated
   const visibleNav = useMemo(
     () => navigation
       .map((group) => ({ ...group, items: group.items.filter((item) => auth.hasAnyPermission(item.permissions)) }))
       .filter((group) => group.items.length > 0),
-    [auth],
+    [permissions, authenticated, auth.hasAnyPermission],
   )
   const searchable = useMemo(() => visibleNav.flatMap((group) => group.items), [visibleNav])
   const results = searchable.filter((item) => item.label.toLowerCase().includes(query.toLowerCase()))
   const approvals = useQuery({
     queryKey: ['approvals', 'badge'],
     queryFn: api.approvals,
-    enabled: !api.demoMode && auth.hasAnyPermission(['approval:business', 'approval:finance', 'approval:compliance', 'approval:merchant', 'definition:read']),
+    enabled: authenticated && !api.demoMode && auth.hasAnyPermission(['approval:business', 'approval:finance', 'approval:compliance', 'approval:merchant', 'definition:read']),
   })
   const releases = useQuery({
     queryKey: ['releases', 'health'],
     queryFn: api.releases,
-    enabled: !api.demoMode && auth.hasPermission('release:read'),
+    enabled: authenticated && !api.demoMode && auth.hasPermission('release:read'),
   })
   const openApprovals = (approvals.data ?? []).filter((item) => item.status === 'OPEN').length
   const activeCells = (releases.data ?? []).filter((item) => item.state === 'ACTIVE').length

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/marketing/award-expected.schema.json",
+  "title": "MarketingAwardExpected",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "eventId", "eventType", "tenantId", "sourceRequestId",
+    "campaignId", "definitionVersion", "subjectHash", "clientItemId", "skuId", "benefitType",
+    "quantity", "occurredAt"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "eventId": {"type": "string", "minLength": 1, "maxLength": 64},
+    "eventType": {"const": "MARKETING_AWARD_EXPECTED"},
+    "tenantId": {"type": "string", "minLength": 1, "maxLength": 64},
+    "sourceRequestId": {"type": "string", "minLength": 1, "maxLength": 128},
+    "campaignId": {"type": "string", "minLength": 1, "maxLength": 64},
+    "definitionVersion": {"type": "integer", "minimum": 1},
+    "subjectHash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "clientItemId": {"type": "string", "minLength": 1, "maxLength": 128},
+    "skuId": {"type": "string", "minLength": 1, "maxLength": 128},
+    "benefitType": {"enum": ["CASH", "COUPON", "SERVICE_VOUCHER", "REDEMPTION_CODE", "PHYSICAL"]},
+    "amountMinor": {"type": "integer", "minimum": 1},
+    "currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+    "quantity": {"const": 1},
+    "occurredAt": {"type": "string", "format": "date-time"}
+  },
+  "allOf": [{
+    "if": {"properties": {"benefitType": {"const": "CASH"}}},
+    "then": {"required": ["amountMinor", "currency"]},
+    "else": {"not": {"anyOf": [{"required": ["amountMinor"]}, {"required": ["currency"]}]}}
+  }]
+}

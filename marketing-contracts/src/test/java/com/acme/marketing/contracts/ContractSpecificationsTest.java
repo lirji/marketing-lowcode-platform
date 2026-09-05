@@ -40,7 +40,8 @@ class ContractSpecificationsTest {
             "/api/v1/decisions/runtime/manifest", "/api/v1/decisions/runtime/activation",
             "/api/v1/decisions/runtime/ack", "/api/v1/decisions/runtime/audience-membership",
             "/api/v1/funding/accounts", "/api/v1/funding/accounts/{resourceKey}:advance-fence",
-            "/api/v1/benefits", "/api/v1/benefits/{benefitId}",
+            "/api/v1/benefits", "/api/v1/benefit-skus", "/api/v1/benefits/{benefitId}",
+            "/api/v1/award-intents", "/internal/v1/award-intents",
             "/api/v1/promotion-applications", "/api/v1/promotion-applications/{applicationId}:confirm",
             "/api/v1/promotion-applications/{applicationId}:cancel",
             "/api/v1/promotion-applications/{applicationId}:refund",
@@ -66,7 +67,7 @@ class ContractSpecificationsTest {
             "mk.journey.output.v1", "mk.engagement.command.v1", "mk.benefit.command.v1",
             "mk.engagement.event.v1", "mk.benefit.event.v1", "mk.marketing.fact.v1",
             "mk.measurement.projection.v1", "mk.platform.events.v1", "mk.release.activation.v1",
-            "mk.release.kill-switch.v1");
+            "mk.release.kill-switch.v1", "marketing.award-expected.v1");
 
     @Test
     void openApiMatchesTheImplementedR1Surface() throws IOException {
@@ -86,6 +87,26 @@ class ContractSpecificationsTest {
         }
         assertFalse(Files.readString(source).contains("X-Payload-SHA256"));
         verifyExternalReferences(document, source);
+    }
+
+    @Test
+    void awardIntentContractExposesRiskBlockedAndUnavailableSemantics() throws IOException {
+        Map<String, Object> document = yaml(RESOURCES.resolve("openapi/marketing-api.yaml"));
+        Map<String, Object> schemas = map(map(document.get("components")).get("schemas"));
+        Map<String, Object> awardView = map(schemas.get("AwardIntentView"));
+        Map<String, Object> properties = map(awardView.get("properties"));
+
+        assertEquals(List.of("PENDING", "SENT", "DEAD", "RISK_BLOCKED"),
+                map(properties.get("status")).get("enum"));
+        assertEquals(List.of("CHALLENGE", "REVIEW", "REJECT", "UNAVAILABLE"),
+                map(properties.get("riskAction")).get("enum"));
+        assertEquals(List.of("string", "null"), map(properties.get("deliveryResult")).get("type"));
+        assertTrue(((List<?>) awardView.get("required")).contains("deliveryResult"),
+                "deliveryResult remains present and is null for RISK_BLOCKED rows");
+
+        Map<String, Object> post = map(map(map(document.get("paths"))
+                .get("/internal/v1/award-intents")).get("post"));
+        assertTrue(map(post.get("responses")).containsKey("503"));
     }
 
     @Test

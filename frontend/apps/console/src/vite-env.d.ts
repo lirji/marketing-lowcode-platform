@@ -6,6 +6,9 @@ interface ImportMetaEnv {
   readonly VITE_AUTH_MODE?: 'DEV' | 'OIDC'
   readonly VITE_OIDC_AUTHORITY?: string
   readonly VITE_OIDC_CLIENT_ID?: string
+  readonly VITE_OIDC_ORGANIZATION?: string
+  readonly VITE_BENEFIT_CONSOLE_ORIGIN?: string
+  readonly VITE_RISK_CONSOLE_ORIGIN?: string
 }
 
 interface ImportMeta {
@@ -20,6 +23,9 @@ interface Window {
     ALLOW_DEV_AUTH?: boolean | string
     OIDC_AUTHORITY?: string
     OIDC_CLIENT_ID?: string
+    OIDC_ORGANIZATION?: string
     OIDC_SCOPE?: string
+    BENEFIT_CONSOLE_ORIGIN?: string
+    RISK_CONSOLE_ORIGIN?: string
   }
 }

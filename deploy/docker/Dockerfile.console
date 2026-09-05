@@ -20,6 +20,8 @@ COPY deploy/docker/security-headers.conf.template /etc/nginx/templates/security-
 USER root
 RUN chown -R 101:101 /usr/share/nginx/html /etc/nginx/templates
 ENV NGINX_ENVSUBST_OUTPUT_DIR=/etc/marketing-console
+ENV CONSOLE_BENEFIT_ORIGIN=
+ENV CONSOLE_RISK_ORIGIN=
 USER 101
 EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=5 \

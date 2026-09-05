@@ -199,19 +199,71 @@ paths:
     get: {tags: [Benefit], operationId: listFundingAccounts, responses: *list}
     post: {tags: [Benefit], operationId: createFundingAccount, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
   /api/v1/benefits:
-    get: {tags: [Benefit], operationId: listBenefits, responses: *list}
+    get:
+      tags: [Benefit]
+      operationId: listBenefits
+      responses:
+        '200':
+          description: Latest benefit definitions
+          content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/BenefitView'}}}}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/benefit-skus:
+    get:
+      tags: [Benefit]
+      operationId: listBenefitSkus
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema: {$ref: '#/components/schemas/BenefitSkuStatus', default: ACTIVE}
+      responses:
+        '200':
+          description: Tenant-scoped benefit center SKU templates
+          content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/BenefitSkuView'}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/benefits/{benefitId}:
     get:
       tags: [Benefit]
       operationId: getBenefit
       parameters: [{$ref: '#/components/parameters/BenefitId'}]
-      responses: *ok
+      responses:
+        '200': {description: Latest benefit definition, content: {application/json: {schema: {$ref: '#/components/schemas/BenefitView'}}}}
+        default: {$ref: '#/components/responses/Problem'}
     put:
       tags: [Benefit]
       operationId: putBenefit
       parameters: [{$ref: '#/components/parameters/BenefitId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
-      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
-      responses: *ok
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/BenefitRequest'}}}}
+      responses:
+        '200': {description: Stored benefit definition version, content: {application/json: {schema: {$ref: '#/components/schemas/BenefitView'}}}}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/award-intents:
+    get:
+      tags: [Benefit]
+      operationId: listAwardIntents
+      parameters:
+        - {in: query, name: campaignId, required: true, schema: {type: string, minLength: 1, maxLength: 64}}
+        - {in: query, name: limit, required: false, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+        - {in: query, name: cursor, required: false, description: Last intentId from the previous page, schema: {type: string, minLength: 1, maxLength: 64}}
+      responses:
+        '200':
+          description: Tenant-scoped award intent delivery states
+          content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/AwardIntentView'}}}}
+        default: {$ref: '#/components/responses/Problem'}
+  /internal/v1/award-intents:
+    post:
+      tags: [Benefit]
+      operationId: assembleAwardIntent
+      description: Internal post-decision trigger. Amount and SKU are reconstructed from a signed server OfferToken.
+      x-internal: true
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AssembleAwardIntentRequest'}}}
+      responses:
+        '202': {description: Recorded, risk-blocked, or idempotently replayed, content: {application/json: {schema: {$ref: '#/components/schemas/AwardIntentView'}}}}
+        '503': {description: Risk evaluation is unavailable and the fail-closed result was recorded, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/funding/accounts/{resourceKey}:advance-fence:
     post: {tags: [Benefit], operationId: advanceFundingFence, parameters: [{$ref: '#/components/parameters/ResourceKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
   /api/v1/promotion-applications:
@@ -403,6 +455,88 @@ components:
     Problem: {description: RFC 9457 problem response, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
   schemas:
     JsonObject: {type: object, additionalProperties: true}
+    BenefitStatus: {type: string, enum: [DRAFT, ACTIVE, RETIRED]}
+    BenefitSkuStatus: {type: string, enum: [DRAFT, PENDING_APPROVAL, ACTIVE, PAUSED, RETIRED]}
+    BenefitRequest:
+      type: object
+      additionalProperties: false
+      required: [name, status, resourceKey, policy]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 256}
+        status: {$ref: '#/components/schemas/BenefitStatus'}
+        resourceKey: {type: string, maxLength: 256}
+        benefitSkuId: {type: [string, 'null'], maxLength: 128}
+        policy: {type: object, additionalProperties: true}
+    BenefitView:
+      type: object
+      additionalProperties: false
+      required: [benefitId, version, name, status, resourceKey, benefitSkuId, policy, createdBy, createdAt]
+      properties:
+        benefitId: {type: string}
+        version: {type: integer, format: int64, minimum: 1}
+        name: {type: string}
+        status: {$ref: '#/components/schemas/BenefitStatus'}
+        resourceKey: {type: string}
+        benefitSkuId: {type: [string, 'null']}
+        policy: {type: object, additionalProperties: true}
+        createdBy: {type: string}
+        createdAt: {type: string, format: date-time}
+    BenefitSkuView:
+      type: object
+      additionalProperties: false
+      required: [skuId, benefitType, status, enabled, validityType, usableWeekdays, version]
+      properties:
+        skuId: {type: string}
+        benefitType: {type: string, enum: [CASH, COUPON, SERVICE_VOUCHER, REDEMPTION_CODE, PHYSICAL]}
+        faceValueMinor: {type: [integer, 'null'], format: int64}
+        currency: {type: [string, 'null']}
+        status: {$ref: '#/components/schemas/BenefitSkuStatus'}
+        enabled: {type: boolean}
+        validityType: {type: string, enum: [ABSOLUTE, RELATIVE]}
+        validFrom: {type: [string, 'null'], format: date-time}
+        validTo: {type: [string, 'null'], format: date-time}
+        relativeDays: {type: [integer, 'null']}
+        usableWeekdays: {type: array, items: {type: integer, minimum: 1, maximum: 7}}
+        dailyQuota: {type: [integer, 'null'], format: int64}
+        userLimitPerDay: {type: [integer, 'null'], format: int64}
+        userLimitTotal: {type: [integer, 'null'], format: int64}
+        equivalentSkuId: {type: [string, 'null']}
+        version: {type: integer, format: int64, minimum: 1}
+    AssembleAwardIntentRequest:
+      type: object
+      additionalProperties: false
+      required: [sourceRequestId, campaignId, definitionVersion, subjectRef, offerToken, cartDigest]
+      properties:
+        sourceRequestId: {type: string, minLength: 1, maxLength: 128}
+        campaignId: {type: string, minLength: 1, maxLength: 64}
+        definitionVersion: {type: integer, format: int64, minimum: 1, maximum: 2147483647}
+        subjectRef: {type: string, minLength: 1, maxLength: 256}
+        offerToken: {type: string, minLength: 1, maxLength: 32768}
+        cartDigest: {type: string, pattern: '^sha256:[a-f0-9]{64}$'}
+    AwardIntentView:
+      type: object
+      additionalProperties: false
+      required: [intentId, sourceSystem, sourceRequestId, campaignId, definitionVersion, subjectHash,
+                 deliveryMode, status, deliveryResult, attempts, lastError, createdAt, updatedAt]
+      properties:
+        intentId: {type: string}
+        sourceSystem: {type: string}
+        sourceRequestId: {type: string}
+        campaignId: {type: string}
+        definitionVersion: {type: integer, format: int64, minimum: 1}
+        subjectHash: {type: string, pattern: '^[a-f0-9]{64}$'}
+        deliveryMode: {type: string, enum: [LEGACY, SHADOW, CENTER]}
+        status: {type: string, enum: [PENDING, SENT, DEAD, RISK_BLOCKED]}
+        deliveryResult: {type: [string, 'null'], enum: [LEGACY_OWNED, SHADOW_RECORDED, CENTER_ENQUEUED, CENTER_ACCEPTED, null]}
+        riskAction: {type: string, enum: [CHALLENGE, REVIEW, REJECT, UNAVAILABLE]}
+        riskReason: {type: string}
+        riskDecisionId: {type: [string, 'null']}
+        attempts: {type: integer, minimum: 0}
+        benefitOrderNo: {type: [string, 'null']}
+        lastError: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        sentAt: {type: [string, 'null'], format: date-time}
     CreateCampaign:
       type: object
       additionalProperties: false

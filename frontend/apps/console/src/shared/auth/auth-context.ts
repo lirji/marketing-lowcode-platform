@@ -17,9 +17,11 @@ export type AuthState = {
   shops: string[]
   permissions: string[]
   error?: string
+  redirecting: boolean
   hasPermission: (permission: string) => boolean
   hasAnyPermission: (permissions: string[]) => boolean
-  login: () => Promise<void>
+  login: (returnTo?: string) => Promise<void>
+  completeLogin: () => Promise<string>
   logout: () => Promise<void>
 }
 
@@ -36,9 +38,11 @@ export const unauthenticatedState: AuthState = {
   organizations: [],
   shops: [],
   permissions: [],
+  redirecting: false,
   hasPermission: () => false,
   hasAnyPermission: () => false,
   login: async () => undefined,
+  completeLogin: async () => '/',
   logout: async () => undefined,
 }
 
@@ -51,9 +55,11 @@ export const devAuthState: AuthState = {
   organizations: ['retail-business'],
   shops: ['all-shops'],
   permissions: ['*'],
+  redirecting: false,
   hasPermission: () => true,
   hasAnyPermission: () => true,
   login: async () => undefined,
+  completeLogin: async () => '/',
   logout: async () => undefined,
 }
 
