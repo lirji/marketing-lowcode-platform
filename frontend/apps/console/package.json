@@ -15,7 +15,7 @@
     "@marketing/contracts": "workspace:*",
     "@tanstack/react-query": "^5.0.0",
     "@xyflow/react": "^12.0.0",
-    "lucide-react": "^0.400.0",
+    "lucide-react": "^1.40.0",
     "oidc-client-ts": "^3.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
