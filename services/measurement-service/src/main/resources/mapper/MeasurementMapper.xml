@@ -1,0 +1,409 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.measurement.infrastructure.persistence.mapper.MeasurementMapper">
+
+    <insert id="insertExperiment">
+        INSERT INTO mk_experiment
+            (tenant_id, experiment_id, version_no, layer_name, definition_json, state_name, created_at)
+        VALUES
+            (#{tenantId}, #{experimentId}, #{versionNo}, #{layerName}, #{definitionJson}, #{stateName}, #{createdAt})
+    </insert>
+
+    <insert id="insertAssignment">
+        INSERT INTO mk_experiment_assignment
+            (tenant_id, experiment_id, version_no, layer_name, randomization_unit, variant_id,
+             holdout_value, bucket_no, assigned_at)
+        VALUES
+            (#{tenantId}, #{experimentId}, #{versionNo}, #{layerName}, #{randomizationUnit}, #{variantId},
+             #{holdoutValue}, #{bucketNo}, #{assignedAt})
+    </insert>
+
+    <select id="selectAssignment"
+            resultType="com.acme.marketing.measurement.application.MeasurementRepository$AssignmentRow">
+        SELECT variant_id AS variantId,
+               holdout_value AS holdoutValue,
+               bucket_no AS bucketNo,
+               assigned_at AS assignedAt
+        FROM mk_experiment_assignment
+        WHERE tenant_id = #{tenantId}
+          AND experiment_id = #{experimentId}
+          AND version_no = #{version}
+          AND randomization_unit = #{unit}
+    </select>
+
+    <select id="selectCorrectionRootForUpdate" resultType="java.lang.String">
+        SELECT correction_root_id
+        FROM mk_fact
+        WHERE tenant_id = #{tenantId} AND event_id = #{eventId}
+        FOR UPDATE
+    </select>
+
+    <select id="selectCorrectionIdentityForUpdate"
+            resultType="com.acme.marketing.measurement.application.MeasurementRepository$CorrectionIdentity">
+        SELECT fact_type AS type, business_key AS businessKey, subject_hash AS subjectHash
+        FROM mk_fact
+        WHERE tenant_id = #{tenantId} AND event_id = #{eventId}
+        FOR UPDATE
+    </select>
+
+    <select id="selectActiveCorrectionEventsForUpdate" resultType="java.lang.String">
+        SELECT event_id
+        FROM mk_fact
+        WHERE tenant_id = #{tenantId}
+          AND correction_root_id = #{correctionRootId}
+          AND corrected_value = FALSE
+        FOR UPDATE
+    </select>
+
+    <select id="countCorrectionChain" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM mk_fact
+        WHERE tenant_id = #{tenantId} AND correction_root_id = #{correctionRootId}
+    </select>
+
+    <update id="updateFactCorrected">
+        UPDATE mk_fact
+        SET corrected_value = TRUE
+        WHERE tenant_id = #{tenantId} AND event_id = #{eventId} AND corrected_value = FALSE
+    </update>
+
+    <insert id="insertFact">
+        INSERT INTO mk_fact
+            (tenant_id, event_id, fact_type, business_key, subject_hash, occurred_at, ingested_at,
+             schema_version, payload_hash, attributes_json, correction_of, correction_root_id,
+             corrected_value, revenue_minor, cost_minor, experiment_id, experiment_version, variant_id)
+        VALUES
+            (#{tenantId}, #{eventId}, #{factType}, #{businessKey}, #{subjectHash}, #{occurredAt}, #{ingestedAt},
+             #{schemaVersion}, #{payloadHash}, #{attributesJson}, #{correctionOf}, #{correctionRootId},
+             #{correctedValue}, #{revenueMinor}, #{costMinor}, #{experimentId}, #{experimentVersion}, #{variantId})
+    </insert>
+
+    <select id="selectStoredFactReceipt"
+            resultType="com.acme.marketing.measurement.application.MeasurementRepository$StoredFactReceipt">
+        SELECT ingested_at AS ingestedAt, payload_hash AS payloadHash
+        FROM mk_fact
+        WHERE tenant_id = #{tenantId} AND event_id = #{eventId}
+    </select>
+
+    <select id="selectProjectionContribution"
+            resultType="com.acme.marketing.measurement.application.MeasurementRepository$ProjectionContributionRow">
+        SELECT fact_type AS factType,
+               business_key AS businessKey,
+               subject_hash AS subjectHash,
+               occurred_at AS occurredAt,
+               ingested_at AS ingestedAt,
+               revenue_minor AS revenueMinor,
+               cost_minor AS costMinor,
+               attributes_json AS attributesJson,
+               experiment_id AS experimentId,
+               variant_id AS variantId
+        FROM mk_fact
+        WHERE tenant_id = #{tenantId} AND event_id = #{eventId}
+    </select>
+
+    <insert id="insertWatermarkConfig">
+        INSERT INTO mk_projection_watermark_config
+            (tenant_id, projection_name, partition_count, updated_at)
+        VALUES
+            (#{tenantId}, #{projectionName}, #{partitionCount}, #{updatedAt})
+    </insert>
+
+    <select id="selectWatermarkPartitionCountForUpdate" resultType="java.lang.Integer">
+        SELECT partition_count
+        FROM mk_projection_watermark_config
+        WHERE tenant_id = #{tenantId} AND projection_name = #{projectionName}
+        FOR UPDATE
+    </select>
+
+    <select id="selectWatermarkPartitionCount" resultType="java.lang.Integer">
+        SELECT partition_count
+        FROM mk_projection_watermark_config
+        WHERE tenant_id = #{tenantId} AND projection_name = #{projectionName}
+    </select>
+
+    <select id="selectPartitionWatermarkForUpdate"
+            resultType="com.acme.marketing.measurement.application.MeasurementRepository$PartitionWatermark">
+        SELECT source_offset AS sourceOffset,
+               complete_through_epoch_ms AS completeThroughEpochMillis
+        FROM mk_projection_partition_watermark
+        WHERE tenant_id = #{tenantId}
+          AND projection_name = #{projectionName}
+          AND partition_id = #{partitionId}
+        FOR UPDATE
+    </select>
+
+    <insert id="insertPartitionWatermark">
+        INSERT INTO mk_projection_partition_watermark
+            (tenant_id, projection_name, partition_id, source_offset, complete_through_epoch_ms, updated_at)
+        VALUES
+            (#{tenantId}, #{projectionName}, #{partitionId}, #{sourceOffset},
+             #{completeThroughEpochMillis}, #{updatedAt})
+    </insert>
+
+    <update id="updatePartitionWatermark">
+        UPDATE mk_projection_partition_watermark
+        SET source_offset = #{sourceOffset},
+            complete_through_epoch_ms = #{completeThroughEpochMillis},
+            updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId}
+          AND projection_name = #{projectionName}
+          AND partition_id = #{partitionId}
+    </update>
+
+    <select id="selectWatermarkAggregate"
+            resultType="com.acme.marketing.measurement.application.MeasurementRepository$WatermarkAggregate">
+        SELECT COUNT(*) AS partitionCount,
+               COALESCE(MIN(complete_through_epoch_ms), 0) AS minimumEpochMillis
+        FROM mk_projection_partition_watermark
+        WHERE tenant_id = #{tenantId} AND projection_name = #{projectionName}
+    </select>
+
+    <select id="selectExperiment"
+            resultType="com.acme.marketing.measurement.application.MeasurementRepository$ExperimentRow">
+        SELECT definition_json AS definitionJson, state_name AS stateName, created_at AS createdAt
+        FROM mk_experiment
+        WHERE tenant_id = #{tenantId} AND experiment_id = #{experimentId} AND version_no = #{version}
+    </select>
+
+    <insert id="insertLayerAssignment">
+        INSERT INTO mk_experiment_layer_assignment
+            (tenant_id, layer_name, randomization_unit, experiment_id, assigned_at)
+        VALUES
+            (#{tenantId}, #{layerName}, #{randomizationUnit}, #{experimentId}, #{assignedAt})
+    </insert>
+
+    <select id="selectLayerOwnerForUpdate" resultType="java.lang.String">
+        SELECT experiment_id
+        FROM mk_experiment_layer_assignment
+        WHERE tenant_id = #{tenantId} AND layer_name = #{layer} AND randomization_unit = #{unit}
+        FOR UPDATE
+    </select>
+
+    <select id="selectActiveFact"
+            resultType="com.acme.marketing.measurement.application.MeasurementRepository$FactRow">
+        SELECT event_id AS eventId,
+               fact_type AS factType,
+               business_key AS businessKey,
+               subject_hash AS subjectHash,
+               occurred_at AS occurredAt,
+               revenue_minor AS revenueMinor,
+               cost_minor AS costMinor
+        FROM mk_fact
+        WHERE tenant_id = #{tenantId} AND event_id = #{eventId} AND corrected_value = FALSE
+    </select>
+
+    <select id="selectAttributionTouches"
+            resultType="com.acme.marketing.measurement.application.MeasurementRepository$FactRow">
+        SELECT event_id AS eventId,
+               fact_type AS factType,
+               business_key AS businessKey,
+               subject_hash AS subjectHash,
+               occurred_at AS occurredAt,
+               revenue_minor AS revenueMinor,
+               cost_minor AS costMinor
+        FROM mk_fact
+        WHERE tenant_id = #{tenantId}
+          AND subject_hash = #{subjectHash}
+          AND corrected_value = FALSE
+          AND fact_type IN ('EXPOSURE', 'CONTACT_SENT', 'CLICK', 'OFFER_SHOWN')
+          AND occurred_at &gt;= #{from}
+          AND occurred_at &lt;= #{to}
+        ORDER BY occurred_at
+    </select>
+
+    <insert id="upsertAttributionLock">
+        INSERT INTO mk_attribution_recompute_lock (tenant_id, updated_at)
+        VALUES (#{tenantId}, #{updatedAt})
+        ON DUPLICATE KEY UPDATE tenant_id = tenant_id
+    </insert>
+
+    <select id="selectAttributionLockForUpdate" resultType="java.lang.String">
+        SELECT tenant_id
+        FROM mk_attribution_recompute_lock
+        WHERE tenant_id = #{tenantId}
+        FOR UPDATE
+    </select>
+
+    <select id="selectActiveConversionIds" resultType="java.lang.String">
+        SELECT event_id
+        FROM mk_fact
+        WHERE tenant_id = #{tenantId} AND fact_type = 'CONVERSION' AND corrected_value = FALSE
+        ORDER BY occurred_at, event_id
+    </select>
+
+    <delete id="deleteAttributionCredits">
+        DELETE FROM mk_attribution_credit WHERE tenant_id = #{tenantId}
+    </delete>
+
+    <insert id="insertAttributionCredit">
+        INSERT INTO mk_attribution_credit
+            (tenant_id, conversion_event_id, policy_name, touch_event_id, credit_value,
+             revenue_minor, calculated_at)
+        VALUES
+            (#{tenantId}, #{conversionEventId}, #{policyName}, #{touchEventId}, #{creditValue},
+             #{revenueMinor}, #{calculatedAt})
+    </insert>
+
+    <update id="updateAttributionLock">
+        UPDATE mk_attribution_recompute_lock
+        SET updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId}
+    </update>
+
+    <select id="selectExposureCounts"
+            resultType="com.acme.marketing.measurement.application.MeasurementRepository$VariantCount">
+        SELECT variant_id AS variantId, COUNT(*) AS countValue
+        FROM mk_fact
+        WHERE tenant_id = #{tenantId}
+          AND fact_type = 'EXPOSURE'
+          AND corrected_value = FALSE
+          AND experiment_id = #{experimentId}
+          AND experiment_version = #{version}
+        GROUP BY variant_id
+    </select>
+
+    <update id="updateExperimentPausedForSrm">
+        UPDATE mk_experiment
+        SET state_name = 'PAUSED_SRM'
+        WHERE tenant_id = #{tenantId} AND experiment_id = #{experimentId} AND version_no = #{version}
+    </update>
+
+    <insert id="insertTrace">
+        INSERT INTO mk_decision_trace
+            (tenant_id, trace_id, request_id, order_id, subject_hash, generation_no, duration_micros,
+             candidates_json, pricing_json, terms_version, expires_at, legal_hold, created_at)
+        VALUES
+            (#{tenantId}, #{traceId}, #{requestId}, #{orderId}, #{subjectHash}, #{generationNo},
+             #{durationMicros}, #{candidatesJson}, #{pricingJson}, #{termsVersion}, #{expiresAt},
+             #{legalHold}, #{createdAt})
+    </insert>
+
+    <sql id="traceColumns">
+        trace_id AS traceId,
+        request_id AS requestId,
+        order_id AS orderId,
+        subject_hash AS subjectHash,
+        generation_no AS generationNo,
+        duration_micros AS durationMicros,
+        candidates_json AS candidatesJson,
+        pricing_json AS pricingJson,
+        terms_version AS termsVersion,
+        expires_at AS expiresAt,
+        legal_hold AS legalHold,
+        created_at AS createdAt
+    </sql>
+
+    <select id="selectTraceByRequest"
+            resultType="com.acme.marketing.measurement.application.MeasurementRepository$TraceRow">
+        SELECT <include refid="traceColumns"/>
+        FROM mk_decision_trace
+        WHERE tenant_id = #{tenantId}
+          AND request_id = #{requestId}
+          AND (expires_at &gt; #{now} OR legal_hold = TRUE)
+        LIMIT 1
+    </select>
+
+    <select id="selectTraceByOrder"
+            resultType="com.acme.marketing.measurement.application.MeasurementRepository$TraceRow">
+        SELECT <include refid="traceColumns"/>
+        FROM mk_decision_trace
+        WHERE tenant_id = #{tenantId}
+          AND order_id = #{orderId}
+          AND (expires_at &gt; #{now} OR legal_hold = TRUE)
+        ORDER BY created_at DESC
+        LIMIT 1
+    </select>
+
+    <insert id="insertCommand">
+        INSERT INTO mk_measurement_command
+            (tenant_id, command_id, payload_hash, state_name, response_json, created_at, expires_at)
+        VALUES
+            (#{tenantId}, #{commandId}, #{payloadHash}, #{stateName}, #{responseJson}, #{createdAt}, #{expiresAt})
+    </insert>
+
+    <select id="selectCommandForUpdate"
+            resultType="com.acme.marketing.measurement.application.MeasurementRepository$StoredCommand">
+        SELECT payload_hash AS payloadHash,
+               state_name AS stateName,
+               response_json AS responseJson,
+               expires_at AS expiresAt
+        FROM mk_measurement_command
+        WHERE tenant_id = #{tenantId} AND command_id = #{commandId}
+        FOR UPDATE
+    </select>
+
+    <delete id="deleteCommand">
+        DELETE FROM mk_measurement_command WHERE tenant_id = #{tenantId} AND command_id = #{commandId}
+    </delete>
+
+    <update id="updateCommandCompleted">
+        UPDATE mk_measurement_command
+        SET state_name = 'COMPLETED', response_json = #{responseJson}
+        WHERE tenant_id = #{tenantId} AND command_id = #{commandId}
+    </update>
+
+    <select id="selectProjectionDelta"
+            resultType="com.acme.marketing.measurement.application.MeasurementProjectionRepository$StoredDelta">
+        SELECT payload_hash AS payloadHash,
+               source_topic AS topic,
+               source_partition AS `partition`,
+               source_offset AS `offset`
+        FROM mk_dashboard_projection_delta
+        WHERE tenant_id = #{tenantId} AND delta_id = #{deltaId}
+    </select>
+
+    <select id="selectProjectionPayloadHashBySource" resultType="java.lang.String">
+        SELECT payload_hash
+        FROM mk_dashboard_projection_delta
+        WHERE source_topic = #{topic} AND source_partition = #{partition} AND source_offset = #{offset}
+    </select>
+
+    <insert id="insertProjectionDelta">
+        INSERT INTO mk_dashboard_projection_delta
+            (tenant_id, delta_id, root_event_id, source_event_id, revision_no, operation_name, fact_type,
+             business_key, campaign_id, experiment_id, variant_id, subject_hash, count_delta,
+             revenue_delta_minor, cost_delta_minor, occurred_at, ingested_at, payload_hash, source_topic,
+             source_partition, source_offset, projected_at)
+        VALUES
+            (#{tenantId}, #{deltaId}, #{rootEventId}, #{sourceEventId}, #{revisionNo}, #{operationName},
+             #{factType}, #{businessKey}, #{campaignId}, #{experimentId}, #{variantId}, #{subjectHash},
+             #{countDelta}, #{revenueDeltaMinor}, #{costDeltaMinor}, #{occurredAt}, #{ingestedAt},
+             #{payloadHash}, #{sourceTopic}, #{sourcePartition}, #{sourceOffset}, #{projectedAt})
+    </insert>
+
+    <select id="selectProjectionCounts"
+            resultType="com.acme.marketing.measurement.application.MeasurementProjectionRepository$FactCount">
+        SELECT fact_type AS factType, SUM(count_delta) AS countValue
+        FROM mk_dashboard_projection_delta
+        WHERE tenant_id = #{tenantId} AND occurred_at &gt;= #{from} AND occurred_at &lt; #{to}
+        GROUP BY fact_type
+        HAVING SUM(count_delta) &lt;&gt; 0
+    </select>
+
+    <select id="selectProjectionAmounts"
+            resultType="com.acme.marketing.measurement.application.MeasurementProjectionRepository$Amounts">
+        SELECT COALESCE(SUM(CAST(revenue_delta_minor AS DECIMAL(65, 0))), 0) AS revenue,
+               COALESCE(SUM(CAST(cost_delta_minor AS DECIMAL(65, 0))), 0) AS cost
+        FROM mk_dashboard_projection_delta
+        WHERE tenant_id = #{tenantId} AND occurred_at &gt;= #{from} AND occurred_at &lt; #{to}
+    </select>
+
+    <select id="selectProjectionSeries"
+            resultType="com.acme.marketing.measurement.application.MeasurementProjectionRepository$SeriesBucket">
+        SELECT
+            <choose>
+                <when test="hourly">SUBSTRING(occurred_at, 1, 13)</when>
+                <otherwise>SUBSTRING(occurred_at, 1, 10)</otherwise>
+            </choose> AS bucketValue,
+            COALESCE(SUM(CAST(revenue_delta_minor AS DECIMAL(65, 0))), 0) AS revenue,
+            COALESCE(SUM(CAST(cost_delta_minor AS DECIMAL(65, 0))), 0) AS cost,
+            COALESCE(SUM(CASE WHEN fact_type = 'CONVERSION' THEN count_delta ELSE 0 END), 0) AS conversions
+        FROM mk_dashboard_projection_delta
+        WHERE tenant_id = #{tenantId} AND occurred_at &gt;= #{from} AND occurred_at &lt; #{to}
+        GROUP BY bucketValue
+        ORDER BY bucketValue
+    </select>
+
+</mapper>

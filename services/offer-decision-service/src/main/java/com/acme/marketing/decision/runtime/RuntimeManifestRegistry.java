@@ -9,6 +9,7 @@ import com.acme.marketing.platform.crypto.StableBucket;
 import com.acme.marketing.platform.error.ConflictException;
 import com.acme.marketing.platform.error.NotFoundException;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
@@ -254,6 +255,28 @@ public final class RuntimeManifestRegistry {
 
     public int loadedDesiredCount() {
         return active.size();
+    }
+
+    /**
+     * 返回当前确实可路由的 generation 数量。readiness 不能只看已缓存 map 大小，
+     * 因为 manifest 或 activation 过期后，Decision 已无法安全接流。
+     */
+    public int usableGenerationCount() {
+        Instant now = clock.instant();
+        return (int) active.entrySet().stream().filter(entry -> {
+            ActiveRouting routing = entry.getValue();
+            if (routing.directive().activatedAt().isAfter(now)
+                    || !routing.directive().expiresAt().isAfter(now)
+                    || !routing.manifest().expiresAt().isAfter(now)) {
+                return false;
+            }
+            long primaryGeneration = routing.directive().generation();
+            if (!generations.containsKey(new SlotGeneration(entry.getKey(), primaryGeneration))) return false;
+            int canary = routing.directive().canaryBasisPoints();
+            return canary <= 0 || canary >= 10_000
+                    || generations.containsKey(new SlotGeneration(
+                            entry.getKey(), routing.directive().stableGeneration()));
+        }).count();
     }
 
     public ReleaseManifest currentManifest(String tenantId) {

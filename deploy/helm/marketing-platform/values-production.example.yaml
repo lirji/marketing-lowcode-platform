@@ -42,6 +42,10 @@ serviceMonitor:
   labels:
     release: kube-prometheus-stack
 
+autoscaling:
+  businessMetrics:
+    enabled: true
+
 flink:
   enabled: true
   createServiceAccount: true

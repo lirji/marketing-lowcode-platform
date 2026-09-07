@@ -2,6 +2,7 @@ package com.acme.marketing.benefit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.acme.marketing.benefit.application.BenefitFundingService;
@@ -13,6 +14,7 @@ import com.acme.marketing.contracts.offer.FundingShareClaim;
 import com.acme.marketing.contracts.offer.OfferLineClaim;
 import com.acme.marketing.contracts.offer.OfferTokenClaims;
 import com.acme.marketing.contracts.offer.OfferTokenCodec;
+import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.crypto.Ed25519;
 import com.acme.marketing.platform.identity.TenantId;
 import com.acme.marketing.testsupport.MySqlIntegrationTest;
@@ -53,8 +55,10 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
     private static final KeyPair OFFER_KEYS = Ed25519.generateKeyPair();
     private static final String CART_DIGEST = "sha256:" + "c".repeat(64);
     private static final AtomicInteger BENEFIT_SKU_REQUESTS = new AtomicInteger();
+    private static final AtomicInteger BENEFIT_CATALOG_STATUS = new AtomicInteger(200);
     private static final AtomicBoolean SKU_ACTIVE = new AtomicBoolean(true);
     private static final AtomicReference<String> FORWARDED_TENANT = new AtomicReference<>();
+    private static final AtomicReference<String> BENEFIT_AUTHORIZATION = new AtomicReference<>();
     private static final AtomicInteger AWARD_REQUESTS = new AtomicInteger();
     private static final AtomicReference<String> AWARD_IDEMPOTENCY_KEY = new AtomicReference<>();
     private static final AtomicReference<String> AWARD_TENANT = new AtomicReference<>();
@@ -64,6 +68,7 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
     private static final ConcurrentHashMap<String, String> RISK_PAYLOADS = new ConcurrentHashMap<>();
     private static final AtomicReference<String> RISK_AUTHORIZATION = new AtomicReference<>();
     private static final AtomicReference<String> RISK_TENANT = new AtomicReference<>();
+    private static final AtomicReference<String> RISK_TRACEPARENT = new AtomicReference<>();
     private static final AtomicReference<String> SKU_BENEFIT_TYPE = new AtomicReference<>("CASH");
     private static final Pattern TXN_ID = Pattern.compile("\\\"txnId\\\":\\\"([^\\\"]+)\\\"");
     private static final ExecutorService RISK_SERVER_EXECUTOR = Executors.newCachedThreadPool();
@@ -90,6 +95,7 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
                 () -> Base64.getEncoder().encodeToString(OFFER_KEYS.getPublic().getEncoded()));
         registry.add("marketing.benefit-center.base-url",
                 () -> "http://127.0.0.1:" + BENEFIT_CENTER.getAddress().getPort());
+        registry.add("marketing.benefit-center.bearer-token", () -> "benefit-test-token");
         registry.add("marketing.risk.base-url",
                 () -> "http://127.0.0.1:" + RISK_PLATFORM.getAddress().getPort());
         registry.add("marketing.risk.bearer-token", () -> "risk-test-token");
@@ -117,7 +123,9 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         assertEquals(1, first.size());
         assertEquals("sku-active", first.get(0).get("skuId").asString());
         assertEquals(first, cached);
-        assertEquals("tenant-a", FORWARDED_TENANT.get());
+        assertEquals("tenant-a", FORWARDED_TENANT.get(),
+                "service token authenticates the caller while the verified marketing tenant scopes the catalog");
+        assertEquals("Bearer benefit-test-token", BENEFIT_AUTHORIZATION.get());
         assertEquals(1, BENEFIT_SKU_REQUESTS.get(), "second list request should use tenant-scoped L1 cache");
 
         benefitSkuCatalog.list("tenant-b", SkuStatus.ACTIVE);
@@ -128,7 +136,8 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
 
         JsonNode stored = put("/api/v1/benefits/coupon-active", Map.of(
                 "name", "Active coupon", "status", "ACTIVE", "resourceKey", "",
-                "benefitSkuId", "sku-active", "policy", Map.of()), "benefit-command-active-001");
+                "benefitSkuId", "sku-active", "policy", Map.of("type", "CASH")),
+                "benefit-command-active-001");
         assertEquals("sku-active", stored.get("benefitSkuId").asString());
         assertEquals("sku-active", get("/api/v1/benefits/coupon-active").get("benefitSkuId").asString());
         assertTrue(BENEFIT_SKU_REQUESTS.get() >= 2, "ACTIVE publish must bypass the list cache");
@@ -137,7 +146,8 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         int requestsBeforeReplay = BENEFIT_SKU_REQUESTS.get();
         JsonNode replay = put("/api/v1/benefits/coupon-active", Map.of(
                 "name", "Active coupon", "status", "ACTIVE", "resourceKey", "",
-                "benefitSkuId", "sku-active", "policy", Map.of()), "benefit-command-active-001");
+                "benefitSkuId", "sku-active", "policy", Map.of("type", "CASH")),
+                "benefit-command-active-001");
         assertEquals(stored, replay);
         assertEquals(requestsBeforeReplay, BENEFIT_SKU_REQUESTS.get(),
                 "completed idempotent replay must not revalidate a subsequently paused SKU");
@@ -147,7 +157,7 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
                 .header("Idempotency-Key", "benefit-command-invalid-001")
                 .PUT(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(Map.of(
                         "name", "Invalid coupon", "status", "ACTIVE", "resourceKey", "",
-                        "benefitSkuId", "sku-paused", "policy", Map.of()))))
+                        "benefitSkuId", "sku-paused", "policy", Map.of("type", "COUPON")))))
                 .build();
         HttpResponse<String> rejected = client.send(invalid, HttpResponse.BodyHandlers.ofString());
         assertEquals(409, rejected.statusCode());
@@ -157,11 +167,111 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
     }
 
     @Test
+    void catalogSeparatesMissingMachineAuthenticationFromTenantMismatch() throws Exception {
+        BENEFIT_CATALOG_STATUS.set(401);
+        try {
+            HttpResponse<String> unauthorized = client.send(base(
+                            "/api/v1/benefit-skus?status=ACTIVE", "tenant-catalog-auth")
+                            .GET().build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(401, unauthorized.statusCode());
+            assertEquals("BENEFIT_CATALOG_AUTH_REQUIRED",
+                    mapper.readTree(unauthorized.body()).get("code").asString());
+
+            BENEFIT_CATALOG_STATUS.set(403);
+            HttpResponse<String> mismatch = client.send(base(
+                            "/api/v1/benefit-skus?status=ACTIVE", "tenant-catalog-mismatch")
+                            .GET().build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(403, mismatch.statusCode());
+            assertEquals("BENEFIT_CATALOG_TENANT_MISMATCH",
+                    mapper.readTree(mismatch.body()).get("code").asString());
+        } finally {
+            BENEFIT_CATALOG_STATUS.set(200);
+        }
+    }
+
+    @Test
+    void benefitAndAwardRejectSkuTypeMismatchWithoutSilentRewrite() throws Exception {
+        SKU_ACTIVE.set(true);
+        HttpResponse<String> bindingMismatch = client.send(base("/api/v1/benefits/type-mismatch")
+                .header("Content-Type", "application/json")
+                .header("Idempotency-Key", "benefit-type-mismatch-001")
+                .PUT(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(Map.of(
+                        "name", "Mismatched draft", "status", "DRAFT", "resourceKey", "",
+                        "benefitSkuId", "sku-active", "policy", Map.of("type", "COUPON")))))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(409, bindingMismatch.statusCode());
+        assertEquals("BENEFIT_SKU_TYPE_MISMATCH",
+                mapper.readTree(bindingMismatch.body()).get("code").asString());
+
+        put("/api/v1/benefits/award-type-guard", Map.of(
+                "name", "Type guarded cash", "status", "ACTIVE", "resourceKey", "",
+                "benefitSkuId", "sku-active", "policy", Map.of("type", "CASH")),
+                "benefit-type-guard-001");
+        jdbc.update("update mk_benefit_definition set policy_json=? where tenant_id=? and benefit_id=?",
+                "{\"type\":\"COUPON\"}", "tenant-a", "award-type-guard");
+        String source = "award-type-mismatch-001";
+        HttpResponse<String> awardMismatch = postRaw("/internal/v1/award-intents",
+                awardCommand(source, "campaign-type-guard", 1,
+                        "tenant-a", "award-type-guard@1", 500), source, "tenant-a");
+        assertEquals(409, awardMismatch.statusCode());
+        assertEquals("AWARD_BENEFIT_TYPE_MISMATCH",
+                mapper.readTree(awardMismatch.body()).get("code").asString());
+        assertEquals(0, riskRequestCount(source), "type mismatch must fail before risk and relay side effects");
+    }
+
+    @Test
+    void missingFencingEpochReturnsReadableBadRequest() throws Exception {
+        HttpResponse<String> response = client.send(base("/api/v1/funding/accounts")
+                .header("Content-Type", "application/json")
+                .header("Idempotency-Key", "missing-fence-account-001")
+                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(Map.of(
+                        "resourceKey", "INVENTORY:missing-fence", "type", "INVENTORY",
+                        "currency", "UNIT", "authorized", 10))))
+                .build(), HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(400, response.statusCode());
+        assertEquals("INVALID_ARGUMENT", mapper.readTree(response.body()).get("code").asString());
+        assertTrue(mapper.readTree(response.body()).get("detail").asString().contains("fencingEpoch"));
+    }
+
+    @Test
+    void releaseGateRejectsInactiveAndUnboundBenefitVersions() throws Exception {
+        SKU_ACTIVE.set(true);
+        put("/api/v1/benefits/release-active", Map.of(
+                "name", "Release active", "status", "ACTIVE", "resourceKey", "",
+                "benefitSkuId", "sku-active", "policy", Map.of("type", "CASH")),
+                "release-active-001");
+        JsonNode accepted = post("/internal/v1/benefits:assert-releasable",
+                Map.of("references", List.of("release-active@1")), null);
+        assertTrue(accepted.get("releasable").asBoolean());
+
+        put("/api/v1/benefits/release-draft", Map.of(
+                "name", "Release draft", "status", "DRAFT", "resourceKey", "",
+                "benefitSkuId", "sku-active", "policy", Map.of("type", "CASH")),
+                "release-draft-001");
+        HttpResponse<String> inactive = postRaw("/internal/v1/benefits:assert-releasable",
+                Map.of("references", List.of("release-draft@1")), null, "tenant-a");
+        assertEquals(409, inactive.statusCode());
+        assertEquals("BENEFIT_RELEASE_NOT_ACTIVE", mapper.readTree(inactive.body()).get("code").asString());
+
+        put("/api/v1/benefits/release-unbound", Map.of(
+                "name", "Release unbound", "status", "DRAFT", "resourceKey", "",
+                "policy", Map.of("type", "CASH")), "release-unbound-001");
+        jdbc.update("update mk_benefit_definition set status_name='ACTIVE' where tenant_id=? and benefit_id=?",
+                "tenant-a", "release-unbound");
+        HttpResponse<String> unbound = postRaw("/internal/v1/benefits:assert-releasable",
+                Map.of("references", List.of("release-unbound@1")), null, "tenant-a");
+        assertEquals(409, unbound.statusCode());
+        assertEquals("BENEFIT_RELEASE_UNBOUND", mapper.readTree(unbound.body()).get("code").asString());
+    }
+
+    @Test
     void centerAwardIntentIsConcurrentIdempotentAndRelayedExactlyOnce() throws Exception {
         SKU_ACTIVE.set(true);
         put("/api/v1/benefits/award-cash", Map.of(
                 "name", "Authoritative cash", "status", "ACTIVE", "resourceKey", "",
-                "benefitSkuId", "sku-active", "policy", Map.of()), "benefit-award-command-001");
+                "benefitSkuId", "sku-active", "policy", Map.of("type", "CASH")),
+                "benefit-award-command-001");
         String sourceRequestId = "award-source-center-001";
         Map<String, Object> command = awardCommand(sourceRequestId, "campaign-center", 7,
                 "tenant-a", "award-cash@1", 1_234);
@@ -192,6 +302,8 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         assertEquals(1, jdbc.queryForObject("select count(*) from mk_benefit_outbox where tenant_id=? and aggregate_id=(select intent_id from mk_award_intent_outbox where tenant_id=? and source_request_id=?) and destination_topic=?",
                 Integer.class, "tenant-a", "tenant-a", sourceRequestId, "marketing.award-expected.v1"));
         int riskChecksAfterFirstResult = riskRequestCount(sourceRequestId);
+        assertEquals(1, riskChecksAfterFirstResult,
+                "the durable pre-risk claim must allow only one concurrent risk evaluation");
         post("/internal/v1/award-intents", command, sourceRequestId);
         assertEquals(riskChecksAfterFirstResult, riskRequestCount(sourceRequestId),
                 "persisted idempotent replay must not evaluate risk again");
@@ -204,6 +316,8 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         assertEquals("subject-1", riskPayload.get("accountNo").asString());
         assertEquals("Bearer risk-test-token", RISK_AUTHORIZATION.get());
         assertEquals("tenant-a", RISK_TENANT.get());
+        assertTrue(RISK_TRACEPARENT.get().matches("00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]"),
+                "risk request must preserve the inbound trace across the bounded executor");
 
         String storedPayload = jdbc.queryForObject("select payload_json from mk_award_intent_outbox where tenant_id=? and source_request_id=?",
                 String.class, "tenant-a", sourceRequestId);
@@ -241,7 +355,8 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         assertEquals(0, replayRelay.sent());
         assertEquals(1, AWARD_REQUESTS.get());
         assertEquals(sourceRequestId, AWARD_IDEMPOTENCY_KEY.get());
-        assertEquals("tenant-a", AWARD_TENANT.get());
+        assertEquals("tenant-a", AWARD_TENANT.get(),
+                "relay must forward the persisted business tenant together with its machine identity");
         assertEquals(outbound, mapper.readTree(AWARD_PAYLOAD.get()));
         assertEquals(1L, jdbc.queryForObject("select lease_version from mk_award_intent_outbox where tenant_id=? and source_request_id=?",
                 Long.class, "tenant-a", sourceRequestId), "relay claim must advance the fencing generation");
@@ -260,7 +375,7 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         SKU_ACTIVE.set(true);
         putTenant("/api/v1/benefits/shadow-cash", Map.of(
                 "name", "Shadow cash", "status", "ACTIVE", "resourceKey", "",
-                "benefitSkuId", "sku-active", "policy", Map.of()),
+                "benefitSkuId", "sku-active", "policy", Map.of("type", "CASH")),
                 "benefit-shadow-command-001", "tenant-shadow");
         JsonNode shadow = postTenant("/internal/v1/award-intents",
                 awardCommand("award-shadow-001", "campaign-shadow", 1,
@@ -301,7 +416,8 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         SKU_ACTIVE.set(true);
         put("/api/v1/benefits/award-risk", Map.of(
                 "name", "Risk checked cash", "status", "ACTIVE", "resourceKey", "",
-                "benefitSkuId", "sku-active", "policy", Map.of()), "benefit-risk-command-001");
+                "benefitSkuId", "sku-active", "policy", Map.of("type", "CASH")),
+                "benefit-risk-command-001");
         String rejectedSource = "award-risk-reject-001";
         Map<String, Object> rejectedCommand = awardCommand(rejectedSource, "campaign-risk-union", 4,
                 "tenant-a", "award-risk@1", 700);
@@ -368,7 +484,8 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         SKU_ACTIVE.set(true);
         put("/api/v1/benefits/award-risk-unavailable", Map.of(
                 "name", "Unavailable risk cash", "status", "ACTIVE", "resourceKey", "",
-                "benefitSkuId", "sku-active", "policy", Map.of()), "benefit-risk-unavailable-001");
+                "benefitSkuId", "sku-active", "policy", Map.of("type", "CASH")),
+                "benefit-risk-unavailable-001");
         String timeoutSource = "award-risk-timeout-001";
         Map<String, Object> timeoutCommand = awardCommand(timeoutSource, "campaign-risk-unavailable", 5,
                 "tenant-a", "award-risk-unavailable@1", 800);
@@ -415,7 +532,7 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         SKU_ACTIVE.set(true);
         putTenant("/api/v1/benefits/shadow-risk", Map.of(
                 "name", "Shadow risk cash", "status", "ACTIVE", "resourceKey", "",
-                "benefitSkuId", "sku-active", "policy", Map.of()),
+                "benefitSkuId", "sku-active", "policy", Map.of("type", "CASH")),
                 "benefit-shadow-risk-001", "tenant-shadow");
         JsonNode shadow = postTenant("/internal/v1/award-intents",
                 awardCommand("award-shadow-reject-001", "campaign-mode-risk", 1,
@@ -451,7 +568,7 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         try {
             putTenant("/api/v1/benefits/coupon-risk", Map.of(
                     "name", "Coupon risk", "status", "ACTIVE", "resourceKey", "",
-                    "benefitSkuId", "sku-active", "policy", Map.of()),
+                    "benefitSkuId", "sku-active", "policy", Map.of("type", "COUPON")),
                     "benefit-coupon-risk-001", "tenant-coupon");
             postTenant("/internal/v1/award-intents",
                     awardCommand("award-coupon-allow-001", "campaign-coupon-risk", 1,
@@ -489,7 +606,8 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         SKU_ACTIVE.set(true);
         put("/api/v1/benefits/award-dead", Map.of(
                 "name", "Rejected cash", "status", "ACTIVE", "resourceKey", "",
-                "benefitSkuId", "sku-active", "policy", Map.of()), "benefit-award-dead-command-001");
+                "benefitSkuId", "sku-active", "policy", Map.of("type", "CASH")),
+                "benefit-award-dead-command-001");
         String sourceRequestId = "award-source-dead-001";
         post("/internal/v1/award-intents",
                 awardCommand(sourceRequestId, "campaign-dead", 3, "tenant-a", "award-dead@1", 300),
@@ -531,6 +649,22 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         String applicationId = first.get("applicationId").asString();
         assertEquals(applicationId, duplicate.get("applicationId").asString());
         assertEquals("RESERVED", first.get("state").asString());
+        assertEquals(16, jdbc.queryForObject(
+                "select count(*) from mk_resource_escrow_bucket where tenant_id=? and resource_key=?",
+                Integer.class, "tenant-a", "BUDGET:PLATFORM:platform:CNY"));
+        assertEquals(2, jdbc.queryForObject(
+                "select count(*) from mk_resource_escrow_bucket where tenant_id=? and resource_key=? and reserved_amount>0",
+                Integer.class, "tenant-a", "BUDGET:PLATFORM:platform:CNY"));
+        assertEquals(700L, jdbc.queryForObject(
+                "select sum(reserved_amount) from mk_resource_escrow_bucket where tenant_id=? and resource_key=?",
+                Long.class, "tenant-a", "BUDGET:PLATFORM:platform:CNY"));
+        assertEquals(0L, jdbc.queryForObject(
+                "select reserved_amount from mk_resource_account where tenant_id=? and resource_key=?",
+                Long.class, "tenant-a", "BUDGET:PLATFORM:platform:CNY"),
+                "budget balance writes must not serialize on the resource-account root row");
+        assertEquals(3, jdbc.queryForObject(
+                "select count(*) from mk_reservation_escrow_allocation where tenant_id=? and application_id=?",
+                Integer.class, "tenant-a", applicationId));
 
         post("/api/v1/funding/accounts/INVENTORY:benefit-v1:advance-fence",
                 Map.of("expectedEpoch", 1, "state", "ACTIVE"), null);
@@ -558,6 +692,65 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
     }
 
     @Test
+    void concurrentHotBudgetReservationsSpreadAcrossEscrowBucketsWithoutOverspend() throws Exception {
+        String inventory = "INVENTORY:benefit-hot-v1";
+        String budget = "BUDGET:PLATFORM:hot-platform:CNY";
+        createAccount(inventory, "INVENTORY", "UNIT", 1_000);
+        createAccount(budget, "BUDGET", "CNY", 10_000);
+        var pool = Executors.newFixedThreadPool(16);
+        try {
+            List<Callable<JsonNode>> calls = java.util.stream.IntStream.range(0, 16)
+                    .mapToObj(index -> (Callable<JsonNode>) () -> post(
+                            "/api/v1/promotion-applications",
+                            Map.of("offerToken", hotBudgetToken(index), "cartDigest", CART_DIGEST,
+                                    "orderId", "hot-order-" + index, "expectedFencingEpochs",
+                                    Map.of(inventory, 1, budget, 1)),
+                            "hot-reserve-command-" + index))
+                    .toList();
+            List<JsonNode> applications = pool.invokeAll(calls).stream().map(future -> {
+                try { return future.get(); }
+                catch (Exception failure) { throw new IllegalStateException(failure); }
+            }).toList();
+            assertEquals(16, applications.stream()
+                    .map(value -> value.get("applicationId").asString()).distinct().count());
+        } finally {
+            pool.shutdownNow();
+        }
+
+        for (int index = 16; index < 100; index++) {
+            post("/api/v1/promotion-applications",
+                    Map.of("offerToken", hotBudgetToken(index), "cartDigest", CART_DIGEST,
+                            "orderId", "hot-order-" + index, "expectedFencingEpochs",
+                            Map.of(inventory, 1, budget, 1)),
+                    "hot-reserve-command-" + index);
+        }
+        HttpResponse<String> exhausted = postRaw("/api/v1/promotion-applications",
+                Map.of("offerToken", hotBudgetToken(100), "cartDigest", CART_DIGEST,
+                        "orderId", "hot-order-100", "expectedFencingEpochs",
+                        Map.of(inventory, 1, budget, 1)),
+                "hot-reserve-command-100", "tenant-a");
+        assertEquals(409, exhausted.statusCode());
+        assertTrue(exhausted.body().contains("REPRICE_REQUIRED"));
+
+        assertTrue(jdbc.queryForObject(
+                "select count(distinct bucket_id) from mk_reservation_escrow_allocation where tenant_id=? and resource_key=?",
+                Integer.class, "tenant-a", budget) > 1,
+                "stable quote hashing must spread normal reservations across independent rows");
+        assertEquals(10_000L, jdbc.queryForObject(
+                "select sum(reserved_amount) from mk_resource_escrow_bucket where tenant_id=? and resource_key=?",
+                Long.class, "tenant-a", budget));
+        assertEquals(0, jdbc.queryForObject(
+                "select count(*) from mk_resource_escrow_bucket where tenant_id=? and resource_key=? and authorized_amount<>available_amount+reserved_amount+consumed_amount",
+                Integer.class, "tenant-a", budget));
+        assertEquals(10_000L, jdbc.queryForObject(
+                "select sum(amount_value) from mk_funding_ledger where tenant_id=? and resource_key=? and operation_name='RESERVE'",
+                Long.class, "tenant-a", budget));
+        assertEquals(0L, jdbc.queryForObject(
+                "select reserved_amount from mk_resource_account where tenant_id=? and resource_key=?",
+                Long.class, "tenant-a", budget));
+    }
+
+    @Test
     void journeyGrantConsumesInventoryExactlyOnce() throws Exception {
         createAccount("INVENTORY:journey-grant-v1", "INVENTORY", "UNIT", 5);
         JourneyEffectCommand command = new JourneyEffectCommand("JOURNEY_EFFECT_COMMAND", "tenant-a",
@@ -577,7 +770,8 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
 
     private void createAccount(String key, String type, String currency, long authorized) throws Exception {
         post("/api/v1/funding/accounts", Map.of("resourceKey", key, "type", type, "currency", currency,
-                "authorized", authorized, "fencingEpoch", 1), null);
+                "authorized", authorized, "fencingEpoch", 1),
+                "account-" + Digests.sha256Hex(key).substring(0, 16));
     }
 
     private static String token() {
@@ -589,6 +783,17 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
                 "order-1", List.of("shop-1"), CART_DIGEST, "quote-1", "request-1", 1,
                 List.of("artifact-1"), List.of(line),
                 "terms-v1", now.minusSeconds(1), now.plusSeconds(300), "nonce-1", List.of());
+        return OfferTokenCodec.encode("offer-test-key", OFFER_KEYS.getPrivate(), claims);
+    }
+
+    private static String hotBudgetToken(int index) {
+        Instant now = Instant.now();
+        OfferLineClaim line = new OfferLineClaim("hot-offer-" + index, "benefit-hot-v1", "CNY", 100, 1,
+                List.of(new FundingShareClaim("PLATFORM", "hot-platform", "CNY", 100)));
+        OfferTokenClaims claims = new OfferTokenClaims("decision", new TenantId("tenant-a"), "org-a", "subject-1",
+                "hot-order-" + index, List.of("shop-1"), CART_DIGEST, "hot-quote-" + index,
+                "hot-request-" + index, 1, List.of("artifact-1"), List.of(line),
+                "terms-v1", now.minusSeconds(1), now.plusSeconds(300), "hot-nonce-" + index, List.of());
         return OfferTokenCodec.encode("offer-test-key", OFFER_KEYS.getPrivate(), claims);
     }
 
@@ -672,9 +877,23 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
     private static HttpServer startBenefitCenter() {
         try {
             HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-            server.createContext("/admin/v1/skus", exchange -> {
+            server.createContext("/internal/v1/catalog/skus", exchange -> {
                 BENEFIT_SKU_REQUESTS.incrementAndGet();
                 FORWARDED_TENANT.set(exchange.getRequestHeaders().getFirst("X-Tenant-Id"));
+                BENEFIT_AUTHORIZATION.set(exchange.getRequestHeaders().getFirst("Authorization"));
+                int responseStatus = BENEFIT_CATALOG_STATUS.get();
+                if (responseStatus != 200) {
+                    byte[] problem = (responseStatus == 401
+                            ? "{\"code\":\"UNAUTHORIZED\"}"
+                            : "{\"code\":\"BENEFIT_TENANT_MISMATCH\"}")
+                            .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().set("Content-Type", "application/problem+json");
+                    exchange.sendResponseHeaders(responseStatus, problem.length);
+                    try (var output = exchange.getResponseBody()) {
+                        output.write(problem);
+                    }
+                    return;
+                }
                 String active = SKU_ACTIVE.get() ? """
                           {"skuId":"sku-active","benefitType":"%s","faceValueMinor":8000,
                            "currency":"CNY","status":"ACTIVE","enabled":true,"validityType":"RELATIVE",
@@ -732,6 +951,7 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
                 RISK_PAYLOADS.put(transactionId, requestBody);
                 RISK_AUTHORIZATION.set(exchange.getRequestHeaders().getFirst("Authorization"));
                 RISK_TENANT.set(exchange.getRequestHeaders().getFirst("X-Tenant-Id"));
+                RISK_TRACEPARENT.set(exchange.getRequestHeaders().getFirst("traceparent"));
 
                 if (transactionId.contains("timeout")) {
                     try {

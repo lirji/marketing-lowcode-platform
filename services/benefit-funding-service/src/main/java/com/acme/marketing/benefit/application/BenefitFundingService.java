@@ -28,8 +28,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.Supplier;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -40,22 +39,30 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class BenefitFundingService {
-    private final JdbcTemplate jdbc;
+    private final BenefitFundingRepository repository;
     private final ObjectMapper mapper;
     private final Clock clock;
     private final OfferTokenTrust tokenTrust;
     private final BenefitSkuCatalog benefitSkuCatalog;
     private final TransactionTemplate isolatedTransactions;
+    private final int budgetBucketCount;
 
-    public BenefitFundingService(JdbcTemplate jdbc, ObjectMapper mapper, Clock clock, OfferTokenTrust tokenTrust,
-            BenefitSkuCatalog benefitSkuCatalog, PlatformTransactionManager transactionManager) {
-        this.jdbc = jdbc;
+    /** 构造资金应用服务；数据库实现经持久化端口注入，应用层不绑定 MyBatis。 */
+    public BenefitFundingService(BenefitFundingRepository repository, ObjectMapper mapper, Clock clock,
+            OfferTokenTrust tokenTrust,
+            BenefitSkuCatalog benefitSkuCatalog, PlatformTransactionManager transactionManager,
+            @Value("${marketing.funding.budget-bucket-count:16}") int budgetBucketCount) {
+        if (budgetBucketCount < 2 || budgetBucketCount > 64) {
+            throw new IllegalArgumentException("budget bucket count must be in [2,64]");
+        }
+        this.repository = repository;
         this.mapper = mapper;
         this.clock = clock;
         this.tokenTrust = tokenTrust;
         this.benefitSkuCatalog = benefitSkuCatalog;
         this.isolatedTransactions = new TransactionTemplate(transactionManager);
         this.isolatedTransactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.budgetBucketCount = budgetBucketCount;
     }
 
     @Transactional
@@ -65,10 +72,13 @@ public class BenefitFundingService {
         ResourceAccount account = new ResourceAccount(request.resourceKey(), request.type(), request.currency(),
                 request.authorized(), request.authorized(), 0, 0, 0, request.fencingEpoch(), 0,
                 ResourceAccount.State.ACTIVE);
-        jdbc.update("insert into mk_resource_account(tenant_id,resource_key,resource_type,currency_code,authorized_amount,available_amount,reserved_amount,consumed_amount,returned_amount,fencing_epoch,version_no,state_name,updated_at) values(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                scope.tenantId().value(), account.resourceKey(), account.type().name(), account.currency(),
-                account.authorized(), account.available(), account.reserved(), account.consumed(), account.returned(),
-                account.fencingEpoch(), account.version(), account.state().name(), format(clock.instant()));
+        repository.saveAccount(new BenefitFundingRepository.AccountWrite(scope.tenantId().value(),
+                account.resourceKey(), account.type().name(), account.currency(), account.authorized(),
+                account.available(), account.reserved(), account.consumed(), account.returned(),
+                account.fencingEpoch(), account.version(), account.state().name(), format(clock.instant())));
+        if (account.type() == ResourceAccount.Type.BUDGET) {
+            createBudgetBuckets(scope.tenantId().value(), account);
+        }
         return AccountView.from(account);
     }
 
@@ -76,26 +86,58 @@ public class BenefitFundingService {
     public List<AccountView> accounts() {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("funding:account-read");
-        return jdbc.query("select resource_key,resource_type,currency_code,authorized_amount,available_amount,reserved_amount,consumed_amount,returned_amount,fencing_epoch,version_no,state_name from mk_resource_account where tenant_id=? order by resource_key",
-                (rs, rowNum) -> AccountView.from(resourceAccount(rs)), scope.tenantId().value());
+        List<ResourceAccount> roots = repository.findAccounts(scope.tenantId().value(), true);
+        return roots.stream().map(account -> accountView(scope.tenantId().value(), account)).toList();
     }
 
     @Transactional(readOnly = true)
     public List<BenefitView> benefits() {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("benefit:read");
-        return jdbc.query("select benefit_id,version_no,name_text,status_name,resource_key,benefit_sku_id,policy_json,created_by,created_at from mk_benefit_definition current where tenant_id=? and version_no=(select max(latest.version_no) from mk_benefit_definition latest where latest.tenant_id=current.tenant_id and latest.benefit_id=current.benefit_id) order by name_text,benefit_id",
-                (rs, rowNum) -> benefitView(rs), scope.tenantId().value());
+        return repository.findLatestBenefits(scope.tenantId().value()).stream()
+                .map(this::benefitView).toList();
     }
 
     @Transactional(readOnly = true)
     public BenefitView benefit(String benefitId) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("benefit:read");
-        List<BenefitView> rows = jdbc.query("select benefit_id,version_no,name_text,status_name,resource_key,benefit_sku_id,policy_json,created_by,created_at from mk_benefit_definition where tenant_id=? and benefit_id=? order by version_no desc limit 1",
-                (rs, rowNum) -> benefitView(rs), scope.tenantId().value(), benefitId);
-        if (rows.isEmpty()) throw new NotFoundException("BENEFIT_NOT_FOUND", "benefit not found");
-        return rows.getFirst();
+        return repository.findLatestBenefit(scope.tenantId().value(), benefitId)
+                .map(this::benefitView)
+                .orElseThrow(() -> new NotFoundException("BENEFIT_NOT_FOUND", "benefit not found"));
+    }
+
+    /** 发布门禁按不可变 definition version 校验，且每次直读权益中台，避免 ACTIVE 状态缓存窗口。 */
+    @Transactional(readOnly = true)
+    public ReleaseEligibility assertReleasable(Set<String> references) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("release:write");
+        if (references == null || references.isEmpty()) {
+            throw new IllegalArgumentException("benefit definition references are required");
+        }
+        for (String reference : references) {
+            BenefitVersion version = BenefitVersion.parse(reference);
+            BenefitFundingRepository.ReleaseBenefitRow row = repository.findReleaseBenefit(
+                    scope.tenantId().value(), version.benefitId(), version.version()).orElse(null);
+            if (row == null) {
+                throw new ConflictException("BENEFIT_RELEASE_NOT_FOUND",
+                        "referenced BenefitDefinition version does not exist: " + reference);
+            }
+            ReleaseBenefit benefit = new ReleaseBenefit(row.status(), row.benefitSkuId(),
+                    readMap(row.policyJson()));
+            if (!BenefitStatus.ACTIVE.name().equals(benefit.status())) {
+                throw new ConflictException("BENEFIT_RELEASE_NOT_ACTIVE",
+                        "referenced BenefitDefinition is not ACTIVE: " + reference);
+            }
+            if (benefit.benefitSkuId() == null || benefit.benefitSkuId().isBlank()) {
+                throw new ConflictException("BENEFIT_RELEASE_UNBOUND",
+                        "referenced BenefitDefinition has no benefit SKU: " + reference);
+            }
+            BenefitSkuView sku = benefitSkuCatalog.requireActiveSku(
+                    scope.tenantId().value(), benefit.benefitSkuId());
+            requireMatchingBenefitType(benefit.policy(), sku);
+        }
+        return new ReleaseEligibility(true, Set.copyOf(references));
     }
 
     @Transactional
@@ -108,38 +150,43 @@ public class BenefitFundingService {
         String payloadHash = Digests.sha256Hex("BENEFIT_PUT|" + benefitId + '|' + json(request));
         return command(scope.tenantId().value(), commandId, payloadHash, BenefitView.class,
                 () -> {
-                    // 只让首次幂等命令执行发布校验；成功命令回放必须返回原响应，不受后续模板暂停影响。
-                    if (request.status() == BenefitStatus.ACTIVE) {
-                        if (request.benefitSkuId() == null) {
-                            throw new ConflictException("SKU_NOT_ACTIVE",
-                                    "ACTIVE benefit must bind an ACTIVE benefit SKU");
-                        }
-                        benefitSkuCatalog.requireActive(scope.tenantId().value(), request.benefitSkuId());
+                    // 只让首次幂等命令执行绑定校验；成功回放不受后续模板暂停影响。
+                    if (request.benefitSkuId() != null) {
+                        BenefitSkuView sku = benefitSkuCatalog.requireActiveSku(
+                                scope.tenantId().value(), request.benefitSkuId());
+                        requireMatchingBenefitType(request.policy(), sku);
+                    } else if (request.status() == BenefitStatus.ACTIVE) {
+                        throw new ConflictException("SKU_NOT_ACTIVE",
+                                "ACTIVE benefit must bind an ACTIVE benefit SKU");
                     }
                     return putBenefitNow(scope.tenantId().value(), scope.actorId(), benefitId, request);
                 });
     }
 
+    /** SKU 类型和营销策略类型必须完全一致，禁止在入库或发奖时静默改写语义。 */
+    private static void requireMatchingBenefitType(Map<String, Object> policy, BenefitSkuView sku) {
+        Object configured = policy.get("type");
+        if (!(configured instanceof String type) || !sku.benefitType().equals(type)) {
+            throw new ConflictException("BENEFIT_SKU_TYPE_MISMATCH",
+                    "policy.type must exactly match benefit SKU type " + sku.benefitType());
+        }
+    }
+
     private BenefitView putBenefitNow(String tenantId, String actorId, String benefitId, BenefitRequest request) {
-        jdbc.update("insert into mk_benefit_definition_head(tenant_id,benefit_id,latest_version) values(?,?,?) on duplicate key update benefit_id=benefit_id",
-                tenantId, benefitId, 0);
-        Long current = jdbc.query("select latest_version from mk_benefit_definition_head where tenant_id=? and benefit_id=? for update",
-                rs -> rs.next() ? rs.getLong(1) : null, tenantId, benefitId);
-        if (current == null) throw new IllegalStateException("benefit version head was not created");
+        repository.ensureBenefitHead(tenantId, benefitId);
+        long current = repository.findBenefitHeadForUpdate(tenantId, benefitId)
+                .orElseThrow(() -> new IllegalStateException("benefit version head was not created"));
         long version = Math.addExact(current, 1);
         if (!request.resourceKey().isBlank()) {
-            Integer resources = jdbc.query("select count(*) from mk_resource_account where tenant_id=? and resource_key=?",
-                    rs -> rs.next() ? rs.getInt(1) : 0, tenantId, request.resourceKey());
-            if (resources == null || resources == 0) {
+            if (repository.countResource(tenantId, request.resourceKey()) == 0) {
                 throw new ConflictException("BENEFIT_RESOURCE_NOT_FOUND", request.resourceKey());
             }
         }
         Instant now = clock.instant();
-        jdbc.update("insert into mk_benefit_definition(tenant_id,benefit_id,version_no,name_text,status_name,resource_key,benefit_sku_id,policy_json,created_by,created_at) values(?,?,?,?,?,?,?,?,?,?)",
-                tenantId, benefitId, version, request.name(), request.status().name(), request.resourceKey(),
-                request.benefitSkuId(), json(request.policy()), actorId, format(now));
-        jdbc.update("update mk_benefit_definition_head set latest_version=? where tenant_id=? and benefit_id=?",
-                version, tenantId, benefitId);
+        repository.saveBenefit(new BenefitFundingRepository.BenefitWrite(tenantId, benefitId, version,
+                request.name(), request.status().name(), request.resourceKey(), request.benefitSkuId(),
+                json(request.policy()), actorId, format(now)));
+        repository.updateBenefitHead(tenantId, benefitId, version);
         return new BenefitView(benefitId, version, request.name(), request.status(), request.resourceKey(),
                 request.benefitSkuId(), request.policy(), actorId, now);
     }
@@ -164,11 +211,21 @@ public class BenefitFundingService {
         ResourceAccount next = new ResourceAccount(current.resourceKey(), current.type(), current.currency(),
                 current.authorized(), current.available(), current.reserved(), current.consumed(), current.returned(),
                 Math.addExact(current.fencingEpoch(), 1), Math.addExact(current.version(), 1), request.state());
-        int updated = jdbc.update("update mk_resource_account set fencing_epoch=?,version_no=?,state_name=?,updated_at=? where tenant_id=? and resource_key=? and fencing_epoch=? and version_no=?",
-                next.fencingEpoch(), next.version(), next.state().name(), format(clock.instant()),
-                scope.tenantId().value(), resourceKey, current.fencingEpoch(), current.version());
+        int updated = repository.updateAccountFence(new BenefitFundingRepository.AccountFenceWrite(
+                scope.tenantId().value(), resourceKey, next.fencingEpoch(), next.version(), next.state().name(),
+                format(clock.instant()), current.fencingEpoch(), current.version()));
         if (updated != 1) throw new ConflictException("RESOURCE_CONCURRENT_MODIFICATION", resourceKey);
-        return AccountView.from(next);
+        if (current.type() == ResourceAccount.Type.BUDGET) {
+            // fencing 是低频控制面动作；同一事务更新全部分桶，阻断旧纪元写者且不进入余额热路径。
+            int expectedBuckets = repository.countBuckets(scope.tenantId().value(), resourceKey);
+            int bucketUpdates = repository.updateBucketFence(new BenefitFundingRepository.BucketFenceWrite(
+                    scope.tenantId().value(), resourceKey, next.fencingEpoch(), next.state().name(),
+                    current.fencingEpoch(), format(clock.instant())));
+            if (expectedBuckets == 0 || bucketUpdates != expectedBuckets) {
+                throw new ConflictException("RESOURCE_BUCKET_FENCE_INCOMPLETE", resourceKey);
+            }
+        }
+        return accountView(scope.tenantId().value(), next);
     }
 
     @Transactional
@@ -198,13 +255,12 @@ public class BenefitFundingService {
         ResourceAccount next = account.grant(quantity, expectedEpoch);
         saveAccount(command.tenantId(), next);
         Instant now = clock.instant();
-        jdbc.update("insert into mk_journey_benefit_grant(tenant_id,command_id,enrollment_id,subject_token,journey_id,journey_version,resource_key,benefit_id,quantity_value,fencing_epoch,state_name,created_at) values(?,?,?,?,?,?,?,?,?,?,?,?)",
-                command.tenantId(), command.commandId(), command.enrollmentId(), command.subjectToken(),
-                command.journeyId(), command.journeyVersion(), resourceKey,
-                command.payload().getOrDefault("benefitId", resourceKey), quantity, next.fencingEpoch(),
-                "GRANTED", format(now));
+        repository.saveJourneyGrant(new BenefitFundingRepository.JourneyGrantWrite(command.tenantId(),
+                command.commandId(), command.enrollmentId(), command.subjectToken(), command.journeyId(),
+                command.journeyVersion(), resourceKey, command.payload().getOrDefault("benefitId", resourceKey),
+                quantity, next.fencingEpoch(), "GRANTED", format(now)));
         ledger(command.tenantId(), command.commandId(), command.enrollmentId(), resourceKey,
-                "GRANT", "AVAILABLE", "CONSUMED", quantity, next.version(), null, now);
+                "GRANT", "AVAILABLE", "CONSUMED", quantity, next.version(), 0, null, now);
         outbox(command.tenantId(), command.commandId(), "JourneyBenefitGranted", now);
         return new JourneyGrantView(command.commandId(), command.enrollmentId(), resourceKey,
                 command.payload().getOrDefault("benefitId", resourceKey), quantity, next.fencingEpoch(), now);
@@ -233,9 +289,11 @@ public class BenefitFundingService {
             throw new ConflictException("FENCING_EPOCHS_INCOMPLETE",
                     "every reserved resource requires exactly one fencing epoch");
         }
-        List<ResourceAccount> accounts = lockAccounts(tenantId, demands.keySet().stream().sorted().toList());
+        List<ResourceAccount> accounts = loadAccountsForReserve(
+                tenantId, demands.keySet().stream().sorted().toList());
         Map<String, ResourceAccount> byKey = new LinkedHashMap<>();
         accounts.forEach(account -> byKey.put(account.resourceKey(), account));
+        Map<String, List<BalanceMutation>> mutations = new LinkedHashMap<>();
         for (ResourceDemand demand : demands.values().stream().sorted(Comparator.comparing(ResourceDemand::resourceKey)).toList()) {
             ResourceAccount account = byKey.get(demand.resourceKey());
             if (account == null) throw new ConflictException("REPRICE_REQUIRED", "resource is unavailable: " + demand.resourceKey());
@@ -243,28 +301,47 @@ public class BenefitFundingService {
                 throw new ConflictException("RESOURCE_SEMANTICS_MISMATCH", demand.resourceKey());
             }
             long expectedEpoch = request.expectedFencingEpochs().get(demand.resourceKey());
-            ResourceAccount next = account.reserve(demand.amount(), expectedEpoch);
-            saveAccount(tenantId, next);
-            byKey.put(demand.resourceKey(), next);
+            if (account.type() == ResourceAccount.Type.BUDGET) {
+                mutations.put(demand.resourceKey(), reserveBudgetBuckets(
+                        tenantId, account, demand.amount(), expectedEpoch, claims.quoteId()));
+            } else {
+                ResourceAccount next = account.reserve(demand.amount(), expectedEpoch);
+                saveAccount(tenantId, next);
+                byKey.put(demand.resourceKey(), next);
+                mutations.put(demand.resourceKey(), List.of(new BalanceMutation(
+                        next.fencingEpoch(), next.version(), 0, demand.amount())));
+            }
         }
         String applicationId = UUID.randomUUID().toString();
         Instant now = clock.instant();
-        try {
-            jdbc.update("insert into mk_promotion_application(tenant_id,application_id,quote_id,decision_request_id,order_id,organization_id,shop_ids_json,cart_digest,token_digest,generation_no,state_name,total_discount,currency_code,expires_at,created_at,updated_at,expiry_next_attempt_at) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    tenantId, applicationId, claims.quoteId(), claims.decisionRequestId(), request.orderId(),
-                    claims.organizationId(), json(new java.util.TreeSet<>(claims.shopIds())),
-                    request.cartDigest(), Digests.sha256Hex(request.offerToken()), claims.generation(),
-                    ApplicationState.RESERVED.name(), claims.totalDiscountMinorUnits(), claims.offerLines().getFirst().currency(),
-                    format(claims.expiresAt()), format(now), format(now), format(now));
-        } catch (DuplicateKeyException replay) {
+        boolean created = repository.trySaveApplication(new BenefitFundingRepository.ApplicationWrite(
+                tenantId, applicationId, claims.quoteId(), claims.decisionRequestId(), request.orderId(),
+                claims.organizationId(), json(new java.util.TreeSet<>(claims.shopIds())), request.cartDigest(),
+                Digests.sha256Hex(request.offerToken()), claims.generation(), ApplicationState.RESERVED.name(),
+                claims.totalDiscountMinorUnits(), claims.offerLines().getFirst().currency(),
+                format(claims.expiresAt()), format(now), format(now), format(now)));
+        if (!created) {
             throw new ConflictException("OFFER_TOKEN_REPLAYED", "offer token quote was already reserved");
         }
         for (ResourceDemand demand : demands.values()) {
-            jdbc.update("insert into mk_reservation_item(tenant_id,application_id,resource_key,resource_type,currency_code,original_amount,reserved_amount,consumed_amount,refunded_amount,released_amount,reservation_epoch) values(?,?,?,?,?,?,?,?,?,?,?)",
-                    tenantId, applicationId, demand.resourceKey(), demand.type().name(), demand.currency(), demand.amount(),
-                    demand.amount(), 0, 0, 0, byKey.get(demand.resourceKey()).fencingEpoch());
-            ledger(tenantId, applicationId, request.orderId(), demand.resourceKey(), "RESERVE",
-                    "AVAILABLE", "RESERVED", demand.amount(), byKey.get(demand.resourceKey()).version(), null, now);
+            List<BalanceMutation> resourceMutations = mutations.get(demand.resourceKey());
+            BalanceMutation firstMutation = resourceMutations.getFirst();
+            repository.saveReservationItem(new BenefitFundingRepository.ReservationItemWrite(
+                    tenantId, applicationId, demand.resourceKey(), demand.type().name(), demand.currency(),
+                    demand.amount(), demand.amount(), 0, 0, 0, firstMutation.fencingEpoch()));
+            if (demand.type() == ResourceAccount.Type.BUDGET) {
+                for (BalanceMutation mutation : resourceMutations) {
+                    repository.saveEscrowAllocation(new BenefitFundingRepository.EscrowAllocationWrite(
+                            tenantId, applicationId, demand.resourceKey(), mutation.bucketId(), mutation.amount(),
+                            mutation.amount(), 0, 0, 0, mutation.fencingEpoch()));
+                    ledger(tenantId, applicationId, request.orderId(), demand.resourceKey(), "RESERVE",
+                            "AVAILABLE", "RESERVED", mutation.amount(), mutation.version(), mutation.bucketId(),
+                            null, now);
+                }
+            } else {
+                ledger(tenantId, applicationId, request.orderId(), demand.resourceKey(), "RESERVE",
+                        "AVAILABLE", "RESERVED", demand.amount(), firstMutation.version(), 0, null, now);
+            }
         }
         outbox(tenantId, applicationId, "PromotionReserved", now);
         return application(tenantId, applicationId);
@@ -305,9 +382,9 @@ public class BenefitFundingService {
         scope.requirePermission("promotion:expire");
         if (limit < 1 || limit > 1_000) throw new IllegalArgumentException("expiry limit must be in [1,1000]");
         Instant now = clock.instant();
-        List<ExpiredApplication> candidates = jdbc.query("select tenant_id,application_id from mk_promotion_application where tenant_id=? and state_name='RESERVED' and expires_at<=? and expiry_next_attempt_at<=? order by expires_at limit ?",
-                (rs, rowNum) -> new ExpiredApplication(rs.getString(1), rs.getString(2)),
-                scope.tenantId().value(), format(now), format(now), limit);
+        List<ExpiredApplication> candidates = repository.findExpiredApplications(
+                        scope.tenantId().value(), format(now), limit).stream()
+                .map(row -> new ExpiredApplication(row.tenantId(), row.applicationId())).toList();
         return expireCandidates(candidates, scope, now);
     }
 
@@ -315,9 +392,8 @@ public class BenefitFundingService {
     public ExpirationResult expireDueReservations(int limit) {
         if (limit < 1 || limit > 1_000) throw new IllegalArgumentException("expiry limit must be in [1,1000]");
         Instant now = clock.instant();
-        List<ExpiredApplication> candidates = jdbc.query("select tenant_id,application_id from mk_promotion_application where state_name='RESERVED' and expires_at<=? and expiry_next_attempt_at<=? order by expires_at limit ?",
-                (rs, rowNum) -> new ExpiredApplication(rs.getString(1), rs.getString(2)),
-                format(now), format(now), limit);
+        List<ExpiredApplication> candidates = repository.findExpiredApplications(null, format(now), limit).stream()
+                .map(row -> new ExpiredApplication(row.tenantId(), row.applicationId())).toList();
         return expireCandidates(candidates, null, now);
     }
 
@@ -340,24 +416,24 @@ public class BenefitFundingService {
         if (application.state() != ApplicationState.RESERVED || application.expiresAt().isAfter(now)) return false;
         List<ReservationItem> items = lockItems(candidate.tenantId(), candidate.applicationId());
         apply(candidate.tenantId(), application, items, Operation.RELEASE, Map.of(), null);
-        int updated = jdbc.update("update mk_promotion_application set state_name='EXPIRED',updated_at=? where tenant_id=? and application_id=? and state_name='RESERVED'",
-                format(now), candidate.tenantId(), candidate.applicationId());
+        int updated = repository.expireApplication(
+                candidate.tenantId(), candidate.applicationId(), format(now));
         if (updated != 1) return false;
         outbox(candidate.tenantId(), candidate.applicationId(), "PromotionExpired", now);
         return true;
     }
 
     private void recordExpirationFailure(ExpiredApplication candidate, RuntimeException failure, Instant now) {
-        Integer attempts = jdbc.query("select expiry_attempts from mk_promotion_application where tenant_id=? and application_id=? for update",
-                rs -> rs.next() ? rs.getInt(1) : null, candidate.tenantId(), candidate.applicationId());
+        Integer attempts = repository.findExpiryAttemptsForUpdate(
+                candidate.tenantId(), candidate.applicationId()).orElse(null);
         if (attempts == null) return;
         int nextAttempts = Math.addExact(attempts, 1);
         long delaySeconds = Math.min(300, 1L << Math.min(8, nextAttempts - 1));
         String error = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
         if (error.length() > 1_000) error = error.substring(0, 1_000);
-        jdbc.update("update mk_promotion_application set expiry_attempts=?,expiry_next_attempt_at=?,expiry_last_error=? where tenant_id=? and application_id=? and state_name='RESERVED'",
-                nextAttempts, format(now.plusSeconds(delaySeconds)), error,
-                candidate.tenantId(), candidate.applicationId());
+        repository.updateExpiryFailure(new BenefitFundingRepository.ExpiryFailureWrite(
+                candidate.tenantId(), candidate.applicationId(), nextAttempts,
+                format(now.plusSeconds(delaySeconds)), error));
     }
 
     private ApplicationView transition(String applicationId, String commandId, String semantic,
@@ -377,8 +453,8 @@ public class BenefitFundingService {
             List<ReservationItem> items = lockItems(scope.tenantId().value(), applicationId);
             apply(scope.tenantId().value(), application, items, operation, amounts, expectedFencingEpochs);
             Instant now = clock.instant();
-            jdbc.update("update mk_promotion_application set state_name=?,updated_at=? where tenant_id=? and application_id=?",
-                    target.name(), format(now), scope.tenantId().value(), applicationId);
+            repository.updateApplicationState(
+                    scope.tenantId().value(), applicationId, target.name(), format(now));
             outbox(scope.tenantId().value(), applicationId, "Promotion" + target.name(), now);
             return application(scope.tenantId().value(), applicationId);
         });
@@ -413,8 +489,7 @@ public class BenefitFundingService {
         ApplicationState next = reverse ? ApplicationState.REVERSED
                 : fullyRefunded ? ApplicationState.REFUNDED : ApplicationState.PARTIALLY_REFUNDED;
         Instant now = clock.instant();
-        jdbc.update("update mk_promotion_application set state_name=?,updated_at=? where tenant_id=? and application_id=?",
-                next.name(), format(now), tenantId, applicationId);
+        repository.updateApplicationState(tenantId, applicationId, next.name(), format(now));
         outbox(tenantId, applicationId, "Promotion" + next.name(), now);
         return application(tenantId, applicationId);
     }
@@ -427,7 +502,7 @@ public class BenefitFundingService {
                     "every settled resource requires exactly one current fencing epoch");
         }
         Map<String, ResourceAccount> accounts = new LinkedHashMap<>();
-        lockAccounts(tenantId, keys).forEach(account -> accounts.put(account.resourceKey(), account));
+        loadAccountsForSettlement(tenantId, keys).forEach(account -> accounts.put(account.resourceKey(), account));
         Instant now = clock.instant();
         for (ReservationItem item : items.stream().sorted(Comparator.comparing(ReservationItem::resourceKey)).toList()) {
             long amount = requested.isEmpty()
@@ -438,26 +513,76 @@ public class BenefitFundingService {
             if (account == null) throw new ConflictException("RESOURCE_UNAVAILABLE", item.resourceKey());
             long writerEpoch = expectedFencingEpochs == null
                     ? account.fencingEpoch() : expectedFencingEpochs.get(item.resourceKey());
+            if (account.type() == ResourceAccount.Type.BUDGET) {
+                applyBudgetBuckets(tenantId, application, item, operation, amount, writerEpoch, now);
+            } else {
+                ResourceAccount next = switch (operation) {
+                    case CONFIRM -> account.confirm(amount, writerEpoch);
+                    case RELEASE -> account.release(amount, writerEpoch);
+                    case REFUND -> account.refund(amount, writerEpoch);
+                };
+                saveAccount(tenantId, next);
+                accounts.put(item.resourceKey(), next);
+                String from = operation == Operation.CONFIRM || operation == Operation.RELEASE
+                        ? "RESERVED" : "CONSUMED";
+                String to = operation == Operation.CONFIRM ? "CONSUMED" : "AVAILABLE";
+                ledger(tenantId, application.applicationId(), application.orderId(), item.resourceKey(),
+                        operation.name(), from, to, amount, next.version(), 0,
+                        operation == Operation.REFUND ? application.applicationId() : null, now);
+            }
+            updateReservationItem(tenantId, application.applicationId(), item.resourceKey(), operation, amount);
+        }
+    }
+
+    /** 预算结算只能回写预留时记录的原分桶，防止退款或释放误入其他 escrow。 */
+    private void applyBudgetBuckets(String tenantId, StoredApplication application, ReservationItem item,
+            Operation operation, long amount, long writerEpoch, Instant now) {
+        List<EscrowAllocation> allocations = repository.findEscrowAllocationsForUpdate(
+                        tenantId, application.applicationId(), item.resourceKey()).stream()
+                .map(row -> new EscrowAllocation(row.bucketId(), row.original(), row.reserved(),
+                        row.consumed(), row.refunded(), row.released(), row.reservationEpoch()))
+                .toList();
+        long capacity = allocations.stream().mapToLong(allocation -> allocation.capacity(operation)).sum();
+        if (allocations.isEmpty() || capacity < amount) {
+            throw new ConflictException(operation == Operation.REFUND ? "REFUND_INVALID" : "RESERVATION_INVALID",
+                    item.resourceKey());
+        }
+        long remaining = amount;
+        for (EscrowAllocation allocation : allocations) {
+            long part = Math.min(remaining, allocation.capacity(operation));
+            if (part == 0) continue;
+            ResourceAccount bucket = lockBudgetBucket(tenantId, item.resourceKey(), allocation.bucketId());
             ResourceAccount next = switch (operation) {
-                case CONFIRM -> account.confirm(amount, writerEpoch);
-                case RELEASE -> account.release(amount, writerEpoch);
-                case REFUND -> account.refund(amount, writerEpoch);
+                case CONFIRM -> bucket.confirm(part, writerEpoch);
+                case RELEASE -> bucket.release(part, writerEpoch);
+                case REFUND -> bucket.refund(part, writerEpoch);
             };
-            saveAccount(tenantId, next);
-            String from = operation == Operation.CONFIRM || operation == Operation.RELEASE ? "RESERVED" : "CONSUMED";
+            saveBudgetBucket(tenantId, allocation.bucketId(), next);
+            String from = operation == Operation.REFUND ? "CONSUMED" : "RESERVED";
             String to = operation == Operation.CONFIRM ? "CONSUMED" : "AVAILABLE";
             ledger(tenantId, application.applicationId(), application.orderId(), item.resourceKey(),
-                    operation.name(), from, to, amount, next.version(),
+                    operation.name(), from, to, part, next.version(), allocation.bucketId(),
                     operation == Operation.REFUND ? application.applicationId() : null, now);
-            switch (operation) {
-                case CONFIRM -> jdbc.update("update mk_reservation_item set reserved_amount=reserved_amount-?,consumed_amount=consumed_amount+? where tenant_id=? and application_id=? and resource_key=?",
-                        amount, amount, tenantId, application.applicationId(), item.resourceKey());
-                case RELEASE -> jdbc.update("update mk_reservation_item set reserved_amount=reserved_amount-?,released_amount=released_amount+? where tenant_id=? and application_id=? and resource_key=?",
-                        amount, amount, tenantId, application.applicationId(), item.resourceKey());
-                case REFUND -> jdbc.update("update mk_reservation_item set consumed_amount=consumed_amount-?,refunded_amount=refunded_amount+? where tenant_id=? and application_id=? and resource_key=?",
-                        amount, amount, tenantId, application.applicationId(), item.resourceKey());
-            }
+            updateEscrowAllocation(tenantId, application.applicationId(), item.resourceKey(),
+                    allocation.bucketId(), operation, part);
+            remaining -= part;
+            if (remaining == 0) break;
         }
+        if (remaining != 0) throw new IllegalStateException("escrow allocation was not fully settled");
+    }
+
+    private void updateReservationItem(String tenantId, String applicationId, String resourceKey,
+            Operation operation, long amount) {
+        int updated = repository.updateReservationAmounts(new BenefitFundingRepository.ReservationMutation(
+                tenantId, applicationId, resourceKey, operation.name(), amount));
+        if (updated != 1) throw new ConflictException("RESERVATION_CONCURRENT_MODIFICATION", resourceKey);
+    }
+
+    private void updateEscrowAllocation(String tenantId, String applicationId, String resourceKey,
+            int bucketId, Operation operation, long amount) {
+        int updated = repository.updateEscrowAllocationAmounts(new BenefitFundingRepository.EscrowMutation(
+                tenantId, applicationId, resourceKey, bucketId, operation.name(), amount));
+        if (updated != 1) throw new ConflictException("ESCROW_ALLOCATION_CONCURRENT_MODIFICATION", resourceKey);
     }
 
     @Transactional(readOnly = true)
@@ -466,15 +591,22 @@ public class BenefitFundingService {
         scope.requirePermission("funding:reconcile");
         String tenantId = scope.tenantId().value();
         List<String> violations = new ArrayList<>();
-        List<ResourceSnapshot> resources = jdbc.query("select resource_key,authorized_amount,available_amount,reserved_amount,consumed_amount,returned_amount from mk_resource_account where tenant_id=?",
-                (rs, rowNum) -> new ResourceSnapshot(rs.getString(1), rs.getLong(2), rs.getLong(3),
-                        rs.getLong(4), rs.getLong(5), rs.getLong(6)), tenantId);
+        List<ResourceAccount> roots = repository.findAccounts(tenantId, false);
+        List<ResourceSnapshot> resources = roots.stream().map(account -> {
+            AccountView view = accountView(tenantId, account);
+            return new ResourceSnapshot(view.resourceKey(), view.authorized(), view.available(),
+                    view.reserved(), view.consumed(), view.returned());
+        }).toList();
+        Set<String> budgetResources = roots.stream()
+                .filter(account -> account.type() == ResourceAccount.Type.BUDGET)
+                .map(ResourceAccount::resourceKey).collect(java.util.stream.Collectors.toUnmodifiableSet());
         Map<String, ReplayBalance> balances = new LinkedHashMap<>();
         resources.forEach(resource -> balances.put(resource.resourceKey(), new ReplayBalance(resource.authorized())));
         Map<ApplicationResourceKey, ReservationReplay> reservationReplay = new LinkedHashMap<>();
-        List<LedgerEntry> ledger = jdbc.query("select application_id,resource_key,operation_name,debit_bucket,credit_bucket,amount_value,account_version from mk_funding_ledger where tenant_id=? order by resource_key,account_version,ledger_id",
-                (rs, rowNum) -> new LedgerEntry(rs.getString(1), rs.getString(2), rs.getString(3),
-                        rs.getString(4), rs.getString(5), rs.getLong(6), rs.getLong(7)), tenantId);
+        List<LedgerEntry> ledger = repository.findLedger(tenantId).stream()
+                .map(row -> new LedgerEntry(row.applicationId(), row.resourceKey(), row.escrowBucketId(),
+                        row.operation(), row.debitBucket(), row.creditBucket(), row.amount(), row.accountVersion()))
+                .toList();
         long ledgerMovement = 0;
         for (LedgerEntry entry : ledger) {
             try {
@@ -502,11 +634,19 @@ public class BenefitFundingService {
                 violations.add(resource.resourceKey() + ":ACCOUNT_LEDGER_MISMATCH");
             }
         }
-        List<ReconcileItem> items = jdbc.query("select application_id,resource_key,original_amount,reserved_amount,consumed_amount,refunded_amount,released_amount,reservation_epoch from mk_reservation_item where tenant_id=?",
-                (rs, rowNum) -> new ReconcileItem(rs.getString(1), rs.getString(2), rs.getLong(3),
-                        rs.getLong(4), rs.getLong(5), rs.getLong(6), rs.getLong(7), rs.getLong(8)), tenantId);
+        List<ReconcileItem> items = repository.findReconcileItems(tenantId).stream()
+                .map(row -> new ReconcileItem(row.applicationId(), row.resourceKey(), row.original(),
+                        row.reserved(), row.consumed(), row.refunded(), row.released(), row.reservationEpoch()))
+                .toList();
         Map<String, List<ReconcileItem>> itemsByApplication = new LinkedHashMap<>();
         Set<ApplicationResourceKey> storedItemKeys = new java.util.HashSet<>();
+        Map<ApplicationResourceKey, ReconcileItem> escrowAllocations = new LinkedHashMap<>();
+        repository.findEscrowReconcileItems(tenantId).forEach(row ->
+                escrowAllocations.put(new ApplicationResourceKey(row.applicationId(), row.resourceKey()),
+                        new ReconcileItem(row.applicationId(), row.resourceKey(), row.original(), row.reserved(),
+                                row.consumed(), row.refunded(), row.released(),
+                                row.minReservationEpoch() == row.maxReservationEpoch()
+                                        ? row.minReservationEpoch() : -1)));
         for (ReconcileItem item : items) {
             storedItemKeys.add(new ApplicationResourceKey(item.applicationId(), item.resourceKey()));
             itemsByApplication.computeIfAbsent(item.applicationId(), ignored -> new ArrayList<>()).add(item);
@@ -518,16 +658,23 @@ public class BenefitFundingService {
             if (item.reservationEpoch() < 1) {
                 violations.add(item.applicationId() + ':' + item.resourceKey() + ":RESERVATION_EPOCH_INVALID");
             }
+            if (budgetResources.contains(item.resourceKey())) {
+                ReconcileItem allocation = escrowAllocations.get(
+                        new ApplicationResourceKey(item.applicationId(), item.resourceKey()));
+                if (allocation == null || !sameReservationAmounts(item, allocation)) {
+                    violations.add(item.applicationId() + ':' + item.resourceKey()
+                            + ":ESCROW_ALLOCATION_MISMATCH");
+                }
+            }
         }
         reservationReplay.keySet().stream().filter(key -> !storedItemKeys.contains(key)).forEach(key ->
                 violations.add(key.applicationId() + ':' + key.resourceKey() + ":RESERVATION_ITEM_MISSING"));
         Map<String, Set<String>> outboxTypes = new LinkedHashMap<>();
-        jdbc.query("select aggregate_id,event_type from mk_benefit_outbox where tenant_id=?", rs -> {
-            outboxTypes.computeIfAbsent(rs.getString(1), ignored -> new java.util.HashSet<>()).add(rs.getString(2));
-        }, tenantId);
-        jdbc.query("select application_id,state_name from mk_promotion_application where tenant_id=?", rs -> {
-            String applicationId = rs.getString(1);
-            ApplicationState state = ApplicationState.valueOf(rs.getString(2));
+        repository.findOutboxTypes(tenantId).forEach(row -> outboxTypes
+                .computeIfAbsent(row.aggregateId(), ignored -> new java.util.HashSet<>()).add(row.eventType()));
+        repository.findApplicationStates(tenantId).forEach(row -> {
+            String applicationId = row.applicationId();
+            ApplicationState state = ApplicationState.valueOf(row.stateName());
             List<ReconcileItem> applicationItems = itemsByApplication.getOrDefault(applicationId, List.of());
             if (applicationItems.isEmpty() || !stateMatches(state, applicationItems)) {
                 violations.add(applicationId + ":APPLICATION_RESERVATION_MISMATCH");
@@ -536,7 +683,7 @@ public class BenefitFundingService {
             if (!events.contains("PromotionReserved") || !events.contains(expectedStateEvent(state))) {
                 violations.add(applicationId + ":OUTBOX_INCOMPLETE");
             }
-        }, tenantId);
+        });
         violations.sort(String::compareTo);
         return new ReconciliationReport(violations.isEmpty(), violations, ledgerMovement, clock.instant());
     }
@@ -553,6 +700,15 @@ public class BenefitFundingService {
             case REFUNDED, REVERSED -> items.stream().allMatch(item -> item.reserved() == 0
                     && item.consumed() == 0 && item.refunded() == item.original());
         };
+    }
+
+    private static boolean sameReservationAmounts(ReconcileItem item, ReconcileItem allocation) {
+        return item.original() == allocation.original()
+                && item.reserved() == allocation.reserved()
+                && item.consumed() == allocation.consumed()
+                && item.refunded() == allocation.refunded()
+                && item.released() == allocation.released()
+                && item.reservationEpoch() == allocation.reservationEpoch();
     }
 
     private static String expectedStateEvent(ApplicationState state) {
@@ -580,46 +736,169 @@ public class BenefitFundingService {
                 left.type(), left.currency(), Math.addExact(left.amount(), right.amount())));
     }
 
-    private List<ResourceAccount> lockAccounts(String tenantId, List<String> keys) {
+    /** 新建预算账户时均匀授予 escrow，后续余额写不再竞争资源账户主行。 */
+    private void createBudgetBuckets(String tenantId, ResourceAccount account) {
+        long quotient = account.authorized() / budgetBucketCount;
+        long remainder = account.authorized() % budgetBucketCount;
+        Instant now = clock.instant();
+        for (int bucketId = 0; bucketId < budgetBucketCount; bucketId++) {
+            long authorized = quotient + (bucketId < remainder ? 1 : 0);
+            repository.saveBucket(new BenefitFundingRepository.BucketWrite(tenantId, account.resourceKey(),
+                    bucketId, authorized, authorized, 0, 0, 0, account.fencingEpoch(), 0,
+                    account.state().name(), format(now)));
+        }
+    }
+
+    /**
+     * 先以 quote/resource 稳定散列选择分桶，再用单行条件更新抢占额度。
+     * 正常请求只锁一个 bucket；候选桶被并发耗尽时才探测下一个桶。
+     */
+    private List<BalanceMutation> reserveBudgetBuckets(String tenantId, ResourceAccount account, long amount,
+            long expectedEpoch, String quoteId) {
+        List<Integer> bucketIds = repository.findEligibleBucketIds(
+                tenantId, account.resourceKey(), expectedEpoch, amount);
+        if (!bucketIds.isEmpty()) {
+            int start = Math.floorMod((quoteId + '|' + account.resourceKey()).hashCode(), bucketIds.size());
+            for (int offset = 0; offset < bucketIds.size(); offset++) {
+                int bucketId = bucketIds.get((start + offset) % bucketIds.size());
+                int updated = repository.reserveBucket(new BenefitFundingRepository.BucketReserveWrite(
+                        tenantId, account.resourceKey(), bucketId, expectedEpoch, amount,
+                        format(clock.instant())));
+                if (updated == 0) continue;
+                long version = repository.findBucketVersion(tenantId, account.resourceKey(), bucketId)
+                        .orElseThrow(() -> new IllegalStateException("updated escrow bucket disappeared"));
+                return List.of(new BalanceMutation(expectedEpoch, version, bucketId, amount));
+            }
+        }
+        // 大额、碎片化或候选桶被并发抢占时进入慢路径：按 bucket_id 全序加锁，避免多桶反向加锁死锁。
+        List<BudgetBucket> buckets = repository.findBucketsForUpdate(tenantId, account.resourceKey()).stream()
+                .map(row -> new BudgetBucket(row.bucketId(), budgetAccount(account, row)))
+                .toList();
+        long available = buckets.stream().filter(bucket -> bucket.account().state() == ResourceAccount.State.ACTIVE
+                        && bucket.account().fencingEpoch() == expectedEpoch)
+                .mapToLong(bucket -> bucket.account().available()).sum();
+        if (available >= amount) {
+            List<BalanceMutation> mutations = new ArrayList<>();
+            long remaining = amount;
+            for (BudgetBucket bucket : buckets) {
+                if (remaining == 0) break;
+                if (bucket.account().state() != ResourceAccount.State.ACTIVE
+                        || bucket.account().fencingEpoch() != expectedEpoch) continue;
+                long part = Math.min(remaining, bucket.account().available());
+                if (part == 0) continue;
+                ResourceAccount next = bucket.account().reserve(part, expectedEpoch);
+                saveBudgetBucket(tenantId, bucket.bucketId(), next);
+                mutations.add(new BalanceMutation(expectedEpoch, next.version(), bucket.bucketId(), part));
+                remaining -= part;
+            }
+            if (remaining != 0) throw new IllegalStateException("locked budget escrow was not fully allocated");
+            return List.copyOf(mutations);
+        }
+        ResourceAccount current = loadAccount(tenantId, account.resourceKey(), false);
+        if (current.fencingEpoch() != expectedEpoch) {
+            throw new ConflictException("FENCING_EPOCH_MISMATCH", account.resourceKey());
+        }
+        if (current.state() != ResourceAccount.State.ACTIVE) {
+            throw new ConflictException("RESOURCE_FROZEN", account.resourceKey());
+        }
+        throw new ConflictException("REPRICE_REQUIRED",
+                "resource capacity is insufficient: " + account.resourceKey());
+    }
+
+    private List<ResourceAccount> loadAccountsForReserve(String tenantId, List<String> keys) {
+        return loadAccountsWithBudgetEscrow(tenantId, keys);
+    }
+
+    private List<ResourceAccount> loadAccountsForSettlement(String tenantId, List<String> keys) {
+        return loadAccountsWithBudgetEscrow(tenantId, keys);
+    }
+
+    /** 预算只读主行元数据，余额由 bucket 原子更新；其他资源继续锁单账户行。 */
+    private List<ResourceAccount> loadAccountsWithBudgetEscrow(String tenantId, List<String> keys) {
         List<ResourceAccount> accounts = new ArrayList<>();
         for (String key : keys) {
-            accounts.addAll(jdbc.query("select resource_key,resource_type,currency_code,authorized_amount,available_amount,reserved_amount,consumed_amount,returned_amount,fencing_epoch,version_no,state_name from mk_resource_account where tenant_id=? and resource_key=? for update",
-                    (rs, rowNum) -> new ResourceAccount(rs.getString(1), ResourceAccount.Type.valueOf(rs.getString(2)),
-                            rs.getString(3), rs.getLong(4), rs.getLong(5), rs.getLong(6), rs.getLong(7),
-                            rs.getLong(8), rs.getLong(9), rs.getLong(10), ResourceAccount.State.valueOf(rs.getString(11))),
-                    tenantId, key));
+            ResourceAccount account = repository.findAccount(tenantId, key, false).orElse(null);
+            if (account == null) continue;
+            if (account.type() == ResourceAccount.Type.BUDGET) accounts.add(account);
+            else accounts.add(loadAccount(tenantId, key, true));
         }
         return accounts;
     }
 
-    private ResourceAccount resourceAccount(java.sql.ResultSet rs) throws java.sql.SQLException {
-        return new ResourceAccount(rs.getString(1), ResourceAccount.Type.valueOf(rs.getString(2)),
-                rs.getString(3), rs.getLong(4), rs.getLong(5), rs.getLong(6), rs.getLong(7),
-                rs.getLong(8), rs.getLong(9), rs.getLong(10), ResourceAccount.State.valueOf(rs.getString(11)));
+    private ResourceAccount loadAccount(String tenantId, String resourceKey, boolean lock) {
+        return repository.findAccount(tenantId, resourceKey, lock)
+                .orElseThrow(() -> new NotFoundException("RESOURCE_NOT_FOUND", resourceKey));
     }
 
-    private BenefitView benefitView(java.sql.ResultSet rs) throws java.sql.SQLException {
-        @SuppressWarnings("unchecked")
-        Map<String, Object> policy = read(rs.getString(7), Map.class);
-        return new BenefitView(rs.getString(1), rs.getLong(2), rs.getString(3),
-                BenefitStatus.valueOf(rs.getString(4)), rs.getString(5), rs.getString(6), policy, rs.getString(8),
-                Instant.parse(rs.getString(9)));
+    private ResourceAccount lockBudgetBucket(String tenantId, String resourceKey, int bucketId) {
+        BenefitFundingRepository.BudgetBucketRow row = repository.findBucketForUpdate(
+                tenantId, resourceKey, bucketId)
+                .orElseThrow(() -> new ConflictException("RESOURCE_BUCKET_NOT_FOUND", resourceKey));
+        return new ResourceAccount(resourceKey, ResourceAccount.Type.BUDGET, "ESCROW", row.authorized(),
+                row.available(), row.reserved(), row.consumed(), row.returned(), row.fencingEpoch(),
+                row.version(), ResourceAccount.State.valueOf(row.state()));
+    }
+
+    private void saveBudgetBucket(String tenantId, int bucketId, ResourceAccount bucket) {
+        int updated = repository.updateBucketBalance(new BenefitFundingRepository.BucketBalanceWrite(
+                tenantId, bucket.resourceKey(), bucketId, bucket.available(), bucket.reserved(),
+                bucket.consumed(), bucket.returned(), bucket.version(), bucket.version() - 1,
+                bucket.fencingEpoch(), format(clock.instant())));
+        if (updated != 1) throw new ConflictException("RESOURCE_CONCURRENT_MODIFICATION", bucket.resourceKey());
+    }
+
+    /** 账户查询聚合所有 escrow，主行只保留稳定资源元数据和控制面 fencing。 */
+    private AccountView accountView(String tenantId, ResourceAccount account) {
+        if (account.type() != ResourceAccount.Type.BUDGET) return AccountView.from(account);
+        BenefitFundingRepository.BucketTotals totals = repository.summarizeBuckets(
+                tenantId, account.resourceKey());
+        if (totals == null || totals.count() == 0 || totals.authorized() != account.authorized()
+                || totals.minFencingEpoch() != account.fencingEpoch()
+                || totals.maxFencingEpoch() != account.fencingEpoch() || totals.distinctStates() != 1
+                || !account.state().name().equals(totals.state())) {
+            throw new IllegalStateException("budget escrow conservation metadata is invalid: " + account.resourceKey());
+        }
+        ResourceAccount aggregate = new ResourceAccount(account.resourceKey(), account.type(), account.currency(),
+                totals.authorized(), totals.available(), totals.reserved(), totals.consumed(), totals.returned(),
+                account.fencingEpoch(), Math.max(account.version(), totals.maxVersion()), account.state());
+        return AccountView.from(aggregate);
+    }
+
+    private List<ResourceAccount> lockAccounts(String tenantId, List<String> keys) {
+        List<ResourceAccount> accounts = new ArrayList<>();
+        for (String key : keys) {
+            repository.findAccount(tenantId, key, true).ifPresent(accounts::add);
+        }
+        return accounts;
+    }
+
+    private static ResourceAccount budgetAccount(ResourceAccount root,
+            BenefitFundingRepository.BudgetBucketRow row) {
+        return new ResourceAccount(root.resourceKey(), ResourceAccount.Type.BUDGET, root.currency(),
+                row.authorized(), row.available(), row.reserved(), row.consumed(), row.returned(),
+                row.fencingEpoch(), row.version(), ResourceAccount.State.valueOf(row.state()));
+    }
+
+    private BenefitView benefitView(BenefitFundingRepository.BenefitRow row) {
+        return new BenefitView(row.benefitId(), row.version(), row.name(), BenefitStatus.valueOf(row.status()),
+                row.resourceKey(), row.benefitSkuId(), readMap(row.policyJson()), row.createdBy(),
+                Instant.parse(row.createdAt()));
     }
 
     private void saveAccount(String tenantId, ResourceAccount account) {
-        int count = jdbc.update("update mk_resource_account set available_amount=?,reserved_amount=?,consumed_amount=?,returned_amount=?,version_no=?,updated_at=? where tenant_id=? and resource_key=? and version_no=?",
-                account.available(), account.reserved(), account.consumed(), account.returned(), account.version(),
-                format(clock.instant()), tenantId, account.resourceKey(), account.version() - 1);
+        int count = repository.updateAccountBalance(new BenefitFundingRepository.AccountBalanceWrite(
+                tenantId, account.resourceKey(), account.available(), account.reserved(), account.consumed(),
+                account.returned(), account.version(), account.version() - 1, format(clock.instant())));
         if (count != 1) throw new ConflictException("RESOURCE_CONCURRENT_MODIFICATION", account.resourceKey());
     }
 
     private StoredApplication lockApplication(String tenantId, String applicationId) {
-        List<StoredApplication> applications = jdbc.query("select application_id,order_id,organization_id,shop_ids_json,state_name,expires_at from mk_promotion_application where tenant_id=? and application_id=? for update",
-                (rs, rowNum) -> new StoredApplication(rs.getString(1), rs.getString(2),
-                        rs.getString(3), stringSet(rs.getString(4)), ApplicationState.valueOf(rs.getString(5)),
-                        Instant.parse(rs.getString(6))), tenantId, applicationId);
-        if (applications.isEmpty()) throw new NotFoundException("APPLICATION_NOT_FOUND", "promotion application not found");
-        return applications.getFirst();
+        BenefitFundingRepository.StoredApplicationRow row = repository.findApplicationForUpdate(
+                tenantId, applicationId)
+                .orElseThrow(() -> new NotFoundException(
+                        "APPLICATION_NOT_FOUND", "promotion application not found"));
+        return new StoredApplication(row.applicationId(), row.orderId(), row.organizationId(),
+                stringSet(row.shopIdsJson()), ApplicationState.valueOf(row.state()), Instant.parse(row.expiresAt()));
     }
 
     private static void requireApplicationScope(TenantScope scope, StoredApplication application) {
@@ -637,46 +916,41 @@ public class BenefitFundingService {
     }
 
     private List<ReservationItem> lockItems(String tenantId, String applicationId) {
-        return jdbc.query("select resource_key,original_amount,reserved_amount,consumed_amount,refunded_amount,released_amount,reservation_epoch from mk_reservation_item where tenant_id=? and application_id=? order by resource_key for update",
-                (rs, rowNum) -> new ReservationItem(rs.getString(1), rs.getLong(2), rs.getLong(3),
-                        rs.getLong(4), rs.getLong(5), rs.getLong(6), rs.getLong(7)), tenantId, applicationId);
+        return repository.findReservationItems(tenantId, applicationId, true).stream()
+                .map(row -> new ReservationItem(row.resourceKey(), row.originalAmount(), row.reservedAmount(),
+                        row.consumedAmount(), row.refundedAmount(), row.releasedAmount(), row.reservationEpoch()))
+                .toList();
     }
 
     private ApplicationView application(String tenantId, String applicationId) {
-        List<ApplicationView> applications = jdbc.query("select quote_id,order_id,cart_digest,generation_no,state_name,total_discount,currency_code,expires_at,created_at,updated_at from mk_promotion_application where tenant_id=? and application_id=?",
-                (rs, rowNum) -> new ApplicationView(applicationId, rs.getString(1), rs.getString(2), rs.getString(3),
-                        rs.getLong(4), ApplicationState.valueOf(rs.getString(5)), rs.getLong(6), rs.getString(7),
-                        items(tenantId, applicationId), Instant.parse(rs.getString(8)), Instant.parse(rs.getString(9)),
-                        Instant.parse(rs.getString(10))),
-                tenantId, applicationId);
-        if (applications.isEmpty()) throw new NotFoundException("APPLICATION_NOT_FOUND", "promotion application not found");
-        return applications.getFirst();
+        BenefitFundingRepository.ApplicationRow row = repository.findApplication(tenantId, applicationId)
+                .orElseThrow(() -> new NotFoundException(
+                        "APPLICATION_NOT_FOUND", "promotion application not found"));
+        return new ApplicationView(applicationId, row.quoteId(), row.orderId(), row.cartDigest(), row.generation(),
+                ApplicationState.valueOf(row.state()), row.totalDiscount(), row.currency(),
+                items(tenantId, applicationId), Instant.parse(row.expiresAt()), Instant.parse(row.createdAt()),
+                Instant.parse(row.updatedAt()));
     }
 
     private List<ItemView> items(String tenantId, String applicationId) {
-        return jdbc.query("select resource_key,resource_type,currency_code,original_amount,reserved_amount,consumed_amount,refunded_amount,released_amount,reservation_epoch from mk_reservation_item where tenant_id=? and application_id=? order by resource_key",
-                (rs, rowNum) -> new ItemView(rs.getString(1), ResourceAccount.Type.valueOf(rs.getString(2)),
-                        rs.getString(3), rs.getLong(4), rs.getLong(5), rs.getLong(6), rs.getLong(7),
-                        rs.getLong(8), rs.getLong(9)),
-                tenantId, applicationId);
+        return repository.findItems(tenantId, applicationId).stream()
+                .map(row -> new ItemView(row.resourceKey(), ResourceAccount.Type.valueOf(row.type()),
+                        row.currency(), row.originalAmount(), row.reservedAmount(), row.consumedAmount(),
+                        row.refundedAmount(), row.releasedAmount(), row.reservationEpoch()))
+                .toList();
     }
 
     private <T> T command(String tenantId, String commandId, String payloadHash, Class<T> type, Supplier<T> action) {
         if (commandId == null || !commandId.matches("[a-zA-Z0-9_.:-]{8,128}")) {
             throw new IllegalArgumentException("command id is invalid");
         }
-        boolean owner = false;
-        try {
-            jdbc.update("insert into mk_command_dedup(tenant_id,command_id,payload_hash,state_name,created_at,expires_at) values(?,?,?,?,?,?)",
-                    tenantId, commandId, payloadHash, "PROCESSING", format(clock.instant()),
-                    format(clock.instant().plusSeconds(604_800)));
-            owner = true;
-        } catch (DuplicateKeyException duplicate) {
-            // Existing command row is locked/read below; committed original response is returned byte-for-byte.
-        }
-        List<StoredCommand> rows = jdbc.query("select payload_hash,state_name,response_json from mk_command_dedup where tenant_id=? and command_id=? for update",
-                (rs, rowNum) -> new StoredCommand(rs.getString(1), rs.getString(2), rs.getString(3)), tenantId, commandId);
-        StoredCommand stored = rows.getFirst();
+        Instant now = clock.instant();
+        boolean owner = repository.tryBeginCommand(new BenefitFundingRepository.CommandWrite(
+                tenantId, commandId, payloadHash, "PROCESSING", format(now),
+                format(now.plusSeconds(604_800))));
+        // Existing command row is locked/read below; committed original response is returned byte-for-byte。
+        BenefitFundingRepository.CommandRow stored = repository.findCommandForUpdate(tenantId, commandId)
+                .orElseThrow(() -> new IllegalStateException("command deduplication row disappeared"));
         if (!stored.payloadHash().equals(payloadHash)) {
             throw new ConflictException("IDEMPOTENCY_PAYLOAD_CONFLICT", "command id was used with another payload");
         }
@@ -687,46 +961,37 @@ public class BenefitFundingService {
             return read(stored.responseJson(), type);
         }
         T response = action.get();
-        jdbc.update("update mk_command_dedup set state_name='COMPLETED',response_json=? where tenant_id=? and command_id=?",
-                json(response), tenantId, commandId);
+        repository.completeCommand(tenantId, commandId, json(response));
         return response;
     }
 
     private void ledger(String tenantId, String applicationId, String orderId, String resourceKey,
             String operation, String debitBucket, String creditBucket, long amount, long accountVersion,
-            String correctionOf, Instant now) {
-        jdbc.update("insert into mk_funding_ledger(tenant_id,ledger_id,application_id,order_id,resource_key,operation_name,debit_bucket,credit_bucket,amount_value,account_version,correction_of,occurred_at) values(?,?,?,?,?,?,?,?,?,?,?,?)",
-                tenantId, UUID.randomUUID().toString(), applicationId, orderId, resourceKey, operation,
-                debitBucket, creditBucket, amount, accountVersion, correctionOf, format(now));
+            int escrowBucketId, String correctionOf, Instant now) {
+        repository.saveLedger(new BenefitFundingRepository.LedgerWrite(tenantId, UUID.randomUUID().toString(),
+                applicationId, orderId, resourceKey, escrowBucketId, operation, debitBucket, creditBucket,
+                amount, accountVersion, correctionOf, format(now)));
     }
 
     private void outbox(String tenantId, String applicationId, String type, Instant now) {
         long sequence = nextOutboxSequence(tenantId, applicationId, now);
         String eventId = UUID.randomUUID().toString();
-        jdbc.update("insert into mk_benefit_outbox(tenant_id,event_id,aggregate_id,event_type,destination_topic,partition_key,stream_sequence,payload_json,next_attempt_at,created_at) values(?,?,?,?,?,?,?,?,?,?)",
-                tenantId, eventId, applicationId, type, "mk.benefit.event.v1",
-                tenantId + ':' + applicationId, sequence,
+        repository.saveOutbox(new BenefitFundingRepository.OutboxWrite(tenantId, eventId, applicationId,
+                type, "mk.benefit.event.v1", tenantId + ':' + applicationId, sequence,
                 json(Map.of("eventId", eventId, "eventType", type, "tenantId", tenantId,
                         "aggregateId", applicationId, "occurredAt", format(now))),
-                format(now), format(now));
+                format(now), format(now)));
     }
 
     private long nextOutboxSequence(String tenantId, String aggregateId, Instant now) {
-        int updated = jdbc.update("update mk_benefit_outbox_position set last_sequence=last_sequence+1,updated_at=? where tenant_id=? and aggregate_id=?",
-                format(now), tenantId, aggregateId);
+        int updated = repository.incrementOutboxPosition(tenantId, aggregateId, format(now));
         if (updated == 0) {
-            try {
-                jdbc.update("insert into mk_benefit_outbox_position(tenant_id,aggregate_id,last_sequence,updated_at) values(?,?,?,?)",
-                        tenantId, aggregateId, 1, format(now));
-            } catch (DuplicateKeyException race) {
-                jdbc.update("update mk_benefit_outbox_position set last_sequence=last_sequence+1,updated_at=? where tenant_id=? and aggregate_id=?",
-                        format(now), tenantId, aggregateId);
+            if (!repository.tryCreateOutboxPosition(tenantId, aggregateId, format(now))) {
+                repository.incrementOutboxPosition(tenantId, aggregateId, format(now));
             }
         }
-        Long value = jdbc.query("select last_sequence from mk_benefit_outbox_position where tenant_id=? and aggregate_id=?",
-                rs -> rs.next() ? rs.getLong(1) : null, tenantId, aggregateId);
-        if (value == null) throw new IllegalStateException("benefit outbox sequence allocation failed");
-        return value;
+        return repository.findOutboxPosition(tenantId, aggregateId)
+                .orElseThrow(() -> new IllegalStateException("benefit outbox sequence allocation failed"));
     }
 
     private String json(Object value) {
@@ -738,13 +1003,26 @@ public class BenefitFundingService {
         catch (JacksonException failure) { throw new IllegalStateException("stored command response is invalid", failure); }
     }
 
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> readMap(String value) {
+        return read(value, Map.class);
+    }
+
     private enum Operation { CONFIRM, RELEASE, REFUND }
     public enum ApplicationState { RESERVED, CONFIRMED, CANCELLED, EXPIRED, PARTIALLY_REFUNDED, REFUNDED, REVERSED }
     public enum BenefitStatus { DRAFT, ACTIVE, RETIRED }
     private record ResourceSnapshot(String resourceKey, long authorized, long available, long reserved,
             long consumed, long returned) { }
-    private record LedgerEntry(String applicationId, String resourceKey, String operation,
+    private record LedgerEntry(String applicationId, String resourceKey, int escrowBucketId, String operation,
             String debitBucket, String creditBucket, long amount, long accountVersion) { }
+    private record BalanceMutation(long fencingEpoch, long version, int bucketId, long amount) { }
+    private record BudgetBucket(int bucketId, ResourceAccount account) { }
+    private record EscrowAllocation(int bucketId, long original, long reserved, long consumed,
+            long refunded, long released, long reservationEpoch) {
+        private long capacity(Operation operation) {
+            return operation == Operation.REFUND ? consumed : reserved;
+        }
+    }
     private record ApplicationResourceKey(String applicationId, String resourceKey) { }
     private record ReconcileItem(String applicationId, String resourceKey, long original, long reserved,
             long consumed, long refunded, long released, long reservationEpoch) { }
@@ -841,15 +1119,42 @@ public class BenefitFundingService {
         }
     }
     private record ResourceDemand(String resourceKey, ResourceAccount.Type type, String currency, long amount) { }
+    private record ReleaseBenefit(String status, String benefitSkuId, Map<String, Object> policy) { }
+    private record BenefitVersion(String benefitId, long version) {
+        private static BenefitVersion parse(String value) {
+            int separator = value == null ? -1 : value.lastIndexOf('@');
+            if (separator < 1 || separator == value.length() - 1) {
+                throw new ConflictException("BENEFIT_RELEASE_REFERENCE_INVALID",
+                        "benefitDefinitionVersion must use benefitId@positiveVersion");
+            }
+            try {
+                long version = Long.parseLong(value.substring(separator + 1));
+                if (version < 1) throw new NumberFormatException("non-positive version");
+                return new BenefitVersion(value.substring(0, separator), version);
+            } catch (NumberFormatException invalid) {
+                throw new ConflictException("BENEFIT_RELEASE_REFERENCE_INVALID",
+                        "benefitDefinitionVersion must use benefitId@positiveVersion");
+            }
+        }
+    }
     private record StoredApplication(String applicationId, String orderId, String organizationId,
             Set<String> shopIds, ApplicationState state,
             Instant expiresAt) { }
     private record ExpiredApplication(String tenantId, String applicationId) { }
     private record ReservationItem(String resourceKey, long originalAmount, long reservedAmount,
             long consumedAmount, long refundedAmount, long releasedAmount, long reservationEpoch) { }
-    private record StoredCommand(String payloadHash, String state, String responseJson) { }
     public record CreateAccountRequest(String resourceKey, ResourceAccount.Type type, String currency,
-            long authorized, long fencingEpoch) { }
+            long authorized, Long fencingEpoch) {
+        /** 使用包装类型区分缺字段，确保在请求边界返回稳定、可读的 problem。 */
+        public CreateAccountRequest {
+            if (fencingEpoch == null || fencingEpoch < 1) {
+                throw new IllegalArgumentException("fencingEpoch must be greater than or equal to 1");
+            }
+        }
+    }
+    public record ReleaseEligibility(boolean releasable, Set<String> references) {
+        public ReleaseEligibility { references = Set.copyOf(references); }
+    }
     public record BenefitRequest(String name, BenefitStatus status, String resourceKey, String benefitSkuId,
             Map<String, Object> policy) {
         public BenefitRequest {

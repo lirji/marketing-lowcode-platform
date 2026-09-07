@@ -53,7 +53,8 @@ public final class TenantContextFilter extends OncePerRequestFilter {
     private TenantScope resolveScope(HttpServletRequest request) {
         Jwt jwt = currentJwt();
         if (jwt != null) {
-            String tenant = firstNonBlank(claimString(jwt, "tenant_id"), claimString(jwt, "owner"));
+            // tenant_id 是货主业务租户；owner 只表示 Casdoor 登录组织，二者不能互相回退。
+            String tenant = firstNonBlank(claimString(jwt, "tenant_id"), propertyClaim(jwt, "tenant_id"));
             if (tenant == null) {
                 return null;
             }
@@ -152,14 +153,19 @@ public final class TenantContextFilter extends OncePerRequestFilter {
         return text.isEmpty() || "null".equals(text) ? null : text;
     }
 
+    /** Casdoor 默认 JWT 会把自定义用户字段放在 properties；在信任边界归一化为 tenant_id。 */
+    private static String propertyClaim(Jwt jwt, String name) {
+        Object properties = jwt.getClaims().get("properties");
+        if (!(properties instanceof Map<?, ?> values)) return null;
+        Object value = values.get(name);
+        if (value == null || String.valueOf(value).isBlank()) return null;
+        return String.valueOf(value).trim();
+    }
+
     private static String firstNonBlank(String... values) {
-        if (values == null) {
-            return null;
-        }
+        if (values == null) return null;
         for (String value : values) {
-            if (value != null && !value.isBlank()) {
-                return value.trim();
-            }
+            if (value != null && !value.isBlank()) return value.trim();
         }
         return null;
     }

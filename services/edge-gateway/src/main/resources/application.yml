@@ -4,6 +4,13 @@ server:
 spring:
   application:
     name: edge-gateway
+  data.redis:
+    url: ${REDIS_URL:redis://localhost:6379}
+    connect-timeout: ${GATEWAY_REDIS_CONNECT_TIMEOUT:500ms}
+    timeout: ${GATEWAY_REDIS_COMMAND_TIMEOUT:500ms}
+  http.clients:
+    connect-timeout: ${GATEWAY_CONNECT_TIMEOUT:1s}
+    read-timeout: ${GATEWAY_RESPONSE_TIMEOUT:3s}
   cloud:
     gateway:
       server:
@@ -13,42 +20,91 @@ spring:
               uri: ${CONTROL_SERVICE_URL:http://localhost:8081}
               predicates:
                 - "Path=/api/v1/campaigns/**,/api/v1/definitions/**,/api/v1/approvals/**,/api/v1/releases/**,/api/v1/registries/**"
+              filters:
+                - "CircuitBreaker=controlCircuit"
             - id: compiler
               uri: ${COMPILER_SERVICE_URL:http://localhost:8082}
               predicates:
                 - "Path=/api/v1/compile/**,/api/v1/artifacts/**"
+              filters:
+                - "CircuitBreaker=compilerCircuit"
             - id: audience
               uri: ${AUDIENCE_SERVICE_URL:http://localhost:8083}
               predicates:
                 - "Path=/api/v1/audiences/**,/api/v1/fields/**"
+              filters:
+                - "CircuitBreaker=audienceCircuit"
             - id: decision
               uri: ${DECISION_SERVICE_URL:http://localhost:8084}
               predicates:
                 - "Path=/api/v1/decisions/**,/api/v1/decisions:evaluate,/api/v1/decisions:batch-evaluate"
+              filters:
+                - "CircuitBreaker=decisionCircuit"
             - id: benefit
               uri: ${BENEFIT_SERVICE_URL:http://localhost:8085}
               predicates:
                 - "Path=/api/v1/benefits/**,/api/v1/benefit-skus,/api/v1/award-intents,/api/v1/promotion-applications/**,/api/v1/promotion-applications:expire,/api/v1/funding/**"
+              filters:
+                - "CircuitBreaker=benefitCircuit"
             - id: events
               uri: ${EVENT_SERVICE_URL:http://localhost:8086}
               predicates:
                 - "Path=/api/v1/events/**,/api/v1/quarantine/**"
+              filters:
+                - "CircuitBreaker=eventCircuit"
             - id: journey
               uri: ${JOURNEY_SERVICE_URL:http://localhost:8087}
               predicates:
                 - "Path=/api/v1/journey-runtime/**,/api/v1/journeys/**,/api/v1/enrollments/**"
+              filters:
+                - "CircuitBreaker=journeyCircuit"
             - id: engagement
               uri: ${ENGAGEMENT_SERVICE_URL:http://localhost:8088}
               predicates:
                 - "Path=/api/v1/consents/**,/api/v1/templates/**,/api/v1/contacts/**,/api/v1/providers/**"
+              filters:
+                - "CircuitBreaker=engagementCircuit"
             - id: measurement
               uri: ${MEASUREMENT_SERVICE_URL:http://localhost:8089}
               predicates:
                 - "Path=/api/v1/measurements/**,/api/v1/traces/**,/api/v1/experiments/**"
+              filters:
+                - "CircuitBreaker=measurementCircuit"
 marketing:
   security:
     mode: ${MARKETING_SECURITY_MODE:DEV}
     dev-headers-enabled: ${MARKETING_DEV_HEADERS_ENABLED:true}
+  gateway.rate-limit:
+    enabled: ${MARKETING_GATEWAY_RATE_LIMIT_ENABLED:true}
+    events-per-second: ${MARKETING_GATEWAY_EVENT_RATE:10000}
+    events-burst: ${MARKETING_GATEWAY_EVENT_BURST:10000}
+    decisions-per-second: ${MARKETING_GATEWAY_DECISION_RATE:30000}
+    decisions-burst: ${MARKETING_GATEWAY_DECISION_BURST:30000}
+    writes-per-second: ${MARKETING_GATEWAY_WRITE_RATE:2000}
+    writes-burst: ${MARKETING_GATEWAY_WRITE_BURST:4000}
+    reads-per-second: ${MARKETING_GATEWAY_READ_RATE:5000}
+    reads-burst: ${MARKETING_GATEWAY_READ_BURST:10000}
+resilience4j.circuitbreaker:
+  configs.default:
+    slidingWindowType: COUNT_BASED
+    slidingWindowSize: 100
+    minimumNumberOfCalls: 20
+    failureRateThreshold: 50
+    slowCallRateThreshold: 50
+    slowCallDurationThreshold: 2s
+    waitDurationInOpenState: 10s
+    permittedNumberOfCallsInHalfOpenState: 5
+    automaticTransitionFromOpenToHalfOpenEnabled: true
+  instances:
+    controlCircuit: {baseConfig: default}
+    compilerCircuit: {baseConfig: default}
+    audienceCircuit: {baseConfig: default}
+    decisionCircuit: {baseConfig: default, slowCallDurationThreshold: 500ms}
+    benefitCircuit: {baseConfig: default}
+    eventCircuit: {baseConfig: default, slowCallDurationThreshold: 1s}
+    journeyCircuit: {baseConfig: default}
+    engagementCircuit: {baseConfig: default}
+    measurementCircuit: {baseConfig: default}
 management:
   endpoints.web.exposure.include: health,info,prometheus
   endpoint.health.probes.enabled: true

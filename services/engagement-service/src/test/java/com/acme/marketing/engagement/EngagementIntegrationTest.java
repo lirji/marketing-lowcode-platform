@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.time.LocalTime;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -40,8 +41,20 @@ class EngagementIntegrationTest extends MySqlIntegrationTest {
         put("/api/v1/contacts/frequency-policies", Map.of("campaignId", "campaign-1", "channel", "SMS",
                 "windowSeconds", 3600, "maxContacts", 1, "quietStart", LocalTime.MIDNIGHT,
                 "quietEnd", LocalTime.MIDNIGHT));
-        post("/api/v1/templates", Map.of("templateId", "sms-paid", "version", 1, "channel", "SMS",
-                "content", "Hello {{name}}", "requiredVariables", Set.of("name")));
+        Map<String, Object> template = Map.of("templateId", "sms-paid", "version", 1, "channel", "SMS",
+                "content", "Hello {{name}}", "requiredVariables", Set.of("name"));
+        JsonNode createdTemplate = post("/api/v1/templates", template, "template-create-command-001");
+        assertEquals(createdTemplate,
+                post("/api/v1/templates", template, "template-create-command-001"));
+        HttpResponse<String> templateConflict = rawPost("/api/v1/templates", Map.of(
+                "templateId", "sms-paid", "version", 1, "channel", "SMS",
+                "content", "Changed {{name}}", "requiredVariables", Set.of("name")),
+                "template-create-command-001");
+        assertEquals(409, templateConflict.statusCode());
+        assertTrue(templateConflict.body().contains("IDEMPOTENCY_PAYLOAD_CONFLICT"));
+        assertEquals(1, jdbc.queryForObject(
+                "select count(*) from mk_template_version where tenant_id=? and template_id=? and version_no=?",
+                Integer.class, "tenant-a", "sms-paid", 1));
         Map<String, Object> send = Map.ofEntries(
                 Map.entry("contactKey", "contact-key-001"), Map.entry("subjectToken", "subject-1"),
                 Map.entry("campaignId", "campaign-1"), Map.entry("channel", "SMS"),
@@ -100,6 +113,9 @@ class EngagementIntegrationTest extends MySqlIntegrationTest {
     }
 
     private JsonNode post(String path, Object body) throws Exception { return successful(rawPost(path, body)); }
+    private JsonNode post(String path, Object body, String key) throws Exception {
+        return successful(rawPost(path, body, key));
+    }
     private JsonNode get(String path) throws Exception {
         return successful(client.send(base(path).GET().build(), HttpResponse.BodyHandlers.ofString()));
     }
@@ -109,7 +125,11 @@ class EngagementIntegrationTest extends MySqlIntegrationTest {
                 HttpResponse.BodyHandlers.ofString()));
     }
     private HttpResponse<String> rawPost(String path, Object body) throws Exception {
+        return rawPost(path, body, "engagement-test-" + UUID.randomUUID());
+    }
+    private HttpResponse<String> rawPost(String path, Object body, String key) throws Exception {
         return client.send(base(path).header("Content-Type", "application/json")
+                .header("Idempotency-Key", key)
                 .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build(),
                 HttpResponse.BodyHandlers.ofString());
     }

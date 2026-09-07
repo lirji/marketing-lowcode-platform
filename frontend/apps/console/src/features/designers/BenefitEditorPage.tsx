@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArchiveRestore, CircleDollarSign, Save, ShieldCheck } from 'lucide-react'
 import { Badge, Button, DemoBanner, EmptyState, PageHeader, Panel, PanelHeader, StateBanner } from '../../components/ui'
 import { ApiProblem, api } from '../../shared/api/client'
-import { problemDetail } from '../../shared/api/problem'
+import { catalogProblemDetail, problemDetail } from '../../shared/api/problem'
 import { useAuth } from '../../shared/auth/useAuth'
 import type { BenefitView } from '../../shared/api/schemas'
 import { SkuPickerField, skuFaceValue, validityLabel } from './SkuPickerField'
@@ -122,6 +123,21 @@ function policyFrom(form: Form) {
   }
 }
 
+function benefitLabel(item: BenefitView) {
+  return `${item.benefitId} · ${item.name} · ${item.status} v${item.version}`
+}
+
+function pickInitialBenefit(items: BenefitView[], preferredId?: string) {
+  if (!preferredId) return undefined
+  return items.find((item) => item.benefitId === preferredId)
+}
+
+function matchesBenefitQuery(item: BenefitView, query: string) {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return true
+  return item.benefitId.toLowerCase().includes(needle) || item.name.toLowerCase().includes(needle)
+}
+
 function saveErrorDetail(error: unknown) {
   if (error instanceof ApiProblem && error.code === 'SKU_NOT_ACTIVE') {
     return error.problem.detail || '所选 SKU 未处于已投放状态，发布被拒绝。'
@@ -132,9 +148,12 @@ function saveErrorDetail(error: unknown) {
 export function BenefitEditorPage() {
   const auth = useAuth()
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
   const [form, setForm] = useState<Form>(() => (api.demoMode ? DEFAULT_FORM : emptyForm()))
   const [notice, setNotice] = useState('')
   const [hydrated, setHydrated] = useState(false)
+  const [baseline, setBaseline] = useState(() => JSON.stringify(api.demoMode ? DEFAULT_FORM : emptyForm()))
+  const [benefitQuery, setBenefitQuery] = useState('')
   const canWrite = auth.hasPermission('benefit:write')
   const merchantShare = 100 - form.platformShare
   const platformAmount = ((form.discountMinor / 100) * form.platformShare / 100).toFixed(2)
@@ -145,12 +164,26 @@ export function BenefitEditorPage() {
   const account = (accounts.data ?? []).find((item) => item.resourceKey === form.resourceKey)
   const selectedSku = (skus.data ?? []).find((item) => item.skuId === form.benefitSkuId)
   const templateLocked = Boolean(selectedSku)
+  const preferredBenefitId = searchParams.get('benefitId')?.trim() || undefined
+  const visibleBenefits = useMemo(
+    () => (benefits.data ?? []).filter((item) => matchesBenefitQuery(item, benefitQuery)),
+    [benefitQuery, benefits.data],
+  )
 
   useEffect(() => {
-    if (hydrated || !benefits.data?.length) return
-    setForm(fromBenefit(benefits.data[0]))
+    if (hydrated || api.demoMode) {
+      if (api.demoMode && !hydrated) setHydrated(true)
+      return
+    }
+    if (benefits.isPending) return
+    const initial = pickInitialBenefit(benefits.data ?? [], preferredBenefitId)
+    if (initial) {
+      const next = fromBenefit(initial)
+      setForm(next)
+      setBaseline(JSON.stringify(next))
+    }
     setHydrated(true)
-  }, [benefits.data, hydrated])
+  }, [benefits.data, benefits.isPending, hydrated, preferredBenefitId])
 
   const save = useMutation({
     mutationFn: () => api.putBenefit(form.benefitId.trim(), {
@@ -161,12 +194,31 @@ export function BenefitEditorPage() {
       policy: policyFrom(form),
     }),
     onSuccess: (value) => {
+      const next = fromBenefit(value)
       setNotice(`已写入 ${value.benefitId} v${value.version}`)
-      setForm(fromBenefit(value))
+      setForm(next)
+      setBaseline(JSON.stringify(next))
       void queryClient.invalidateQueries({ queryKey: ['benefits'] })
     },
   })
   const patch = (next: Partial<Form>) => setForm((current) => ({ ...current, ...next }))
+  const dirty = JSON.stringify(form) !== baseline
+  const typeMismatch = Boolean(selectedSku && form.type && selectedSku.benefitType && form.type !== selectedSku.benefitType)
+  const saveBlocked = api.demoMode || !canWrite || save.isPending || !form.benefitId.trim() || !form.name.trim() || typeMismatch
+  const saveHint = api.demoMode
+    ? '演示模式不可执行'
+    : !canWrite
+      ? '当前身份没有 benefit:write'
+      : !form.benefitId.trim() || !form.name.trim()
+        ? '请先填写权益 ID 和名称'
+        : typeMismatch
+          ? `权益类型 ${form.type} 与模板 ${selectedSku?.benefitType} 不一致`
+          : '写入 PUT /api/v1/benefits/{id}'
+  const saveButton = (label: string) => (
+    <Button tone="primary" disabled={saveBlocked} title={saveHint} onClick={() => save.mutate()}>
+      <Save size={15} />{label}
+    </Button>
+  )
 
   return (
     <div className="workspace benefit-page">
@@ -177,14 +229,7 @@ export function BenefitEditorPage() {
         actions={(
           <>
             <Button disabled title="历史版本列表尚未接入"><ArchiveRestore size={15} />历史版本</Button>
-            <Button
-              tone="primary"
-              disabled={api.demoMode || !canWrite || save.isPending || !form.benefitId.trim() || !form.name.trim()}
-              title={api.demoMode ? '演示模式不可执行' : '写入 PUT /api/v1/benefits/{id}'}
-              onClick={() => save.mutate()}
-            >
-              <Save size={15} />保存策略
-            </Button>
+            {saveButton('保存策略')}
           </>
         )}
       />
@@ -192,46 +237,97 @@ export function BenefitEditorPage() {
       {!api.demoMode && <StateBanner tone="info" title="策略写入 policy 映射" detail="出资比例、门槛与开关保存在权益 policy；资源守恒读取资金账户。有效期与面额以已绑定模板为准。" />}
       {notice && <StateBanner tone="success" title="已写入控制面" detail={notice} />}
       {benefits.isError && <StateBanner tone="error" title="权益加载失败" detail={problemDetail(benefits.error)} />}
+      {!api.demoMode && !benefits.isPending && !benefits.isError && (benefits.data?.length ?? 0) === 0 && (
+        <StateBanner
+          tone="warn"
+          title={`当前业务租户 ${auth.tenantId || '未声明'} 下没有权益`}
+          detail="权益定义按货主隔离。请确认顶栏业务租户与建商品、建活动时相同。"
+        />
+      )}
       {accounts.isError && <StateBanner tone="error" title="资金账户加载失败" detail={problemDetail(accounts.error)} />}
       {save.isError && <StateBanner tone="error" title="保存失败" detail={saveErrorDetail(save.error)} />}
       {form.status === 'ACTIVE' && !form.benefitSkuId.trim() && !api.demoMode && (
         <StateBanner tone="warn" title="发布需要已投放 SKU" detail="草稿可不绑。状态设为 ACTIVE 时，服务端会校验 benefitSkuId。" />
       )}
       {!api.demoMode && (
-        <div className="form-grid">
-          <label className="field"><span>权益 ID</span><input value={form.benefitId} onChange={(event) => patch({ benefitId: event.target.value })} /></label>
-          <label className="field">
-            <span>已有权益</span>
-            <select
-              value={(benefits.data ?? []).some((item) => item.benefitId === form.benefitId) ? form.benefitId : ''}
-              onChange={(event) => {
-                const item = (benefits.data ?? []).find((row) => row.benefitId === event.target.value)
-                if (item) setForm(fromBenefit(item))
-              }}
-            >
-              <option value="">新建 / 手动输入 ID</option>
-              {(benefits.data ?? []).map((item) => (
-                <option key={item.benefitId} value={item.benefitId}>{item.name} · {item.benefitId} v{item.version}</option>
+        <div className="benefit-picker">
+          <div className="form-grid">
+            <label className="field"><span>权益 ID</span><input aria-label="权益 ID" value={form.benefitId} onChange={(event) => patch({ benefitId: event.target.value })} /></label>
+            <label className="field">
+              <span>筛选已有权益</span>
+              <input
+                aria-label="筛选已有权益"
+                placeholder="输入 ID 或名称，例如 coupon-trace-ha-80"
+                value={benefitQuery}
+                onChange={(event) => setBenefitQuery(event.target.value)}
+              />
+            </label>
+            <label className="field span-2">
+              <span>已有权益{(benefits.data?.length ?? 0) > 0 ? ` · ${visibleBenefits.length}/${benefits.data?.length}` : ''}</span>
+              <select
+                aria-label="已有权益"
+                value={(benefits.data ?? []).some((item) => item.benefitId === form.benefitId) ? form.benefitId : ''}
+                onChange={(event) => {
+                  const item = (benefits.data ?? []).find((row) => row.benefitId === event.target.value)
+                  if (item) setForm(fromBenefit(item))
+                }}
+              >
+                <option value="">新建 / 手动输入 ID</option>
+                {visibleBenefits.map((item) => (
+                  <option key={item.benefitId} value={item.benefitId}>{benefitLabel(item)}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {visibleBenefits.length > 0 && (
+            <ul className="benefit-choice-list">
+              {visibleBenefits.map((item) => (
+                <li key={item.benefitId}>
+                  <button
+                    type="button"
+                    aria-pressed={item.benefitId === form.benefitId}
+                    onClick={() => setForm(fromBenefit(item))}
+                  >
+                    <strong>{item.benefitId}</strong>
+                    <span>{item.name} · {item.status} v{item.version}</span>
+                  </button>
+                </li>
               ))}
-            </select>
-          </label>
+            </ul>
+          )}
+          {benefitQuery.trim() && visibleBenefits.length === 0 && (
+            <p className="benefit-picker-empty">没有匹配「{benefitQuery.trim()}」的权益。权益按当前业务租户隔离。</p>
+          )}
         </div>
       )}
       <div className="benefit-layout">
         <div className="benefit-main">
           <Panel>
-            <PanelHeader eyebrow="SKU TEMPLATE" title="绑定权益模板" />
+            <PanelHeader eyebrow="SKU TEMPLATE" title="绑定权益模板" aside={<>{dirty && <Badge tone="warn">有未保存更改</Badge>}{saveButton('保存')}</>} />
             {api.demoMode ? (
               <StateBanner tone="info" title="演示模式不绑定真实 SKU" detail="关闭 DEMO_MODE 后从 GET /api/v1/benefit-skus 读取已投放模板。" />
             ) : (
-              <SkuPickerField
-                value={form.benefitSkuId}
-                onChange={(benefitSkuId) => patch({ benefitSkuId })}
-                disabled={!canWrite}
-                skus={skus.data ?? []}
-                loading={skus.isPending}
-                error={skus.isError ? problemDetail(skus.error) : undefined}
-              />
+              <>
+                <SkuPickerField
+                  value={form.benefitSkuId}
+                  onChange={(benefitSkuId) => patch({ benefitSkuId })}
+                  disabled={!canWrite}
+                  skus={skus.data ?? []}
+                  loading={skus.isPending}
+                  error={skus.isError ? catalogProblemDetail(skus.error, auth.tenantId) : undefined}
+                />
+                {typeMismatch && (
+                  <StateBanner
+                    tone="error"
+                    title="权益类型与模板类型不一致"
+                    detail={`当前权益是 ${form.type}，所选 SKU ${selectedSku?.skuId} 是 ${selectedSku?.benefitType}。保存已禁用，请改类型或换模板。`}
+                  />
+                )}
+                <div className="sku-bind-actions">
+                  <p>选完模板只改本地表单，必须点保存才会写入 benefitSkuId。{dirty ? ' 当前有未保存更改。' : ''}</p>
+                  {saveButton('保存')}
+                </div>
+              </>
             )}
           </Panel>
           <Panel>

@@ -1,7 +1,5 @@
 package com.acme.marketing.audience.application;
 
-import static com.acme.marketing.platform.time.SqlTime.format;
-
 import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.error.ConflictException;
 import com.acme.marketing.platform.error.NotFoundException;
@@ -9,79 +7,73 @@ import com.acme.marketing.platform.web.TenantContextHolder;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
+/**
+ * 受众领域用例编排服务。
+ *
+ * <p>事务、鉴权和业务规则保留在应用层；所有数据库访问统一经由 {@link AudienceRepository}。
+ */
 @Service
 public class AudienceService {
-    private final JdbcTemplate jdbc;
-    private final ObjectMapper mapper;
+    private final AudienceRepository repository;
+    private final ObjectMapper objectMapper;
     private final Clock clock;
 
-    public AudienceService(JdbcTemplate jdbc, ObjectMapper mapper, Clock clock) {
-        this.jdbc = jdbc;
-        this.mapper = mapper;
+    public AudienceService(AudienceRepository repository, ObjectMapper objectMapper, Clock clock) {
+        this.repository = repository;
+        this.objectMapper = objectMapper;
         this.clock = clock;
     }
 
+    /** 注册可用于人群规则的字段定义。 */
     @Transactional
     public FieldDefinition registerField(FieldDefinition field) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("audience-field:write");
-        jdbc.update("insert into mk_field_definition(tenant_id,field_id,value_type,owner_name,provenance,classification,allowed_uses,max_age_seconds,null_policy,missing_policy,retention_days,created_at) values(?,?,?,?,?,?,?,?,?,?,?,?)",
-                scope.tenantId().value(), field.fieldId(), field.valueType().name(), field.owner(), field.provenance(),
-                field.classification().name(), String.join(",", field.allowedUses()), field.maxAgeSeconds(),
-                field.nullPolicy().name(), field.missingPolicy().name(), field.retentionDays(), format(clock.instant()));
+        repository.saveField(scope.tenantId().value(), field, clock.instant());
         return field;
     }
 
+    /** 校验规则并创建新的不可变人群定义版本。 */
     @Transactional
     public SegmentView createSegment(CreateSegmentRequest request) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("audience:write");
         validateRule(scope.tenantId().value(), request.rule());
-        Long latest = jdbc.query("select max(version_no) from mk_segment_definition where tenant_id=? and segment_id=?",
-                rs -> rs.next() ? rs.getObject(1, Long.class) : null, scope.tenantId().value(), request.segmentId());
-        long version = latest == null ? 1 : latest + 1;
+        long version = repository.findLatestSegmentVersion(scope.tenantId().value(), request.segmentId())
+                .map(latest -> Math.addExact(latest, 1L)).orElse(1L);
         Instant now = clock.instant();
         String ruleJson = json(request.rule());
         String digest = "sha256:" + Digests.sha256Hex(ruleJson);
-        jdbc.update("insert into mk_segment_definition(tenant_id,segment_id,version_no,name,rule_json,rule_hash,state_name,created_by,created_at) values(?,?,?,?,?,?,?,?,?)",
-                scope.tenantId().value(), request.segmentId(), version, request.name(), ruleJson, digest,
-                "ACTIVE", scope.actorId(), format(now));
-        return new SegmentView(request.segmentId(), version, request.name(), "ACTIVE", request.rule(), digest, now);
+        SegmentView segment = new SegmentView(request.segmentId(), version, request.name(), "ACTIVE",
+                request.rule(), digest, now);
+        repository.saveSegment(scope.tenantId().value(), scope.actorId(), segment);
+        return segment;
     }
 
+    /** 查询当前租户已注册的字段。 */
     public List<FieldDefinition> fields() {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("audience-field:read");
-        return jdbc.query("select field_id,value_type,owner_name,provenance,classification,allowed_uses,max_age_seconds,null_policy,missing_policy,retention_days from mk_field_definition where tenant_id=? order by field_id",
-                (rs, rowNum) -> new FieldDefinition(rs.getString(1), ValueType.valueOf(rs.getString(2)),
-                        rs.getString(3), rs.getString(4), Classification.valueOf(rs.getString(5)),
-                        csv(rs.getString(6)), rs.getLong(7), NullPolicy.valueOf(rs.getString(8)),
-                        MissingPolicy.valueOf(rs.getString(9)), rs.getInt(10)), scope.tenantId().value());
+        return repository.findFields(scope.tenantId().value());
     }
 
+    /** 查询当前租户每个人群定义的最新版本。 */
     public List<SegmentView> audiences() {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("audience:read");
-        return jdbc.query("select segment_id,version_no,name,state_name,rule_json,rule_hash,created_at from mk_segment_definition current where tenant_id=? and version_no=(select max(latest.version_no) from mk_segment_definition latest where latest.tenant_id=current.tenant_id and latest.segment_id=current.segment_id) order by name,segment_id",
-                (rs, rowNum) -> new SegmentView(rs.getString(1), rs.getLong(2), rs.getString(3),
-                        rs.getString(4), read(rs.getString(5), SegmentRule.class), rs.getString(6),
-                        Instant.parse(rs.getString(7))), scope.tenantId().value());
+        return repository.findLatestSegments(scope.tenantId().value());
     }
 
+    /** 使用请求内的样本人群预览规则命中结果。 */
     public Preview preview(String segmentId, long version, List<SubjectProfile> profiles) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("audience:preview");
@@ -92,6 +84,7 @@ public class AudienceService {
         return new Preview(count, sample, clock.instant());
     }
 
+    /** 创建带成员明细的不可变人群快照。 */
     @Transactional
     public SnapshotView createSnapshot(String segmentId, long version, SnapshotRequest request) {
         var scope = TenantContextHolder.requireCurrent();
@@ -103,39 +96,36 @@ public class AudienceService {
         List<String> hashes = request.subjectTokens().stream().map(AudienceService::subjectHash).sorted().distinct().toList();
         String checksum = "sha256:" + Digests.sha256Hex(String.join("\n", hashes));
         String snapshotId = UUID.randomUUID().toString();
-        jdbc.update("insert into mk_audience_snapshot(tenant_id,snapshot_id,segment_id,segment_version,as_of_time,watermark_time,expires_at,member_count,checksum,state_name,created_at) values(?,?,?,?,?,?,?,?,?,?,?)",
-                scope.tenantId().value(), snapshotId, segmentId, version, format(request.asOf()),
-                format(request.watermark()), format(request.expiresAt()), hashes.size(), checksum,
-                "READY", format(clock.instant()));
-        for (String hash : hashes) {
-            jdbc.update("insert into mk_audience_member(tenant_id,snapshot_id,subject_hash,membership_version,active_value,updated_at) values(?,?,?,?,?,?)",
-                    scope.tenantId().value(), snapshotId, hash, 1, true, format(clock.instant()));
-        }
-        return new SnapshotView(snapshotId, segmentId, version, request.asOf(), request.watermark(),
+        SnapshotView snapshot = new SnapshotView(snapshotId, segmentId, version, request.asOf(), request.watermark(),
                 request.expiresAt(), hashes.size(), checksum, "READY");
+        repository.saveSnapshot(scope.tenantId().value(), snapshot, hashes, clock.instant());
+        return snapshot;
     }
 
+    /** 按单调递增版本更新快照成员，过期事件不会覆盖新状态。 */
     @Transactional
     public MembershipView updateMembership(String snapshotId, MembershipUpdate update) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("audience:stream-update");
         snapshot(scope.tenantId().value(), snapshotId);
         String hash = subjectHash(update.subjectToken());
-        List<Long> current = jdbc.query("select membership_version from mk_audience_member where tenant_id=? and snapshot_id=? and subject_hash=? for update",
-                (rs, rowNum) -> rs.getLong(1), scope.tenantId().value(), snapshotId, hash);
-        if (!current.isEmpty() && update.version() <= current.getFirst()) {
-            return new MembershipView(snapshotId, update.subjectToken(), false, current.getFirst(), "STALE_UPDATE_IGNORED");
+        var current = repository.lockMembershipVersion(scope.tenantId().value(), snapshotId, hash);
+        if (current.isPresent() && update.version() <= current.orElseThrow()) {
+            long currentVersion = current.orElseThrow();
+            return new MembershipView(snapshotId, update.subjectToken(), false, currentVersion,
+                    "STALE_UPDATE_IGNORED");
         }
         if (current.isEmpty()) {
-            jdbc.update("insert into mk_audience_member(tenant_id,snapshot_id,subject_hash,membership_version,active_value,updated_at) values(?,?,?,?,?,?)",
-                    scope.tenantId().value(), snapshotId, hash, update.version(), update.member(), format(clock.instant()));
+            repository.insertMembership(scope.tenantId().value(), snapshotId, hash, update.version(), update.member(),
+                    clock.instant());
         } else {
-            jdbc.update("update mk_audience_member set membership_version=?,active_value=?,updated_at=? where tenant_id=? and snapshot_id=? and subject_hash=?",
-                    update.version(), update.member(), format(clock.instant()), scope.tenantId().value(), snapshotId, hash);
+            repository.updateMembership(scope.tenantId().value(), snapshotId, hash, update.version(), update.member(),
+                    clock.instant());
         }
         return new MembershipView(snapshotId, update.subjectToken(), update.member(), update.version(), "UPDATED");
     }
 
+    /** 按快照时效策略查询成员状态。 */
     public MembershipView membership(String snapshotId, String subjectToken, Instant usedAt, StalePolicy stalePolicy) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("audience:lookup");
@@ -151,37 +141,30 @@ public class AudienceService {
     }
 
     private MembershipView lookup(String tenantId, String snapshotId, String subjectToken, String reason) {
-        List<MembershipView> results = jdbc.query("select active_value,membership_version from mk_audience_member where tenant_id=? and snapshot_id=? and subject_hash=?",
-                (rs, rowNum) -> new MembershipView(snapshotId, subjectToken, rs.getBoolean(1), rs.getLong(2), reason),
-                tenantId, snapshotId, subjectHash(subjectToken));
-        return results.isEmpty() ? new MembershipView(snapshotId, subjectToken, false, 0, reason) : results.getFirst();
+        return repository.findMembership(tenantId, snapshotId, subjectHash(subjectToken))
+                .map(stored -> new MembershipView(snapshotId, subjectToken, stored.member(), stored.version(), reason))
+                .orElseGet(() -> new MembershipView(snapshotId, subjectToken, false, 0, reason));
     }
 
     private SegmentView segment(String tenantId, String segmentId, long version) {
-        List<SegmentView> segments = jdbc.query("select name,state_name,rule_json,rule_hash,created_at from mk_segment_definition where tenant_id=? and segment_id=? and version_no=?",
-                (rs, rowNum) -> new SegmentView(segmentId, version, rs.getString(1), rs.getString(2),
-                        read(rs.getString(3), SegmentRule.class), rs.getString(4), Instant.parse(rs.getString(5))),
-                tenantId, segmentId, version);
-        if (segments.isEmpty()) throw new NotFoundException("SEGMENT_NOT_FOUND", "segment version not found");
-        return segments.getFirst();
+        return repository.findSegment(tenantId, segmentId, version)
+                .orElseThrow(() -> new NotFoundException("SEGMENT_NOT_FOUND", "segment version not found"));
     }
 
     private SnapshotView snapshot(String tenantId, String snapshotId) {
-        List<SnapshotView> snapshots = jdbc.query("select segment_id,segment_version,as_of_time,watermark_time,expires_at,member_count,checksum,state_name from mk_audience_snapshot where tenant_id=? and snapshot_id=?",
-                (rs, rowNum) -> new SnapshotView(snapshotId, rs.getString(1), rs.getLong(2),
-                        Instant.parse(rs.getString(3)), Instant.parse(rs.getString(4)), Instant.parse(rs.getString(5)),
-                        rs.getLong(6), rs.getString(7), rs.getString(8)), tenantId, snapshotId);
-        if (snapshots.isEmpty()) throw new NotFoundException("SNAPSHOT_NOT_FOUND", "audience snapshot not found");
-        return snapshots.getFirst();
+        return repository.findSnapshot(tenantId, snapshotId)
+                .orElseThrow(() -> new NotFoundException("SNAPSHOT_NOT_FOUND", "audience snapshot not found"));
     }
 
     private void validateRule(String tenantId, SegmentRule rule) {
         if (rule.conditions().isEmpty()) throw new IllegalArgumentException("segment rule is empty");
+        Set<String> fieldIds = rule.conditions().stream().map(Condition::fieldId)
+                .collect(java.util.stream.Collectors.toSet());
+        Map<String, ValueType> types = repository.findFieldTypes(tenantId, fieldIds);
         for (Condition condition : rule.conditions()) {
-            List<ValueType> types = jdbc.query("select value_type from mk_field_definition where tenant_id=? and field_id=?",
-                    (rs, rowNum) -> ValueType.valueOf(rs.getString(1)), tenantId, condition.fieldId());
-            if (types.isEmpty()) throw new ConflictException("FIELD_NOT_REGISTERED", condition.fieldId());
-            validateValue(types.getFirst(), condition.value());
+            ValueType type = types.get(condition.fieldId());
+            if (type == null) throw new ConflictException("FIELD_NOT_REGISTERED", condition.fieldId());
+            validateValue(type, condition.value());
         }
     }
 
@@ -224,18 +207,9 @@ public class AudienceService {
         return Digests.sha256Hex(subjectToken);
     }
 
-    private static Set<String> csv(String value) {
-        return value == null || value.isBlank() ? Set.of() : Set.of(value.split(","));
-    }
-
     private String json(Object value) {
-        try { return mapper.writeValueAsString(value); }
+        try { return objectMapper.writeValueAsString(value); }
         catch (JacksonException failure) { throw new IllegalArgumentException("audience rule cannot be serialized", failure); }
-    }
-
-    private <T> T read(String value, Class<T> type) {
-        try { return mapper.readValue(value, type); }
-        catch (JacksonException failure) { throw new IllegalStateException("stored audience rule is invalid", failure); }
     }
 
     public enum ValueType { STRING, DECIMAL, BOOLEAN, INSTANT }

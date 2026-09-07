@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.audience.infrastructure.persistence.mapper.AudienceMapper">
+
+    <insert id="insertField">
+        INSERT INTO mk_field_definition (
+            tenant_id,
+            field_id,
+            value_type,
+            owner_name,
+            provenance,
+            classification,
+            allowed_uses,
+            max_age_seconds,
+            null_policy,
+            missing_policy,
+            retention_days,
+            created_at
+        ) VALUES (
+            #{tenantId},
+            #{fieldId},
+            #{valueType},
+            #{ownerName},
+            #{provenance},
+            #{classification},
+            #{allowedUses},
+            #{maxAgeSeconds},
+            #{nullPolicy},
+            #{missingPolicy},
+            #{retentionDays},
+            #{createdAt}
+        )
+    </insert>
+
+    <select id="selectFields"
+            resultType="com.acme.marketing.audience.infrastructure.persistence.mapper.AudienceMapper$FieldRow">
+        SELECT
+            field_id AS fieldId,
+            value_type AS valueType,
+            owner_name AS ownerName,
+            provenance,
+            classification,
+            allowed_uses AS allowedUses,
+            max_age_seconds AS maxAgeSeconds,
+            null_policy AS nullPolicy,
+            missing_policy AS missingPolicy,
+            retention_days AS retentionDays
+        FROM mk_field_definition
+        WHERE tenant_id = #{tenantId}
+        ORDER BY field_id
+    </select>
+
+    <select id="selectFieldTypes"
+            resultType="com.acme.marketing.audience.infrastructure.persistence.mapper.AudienceMapper$FieldTypeRow">
+        SELECT
+            field_id AS fieldId,
+            value_type AS valueType
+        FROM mk_field_definition
+        WHERE tenant_id = #{tenantId}
+          AND field_id IN
+        <foreach collection="fieldIds" item="fieldId" open="(" separator="," close=")">
+            #{fieldId}
+        </foreach>
+    </select>
+
+    <select id="selectLatestSegmentVersion" resultType="java.lang.Long">
+        SELECT MAX(version_no)
+        FROM mk_segment_definition
+        WHERE tenant_id = #{tenantId}
+          AND segment_id = #{segmentId}
+    </select>
+
+    <insert id="insertSegment">
+        INSERT INTO mk_segment_definition (
+            tenant_id,
+            segment_id,
+            version_no,
+            name,
+            rule_json,
+            rule_hash,
+            state_name,
+            created_by,
+            created_at
+        ) VALUES (
+            #{tenantId},
+            #{segmentId},
+            #{versionNo},
+            #{name},
+            #{ruleJson},
+            #{ruleHash},
+            #{stateName},
+            #{createdBy},
+            #{createdAt}
+        )
+    </insert>
+
+    <select id="selectLatestSegments"
+            resultType="com.acme.marketing.audience.infrastructure.persistence.mapper.AudienceMapper$SegmentRow">
+        SELECT
+            current.segment_id AS segmentId,
+            current.version_no AS versionNo,
+            current.name,
+            current.state_name AS stateName,
+            current.rule_json AS ruleJson,
+            current.rule_hash AS ruleHash,
+            current.created_at AS createdAt
+        FROM mk_segment_definition current
+        WHERE current.tenant_id = #{tenantId}
+          AND current.version_no = (
+              SELECT MAX(latest.version_no)
+              FROM mk_segment_definition latest
+              WHERE latest.tenant_id = current.tenant_id
+                AND latest.segment_id = current.segment_id
+          )
+        ORDER BY current.name, current.segment_id
+    </select>
+
+    <select id="selectSegment"
+            resultType="com.acme.marketing.audience.infrastructure.persistence.mapper.AudienceMapper$SegmentRow">
+        SELECT
+            segment_id AS segmentId,
+            version_no AS versionNo,
+            name,
+            state_name AS stateName,
+            rule_json AS ruleJson,
+            rule_hash AS ruleHash,
+            created_at AS createdAt
+        FROM mk_segment_definition
+        WHERE tenant_id = #{tenantId}
+          AND segment_id = #{segmentId}
+          AND version_no = #{version}
+    </select>
+
+    <insert id="insertSnapshot">
+        INSERT INTO mk_audience_snapshot (
+            tenant_id,
+            snapshot_id,
+            segment_id,
+            segment_version,
+            as_of_time,
+            watermark_time,
+            expires_at,
+            member_count,
+            checksum,
+            state_name,
+            created_at
+        ) VALUES (
+            #{tenantId},
+            #{snapshotId},
+            #{segmentId},
+            #{segmentVersion},
+            #{asOfTime},
+            #{watermarkTime},
+            #{expiresAt},
+            #{memberCount},
+            #{checksum},
+            #{stateName},
+            #{createdAt}
+        )
+    </insert>
+
+    <insert id="insertMembers">
+        INSERT INTO mk_audience_member (
+            tenant_id,
+            snapshot_id,
+            subject_hash,
+            membership_version,
+            active_value,
+            updated_at
+        ) VALUES
+        <foreach collection="members" item="member" separator=",">
+            (
+                #{member.tenantId},
+                #{member.snapshotId},
+                #{member.subjectHash},
+                #{member.membershipVersion},
+                #{member.activeValue},
+                #{member.updatedAt}
+            )
+        </foreach>
+    </insert>
+
+    <select id="selectSnapshot"
+            resultType="com.acme.marketing.audience.infrastructure.persistence.mapper.AudienceMapper$SnapshotRow">
+        SELECT
+            snapshot_id AS snapshotId,
+            segment_id AS segmentId,
+            segment_version AS segmentVersion,
+            as_of_time AS asOfTime,
+            watermark_time AS watermarkTime,
+            expires_at AS expiresAt,
+            member_count AS memberCount,
+            checksum,
+            state_name AS stateName
+        FROM mk_audience_snapshot
+        WHERE tenant_id = #{tenantId}
+          AND snapshot_id = #{snapshotId}
+    </select>
+
+    <select id="selectMembershipVersionForUpdate" resultType="java.lang.Long">
+        SELECT membership_version
+        FROM mk_audience_member
+        WHERE tenant_id = #{tenantId}
+          AND snapshot_id = #{snapshotId}
+          AND subject_hash = #{subjectHash}
+        FOR UPDATE
+    </select>
+
+    <insert id="insertMember">
+        INSERT INTO mk_audience_member (
+            tenant_id,
+            snapshot_id,
+            subject_hash,
+            membership_version,
+            active_value,
+            updated_at
+        ) VALUES (
+            #{tenantId},
+            #{snapshotId},
+            #{subjectHash},
+            #{membershipVersion},
+            #{activeValue},
+            #{updatedAt}
+        )
+    </insert>
+
+    <update id="updateMember">
+        UPDATE mk_audience_member
+        SET membership_version = #{membershipVersion},
+            active_value = #{activeValue},
+            updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId}
+          AND snapshot_id = #{snapshotId}
+          AND subject_hash = #{subjectHash}
+    </update>
+
+    <select id="selectMembership"
+            resultType="com.acme.marketing.audience.infrastructure.persistence.mapper.AudienceMapper$MembershipRow">
+        SELECT
+            active_value AS activeValue,
+            membership_version AS membershipVersion
+        FROM mk_audience_member
+        WHERE tenant_id = #{tenantId}
+          AND snapshot_id = #{snapshotId}
+          AND subject_hash = #{subjectHash}
+    </select>
+
+</mapper>

@@ -20,3 +20,8 @@ helm upgrade --install marketing deploy/helm/marketing-platform \
 启用 `flink.enabled` 前需安装 Apache Flink Kubernetes Operator 和 S3 filesystem 插件，并为 `marketing-flink` ServiceAccount 配置工作负载身份。镜像标签必须不可变；正式发布建议在准入控制器中进一步要求 digest。
 
 生产 Journey 固定使用 `STREAM`：`POST /api/v1/events` 接受并通过 outbox 投递 `JOURNEY_SIGNAL`，Flink 是唯一状态写入者，Journey Service 仅物化 `mk.journey.output.v1`。同步 enrollment/signal/migrate 接口只保留给 DIRECT/DEV 测试，OIDC 部署若误配 DIRECT 会拒绝启动。
+
+生产示例会启用业务指标 HPA；集群必须先由 Prometheus Adapter 暴露
+`marketing_http_server_p99_milliseconds`、`hikaricp_connections_pending`、
+`marketing_outbox_pending`、`marketing_outbox_oldest_age_seconds` 和 `marketing_kafka_consumer_lag`。指标缺失时 HPA 仍可按 CPU/内存扩容，
+但会阻止安全缩容，因此发布准入必须执行 `kubectl describe hpa` 并确认所有 target 都有当前值。

@@ -55,6 +55,15 @@ class ApiExceptionHandlerTest {
         assertEquals(true, problem.getProperties().get("retryable"));
     }
 
+    @Test
+    void admissionBackpressureIsRetryableServiceUnavailable() {
+        var problem = handler.domainException(new DependencyUnavailableException(
+                "EVENT_OUTBOX_BACKPRESSURE", "event backlog is full"), request());
+        assertEquals(503, problem.getStatus());
+        assertEquals("EVENT_OUTBOX_BACKPRESSURE", problem.getProperties().get("code"));
+        assertEquals(true, problem.getProperties().get("retryable"));
+    }
+
     private static MockHttpServletRequest request() {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/test");
         request.setRequestURI("/api/v1/test");

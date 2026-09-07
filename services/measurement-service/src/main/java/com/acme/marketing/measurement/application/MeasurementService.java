@@ -25,8 +25,6 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.Supplier;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
@@ -34,15 +32,15 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class MeasurementService {
-    private final JdbcTemplate jdbc;
+    private final MeasurementRepository repository;
     private final ObjectMapper mapper;
     private final Clock clock;
     private final MeasurementProjectionStore projection;
     private final ExperimentAssigner assigner = new ExperimentAssigner();
 
-    public MeasurementService(JdbcTemplate jdbc, ObjectMapper mapper, Clock clock,
+    public MeasurementService(MeasurementRepository repository, ObjectMapper mapper, Clock clock,
             MeasurementProjectionStore projection) {
-        this.jdbc = jdbc;
+        this.repository = repository;
         this.mapper = mapper;
         this.clock = clock;
         this.projection = projection;
@@ -55,9 +53,8 @@ public class MeasurementService {
         ExperimentAssigner.Experiment experiment = new ExperimentAssigner.Experiment(request.experimentId(),
                 request.version(), request.layer(), request.salt(), request.variants());
         Instant now = clock.instant();
-        jdbc.update("insert into mk_experiment(tenant_id,experiment_id,version_no,layer_name,definition_json,state_name,created_at) values(?,?,?,?,?,?,?)",
-                scope.tenantId().value(), request.experimentId(), request.version(), request.layer(), json(experiment),
-                "ACTIVE", format(now));
+        repository.saveExperiment(new MeasurementRepository.ExperimentWrite(scope.tenantId().value(),
+                request.experimentId(), request.version(), request.layer(), json(experiment), "ACTIVE", format(now)));
         return new ExperimentView(experiment, "ACTIVE", now);
     }
 
@@ -77,14 +74,13 @@ public class MeasurementService {
         }
         ExperimentAssigner.Assignment assignment = assigner.assign(experiment.experiment(), unit);
         Instant now = clock.instant();
-        try {
-            jdbc.update("insert into mk_experiment_assignment(tenant_id,experiment_id,version_no,layer_name,randomization_unit,variant_id,holdout_value,bucket_no,assigned_at) values(?,?,?,?,?,?,?,?,?)",
-                    scope.tenantId().value(), experimentId, version, experiment.experiment().layer(), unit,
-                    assignment.variantId(), assignment.holdout(), assignment.bucket(), format(now));
-        } catch (DuplicateKeyException race) {
+        boolean saved = repository.trySaveAssignment(new MeasurementRepository.AssignmentWrite(
+                scope.tenantId().value(), experimentId, version, experiment.experiment().layer(), unit,
+                assignment.variantId(), assignment.holdout(), assignment.bucket(), format(now)));
+        if (!saved) {
             List<AssignmentView> winner = assignment(scope.tenantId().value(), experimentId, version, unit);
             if (!winner.isEmpty()) return winner.getFirst();
-            throw race;
+            throw new ConflictException("EXPERIMENT_ASSIGNMENT_RACE", "winning assignment is not visible");
         }
         return new AssignmentView(experimentId, version, assignment.variantId(), assignment.holdout(),
                 assignment.bucket(), false, now);
@@ -98,11 +94,11 @@ public class MeasurementService {
             throw new ConflictException("FACT_TENANT_MISMATCH", "fact tenant must match service identity");
         }
         String payloadHash = factPayloadHash(fact);
-        List<StoredFactReceipt> duplicate = storedReceipt(scope.tenantId().value(), fact.eventId());
-        if (!duplicate.isEmpty() && !duplicate.getFirst().payloadHash().equals(payloadHash)) {
+        var duplicate = storedReceipt(scope.tenantId().value(), fact.eventId());
+        if (duplicate.isPresent() && !duplicate.orElseThrow().payloadHash().equals(payloadHash)) {
             throw new ConflictException("FACT_EVENT_ID_COLLISION", "event id was used with another payload");
         }
-        if (!duplicate.isEmpty()) return duplicate.getFirst().receipt();
+        if (duplicate.isPresent()) return duplicate.orElseThrow().receipt();
         String experimentId = fact.attributes().getOrDefault("experimentId", "");
         String experimentVersion = fact.attributes().getOrDefault("experimentVersion", "");
         String variantId = fact.attributes().getOrDefault("variantId", "");
@@ -119,19 +115,16 @@ public class MeasurementService {
         ProjectionContribution previous = null;
         long revision = 1;
         if (!fact.correctionOf().isBlank()) {
-            List<CorrectionTarget> targets = jdbc.query("select correction_root_id from mk_fact where tenant_id=? and event_id=? for update",
-                    (rs, rowNum) -> new CorrectionTarget(rs.getString(1)), scope.tenantId().value(), fact.correctionOf());
-            if (targets.isEmpty()) throw new ConflictException("CORRECTION_TARGET_NOT_FOUND", fact.correctionOf());
-            correctionRoot = targets.getFirst().rootEventId();
-            CorrectionIdentity root = jdbc.query("select fact_type,business_key,subject_hash from mk_fact where tenant_id=? and event_id=? for update",
-                    rs -> rs.next() ? new CorrectionIdentity(rs.getString(1), rs.getString(2), rs.getString(3)) : null,
-                    scope.tenantId().value(), correctionRoot);
-            List<StoredFactReceipt> concurrentDuplicate = storedReceipt(scope.tenantId().value(), fact.eventId());
-            if (!concurrentDuplicate.isEmpty()) {
-                if (!concurrentDuplicate.getFirst().payloadHash().equals(payloadHash)) {
+            correctionRoot = repository.findCorrectionRootForUpdate(scope.tenantId().value(), fact.correctionOf())
+                    .orElseThrow(() -> new ConflictException("CORRECTION_TARGET_NOT_FOUND", fact.correctionOf()));
+            MeasurementRepository.CorrectionIdentity root = repository.findCorrectionIdentityForUpdate(
+                    scope.tenantId().value(), correctionRoot).orElse(null);
+            var concurrentDuplicate = storedReceipt(scope.tenantId().value(), fact.eventId());
+            if (concurrentDuplicate.isPresent()) {
+                if (!concurrentDuplicate.orElseThrow().payloadHash().equals(payloadHash)) {
                     throw new ConflictException("FACT_EVENT_ID_COLLISION", "event id was used with another payload");
                 }
-                return concurrentDuplicate.getFirst().receipt();
+                return concurrentDuplicate.orElseThrow().receipt();
             }
             if (root == null || !root.type().equals(fact.type().name())
                     || !root.businessKey().equals(fact.businessKey())
@@ -139,21 +132,19 @@ public class MeasurementService {
                 throw new ConflictException("CORRECTION_IDENTITY_MISMATCH",
                         "correction must preserve root fact type, business key and subject");
             }
-            List<String> activeEvents = jdbc.query("select event_id from mk_fact where tenant_id=? and correction_root_id=? and corrected_value=false for update",
-                    (rs, rowNum) -> rs.getString(1), scope.tenantId().value(), correctionRoot);
+            List<String> activeEvents = repository.findActiveCorrectionEventsForUpdate(
+                    scope.tenantId().value(), correctionRoot);
             if (activeEvents.size() != 1 || !activeEvents.getFirst().equals(fact.correctionOf())) {
                 throw new ConflictException("CORRECTION_NOT_CURRENT",
                         "correctionOf must reference the single currently active fact");
             }
-            Integer chainLength = jdbc.query("select count(*) from mk_fact where tenant_id=? and correction_root_id=?",
-                    rs -> rs.next() ? rs.getInt(1) : 0, scope.tenantId().value(), correctionRoot);
-            if (chainLength != null && chainLength >= 100) {
+            int chainLength = repository.countCorrectionChain(scope.tenantId().value(), correctionRoot);
+            if (chainLength >= 100) {
                 throw new ConflictException("CORRECTION_CHAIN_LIMIT", "correction chain cannot exceed 100 facts");
             }
-            revision = (chainLength == null ? 1 : chainLength) + 1L;
+            revision = chainLength + 1L;
             previous = projectionContribution(scope.tenantId().value(), fact.correctionOf());
-            int corrected = jdbc.update("update mk_fact set corrected_value=true where tenant_id=? and event_id=? and corrected_value=false",
-                    scope.tenantId().value(), fact.correctionOf());
+            int corrected = repository.markFactCorrected(scope.tenantId().value(), fact.correctionOf());
             if (corrected != 1) {
                 throw new ConflictException("CORRECTION_CHAIN_INVALID", "correction chain has no single active value");
             }
@@ -161,16 +152,14 @@ public class MeasurementService {
         long revenue = longAttribute(fact.attributes(), "revenueMinor");
         if (fact.type() == MarketingFact.Type.REFUND) revenue = Math.negateExact(revenue);
         long cost = longAttribute(fact.attributes(), "costMinor");
-        try {
-            jdbc.update("insert into mk_fact(tenant_id,event_id,fact_type,business_key,subject_hash,occurred_at,ingested_at,schema_version,payload_hash,attributes_json,correction_of,correction_root_id,corrected_value,revenue_minor,cost_minor,experiment_id,experiment_version,variant_id) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    scope.tenantId().value(), fact.eventId(), fact.type().name(), fact.businessKey(),
-                    subjectHash(fact.subjectToken()), format(fact.occurredAt()), format(fact.ingestedAt()),
-                    fact.schemaVersion(), payloadHash, json(fact.attributes()), fact.correctionOf(), correctionRoot,
-                    false, revenue, cost,
-                    experimentId, experimentVersion, variantId);
-        } catch (DuplicateKeyException race) {
-            StoredFactReceipt winner = storedReceipt(scope.tenantId().value(), fact.eventId()).stream()
-                    .findFirst().orElseThrow(() -> race);
+        boolean saved = repository.trySaveFact(new MeasurementRepository.FactWrite(scope.tenantId().value(),
+                fact.eventId(), fact.type().name(), fact.businessKey(), subjectHash(fact.subjectToken()),
+                format(fact.occurredAt()), format(fact.ingestedAt()), fact.schemaVersion(), payloadHash,
+                json(fact.attributes()), fact.correctionOf(), correctionRoot, false, revenue, cost,
+                experimentId, experimentVersion, variantId));
+        if (!saved) {
+            StoredFactReceipt winner = storedReceipt(scope.tenantId().value(), fact.eventId())
+                    .orElseThrow(() -> new ConflictException("FACT_INSERT_RACE", "winning fact is not visible"));
             if (!winner.payloadHash().equals(payloadHash)) {
                 throw new ConflictException("FACT_EVENT_ID_COLLISION", "event id was used with another payload");
             }
@@ -202,28 +191,24 @@ public class MeasurementService {
             throw new IllegalArgumentException("projection watermark is invalid");
         }
         String tenantId = scope.tenantId().value();
-        try {
-            jdbc.update("insert into mk_projection_watermark_config(tenant_id,projection_name,partition_count,updated_at) values(?,?,?,?)",
-                    tenantId, request.projectionName(), request.partitionCount(), format(clock.instant()));
-        } catch (DuplicateKeyException exists) {
-            // Locked and validated below.
-        }
-        Integer configuredPartitions = jdbc.query("select partition_count from mk_projection_watermark_config where tenant_id=? and projection_name=? for update",
-                rs -> rs.next() ? rs.getInt(1) : null, tenantId, request.projectionName());
+        repository.tryCreateWatermarkConfig(new MeasurementRepository.WatermarkConfigWrite(tenantId,
+                request.projectionName(), request.partitionCount(), format(clock.instant())));
+        Integer configuredPartitions = repository.findWatermarkPartitionCountForUpdate(
+                tenantId, request.projectionName()).orElse(null);
         if (configuredPartitions == null || configuredPartitions != request.partitionCount()) {
             throw new ConflictException("WATERMARK_PARTITION_COUNT_CONFLICT",
                     "projection partition count requires an explicit reset procedure");
         }
-        List<PartitionWatermark> current = jdbc.query("select source_offset,complete_through_epoch_ms from mk_projection_partition_watermark where tenant_id=? and projection_name=? and partition_id=? for update",
-                (rs, rowNum) -> new PartitionWatermark(rs.getLong(1), rs.getLong(2)), tenantId,
-                request.projectionName(), request.partitionId());
+        var current = repository.findPartitionWatermarkForUpdate(
+                tenantId, request.projectionName(), request.partitionId());
         long completeMillis = request.completeThrough().toEpochMilli();
+        MeasurementRepository.PartitionWatermarkWrite write = new MeasurementRepository.PartitionWatermarkWrite(
+                tenantId, request.projectionName(), request.partitionId(), request.sourceOffset(), completeMillis,
+                format(clock.instant()));
         if (current.isEmpty()) {
-            jdbc.update("insert into mk_projection_partition_watermark(tenant_id,projection_name,partition_id,source_offset,complete_through_epoch_ms,updated_at) values(?,?,?,?,?,?)",
-                    tenantId, request.projectionName(), request.partitionId(), request.sourceOffset(), completeMillis,
-                    format(clock.instant()));
+            repository.savePartitionWatermark(write);
         } else {
-            PartitionWatermark previous = current.getFirst();
+            MeasurementRepository.PartitionWatermark previous = current.orElseThrow();
             if (request.sourceOffset() < previous.sourceOffset()
                     || completeMillis < previous.completeThroughEpochMillis()
                     || (request.sourceOffset() == previous.sourceOffset()
@@ -231,9 +216,7 @@ public class MeasurementService {
                 throw new ConflictException("WATERMARK_REGRESSION", "partition watermark must advance monotonically");
             }
             if (request.sourceOffset() > previous.sourceOffset()) {
-                jdbc.update("update mk_projection_partition_watermark set source_offset=?,complete_through_epoch_ms=?,updated_at=? where tenant_id=? and projection_name=? and partition_id=?",
-                        request.sourceOffset(), completeMillis, format(clock.instant()), tenantId,
-                        request.projectionName(), request.partitionId());
+                repository.updatePartitionWatermark(write);
             }
         }
         return projectionWatermark(tenantId, request.projectionName());
@@ -297,10 +280,9 @@ public class MeasurementService {
         }
         Fact conversion = fact(tenantId, conversionEventId);
         Instant start = conversion.occurredAt().minusSeconds(windowSeconds);
-        List<Fact> touches = jdbc.query("select event_id,fact_type,business_key,occurred_at,revenue_minor,cost_minor from mk_fact where tenant_id=? and subject_hash=? and corrected_value=false and fact_type in ('EXPOSURE','CONTACT_SENT','CLICK','OFFER_SHOWN') and occurred_at>=? and occurred_at<=? order by occurred_at",
-                (rs, rowNum) -> new Fact(rs.getString(1), rs.getString(2), rs.getString(3),
-                        conversion.subjectHash(), Instant.parse(rs.getString(4)), rs.getLong(5), rs.getLong(6)),
-                tenantId, conversion.subjectHash(), format(start), format(conversion.occurredAt()));
+        List<Fact> touches = repository.findAttributionTouches(tenantId, conversion.subjectHash(),
+                        format(start), format(conversion.occurredAt())).stream()
+                .map(this::fact).toList();
         if (touches.isEmpty()) return new AttributionResult(conversionEventId, policy, Map.of(), conversion.revenue(), clock.instant());
         Map<String, BigDecimal> credits = new LinkedHashMap<>();
         switch (policy) {
@@ -323,14 +305,11 @@ public class MeasurementService {
     }
 
     private AttributionRecomputeResult recomputeAttributionNow(String tenantId) {
-        jdbc.update("insert into mk_attribution_recompute_lock(tenant_id,updated_at) values(?,?) on duplicate key update tenant_id=tenant_id",
-                tenantId, format(clock.instant()));
-        jdbc.query("select tenant_id from mk_attribution_recompute_lock where tenant_id=? for update",
-                rs -> rs.next() ? rs.getString(1) : null, tenantId);
-        List<String> conversions = jdbc.query(
-                "select event_id from mk_fact where tenant_id=? and fact_type='CONVERSION' and corrected_value=false order by occurred_at,event_id",
-                (rs, rowNum) -> rs.getString(1), tenantId);
-        jdbc.update("delete from mk_attribution_credit where tenant_id=?", tenantId);
+        repository.ensureAttributionLock(tenantId, format(clock.instant()));
+        repository.lockAttribution(tenantId)
+                .orElseThrow(() -> new IllegalStateException("attribution recompute lock disappeared"));
+        List<String> conversions = repository.findActiveConversionIds(tenantId);
+        repository.deleteAttributionCredits(tenantId);
         Instant calculatedAt = clock.instant();
         int credits = 0;
         long windowSeconds = 30L * 24 * 60 * 60;
@@ -338,15 +317,14 @@ public class MeasurementService {
             for (AttributionPolicy policy : AttributionPolicy.values()) {
                 AttributionResult result = attribute(tenantId, conversionEventId, policy, windowSeconds);
                 for (Map.Entry<String, BigDecimal> credit : result.touchCredits().entrySet()) {
-                    jdbc.update("insert into mk_attribution_credit(tenant_id,conversion_event_id,policy_name,touch_event_id,credit_value,revenue_minor,calculated_at) values(?,?,?,?,?,?,?)",
+                    repository.saveAttributionCredit(new MeasurementRepository.AttributionCreditWrite(
                             tenantId, conversionEventId, policy.name(), credit.getKey(), credit.getValue(),
-                            result.revenueMinor(), format(calculatedAt));
+                            result.revenueMinor(), format(calculatedAt)));
                     credits++;
                 }
             }
         }
-        jdbc.update("update mk_attribution_recompute_lock set updated_at=? where tenant_id=?",
-                format(calculatedAt), tenantId);
+        repository.updateAttributionLock(tenantId, format(calculatedAt));
         return new AttributionRecomputeResult(conversions.size(), credits, calculatedAt);
     }
 
@@ -356,9 +334,8 @@ public class MeasurementService {
         scope.requirePermission("experiment:monitor");
         ExperimentView experiment = experiment(scope.tenantId().value(), experimentId, version);
         Map<String, Long> observed = new LinkedHashMap<>();
-        jdbc.query("select variant_id,count(*) from mk_fact where tenant_id=? and fact_type='EXPOSURE' and corrected_value=false and experiment_id=? and experiment_version=? group by variant_id",
-                rs -> { observed.put(rs.getString(1), rs.getLong(2)); }, scope.tenantId().value(),
-                experimentId, version);
+        repository.countExposureByVariant(scope.tenantId().value(), experimentId, version)
+                .forEach(row -> observed.put(row.variantId(), row.countValue()));
         long total = observed.values().stream().mapToLong(Long::longValue).sum();
         double chiSquare = 0;
         for (ExperimentAssigner.Variant variant : experiment.experiment().variants()) {
@@ -369,8 +346,7 @@ public class MeasurementService {
             }
         }
         boolean alert = total >= 100 && chiSquare > 16.27;
-        if (alert) jdbc.update("update mk_experiment set state_name='PAUSED_SRM' where tenant_id=? and experiment_id=? and version_no=?",
-                scope.tenantId().value(), experimentId, version);
+        if (alert) repository.pauseExperimentForSrm(scope.tenantId().value(), experimentId, version);
         return new SrmReport(experimentId, version, total, observed, chiSquare, alert,
                 alert ? "PAUSED_SRM" : experiment.state(), clock.instant());
     }
@@ -380,11 +356,10 @@ public class MeasurementService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("trace:write");
         Instant now = clock.instant();
-        jdbc.update("insert into mk_decision_trace(tenant_id,trace_id,request_id,order_id,subject_hash,generation_no,duration_micros,candidates_json,pricing_json,terms_version,expires_at,legal_hold,created_at) values(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                scope.tenantId().value(), request.traceId(), request.requestId(), request.orderId(),
-                subjectHash(request.subjectToken()), request.generation(), request.durationMicros(),
-                json(request.candidates()), json(request.pricing()), request.termsVersion(),
-                format(request.expiresAt()), request.legalHold(), format(now));
+        repository.saveTrace(new MeasurementRepository.TraceWrite(scope.tenantId().value(), request.traceId(),
+                request.requestId(), request.orderId(), subjectHash(request.subjectToken()), request.generation(),
+                request.durationMicros(), json(request.candidates()), json(request.pricing()), request.termsVersion(),
+                format(request.expiresAt()), request.legalHold(), format(now)));
         return trace(scope.tenantId().value(), request.requestId(), null);
     }
 
@@ -401,49 +376,43 @@ public class MeasurementService {
     }
 
     private TraceView trace(String tenantId, String requestId, String orderId) {
-        String field = requestId != null ? "request_id" : "order_id";
-        String value = requestId != null ? requestId : orderId;
-        List<TraceView> rows = jdbc.query("select trace_id,request_id,order_id,subject_hash,generation_no,duration_micros,candidates_json,pricing_json,terms_version,expires_at,legal_hold,created_at from mk_decision_trace where tenant_id=? and " + field + "=? and (expires_at>? or legal_hold=true)",
-                (rs, rowNum) -> new TraceView(rs.getString(1), rs.getString(2), rs.getString(3),
-                        rs.getString(4).substring(0, 12) + "…", rs.getLong(5), rs.getLong(6),
-                        read(rs.getString(7), Map.class), read(rs.getString(8), Map.class), rs.getString(9),
-                        Instant.parse(rs.getString(10)), rs.getBoolean(11), Instant.parse(rs.getString(12)), List.of()),
-                tenantId, value, format(clock.instant()));
-        if (rows.isEmpty()) throw new NotFoundException("TRACE_NOT_FOUND", "decision trace not found or expired");
-        return rows.getFirst();
+        var row = requestId != null
+                ? repository.findTraceByRequest(tenantId, requestId, format(clock.instant()))
+                : repository.findTraceByOrder(tenantId, orderId, format(clock.instant()));
+        MeasurementRepository.TraceRow stored = row.orElseThrow(
+                () -> new NotFoundException("TRACE_NOT_FOUND", "decision trace not found or expired"));
+        return new TraceView(stored.traceId(), stored.requestId(), stored.orderId(),
+                stored.subjectHash().substring(0, 12) + "…", stored.generationNo(), stored.durationMicros(),
+                read(stored.candidatesJson(), Map.class), read(stored.pricingJson(), Map.class),
+                stored.termsVersion(), Instant.parse(stored.expiresAt()), stored.legalHold(),
+                Instant.parse(stored.createdAt()), List.of());
     }
 
     private ExperimentView experiment(String tenantId, String id, String version) {
-        List<ExperimentView> rows = jdbc.query("select definition_json,state_name,created_at from mk_experiment where tenant_id=? and experiment_id=? and version_no=?",
-                (rs, rowNum) -> new ExperimentView(read(rs.getString(1), ExperimentAssigner.Experiment.class),
-                        rs.getString(2), Instant.parse(rs.getString(3))), tenantId, id, version);
-        if (rows.isEmpty()) throw new NotFoundException("EXPERIMENT_NOT_FOUND", "experiment version not found");
-        return rows.getFirst();
+        MeasurementRepository.ExperimentRow row = repository.findExperiment(tenantId, id, version)
+                .orElseThrow(() -> new NotFoundException("EXPERIMENT_NOT_FOUND", "experiment version not found"));
+        return new ExperimentView(read(row.definitionJson(), ExperimentAssigner.Experiment.class), row.stateName(),
+                Instant.parse(row.createdAt()));
     }
 
     private List<AssignmentView> assignment(String tenantId, String experimentId, String version, String unit) {
-        return jdbc.query("select variant_id,holdout_value,bucket_no,assigned_at from mk_experiment_assignment where tenant_id=? and experiment_id=? and version_no=? and randomization_unit=?",
-                (rs, rowNum) -> new AssignmentView(experimentId, version, rs.getString(1), rs.getBoolean(2),
-                        rs.getInt(3), false, Instant.parse(rs.getString(4))), tenantId, experimentId, version, unit);
+        return repository.findAssignment(tenantId, experimentId, version, unit).stream()
+                .map(row -> new AssignmentView(experimentId, version, row.variantId(), row.holdoutValue(),
+                        row.bucketNo(), false, Instant.parse(row.assignedAt())))
+                .toList();
     }
 
     private boolean claimLayer(String tenantId, String layer, String unit, String experimentId) {
-        try {
-            jdbc.update("insert into mk_experiment_layer_assignment(tenant_id,layer_name,randomization_unit,experiment_id,assigned_at) values(?,?,?,?,?)",
-                    tenantId, layer, unit, experimentId, format(clock.instant()));
-        } catch (DuplicateKeyException occupied) {
-            // The row is read under the same transaction after the competing assignment commits.
-        }
-        String owner = jdbc.query("select experiment_id from mk_experiment_layer_assignment where tenant_id=? and layer_name=? and randomization_unit=? for update",
-                rs -> rs.next() ? rs.getString(1) : null, tenantId, layer, unit);
+        repository.tryClaimLayer(new MeasurementRepository.LayerAssignmentWrite(tenantId, layer, unit,
+                experimentId, format(clock.instant())));
+        String owner = repository.findLayerOwnerForUpdate(tenantId, layer, unit).orElse(null);
         return experimentId.equals(owner);
     }
 
-    private List<StoredFactReceipt> storedReceipt(String tenantId, String eventId) {
-        return jdbc.query("select ingested_at,payload_hash from mk_fact where tenant_id=? and event_id=?",
-                (rs, rowNum) -> new StoredFactReceipt(
-                        new FactReceipt(eventId, true, Instant.parse(rs.getString(1))), rs.getString(2)),
-                tenantId, eventId);
+    private java.util.Optional<StoredFactReceipt> storedReceipt(String tenantId, String eventId) {
+        return repository.findStoredFactReceipt(tenantId, eventId)
+                .map(row -> new StoredFactReceipt(
+                        new FactReceipt(eventId, true, Instant.parse(row.ingestedAt())), row.payloadHash()));
     }
 
     private String factPayloadHash(MarketingFact fact) {
@@ -453,39 +422,32 @@ public class MeasurementService {
     }
 
     private ProjectionWatermark projectionWatermark(String tenantId, String projectionName) {
-        Integer configured = jdbc.query("select partition_count from mk_projection_watermark_config where tenant_id=? and projection_name=?",
-                rs -> rs.next() ? rs.getInt(1) : null, tenantId, projectionName);
+        Integer configured = repository.findWatermarkPartitionCount(tenantId, projectionName).orElse(null);
         if (configured == null) return new ProjectionWatermark(projectionName, 0, 0, Instant.EPOCH);
-        WatermarkAggregate aggregate = jdbc.query("select count(*),coalesce(min(complete_through_epoch_ms),0) from mk_projection_partition_watermark where tenant_id=? and projection_name=?",
-                rs -> rs.next() ? new WatermarkAggregate(rs.getInt(1), rs.getLong(2))
-                        : new WatermarkAggregate(0, 0), tenantId, projectionName);
+        MeasurementRepository.WatermarkAggregate aggregate = repository.aggregateWatermark(tenantId, projectionName);
         Instant complete = aggregate.partitionCount() == configured && aggregate.minimumEpochMillis() > 0
                 ? Instant.ofEpochMilli(aggregate.minimumEpochMillis()) : Instant.EPOCH;
         return new ProjectionWatermark(projectionName, configured, aggregate.partitionCount(), complete);
     }
 
     private Fact fact(String tenantId, String eventId) {
-        List<Fact> rows = jdbc.query("select fact_type,business_key,subject_hash,occurred_at,revenue_minor,cost_minor from mk_fact where tenant_id=? and event_id=? and corrected_value=false",
-                (rs, rowNum) -> new Fact(eventId, rs.getString(1), rs.getString(2), rs.getString(3),
-                        Instant.parse(rs.getString(4)), rs.getLong(5), rs.getLong(6)), tenantId, eventId);
-        if (rows.isEmpty()) throw new NotFoundException("FACT_NOT_FOUND", "active fact not found");
-        return rows.getFirst();
+        return repository.findActiveFact(tenantId, eventId).map(this::fact)
+                .orElseThrow(() -> new NotFoundException("FACT_NOT_FOUND", "active fact not found"));
     }
 
     private ProjectionContribution projectionContribution(String tenantId, String eventId) {
-        List<ProjectionContribution> rows = jdbc.query("select fact_type,business_key,subject_hash,occurred_at,ingested_at,revenue_minor,cost_minor,attributes_json,experiment_id,variant_id from mk_fact where tenant_id=? and event_id=?",
-                (rs, rowNum) -> {
-                    @SuppressWarnings("unchecked")
-                    Map<String, String> attributes = read(rs.getString(8), Map.class);
-                    return new ProjectionContribution(MarketingFact.Type.valueOf(rs.getString(1)),
-                            rs.getString(2), attributes.getOrDefault("campaignId", ""), rs.getString(9),
-                            rs.getString(10), rs.getString(3), rs.getLong(6), rs.getLong(7),
-                            Instant.parse(rs.getString(4)), Instant.parse(rs.getString(5)));
-                }, tenantId, eventId);
-        if (rows.isEmpty()) {
-            throw new ConflictException("CORRECTION_TARGET_NOT_FOUND", eventId);
-        }
-        return rows.getFirst();
+        MeasurementRepository.ProjectionContributionRow row = repository.findProjectionContribution(tenantId, eventId)
+                .orElseThrow(() -> new ConflictException("CORRECTION_TARGET_NOT_FOUND", eventId));
+        @SuppressWarnings("unchecked")
+        Map<String, String> attributes = read(row.attributesJson(), Map.class);
+        return new ProjectionContribution(MarketingFact.Type.valueOf(row.factType()), row.businessKey(),
+                attributes.getOrDefault("campaignId", ""), row.experimentId(), row.variantId(), row.subjectHash(),
+                row.revenueMinor(), row.costMinor(), Instant.parse(row.occurredAt()), Instant.parse(row.ingestedAt()));
+    }
+
+    private Fact fact(MeasurementRepository.FactRow row) {
+        return new Fact(row.eventId(), row.factType(), row.businessKey(), row.subjectHash(),
+                Instant.parse(row.occurredAt()), row.revenueMinor(), row.costMinor());
     }
 
     private <T> T command(String tenantId, String commandId, String payloadHash, Class<T> type,
@@ -494,39 +456,33 @@ public class MeasurementService {
             throw new IllegalArgumentException("command id is invalid");
         }
         String now = format(clock.instant());
-        boolean owner = false;
         String expiresAt = format(clock.instant().plusSeconds(604_800));
-        try {
-            jdbc.update("insert into mk_measurement_command(tenant_id,command_id,payload_hash,state_name,response_json,created_at,expires_at) values(?,?,?,?,?,?,?)",
-                    tenantId, commandId, payloadHash, "PROCESSING", null, now, expiresAt);
-            owner = true;
-        } catch (DuplicateKeyException duplicate) {
-            // The locking read below waits for the winning transaction.
-        }
-        List<StoredCommand> rows = jdbc.query("select payload_hash,state_name,response_json,expires_at from mk_measurement_command where tenant_id=? and command_id=? for update",
-                (rs, rowNum) -> new StoredCommand(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4)),
-                tenantId, commandId);
-        if (rows.isEmpty()) throw new ConflictException("MEASUREMENT_COMMAND_LOST", "command record disappeared");
-        StoredCommand stored = rows.getFirst();
+        boolean owner = repository.tryBeginCommand(new MeasurementRepository.CommandWrite(
+                tenantId, commandId, payloadHash, "PROCESSING", null, now, expiresAt));
+        MeasurementRepository.StoredCommand stored = repository.findCommandForUpdate(tenantId, commandId)
+                .orElseThrow(() -> new ConflictException("MEASUREMENT_COMMAND_LOST",
+                        "command record disappeared"));
         if (!owner && stored.expiresAt().compareTo(now) <= 0) {
-            jdbc.update("delete from mk_measurement_command where tenant_id=? and command_id=?", tenantId, commandId);
-            jdbc.update("insert into mk_measurement_command(tenant_id,command_id,payload_hash,state_name,response_json,created_at,expires_at) values(?,?,?,?,?,?,?)",
-                    tenantId, commandId, payloadHash, "PROCESSING", null, now, expiresAt);
+            repository.deleteCommand(tenantId, commandId);
+            if (!repository.tryBeginCommand(new MeasurementRepository.CommandWrite(
+                    tenantId, commandId, payloadHash, "PROCESSING", null, now, expiresAt))) {
+                throw new ConflictException("MEASUREMENT_COMMAND_RACE",
+                        "expired command was concurrently reclaimed");
+            }
             owner = true;
-            stored = new StoredCommand(payloadHash, "PROCESSING", null, expiresAt);
+            stored = new MeasurementRepository.StoredCommand(payloadHash, "PROCESSING", null, expiresAt);
         }
         if (!stored.payloadHash().equals(payloadHash)) {
             throw new ConflictException("IDEMPOTENCY_PAYLOAD_CONFLICT", "command id was used with another payload");
         }
         if (!owner) {
-            if (!"COMPLETED".equals(stored.state()) || stored.responseJson() == null) {
+            if (!"COMPLETED".equals(stored.stateName()) || stored.responseJson() == null) {
                 throw new ConflictException("COMMAND_IN_PROGRESS", "original command is still in progress");
             }
             return read(stored.responseJson(), type);
         }
         T response = action.get();
-        jdbc.update("update mk_measurement_command set state_name='COMPLETED',response_json=? where tenant_id=? and command_id=?",
-                json(response), tenantId, commandId);
+        repository.completeCommand(tenantId, commandId, json(response));
         return response;
     }
 
@@ -563,16 +519,11 @@ public class MeasurementService {
     public enum AttributionPolicy { FIRST_TOUCH, LAST_TOUCH, LINEAR }
     public enum Granularity { HOUR, DAY }
     private record StoredFactReceipt(FactReceipt receipt, String payloadHash) { }
-    private record CorrectionTarget(String rootEventId) { }
-    private record CorrectionIdentity(String type, String businessKey, String subjectHash) { }
-    private record PartitionWatermark(long sourceOffset, long completeThroughEpochMillis) { }
-    private record WatermarkAggregate(int partitionCount, long minimumEpochMillis) { }
     private record Fact(String eventId, String type, String businessKey, String subjectHash,
             Instant occurredAt, long revenue, long cost) { }
     private record ProjectionContribution(MarketingFact.Type type, String businessKey, String campaignId,
             String experimentId, String variantId, String subjectHash, long revenueMinor, long costMinor,
             Instant occurredAt, Instant ingestedAt) { }
-    private record StoredCommand(String payloadHash, String state, String responseJson, String expiresAt) { }
     public record ExperimentRequest(String experimentId, String version, String layer, String salt,
             List<ExperimentAssigner.Variant> variants) { public ExperimentRequest { variants = List.copyOf(variants); } }
     public record ExperimentView(ExperimentAssigner.Experiment experiment, String state, Instant createdAt) { }

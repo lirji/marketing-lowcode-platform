@@ -14,6 +14,7 @@ import com.acme.marketing.contracts.release.ActivationDirectiveSigner;
 import com.acme.marketing.contracts.release.ReleaseManifest;
 import com.acme.marketing.contracts.release.ReleaseManifestSigner;
 import com.acme.marketing.decision.application.DecisionApplicationService;
+import com.acme.marketing.decision.infrastructure.DecisionRuntimeHealthIndicator;
 import com.acme.marketing.decision.model.Cart;
 import com.acme.marketing.decision.model.CartLine;
 import com.acme.marketing.decision.model.FundingRule;
@@ -44,6 +45,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.health.contributor.Status;
 import tools.jackson.databind.ObjectMapper;
 
 class DecisionApplicationServiceTest {
@@ -68,12 +70,17 @@ class DecisionApplicationServiceTest {
                 new PinnedArtifactVerifier(Map.of("compiler-key", releaseKeys.getPublic())), "route-key".getBytes(),
                 new RuntimeManifestRegistry.RuntimeSlot("prod", "cell-a", "main"), mapper,
                 Clock.fixed(NOW, ZoneOffset.UTC));
+        DecisionRuntimeHealthIndicator readiness = new DecisionRuntimeHealthIndicator(registry);
+        assertEquals(Status.DOWN, readiness.health().getStatus(),
+                "a warm-but-not-active or empty runtime must not receive decision traffic");
         registry.install("tenant-a", "release-key", signed, policyArtifact);
         ActivationDirective unsignedDirective = new ActivationDirective("directive-1", new TenantId("tenant-a"),
                 signed.manifestId(), "prod", "cell-a", "decision", "main", 1, 1, 1, 0,
                 signed.signature(), NOW.minusSeconds(1), signed.expiresAt(), "release-manager", "release-key", "");
         registry.applyActivation("tenant-a",
                 ActivationDirectiveSigner.sign(releaseKeys.getPrivate(), unsignedDirective));
+        assertEquals(Status.UP, readiness.health().getStatus());
+        assertEquals(1, registry.usableGenerationCount());
         AudienceMembershipProjection audiences = new AudienceMembershipProjection();
         audiences.update("tenant-a", "audience-v1", "subject-1", true, 1, NOW.plusSeconds(600));
         SigningKeyRing offerKeys = new SigningKeyRing("offer-key", Ed25519.generateKeyPair());

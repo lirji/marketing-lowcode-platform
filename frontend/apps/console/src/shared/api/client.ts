@@ -4,6 +4,7 @@ import { getDevTenantId } from '../auth/devTenant'
 import { reportClientError } from '../observability/report'
 import {
   accountViewSchema,
+  artifactViewSchema,
   approvalViewSchema,
   audiencePreviewSchema,
   audienceSnapshotSchema,
@@ -13,6 +14,7 @@ import {
   benefitViewSchema,
   campaignSchema,
   contactViewSchema,
+  compileReportSchema,
   dashboardSchema,
   definitionBundleSchema,
   enrollmentViewSchema,
@@ -32,8 +34,10 @@ import {
   traceViewSchema,
   validationResultSchema,
   type ApprovalRole,
+  type CompileRequest,
   type Campaign,
   type GraphDefinition,
+  type StageReleaseRequest,
 } from './schemas'
 
 let accessTokenProvider: () => string | undefined = () => undefined
@@ -140,8 +144,8 @@ async function request<T>(path: string, init: RequestInit | undefined, parse: (v
   }
 }
 
-function commandHeaders(): Record<string, string> {
-  return { 'Idempotency-Key': crypto.randomUUID() }
+function commandHeaders(idempotencyKey?: string): Record<string, string> {
+  return { 'Idempotency-Key': idempotencyKey ?? crypto.randomUUID() }
 }
 
 export const api = {
@@ -166,8 +170,14 @@ export const api = {
   decideApproval: (caseId: string, role: ApprovalRole, decision: 'APPROVE' | 'REJECT' = 'APPROVE', comment?: string) =>
     request(`/api/v1/approvals/${encodeURIComponent(caseId)}/decisions`, { method: 'POST', headers: commandHeaders(), body: JSON.stringify({ role, decision, comment }) }, (value) => parseWith(approvalViewSchema, value)),
   releases: () => request('/api/v1/releases', undefined, (value) => zArray(releaseViewSchema, value)),
-  activateRelease: (manifestId: string) =>
-    request(`/api/v1/releases/${encodeURIComponent(manifestId)}:activate`, { method: 'POST', headers: commandHeaders() }, (value) => parseWith(releaseViewSchema, value)),
+  compile: (payload: CompileRequest, idempotencyKey?: string) =>
+    request('/api/v1/compile', { method: 'POST', headers: commandHeaders(idempotencyKey), body: JSON.stringify(payload) }, (value) => parseWith(compileReportSchema, value)),
+  getArtifact: (artifactId: string) =>
+    request(`/api/v1/artifacts/${encodeURIComponent(artifactId)}`, undefined, (value) => parseWith(artifactViewSchema, value)),
+  stageRelease: (payload: StageReleaseRequest, idempotencyKey: string) =>
+    request('/api/v1/releases', { method: 'POST', headers: commandHeaders(idempotencyKey), body: JSON.stringify(payload) }, (value) => parseWith(releaseViewSchema, value)),
+  activateRelease: (manifestId: string, idempotencyKey?: string) =>
+    request(`/api/v1/releases/${encodeURIComponent(manifestId)}:activate`, { method: 'POST', headers: commandHeaders(idempotencyKey) }, (value) => parseWith(releaseViewSchema, value)),
   rollbackRelease: (manifestId: string, targetGeneration: number) =>
     request(`/api/v1/releases/${encodeURIComponent(manifestId)}:rollback`, { method: 'POST', headers: commandHeaders(), body: JSON.stringify({ targetGeneration }) }, (value) => parseWith(releaseViewSchema, value)),
   setKillSwitch: (namespace: string, enabled: boolean, reason: string) =>

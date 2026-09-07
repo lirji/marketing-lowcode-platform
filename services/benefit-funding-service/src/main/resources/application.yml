@@ -19,8 +19,13 @@ spring:
         isolation.level: read_committed
     listener:
       ack-mode: record
+mybatis:
+  mapper-locations: classpath*:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: false
 marketing.kafka.consumers-enabled: ${MARKETING_KAFKA_CONSUMERS_ENABLED:false}
 marketing.benefit.outbox-enabled: ${MARKETING_BENEFIT_OUTBOX_ENABLED:false}
+marketing.funding.budget-bucket-count: ${MARKETING_FUNDING_BUDGET_BUCKET_COUNT:16}
 marketing.benefit-center:
   base-url: ${BENEFIT_CENTER_BASE_URL:http://127.0.0.1:8183}
   bearer-token: ${BENEFIT_CENTER_BEARER_TOKEN:}
@@ -34,6 +39,8 @@ marketing.award:
   relay-enabled: ${MARKETING_AWARD_RELAY_ENABLED:false}
   bulkhead-permits: ${MARKETING_AWARD_BULKHEAD_PERMITS:64}
   bulkhead-wait-ms: ${MARKETING_AWARD_BULKHEAD_WAIT_MS:5}
+  evaluation-lease-ms: ${MARKETING_AWARD_EVALUATION_LEASE_MS:30000}
+  concurrent-wait-ms: ${MARKETING_AWARD_CONCURRENT_WAIT_MS:5000}
   relay-batch-size: ${MARKETING_AWARD_RELAY_BATCH_SIZE:100}
   relay-tenant-batch-size: ${MARKETING_AWARD_RELAY_TENANT_BATCH_SIZE:10}
   relay-max-attempts: ${MARKETING_AWARD_RELAY_MAX_ATTEMPTS:10}

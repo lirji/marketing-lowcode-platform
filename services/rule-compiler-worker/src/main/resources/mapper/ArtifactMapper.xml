@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.compiler.infrastructure.persistence.mapper.ArtifactMapper">
+
+    <insert id="insert">
+        INSERT INTO mk_compiled_artifact (
+            tenant_id,
+            artifact_id,
+            definition_id,
+            definition_version,
+            type_name,
+            abi,
+            payload,
+            checksum,
+            source_digest,
+            signature_key_id,
+            signature_value,
+            metadata_json,
+            compiled_at
+        ) VALUES (
+            #{tenantId},
+            #{artifactId},
+            #{definitionId},
+            #{definitionVersion},
+            #{typeName},
+            #{abi},
+            #{payload},
+            #{checksum},
+            #{sourceDigest},
+            #{signatureKeyId},
+            #{signatureValue},
+            #{metadataJson},
+            #{compiledAt}
+        )
+    </insert>
+
+    <select id="select"
+            resultType="com.acme.marketing.compiler.infrastructure.persistence.mapper.ArtifactMapper$ArtifactRow">
+        SELECT
+            tenant_id AS tenantId,
+            artifact_id AS artifactId,
+            definition_id AS definitionId,
+            definition_version AS definitionVersion,
+            type_name AS typeName,
+            abi,
+            payload,
+            checksum,
+            source_digest AS sourceDigest,
+            signature_key_id AS signatureKeyId,
+            signature_value AS signatureValue,
+            metadata_json AS metadataJson,
+            compiled_at AS compiledAt
+        FROM mk_compiled_artifact
+        WHERE tenant_id = #{tenantId}
+          AND artifact_id = #{artifactId}
+    </select>
+
+</mapper>

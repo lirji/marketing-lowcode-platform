@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
@@ -26,16 +25,16 @@ public final class AwardIntentAssembler {
     static final String SOURCE_SYSTEM = "drools-activity";
     private static final int MAX_ITEMS = 20;
 
-    private final JdbcTemplate jdbc;
+    private final AwardIntentRepository repository;
     private final ObjectMapper mapper;
     private final Clock clock;
     private final OfferTokenTrust tokenTrust;
     private final BenefitSkuCatalog skuCatalog;
 
     /** 构造只依赖可验证决策、营销定义库和权益目录端口的组装器。 */
-    public AwardIntentAssembler(JdbcTemplate jdbc, ObjectMapper mapper, Clock clock,
+    public AwardIntentAssembler(AwardIntentRepository repository, ObjectMapper mapper, Clock clock,
             OfferTokenTrust tokenTrust, BenefitSkuCatalog skuCatalog) {
-        this.jdbc = jdbc;
+        this.repository = repository;
         this.mapper = mapper;
         this.clock = clock;
         this.tokenTrust = tokenTrust;
@@ -66,6 +65,10 @@ public final class AwardIntentAssembler {
             BoundBenefit benefit = activeBenefit(scope.tenantId().value(), reference);
             BenefitSkuCatalog.BenefitSkuView sku = skuCatalog.requireActiveSku(
                     scope.tenantId().value(), benefit.benefitSkuId());
+            if (!benefit.policyType().equals(sku.benefitType())) {
+                throw new ConflictException("AWARD_BENEFIT_TYPE_MISMATCH",
+                        "stored benefit policy type does not match the active SKU type");
+            }
             BenefitType type = benefitType(sku.benefitType());
             for (int unit = 0; unit < line.quantity(); unit++) {
                 if (items.size() >= MAX_ITEMS) {
@@ -99,22 +102,32 @@ public final class AwardIntentAssembler {
     }
 
     private BoundBenefit activeBenefit(String tenantId, BenefitVersion reference) {
-        List<BoundBenefit> rows = jdbc.query(
-                "select benefit_id,version_no,status_name,benefit_sku_id from mk_benefit_definition where tenant_id=? and benefit_id=? and version_no=?",
-                (rs, rowNum) -> new BoundBenefit(rs.getString(1), rs.getLong(2),
-                        rs.getString(3), rs.getString(4)),
-                tenantId, reference.benefitId(), reference.version());
-        if (rows.isEmpty()) {
+        AwardIntentRepository.BenefitBindingRow row = repository.findBenefitBinding(
+                tenantId, reference.benefitId(), reference.version()).orElse(null);
+        if (row == null) {
             throw new ConflictException("AWARD_BENEFIT_VERSION_NOT_FOUND",
                     "benefit definition version does not exist: " + reference.original());
         }
-        BoundBenefit benefit = rows.getFirst();
+        BoundBenefit benefit = new BoundBenefit(row.benefitId(), row.version(), row.status(),
+                row.benefitSkuId(), policyType(row.policyJson()));
         if (!"ACTIVE".equals(benefit.status()) || benefit.benefitSkuId() == null
                 || benefit.benefitSkuId().isBlank()) {
             throw new ConflictException("AWARD_BENEFIT_NOT_ACTIVE",
                     "benefit definition version is not ACTIVE and bound to a SKU: " + reference.original());
         }
         return benefit;
+    }
+
+    /** 持久化策略缺少明确类型时直接拒绝，不能用权益目录类型替它补值。 */
+    private String policyType(String policyJson) {
+        try {
+            String type = mapper.readTree(policyJson).path("type").asString();
+            if (type != null && !type.isBlank()) return type;
+        } catch (RuntimeException ignored) {
+            // 统一转成稳定业务错误码，避免把历史脏数据暴露为 500。
+        }
+        throw new ConflictException("AWARD_BENEFIT_TYPE_MISMATCH",
+                "stored benefit policy has no explicit type");
     }
 
     private static BenefitType benefitType(String value) {
@@ -146,7 +159,8 @@ public final class AwardIntentAssembler {
         return Digests.sha256Hex(tenantId + '\u0000' + subjectRef);
     }
 
-    private record BoundBenefit(String benefitId, long version, String status, String benefitSkuId) { }
+    private record BoundBenefit(String benefitId, long version, String status, String benefitSkuId,
+            String policyType) { }
 
     private record BenefitVersion(String original, String benefitId, long version) {
         private static BenefitVersion parse(String value) {

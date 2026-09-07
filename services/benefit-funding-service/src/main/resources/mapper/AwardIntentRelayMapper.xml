@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.benefit.infrastructure.persistence.mapper.AwardIntentRelayMapper">
+    <select id="selectCandidates"
+            resultType="com.acme.marketing.benefit.application.AwardIntentRelayRepository$PendingIntent">
+        SELECT tenant_id AS tenantId, intent_id AS intentId, source_request_id AS sourceRequestId,
+               payload_json AS payload, attempt_count AS attempts, lease_version AS leaseVersion
+        FROM (
+            SELECT tenant_id, intent_id, source_request_id, payload_json, attempt_count, lease_version,
+                   created_at, ROW_NUMBER() OVER (PARTITION BY tenant_id ORDER BY created_at, intent_id) tenant_rank
+            FROM mk_award_intent_outbox
+            WHERE delivery_mode = 'CENTER'
+              AND ((status_name = 'PENDING' AND next_attempt_at &lt;= #{now})
+                OR (status_name = 'SENDING' AND (lease_until IS NULL OR lease_until &lt;= #{now})))
+        ) ranked
+        WHERE tenant_rank &lt;= #{tenantLimit}
+        ORDER BY created_at, intent_id
+        LIMIT #{totalLimit}
+    </select>
+    <update id="claim">
+        UPDATE mk_award_intent_outbox
+        SET status_name = 'SENDING', lease_owner = #{workerId}, lease_until = #{leaseUntil},
+            lease_version = lease_version + 1, updated_at = #{now}
+        WHERE tenant_id = #{tenantId} AND intent_id = #{intentId}
+          AND lease_version = #{expectedLeaseVersion} AND delivery_mode = 'CENTER'
+          AND ((status_name = 'PENDING' AND next_attempt_at &lt;= #{now})
+            OR (status_name = 'SENDING' AND (lease_until IS NULL OR lease_until &lt;= #{now})))
+    </update>
+    <update id="updateSent">
+        UPDATE mk_award_intent_outbox
+        SET status_name = 'SENT', delivery_result = 'CENTER_ACCEPTED',
+            attempt_count = attempt_count + 1, benefit_order_no = #{orderNo}, last_error = '',
+            lease_owner = NULL, lease_until = NULL, sent_at = #{now}, updated_at = #{now}
+        WHERE tenant_id = #{tenantId} AND intent_id = #{intentId} AND status_name = 'SENDING'
+          AND lease_owner = #{workerId} AND lease_version = #{leaseVersion}
+    </update>
+    <update id="updateFailure">
+        UPDATE mk_award_intent_outbox
+        SET status_name = #{statusName}, attempt_count = attempt_count + 1,
+            next_attempt_at = #{nextAttemptAt}, last_error = #{lastError},
+            lease_owner = NULL, lease_until = NULL, updated_at = #{now}
+        WHERE tenant_id = #{tenantId} AND intent_id = #{intentId} AND status_name = 'SENDING'
+          AND lease_owner = #{workerId} AND lease_version = #{leaseVersion}
+    </update>
+</mapper>

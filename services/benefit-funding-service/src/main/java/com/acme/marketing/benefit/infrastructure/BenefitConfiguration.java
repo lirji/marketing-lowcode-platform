@@ -2,13 +2,14 @@ package com.acme.marketing.benefit.infrastructure;
 
 import com.acme.marketing.benefit.application.OfferTokenTrust;
 import com.acme.marketing.benefit.application.AwardDispatchModeRouter;
+import com.acme.marketing.benefit.application.AwardIntentRelayRepository;
 import com.acme.marketing.benefit.application.RiskEvaluationGateway;
 import com.acme.marketing.platform.crypto.TrustedPublicKeys;
 import com.acme.marketing.platform.isolation.TenantBulkhead;
+import io.opentelemetry.api.OpenTelemetry;
 import java.time.Duration;
 import tools.jackson.databind.ObjectMapper;
 import java.time.Clock;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -62,6 +63,7 @@ public class BenefitConfiguration {
     /** 构造使用 risk.evaluate 服务身份、独立线程池和 fail-closed 保护的风控端口。 */
     @Bean
     public RiskEvaluationGateway riskEvaluationGateway(ObjectMapper mapper, Clock clock,
+            OpenTelemetry openTelemetry,
             @Value("${marketing.risk.base-url:http://127.0.0.1:8082}") String baseUrl,
             @Value("${marketing.risk.bearer-token:}") String bearerToken,
             @Value("${marketing.security.mode:DEV}") String securityMode,
@@ -79,12 +81,13 @@ public class BenefitConfiguration {
         return new HttpRiskEvaluationGateway(mapper, clock, baseUrl, bearerToken,
                 Duration.ofMillis(connectTimeoutMs), Duration.ofMillis(requestTimeoutMs), permits,
                 Duration.ofMillis(bulkheadWaitMs), threadCount, queueCapacity, circuitFailureThreshold,
-                Duration.ofMillis(circuitOpenMs));
+                Duration.ofMillis(circuitOpenMs), openTelemetry);
     }
 
     /** 构造使用服务身份投递权益中台的 AwardIntent Relay。 */
     @Bean
-    public AwardIntentRelay awardIntentRelay(JdbcTemplate jdbc, ObjectMapper mapper, Clock clock,
+    public AwardIntentRelay awardIntentRelay(AwardIntentRelayRepository repository,
+            ObjectMapper mapper, Clock clock,
             PlatformTransactionManager transactionManager,
             @Value("${marketing.benefit-center.base-url:http://127.0.0.1:8183}") String baseUrl,
             @Value("${marketing.benefit-center.bearer-token:}") String bearerToken,
@@ -102,7 +105,7 @@ public class BenefitConfiguration {
                 && (bearerToken == null || bearerToken.isBlank())) {
             throw new IllegalStateException("award relay service bearer token must be configured in OIDC mode");
         }
-        return new AwardIntentRelay(jdbc, mapper, clock, transactionManager, baseUrl, bearerToken,
+        return new AwardIntentRelay(repository, mapper, clock, transactionManager, baseUrl, bearerToken,
                 enabled, batchSize, tenantBatchSize, maxAttempts, circuitFailureThreshold,
                 Duration.ofMillis(connectTimeoutMs), Duration.ofMillis(requestTimeoutMs),
                 Duration.ofMillis(leaseMs), Duration.ofMillis(circuitOpenMs));

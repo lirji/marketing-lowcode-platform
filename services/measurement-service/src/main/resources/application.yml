@@ -19,6 +19,11 @@ spring:
         isolation.level: read_committed
     listener:
       ack-mode: record
+mybatis:
+  mapper-locations: classpath*:mapper/**/*.xml
+  configuration:
+    # 数据库列均在 Mapper XML 中显式映射，避免隐式命名规则掩盖契约错误。
+    map-underscore-to-camel-case: false
 marketing.kafka.consumers-enabled: ${MARKETING_KAFKA_CONSUMERS_ENABLED:false}
 marketing.security:
   mode: ${MARKETING_SECURITY_MODE:DEV}

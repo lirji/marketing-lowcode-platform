@@ -17,6 +17,11 @@ spring:
       properties:
         enable.idempotence: true
         max.in.flight.requests.per.connection: 5
+mybatis:
+  mapper-locations: classpath*:mapper/**/*.xml
+  configuration:
+    # 数据库列都由 Mapper XML 显式映射，不依赖隐式命名转换。
+    map-underscore-to-camel-case: false
 marketing.security:
   mode: ${MARKETING_SECURITY_MODE:DEV}
   dev-headers-enabled: ${MARKETING_DEV_HEADERS_ENABLED:true}
@@ -34,3 +39,10 @@ marketing.outbox:
   fixed-delay-ms: ${MARKETING_OUTBOX_FIXED_DELAY_MS:250}
   send-timeout-ms: ${MARKETING_OUTBOX_SEND_TIMEOUT_MS:10000}
   max-attempts: ${MARKETING_OUTBOX_MAX_ATTEMPTS:10}
+  lease-ms: ${MARKETING_OUTBOX_LEASE_MS:30000}
+  backpressure:
+    max-pending: ${MARKETING_OUTBOX_MAX_PENDING:1000000}
+    max-pending-per-tenant: ${MARKETING_OUTBOX_MAX_PENDING_PER_TENANT:100000}
+    max-oldest-age-seconds: ${MARKETING_OUTBOX_MAX_OLDEST_AGE_SECONDS:300}
+    refresh-ms: ${MARKETING_OUTBOX_BACKPRESSURE_REFRESH_MS:250}
+    max-cached-tenants: ${MARKETING_OUTBOX_BACKPRESSURE_MAX_CACHED_TENANTS:10000}

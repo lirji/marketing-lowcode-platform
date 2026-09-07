@@ -1,1 +1,2 @@
 com.acme.marketing.platform.web.PlatformWebAutoConfiguration
+com.acme.marketing.platform.web.PlatformPersistenceAutoConfiguration

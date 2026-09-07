@@ -29,6 +29,37 @@ spec:
       resource:
         name: memory
         target: {type: Utilization, averageUtilization: {{ $hpa.memoryUtilization }}}
+    {{- if $.Values.autoscaling.businessMetrics.enabled }}
+    {{- with $service.businessMetrics }}
+    {{- range $metric := .pods }}
+    - type: Pods
+      pods:
+        metric:
+          name: {{ $metric.name }}
+        target:
+          type: AverageValue
+          averageValue: {{ $metric.averageValue | quote }}
+    {{- end }}
+    {{- range $metric := .external }}
+    - type: External
+      external:
+        metric:
+          name: {{ $metric.name }}
+          {{- with $metric.matchLabels }}
+          selector:
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+          {{- end }}
+        target:
+          type: {{ default "AverageValue" $metric.targetType }}
+          {{- if eq (default "AverageValue" $metric.targetType) "Value" }}
+          value: {{ $metric.value | quote }}
+          {{- else }}
+          averageValue: {{ $metric.averageValue | quote }}
+          {{- end }}
+    {{- end }}
+    {{- end }}
+    {{- end }}
 {{- end }}
 {{- $pdb := default $.Values.defaults.pdb $service.pdb }}
 {{- if $pdb.enabled }}

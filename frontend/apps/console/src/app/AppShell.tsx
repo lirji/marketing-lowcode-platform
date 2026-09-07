@@ -118,8 +118,8 @@ export function AppShell() {
       <main>
         <header className="topbar">
           <button className="mobile-menu" type="button" aria-label="打开菜单" onClick={() => setNavOpen(true)}><Menu size={19} /></button>
-          <div className="tenant-switch" title="租户与组织范围来自身份令牌，切换需重新登录">
-            {orgLabel} · {auth.shops.includes('*') || auth.shops.length === 0 ? '全部店铺' : auth.shops.join(' / ')}
+          <div className="tenant-switch" title="业务租户是货主。创建活动只能看见同一货主已投放的商品。切换需重新登录。">
+            业务租户 {auth.tenantId || '未声明'} · {orgLabel} · {auth.shops.includes('*') || auth.shops.length === 0 ? '全部店铺' : auth.shops.join(' / ')}
           </div>
           <button className="global-search" type="button" onClick={() => setSearchOpen(true)}><Search size={16} /><span>搜索模块…</span><kbd><Command size={11} /> K</kbd></button>
           <button className="icon-button" type="button" aria-label={openApprovals > 0 ? `${openApprovals} 条待审核` : '通知'} onClick={() => navigate('/governance')}>

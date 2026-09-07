@@ -34,3 +34,21 @@ export function decodeJwtPayload(token: string): Record<string, unknown> {
     return {}
   }
 }
+
+function firstText(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return ''
+}
+
+/**
+ * 货主业务租户。与营销后端 TenantContextFilter 一致：只认 tenant_id /
+ * properties.tenant_id，绝不回退 Casdoor owner（登录组织）。
+ */
+export function businessTenantFromPayload(payload: Record<string, unknown>): string {
+  const nested = payload.properties && typeof payload.properties === 'object' && !Array.isArray(payload.properties)
+    ? (payload.properties as Record<string, unknown>).tenant_id
+    : undefined
+  return firstText(payload.tenant_id, nested)
+}

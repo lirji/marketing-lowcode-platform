@@ -67,6 +67,21 @@ docker run --rm --add-host host.docker.internal:host-gateway -i grafana/k6:2.2.0
 
 两个脚本分别命中真实的 `POST /decisions:evaluate` 和持久化事件接入，不再以活动列表 GET 代替性能证据。它们仍只是短时准入负载，不等于容量报告。正式报告必须记录 commit/image digest、机器与容器限额、参数、数据规模、预热、结果、失败率、分位数、CPU/内存/GC、Redis、数据库、Kafka lag、Flink checkpoint、资金对账和原始报告链接；生产准入还要执行表中 4 小时 soak、3 倍 burst 与故障场景。
 
+目标环境的一键门禁入口会连续执行混合流量 warm-up、4 小时峰值、3 倍突发和 noisy-tenant 隔离，并把每阶段 k6 summary 留在独立证据目录：
+
+```bash
+GATEWAY_URL=https://gateway.preprod.example \
+PEAK_DECISION_RATE=100000 PEAK_EVENT_RATE=50000 \
+CAPACITY_IMAGE_DIGESTS='edge@sha256:...,decision@sha256:...' \
+CAPACITY_DATASET='campaigns=1000,active=200,cart-p99=100' \
+CAPACITY_RESOURCE_ENVELOPE='decision=40x4cpu,event=20x4cpu' \
+scripts/run-capacity-suite.sh
+```
+
+OIDC 环境通过密钥注入设置完整的 `AUTHORIZATION='Bearer …'`，不要把 token 写进报告或 shell history；noisy-tenant 场景分别使用 `HOT_AUTHORIZATION` 与 `CONTROL_AUTHORIZATION` 两个租户身份。DEV header 只用于隔离的非生产压测环境。
+
+Kafka 故障阶段必须显式提供经评审的 `FAULT_DRIVER`（支持 `inject kafka` 和 `recover kafka`）；热点资金阶段必须提供能生成唯一签名 OfferToken 并在结束后执行对账的 `BENEFIT_LOAD_DRIVER`。缺少任一 driver 时，`phase-status.tsv` 会明确记录 `SKIPPED` 且 `suite-status.txt` 为 `INCOMPLETE`；只有所有阶段通过才写 `COMPLETE`。结果按 [容量报告模板](CAPACITY_REPORT_TEMPLATE.md) 补充监控快照、故障时间线和签字，不能只保留 k6 终端摘要。
+
 2026-09-04 在本地 Compose 上以 1 req/s、5 秒和宽松 `P99_MS=5000` 完成负载入口校验：Decision 与 Event Ingest 均为 0% HTTP failure、100% checks，观测 p99 分别为 156.32 ms 和 60.96 ms。该结果只作为脚本与链路可执行证据，未经过预热且不用于判定上表 SLO。
 
 ## 扩容与分区

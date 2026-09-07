@@ -42,6 +42,7 @@ class ContractSpecificationsTest {
             "/api/v1/funding/accounts", "/api/v1/funding/accounts/{resourceKey}:advance-fence",
             "/api/v1/benefits", "/api/v1/benefit-skus", "/api/v1/benefits/{benefitId}",
             "/api/v1/award-intents", "/internal/v1/award-intents",
+            "/internal/v1/benefits:assert-releasable",
             "/api/v1/promotion-applications", "/api/v1/promotion-applications/{applicationId}:confirm",
             "/api/v1/promotion-applications/{applicationId}:cancel",
             "/api/v1/promotion-applications/{applicationId}:refund",
@@ -110,6 +111,15 @@ class ContractSpecificationsTest {
     }
 
     @Test
+    void releaseOperationsDeclareThePermissionsUsedByTheConsole() throws IOException {
+        Map<String, Object> document = yaml(RESOURCES.resolve("openapi/marketing-api.yaml"));
+        Map<String, Object> paths = map(document.get("paths"));
+        assertEquals("release:read", permission(paths, "/api/v1/releases", "get"));
+        assertEquals("release:rollback", permission(paths, "/api/v1/releases/{manifestId}:rollback", "post"));
+        assertEquals("release:kill-switch", permission(paths, "/api/v1/releases/kill-switches/{namespace}", "put"));
+    }
+
+    @Test
     void asyncApiUsesOnlyProvisionedPrimaryTopicsAndResolvableSchemas() throws IOException {
         Path source = RESOURCES.resolve("asyncapi/marketing-events.yaml");
         Map<String, Object> document = yaml(source);
@@ -128,6 +138,10 @@ class ContractSpecificationsTest {
         try (InputStream input = Files.newInputStream(source)) {
             return map(new Yaml(new SafeConstructor(options)).load(input));
         }
+    }
+
+    private static String permission(Map<String, Object> paths, String path, String method) {
+        return String.valueOf(map(map(paths.get(path)).get(method)).get("x-required-permission"));
     }
 
     private static void verifyExternalReferences(Object node, Path source) {

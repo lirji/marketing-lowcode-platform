@@ -98,6 +98,20 @@ spec:
               valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: {{ printf "%s-migration-password" $name }}}}
             {{- end }}
             {{- if eq $name "edge-gateway" }}
+            - {name: REDIS_URL, value: {{ $.Values.external.redis.url | quote }}}
+            - {name: MARKETING_GATEWAY_RATE_LIMIT_ENABLED, value: "true"}
+            - {name: GATEWAY_REDIS_CONNECT_TIMEOUT, value: {{ $service.gateway.redisConnectTimeout | quote }}}
+            - {name: GATEWAY_REDIS_COMMAND_TIMEOUT, value: {{ $service.gateway.redisCommandTimeout | quote }}}
+            - {name: GATEWAY_CONNECT_TIMEOUT, value: {{ $service.gateway.connectTimeout | quote }}}
+            - {name: GATEWAY_RESPONSE_TIMEOUT, value: {{ $service.gateway.responseTimeout | quote }}}
+            - {name: MARKETING_GATEWAY_EVENT_RATE, value: {{ $service.gateway.rateLimit.eventsPerSecond | quote }}}
+            - {name: MARKETING_GATEWAY_EVENT_BURST, value: {{ $service.gateway.rateLimit.eventsBurst | quote }}}
+            - {name: MARKETING_GATEWAY_DECISION_RATE, value: {{ $service.gateway.rateLimit.decisionsPerSecond | quote }}}
+            - {name: MARKETING_GATEWAY_DECISION_BURST, value: {{ $service.gateway.rateLimit.decisionsBurst | quote }}}
+            - {name: MARKETING_GATEWAY_WRITE_RATE, value: {{ $service.gateway.rateLimit.writesPerSecond | quote }}}
+            - {name: MARKETING_GATEWAY_WRITE_BURST, value: {{ $service.gateway.rateLimit.writesBurst | quote }}}
+            - {name: MARKETING_GATEWAY_READ_RATE, value: {{ $service.gateway.rateLimit.readsPerSecond | quote }}}
+            - {name: MARKETING_GATEWAY_READ_BURST, value: {{ $service.gateway.rateLimit.readsBurst | quote }}}
             - {name: CONTROL_SERVICE_URL, value: http://marketing-control-service:8081}
             - {name: COMPILER_SERVICE_URL, value: http://rule-compiler-worker:8082}
             - {name: AUDIENCE_SERVICE_URL, value: http://audience-service:8083}
@@ -180,6 +194,7 @@ spec:
             {{- if eq $name "benefit-funding-service" }}
             - {name: MARKETING_KAFKA_CONSUMERS_ENABLED, value: "true"}
             - {name: MARKETING_BENEFIT_OUTBOX_ENABLED, value: "true"}
+            - {name: MARKETING_FUNDING_BUDGET_BUCKET_COUNT, value: {{ $service.budgetBucketCount | quote }}}
             - {name: BENEFIT_CENTER_BASE_URL, value: {{ $service.benefitCenterBaseUrl | quote }}}
             - {name: RISK_PLATFORM_BASE_URL, value: {{ $service.riskPlatformBaseUrl | quote }}}
             - {name: MARKETING_AWARD_DEFAULT_MODE, value: {{ $service.awardDefaultMode | quote }}}
@@ -189,6 +204,8 @@ spec:
             - {name: MARKETING_AWARD_RELAY_TENANT_BATCH_SIZE, value: {{ $service.awardRelayTenantBatchSize | quote }}}
             - {name: MARKETING_AWARD_RELAY_CIRCUIT_FAILURE_THRESHOLD, value: {{ $service.awardRelayCircuitFailureThreshold | quote }}}
             - {name: MARKETING_AWARD_RELAY_CIRCUIT_OPEN_MS, value: {{ $service.awardRelayCircuitOpenMs | quote }}}
+            - {name: MARKETING_AWARD_EVALUATION_LEASE_MS, value: {{ $service.awardEvaluationLeaseMs | quote }}}
+            - {name: MARKETING_AWARD_CONCURRENT_WAIT_MS, value: {{ $service.awardConcurrentWaitMs | quote }}}
             - name: BENEFIT_CENTER_BEARER_TOKEN
               valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: benefit-center-bearer-token, optional: true}}
             - name: RISK_PLATFORM_BEARER_TOKEN
@@ -230,6 +247,11 @@ spec:
             {{- end }}
             {{- if eq $name "event-gateway-service" }}
             - {name: MARKETING_OUTBOX_ENABLED, value: "true"}
+            - {name: MARKETING_OUTBOX_MAX_PENDING, value: {{ $service.outbox.maxPending | quote }}}
+            - {name: MARKETING_OUTBOX_MAX_PENDING_PER_TENANT, value: {{ $service.outbox.maxPendingPerTenant | quote }}}
+            - {name: MARKETING_OUTBOX_MAX_OLDEST_AGE_SECONDS, value: {{ $service.outbox.maxOldestAgeSeconds | quote }}}
+            - {name: MARKETING_OUTBOX_BACKPRESSURE_REFRESH_MS, value: {{ $service.outbox.backpressureRefreshMs | quote }}}
+            - {name: MARKETING_OUTBOX_BACKPRESSURE_MAX_CACHED_TENANTS, value: {{ $service.outbox.backpressureMaxCachedTenants | quote }}}
             {{- end }}
             {{- if eq $name "engagement-service" }}
             - {name: MARKETING_KAFKA_CONSUMERS_ENABLED, value: "true"}

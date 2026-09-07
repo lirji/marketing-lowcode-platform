@@ -1,7 +1,5 @@
 package com.acme.marketing.eventgateway.application;
 
-import static com.acme.marketing.platform.time.SqlTime.format;
-
 import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.error.ConflictException;
 import com.acme.marketing.platform.error.NotFoundException;
@@ -21,8 +19,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.TreeMap;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
@@ -31,19 +27,24 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class EventIngestionService {
     private static final int MAX_EVENT_BYTES = 262_144;
-    private final JdbcTemplate jdbc;
+    private final EventIngestionRepository repository;
     private final ObjectMapper mapper;
     private final Clock clock;
     private final TenantRateLimiter rateLimiter;
     private final EventPayloadRouter payloadRouter;
+    private final EventAdmissionControl admissionControl;
+    private final EventOutboxDepthRepository outboxDepth;
 
-    public EventIngestionService(JdbcTemplate jdbc, ObjectMapper mapper, Clock clock,
-            EventPayloadRouter payloadRouter) {
-        this.jdbc = jdbc;
+    public EventIngestionService(EventIngestionRepository repository, ObjectMapper mapper, Clock clock,
+            EventPayloadRouter payloadRouter, EventAdmissionControl admissionControl,
+            EventOutboxDepthRepository outboxDepth) {
+        this.repository = repository;
         this.mapper = mapper;
         this.clock = clock;
         this.rateLimiter = new TenantRateLimiter(clock, 10_000);
         this.payloadRouter = payloadRouter;
+        this.admissionControl = admissionControl;
+        this.outboxDepth = outboxDepth;
     }
 
     @Transactional
@@ -51,10 +52,10 @@ public class EventIngestionService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("event-source:write");
         URI.create(request.sourceUri());
-        jdbc.update("insert into mk_source_registration(tenant_id,source_id,source_uri,source_uri_hash,allowed_types,schema_versions,max_lateness_seconds,enabled_value,created_at) values(?,?,?,?,?,?,?,?,?)",
-                scope.tenantId().value(), request.sourceId(), request.sourceUri(), Digests.sha256Hex(request.sourceUri()),
-                String.join(",", request.allowedTypes()),
-                String.join(",", request.schemaVersions()), request.maxLatenessSeconds(), true, format(clock.instant()));
+        repository.insertSource(new EventIngestionRepository.SourceWrite(scope.tenantId().value(),
+                request.sourceId(), request.sourceUri(), Digests.sha256Hex(request.sourceUri()),
+                String.join(",", request.allowedTypes()), String.join(",", request.schemaVersions()),
+                request.maxLatenessSeconds(), true, clock.instant()));
         return new SourceView(request.sourceId(), request.sourceUri(), request.allowedTypes(),
                 request.schemaVersions(), request.maxLatenessSeconds(), true);
     }
@@ -67,9 +68,8 @@ public class EventIngestionService {
         validateShape(event);
         String tenantId = scope.tenantId().value();
         String payloadHash = eventPayloadHash(event);
-        List<StoredReceipt> duplicate = storedReceipt(tenantId, event.sourceId(), event.eventId());
-        if (!duplicate.isEmpty()) {
-            StoredReceipt stored = duplicate.getFirst();
+        StoredReceipt stored = storedReceipt(tenantId, event.sourceId(), event.eventId());
+        if (stored != null) {
             if (!stored.payloadHash().equals(payloadHash)) {
                 throw new ConflictException("EVENT_ID_COLLISION", "event id was used with another payload");
             }
@@ -80,20 +80,23 @@ public class EventIngestionService {
         Source source = source(tenantId, event.sourceId());
         Instant now = clock.instant();
         String reason = validateAgainstSource(source, event, now);
+        if (reason == null) {
+            // 只有会进入 outbox 的候选事件需要 Kafka backlog 门禁；已落库重复请求已在上方重放。
+            admissionControl.assertWritable(tenantId);
+        }
         if (reason == null && event.aggregateVersion() != null) {
             reason = validateSequence(tenantId, event);
         }
         Status status = reason == null ? Status.ACCEPTED : Status.QUARANTINED;
         String receiptId = UUID.randomUUID().toString();
         String eventJson = json(event);
-        try {
-            jdbc.update("insert into mk_event_receipt(tenant_id,receipt_id,source_id,event_id,event_type,business_key,aggregate_version,status_name,reason_code,payload_hash,event_json,occurred_at,ingested_at) values(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    tenantId, receiptId, event.sourceId(), event.eventId(), event.eventType(), event.businessKey(),
-                    event.aggregateVersion(), status.name(), reason == null ? "" : reason, payloadHash, eventJson,
-                    format(event.occurredAt()), format(now));
-        } catch (DuplicateKeyException race) {
-            StoredReceipt winner = storedReceipt(tenantId, event.sourceId(), event.eventId()).stream()
-                    .findFirst().orElseThrow(() -> race);
+        boolean inserted = repository.insertReceipt(new EventIngestionRepository.ReceiptWrite(tenantId,
+                receiptId, event.sourceId(), event.eventId(), event.eventType(), event.businessKey(),
+                event.aggregateVersion(), status.name(), reason == null ? "" : reason, payloadHash,
+                eventJson, event.occurredAt(), now));
+        if (!inserted) {
+            StoredReceipt winner = storedReceipt(tenantId, event.sourceId(), event.eventId());
+            if (winner == null) throw new IllegalStateException("concurrent event receipt cannot be loaded");
             if (!winner.payloadHash().equals(payloadHash)) {
                 throw new ConflictException("EVENT_ID_COLLISION", "event id was used with another payload");
             }
@@ -101,8 +104,8 @@ public class EventIngestionService {
                     "DUPLICATE_EVENT", winner.receipt().ingestedAt());
         }
         if (status == Status.QUARANTINED) {
-            jdbc.update("insert into mk_quarantine(tenant_id,quarantine_id,receipt_id,reason_code,event_json,state_name,created_at) values(?,?,?,?,?,?,?)",
-                    tenantId, UUID.randomUUID().toString(), receiptId, reason, eventJson, "OPEN", format(now));
+            repository.insertQuarantine(new EventIngestionRepository.QuarantineWrite(tenantId,
+                    UUID.randomUUID().toString(), receiptId, reason, eventJson, "OPEN", now));
         } else {
             accept(tenantId, event, receiptId, now);
         }
@@ -114,12 +117,8 @@ public class EventIngestionService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("event:replay");
         String tenantId = scope.tenantId().value();
-        List<Quarantine> rows = jdbc.query(
-                "select q.receipt_id,q.event_json,q.state_name from mk_quarantine q where q.tenant_id=? and q.quarantine_id=? for update",
-                (rs, rowNum) -> new Quarantine(rs.getString(1), rs.getString(2), rs.getString(3)),
-                tenantId, quarantineId);
-        if (rows.isEmpty()) throw new NotFoundException("QUARANTINE_NOT_FOUND", "quarantine item not found");
-        Quarantine row = rows.getFirst();
+        EventIngestionRepository.QuarantineRecord row = repository.lockQuarantine(tenantId, quarantineId)
+                .orElseThrow(() -> new NotFoundException("QUARANTINE_NOT_FOUND", "quarantine item not found"));
         if (!"OPEN".equals(row.state())) throw new ConflictException("QUARANTINE_CLOSED", "item was already replayed");
         InboundEvent event = read(row.eventJson());
         Source source = source(tenantId, event.sourceId());
@@ -132,60 +131,53 @@ public class EventIngestionService {
             if (sequenceReason != null) throw new ConflictException("REPLAY_STILL_INVALID", sequenceReason);
         }
         Instant now = clock.instant();
+        admissionControl.assertWritable(tenantId);
         accept(tenantId, event, row.receiptId(), now);
-        jdbc.update("update mk_quarantine set state_name='REPLAYED',replayed_at=? where tenant_id=? and quarantine_id=?",
-                format(now), tenantId, quarantineId);
-        jdbc.update("update mk_event_receipt set status_name=?,reason_code='' where tenant_id=? and receipt_id=?",
-                Status.REPLAYED.name(), tenantId, row.receiptId());
+        repository.markQuarantineReplayed(tenantId, quarantineId, now);
+        repository.markReceiptReplayed(tenantId, row.receiptId());
         return new Receipt(row.receiptId(), event.eventId(), Status.REPLAYED, "", now);
     }
 
     public List<QuarantineView> quarantine() {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("event:read");
-        return jdbc.query("select quarantine_id,receipt_id,reason_code,state_name,created_at,replayed_at from mk_quarantine where tenant_id=? order by created_at desc",
-                (rs, rowNum) -> new QuarantineView(rs.getString(1), rs.getString(2), rs.getString(3),
-                        rs.getString(4), Instant.parse(rs.getString(5)),
-                        rs.getString(6) == null ? null : Instant.parse(rs.getString(6))), scope.tenantId().value());
+        return repository.findQuarantine(scope.tenantId().value()).stream()
+                .map(row -> new QuarantineView(row.quarantineId(), row.receiptId(), row.reasonCode(),
+                        row.state(), row.createdAt(), row.replayedAt()))
+                .toList();
     }
 
     private void accept(String tenantId, InboundEvent event, String receiptId, Instant now) {
         if (event.aggregateVersion() != null) {
-            int updated = jdbc.update("update mk_event_sequence set last_version=?,updated_at=? where tenant_id=? and source_id=? and business_key=?",
-                    event.aggregateVersion(), format(now), tenantId, event.sourceId(), event.businessKey());
-            if (updated == 0) {
-                jdbc.update("insert into mk_event_sequence(tenant_id,source_id,business_key,last_version,updated_at) values(?,?,?,?,?)",
-                        tenantId, event.sourceId(), event.businessKey(), event.aggregateVersion(), format(now));
+            boolean updated = repository.updateAggregateVersion(tenantId, event.sourceId(), event.businessKey(),
+                    event.aggregateVersion(), now);
+            if (!updated) {
+                repository.insertAggregateVersion(tenantId, event.sourceId(), event.businessKey(),
+                        event.aggregateVersion(), now);
             }
         }
         EventPayloadRouter.OutboundEvent outbound = payloadRouter.route(tenantId, receiptId, event, now);
         long streamSequence = nextStreamSequence(tenantId, outbound.topic(), outbound.partitionKey(), now);
-        jdbc.update("insert into mk_event_outbox(tenant_id,outbox_id,receipt_id,event_type,destination_topic,partition_key,stream_sequence,payload_json,created_at,next_attempt_at) values(?,?,?,?,?,?,?,?,?,?)",
-                tenantId, UUID.randomUUID().toString(), receiptId, event.eventType(), outbound.topic(),
-                outbound.partitionKey(), streamSequence, outbound.payload(), format(now), format(now));
+        String outboxId = UUID.randomUUID().toString();
+        int depthBucketId = outboxDepth.bucketId(outboxId);
+        repository.insertOutbox(new EventIngestionRepository.OutboxWrite(tenantId, outboxId, receiptId,
+                event.eventType(), outbound.topic(), outbound.partitionKey(), streamSequence,
+                outbound.payload(), now, depthBucketId));
+        outboxDepth.increment(tenantId, depthBucketId, now);
     }
 
     private long nextStreamSequence(String tenantId, String topic, String partitionKey, Instant now) {
-        int updated = jdbc.update("update mk_event_stream_position set last_sequence=last_sequence+1,updated_at=? where tenant_id=? and destination_topic=? and partition_key=?",
-                format(now), tenantId, topic, partitionKey);
-        if (updated == 0) {
-            try {
-                jdbc.update("insert into mk_event_stream_position(tenant_id,destination_topic,partition_key,last_sequence,updated_at) values(?,?,?,?,?)",
-                        tenantId, topic, partitionKey, 1, format(now));
-            } catch (DuplicateKeyException concurrentCreator) {
-                jdbc.update("update mk_event_stream_position set last_sequence=last_sequence+1,updated_at=? where tenant_id=? and destination_topic=? and partition_key=?",
-                        format(now), tenantId, topic, partitionKey);
-            }
+        boolean updated = repository.incrementStreamSequence(tenantId, topic, partitionKey, now);
+        if (!updated && !repository.insertInitialStreamSequence(tenantId, topic, partitionKey, now)) {
+            repository.incrementStreamSequence(tenantId, topic, partitionKey, now);
         }
-        Long sequence = jdbc.query("select last_sequence from mk_event_stream_position where tenant_id=? and destination_topic=? and partition_key=?",
-                rs -> rs.next() ? rs.getLong(1) : null, tenantId, topic, partitionKey);
-        if (sequence == null) throw new IllegalStateException("event stream sequence allocation failed");
-        return sequence;
+        return repository.findStreamSequence(tenantId, topic, partitionKey)
+                .orElseThrow(() -> new IllegalStateException("event stream sequence allocation failed"));
     }
 
     private String validateSequence(String tenantId, InboundEvent event) {
-        Long last = jdbc.query("select last_version from mk_event_sequence where tenant_id=? and source_id=? and business_key=? for update",
-                rs -> rs.next() ? rs.getLong(1) : null, tenantId, event.sourceId(), event.businessKey());
+        Long last = repository.lockLastAggregateVersion(tenantId, event.sourceId(), event.businessKey())
+                .orElse(null);
         if (last == null && event.aggregateVersion() > 1) return "AGGREGATE_VERSION_GAP";
         if (last != null && event.aggregateVersion() <= last) return "OUT_OF_ORDER_VERSION";
         if (last != null && event.aggregateVersion() > last + 1) return "AGGREGATE_VERSION_GAP";
@@ -193,19 +185,17 @@ public class EventIngestionService {
     }
 
     private Source source(String tenantId, String sourceId) {
-        List<Source> sources = jdbc.query("select source_uri,allowed_types,schema_versions,max_lateness_seconds,enabled_value from mk_source_registration where tenant_id=? and source_id=?",
-                (rs, rowNum) -> new Source(rs.getString(1), csv(rs.getString(2)), csv(rs.getString(3)),
-                        rs.getLong(4), rs.getBoolean(5)), tenantId, sourceId);
-        if (sources.isEmpty()) throw new NotFoundException("EVENT_SOURCE_NOT_FOUND", "event source is not registered");
-        return sources.getFirst();
+        EventIngestionRepository.SourceRecord source = repository.findSource(tenantId, sourceId)
+                .orElseThrow(() -> new NotFoundException("EVENT_SOURCE_NOT_FOUND", "event source is not registered"));
+        return new Source(source.sourceUri(), csv(source.allowedTypes()), csv(source.schemaVersions()),
+                source.maxLatenessSeconds(), source.enabled());
     }
 
-    private List<StoredReceipt> storedReceipt(String tenantId, String sourceId, String eventId) {
-        return jdbc.query("select receipt_id,status_name,reason_code,ingested_at,payload_hash from mk_event_receipt where tenant_id=? and source_id=? and event_id=?",
-                (rs, rowNum) -> new StoredReceipt(new Receipt(rs.getString("receipt_id"), eventId,
-                        Status.valueOf(rs.getString("status_name")), rs.getString("reason_code"),
-                        Instant.parse(rs.getString("ingested_at"))), rs.getString("payload_hash")),
-                tenantId, sourceId, eventId);
+    private StoredReceipt storedReceipt(String tenantId, String sourceId, String eventId) {
+        return repository.findReceipt(tenantId, sourceId, eventId)
+                .map(row -> new StoredReceipt(new Receipt(row.receiptId(), eventId,
+                        Status.valueOf(row.status()), row.reasonCode(), row.ingestedAt()), row.payloadHash()))
+                .orElse(null);
     }
 
     private String eventPayloadHash(InboundEvent event) {
@@ -267,7 +257,6 @@ public class EventIngestionService {
     private record Source(String sourceUri, Set<String> allowedTypes, Set<String> schemaVersions,
             long maxLatenessSeconds, boolean enabled) { }
     private record StoredReceipt(Receipt receipt, String payloadHash) { }
-    private record Quarantine(String receiptId, String eventJson, String state) { }
     public record InboundEvent(String eventId, String sourceId, String eventType, String businessKey,
             String subjectToken, Instant occurredAt, String schemaVersion, Long aggregateVersion,
             Map<String, Object> data) {

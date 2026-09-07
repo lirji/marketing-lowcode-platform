@@ -5,101 +5,92 @@ import static com.acme.marketing.platform.time.SqlTime.format;
 import com.acme.marketing.contracts.event.MeasurementProjectionDelta;
 import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.error.ConflictException;
-import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
-/** Idempotent materialized view shared by direct ingestion and the Flink projection consumer. */
+/**
+ * 看板物化视图应用服务，供同步摄取和 Flink 投影消费者共同复用。
+ *
+ * <p>该类负责内容幂等与 Kafka 坐标语义，实际读写通过投影仓储端口完成。
+ */
 @Service
 public class MeasurementProjectionStore {
-    private final JdbcTemplate jdbc;
+    private final MeasurementProjectionRepository repository;
     private final ObjectMapper mapper;
     private final Clock clock;
 
-    public MeasurementProjectionStore(JdbcTemplate jdbc, ObjectMapper mapper, Clock clock) {
-        this.jdbc = jdbc;
+    public MeasurementProjectionStore(MeasurementProjectionRepository repository, ObjectMapper mapper, Clock clock) {
+        this.repository = repository;
         this.mapper = mapper;
         this.clock = clock;
     }
 
+    /** 幂等应用一条投影增量，并识别增量标识或 Kafka 坐标冲突。 */
     @Transactional
     public ApplyResult apply(MeasurementProjectionDelta delta, ProjectionSource source) {
         ProjectionSource checked = source == null ? ProjectionSource.direct() : source;
         String payloadHash = hash(delta);
-        List<StoredDelta> existing = stored(delta.tenantId(), delta.deltaId());
-        if (!existing.isEmpty()) return duplicateOrConflict(existing.getFirst(), payloadHash, checked);
+        var existing = repository.findDelta(delta.tenantId(), delta.deltaId());
+        if (existing.isPresent()) return duplicateOrConflict(existing.orElseThrow(), payloadHash, checked);
         if (checked.kafkaRecord()) {
-            List<String> coordinate = jdbc.query(
-                    "select payload_hash from mk_dashboard_projection_delta where source_topic=? and source_partition=? and source_offset=?",
-                    (rs, rowNum) -> rs.getString(1), checked.topic(), checked.partition(), checked.offset());
-            if (!coordinate.isEmpty()) {
-                if (coordinate.getFirst().equals(payloadHash)) return new ApplyResult(false, true);
+            var coordinate = repository.findPayloadHashBySource(checked.topic(), checked.partition(), checked.offset());
+            if (coordinate.isPresent()) {
+                if (coordinate.orElseThrow().equals(payloadHash)) return new ApplyResult(false, true);
                 throw new ConflictException("PROJECTION_OFFSET_COLLISION",
                         "Kafka projection coordinate was reused with another payload");
             }
         }
-        try {
-            jdbc.update("insert into mk_dashboard_projection_delta(tenant_id,delta_id,root_event_id,source_event_id,revision_no,operation_name,fact_type,business_key,campaign_id,experiment_id,variant_id,subject_hash,count_delta,revenue_delta_minor,cost_delta_minor,occurred_at,ingested_at,payload_hash,source_topic,source_partition,source_offset,projected_at) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    delta.tenantId(), delta.deltaId(), delta.rootEventId(), delta.sourceEventId(),
-                    delta.revision(), delta.operation().name(), delta.factType().name(), delta.businessKey(),
-                    delta.campaignId(), delta.experimentId(), delta.variantId(), delta.subjectHash(),
-                    delta.countDelta(), delta.revenueDeltaMinor(), delta.costDeltaMinor(),
-                    format(Instant.ofEpochMilli(delta.occurredAtEpochMillis())),
-                    format(Instant.ofEpochMilli(delta.ingestedAtEpochMillis())), payloadHash,
-                    checked.topic(), checked.partition(), checked.offset(), format(clock.instant()));
-            return new ApplyResult(true, false);
-        } catch (DuplicateKeyException race) {
-            List<StoredDelta> winner = stored(delta.tenantId(), delta.deltaId());
-            if (winner.isEmpty()) {
-                throw new ConflictException("PROJECTION_OFFSET_COLLISION",
-                        "Kafka projection coordinate was concurrently reused");
-            }
-            return duplicateOrConflict(winner.getFirst(), payloadHash, checked);
+        MeasurementProjectionRepository.DeltaWrite write = new MeasurementProjectionRepository.DeltaWrite(
+                delta.tenantId(), delta.deltaId(), delta.rootEventId(), delta.sourceEventId(), delta.revision(),
+                delta.operation().name(), delta.factType().name(), delta.businessKey(), delta.campaignId(),
+                delta.experimentId(), delta.variantId(), delta.subjectHash(), delta.countDelta(),
+                delta.revenueDeltaMinor(), delta.costDeltaMinor(),
+                format(Instant.ofEpochMilli(delta.occurredAtEpochMillis())),
+                format(Instant.ofEpochMilli(delta.ingestedAtEpochMillis())), payloadHash,
+                checked.topic(), checked.partition(), checked.offset(), format(clock.instant()));
+        if (repository.trySaveDelta(write)) return new ApplyResult(true, false);
+
+        // 唯一键竞争可能来自 deltaId，也可能来自 Kafka 坐标；重新读取可给出稳定的业务结果。
+        var winner = repository.findDelta(delta.tenantId(), delta.deltaId());
+        if (winner.isEmpty()) {
+            throw new ConflictException("PROJECTION_OFFSET_COLLISION",
+                    "Kafka projection coordinate was concurrently reused");
         }
+        return duplicateOrConflict(winner.orElseThrow(), payloadHash, checked);
     }
 
+    /** 汇总指定时间范围的看板指标。 */
     public DashboardTotals totals(String tenantId, Instant from, Instant to) {
         Map<String, Long> counts = new LinkedHashMap<>();
-        jdbc.query("select fact_type,sum(count_delta) from mk_dashboard_projection_delta where tenant_id=? and occurred_at>=? and occurred_at<? group by fact_type having sum(count_delta)<>0",
-                rs -> { counts.put(rs.getString(1), rs.getBigDecimal(2).longValueExact()); },
-                tenantId, format(from), format(to));
-        Amounts amounts = jdbc.query("select coalesce(sum(cast(revenue_delta_minor as decimal(65,0))),0),coalesce(sum(cast(cost_delta_minor as decimal(65,0))),0) from mk_dashboard_projection_delta where tenant_id=? and occurred_at>=? and occurred_at<?",
-                rs -> rs.next() ? new Amounts(rs.getBigDecimal(1), rs.getBigDecimal(2))
-                        : new Amounts(BigDecimal.ZERO, BigDecimal.ZERO),
+        repository.sumCounts(tenantId, format(from), format(to)).forEach(row ->
+                counts.put(row.factType(), row.countValue().longValueExact()));
+        MeasurementProjectionRepository.Amounts amounts = repository.sumAmounts(
                 tenantId, format(from), format(to));
         return new DashboardTotals(counts, amounts.revenue().longValueExact(), amounts.cost().longValueExact());
     }
 
+    /** 按小时或自然日汇总看板时序指标。 */
     public Map<Instant, SeriesAmounts> series(String tenantId, Instant from, Instant to, boolean hourly) {
-        int prefixLength = hourly ? 13 : 10;
         Map<Instant, SeriesAmounts> points = new TreeMap<>();
-        jdbc.query("select substring(occurred_at,1," + prefixLength + "),"
-                        + "coalesce(sum(cast(revenue_delta_minor as decimal(65,0))),0),"
-                        + "coalesce(sum(cast(cost_delta_minor as decimal(65,0))),0),"
-                        + "coalesce(sum(case when fact_type='CONVERSION' then count_delta else 0 end),0) "
-                        + "from mk_dashboard_projection_delta where tenant_id=? and occurred_at>=? and occurred_at<? "
-                        + "group by substring(occurred_at,1," + prefixLength + ") order by 1",
-                rs -> {
-                    String bucket = rs.getString(1);
-                    Instant at = Instant.parse(hourly
-                            ? bucket + ":00:00.000000000Z" : bucket + "T00:00:00.000000000Z");
-                    points.put(at, new SeriesAmounts(rs.getBigDecimal(2).longValueExact(),
-                            rs.getBigDecimal(3).longValueExact(), rs.getBigDecimal(4).longValueExact()));
-                }, tenantId, format(from), format(to));
+        repository.sumSeries(tenantId, format(from), format(to), hourly).forEach(row -> {
+            Instant at = Instant.parse(hourly
+                    ? row.bucketValue() + ":00:00.000000000Z"
+                    : row.bucketValue() + "T00:00:00.000000000Z");
+            points.put(at, new SeriesAmounts(row.revenue().longValueExact(), row.cost().longValueExact(),
+                    row.conversions().longValueExact()));
+        });
         return Map.copyOf(points);
     }
 
-    private ApplyResult duplicateOrConflict(StoredDelta existing, String payloadHash, ProjectionSource source) {
+    private ApplyResult duplicateOrConflict(MeasurementProjectionRepository.StoredDelta existing,
+            String payloadHash, ProjectionSource source) {
         if (!existing.payloadHash().equals(payloadHash)) {
             throw new ConflictException("PROJECTION_DELTA_COLLISION",
                     "projection delta id was reused with another payload");
@@ -108,16 +99,10 @@ public class MeasurementProjectionStore {
                 && (!existing.topic().equals(source.topic())
                     || !existing.partition().equals(source.partition())
                     || !existing.offset().equals(source.offset()))) {
-            // The same exactly-once Flink delta may be copied to a recovery topic. Its content identity wins.
+            // 恢复主题可能复制同一条 exactly-once 增量，此时内容身份优先于传输坐标。
             return new ApplyResult(false, true);
         }
         return new ApplyResult(false, true);
-    }
-
-    private List<StoredDelta> stored(String tenantId, String deltaId) {
-        return jdbc.query("select payload_hash,source_topic,source_partition,source_offset from mk_dashboard_projection_delta where tenant_id=? and delta_id=?",
-                (rs, rowNum) -> new StoredDelta(rs.getString(1), rs.getString(2),
-                        (Integer) rs.getObject(3), (Long) rs.getObject(4)), tenantId, deltaId);
     }
 
     private String hash(MeasurementProjectionDelta delta) {
@@ -151,8 +136,4 @@ public class MeasurementProjectionStore {
         public DashboardTotals { counts = Map.copyOf(counts); }
     }
     public record SeriesAmounts(long revenueMinor, long costMinor, long conversions) { }
-    private record Amounts(BigDecimal revenue, BigDecimal cost) { }
-    private record StoredDelta(String payloadHash, String topic, Integer partition, Long offset) {
-        boolean kafkaRecord() { return partition != null; }
-    }
 }

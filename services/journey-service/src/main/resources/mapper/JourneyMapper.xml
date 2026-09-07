@@ -1,0 +1,331 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.journeyservice.infrastructure.persistence.mapper.JourneyMapper">
+
+    <insert id="insertDefinition">
+        INSERT INTO mk_journey_definition
+            (tenant_id, journey_id, version_no, plan_json, state_name, created_by, created_at)
+        VALUES
+            (#{tenantId}, #{journeyId}, #{versionNo}, #{planJson}, #{stateName}, #{createdBy}, #{createdAt})
+    </insert>
+    <select id="selectPlanJson" resultType="java.lang.String">
+        SELECT plan_json FROM mk_journey_definition
+        WHERE tenant_id = #{tenantId} AND journey_id = #{journeyId} AND version_no = #{version}
+    </select>
+    <select id="selectActivePlanJson" resultType="java.lang.String">
+        SELECT plan_json FROM mk_journey_definition
+        WHERE tenant_id = #{tenantId} AND journey_id = #{journeyId} AND version_no = #{version}
+          AND state_name = 'ACTIVE'
+        <if test="lock">FOR UPDATE</if>
+    </select>
+    <select id="selectDefinitionStateForUpdate" resultType="java.lang.String">
+        SELECT state_name FROM mk_journey_definition
+        WHERE tenant_id = #{tenantId} AND journey_id = #{journeyId} AND version_no = #{version}
+        FOR UPDATE
+    </select>
+    <update id="updateDefinitionMigrating">
+        UPDATE mk_journey_definition SET state_name = 'MIGRATING'
+        WHERE tenant_id = #{tenantId} AND journey_id = #{journeyId} AND version_no = #{version}
+    </update>
+    <update id="updateDefinitionMigrated">
+        UPDATE mk_journey_definition SET state_name = 'MIGRATED'
+        WHERE tenant_id = #{tenantId} AND journey_id = #{journeyId} AND version_no = #{version}
+          AND state_name = 'MIGRATING'
+    </update>
+
+    <select id="selectDuplicateEnrollment"
+            resultType="com.acme.marketing.journeyservice.application.JourneyRepository$EnrollmentSummaryRow">
+        SELECT enrollment_id AS enrollmentId, snapshot_json AS snapshotJson, created_at AS createdAt
+        FROM mk_enrollment
+        WHERE tenant_id = #{tenantId} AND journey_id = #{journeyId} AND journey_version = #{version}
+          AND subject_token = #{subjectToken} AND trigger_event_id = #{triggerEventId}
+    </select>
+    <insert id="insertEnrollment">
+        INSERT INTO mk_enrollment
+            (tenant_id, enrollment_id, journey_id, journey_version, subject_token, trigger_event_id,
+             status_name, current_node_id, snapshot_json, projection_topic, projection_partition,
+             projection_offset, created_at, updated_at)
+        VALUES
+            (#{tenantId}, #{enrollmentId}, #{journeyId}, #{journeyVersion}, #{subjectToken}, #{triggerEventId},
+             #{statusName}, #{currentNodeId}, #{snapshotJson}, #{projectionTopic}, #{projectionPartition},
+             #{projectionOffset}, #{createdAt}, #{updatedAt})
+    </insert>
+    <update id="updateEnrollmentState">
+        UPDATE mk_enrollment
+        SET status_name = #{statusName}, current_node_id = #{currentNodeId}, snapshot_json = #{snapshotJson},
+            updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND enrollment_id = #{enrollmentId}
+    </update>
+    <select id="selectEnrollmentSnapshot" resultType="java.lang.String">
+        SELECT snapshot_json FROM mk_enrollment
+        WHERE tenant_id = #{tenantId} AND enrollment_id = #{enrollmentId}
+        <if test="lock">FOR UPDATE</if>
+    </select>
+    <select id="selectEnrollments"
+            resultType="com.acme.marketing.journeyservice.application.JourneyRepository$EnrollmentListRow">
+        SELECT snapshot_json AS snapshotJson, updated_at AS updatedAt
+        FROM mk_enrollment
+        WHERE tenant_id = #{tenantId}
+        <if test="statusName != null and statusName != ''">AND status_name = #{statusName}</if>
+        <if test="journeyId != null and journeyId != ''">AND journey_id = #{journeyId}</if>
+        ORDER BY updated_at DESC, enrollment_id
+        LIMIT #{limit}
+    </select>
+    <select id="selectMigrationSnapshots" resultType="java.lang.String">
+        SELECT snapshot_json FROM mk_enrollment
+        WHERE tenant_id = #{tenantId} AND journey_id = #{journeyId} AND journey_version = #{fromVersion}
+          AND status_name IN ('RUNNING', 'WAITING') AND enrollment_id &gt; #{afterEnrollmentId}
+        ORDER BY enrollment_id
+        LIMIT #{limit}
+        <if test="lock">FOR UPDATE</if>
+    </select>
+    <insert id="insertMigration">
+        INSERT INTO mk_journey_migration
+            (tenant_id, migration_id, enrollment_id, from_version, to_version, previous_snapshot_json,
+             state_name, created_by, created_at)
+        VALUES
+            (#{tenantId}, #{migrationId}, #{enrollmentId}, #{fromVersion}, #{toVersion},
+             #{previousSnapshotJson}, #{stateName}, #{createdBy}, #{createdAt})
+    </insert>
+    <update id="updateEnrollmentMigration">
+        UPDATE mk_enrollment
+        SET journey_version = #{journeyVersion}, current_node_id = #{currentNodeId},
+            snapshot_json = #{snapshotJson}, updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND enrollment_id = #{enrollmentId}
+    </update>
+    <select id="countActiveEnrollments" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM mk_enrollment
+        WHERE tenant_id = #{tenantId} AND journey_id = #{journeyId} AND journey_version = #{version}
+          AND status_name IN ('RUNNING', 'WAITING')
+    </select>
+
+    <insert id="insertEffectIntent">
+        INSERT INTO mk_node_effect_intent
+            (tenant_id, command_id, enrollment_id, node_id, effect_type, payload_json, state_name, created_at)
+        VALUES
+            (#{tenantId}, #{commandId}, #{enrollmentId}, #{nodeId}, #{effectType}, #{payloadJson},
+             #{stateName}, #{createdAt})
+    </insert>
+    <select id="selectEffect"
+            resultType="com.acme.marketing.journeyservice.application.JourneyRepository$EffectRow">
+        SELECT enrollment_id AS enrollmentId, node_id AS nodeId, effect_type AS effectType,
+               payload_json AS payloadJson
+        FROM mk_node_effect_intent
+        WHERE tenant_id = #{tenantId} AND command_id = #{commandId}
+    </select>
+    <update id="updateTimer">
+        UPDATE mk_journey_timer SET fire_at = #{fireAt}, state_name = 'SCHEDULED'
+        WHERE tenant_id = #{tenantId} AND timer_key = #{timerKey}
+    </update>
+    <insert id="insertTimer">
+        INSERT INTO mk_journey_timer
+            (tenant_id, timer_key, enrollment_id, fire_at, state_name, created_at)
+        VALUES
+            (#{tenantId}, #{timerKey}, #{enrollmentId}, #{fireAt}, #{stateName}, #{createdAt})
+    </insert>
+
+    <insert id="insertGeneration">
+        INSERT INTO mk_journey_runtime_generation
+            (tenant_id, environment_name, cell_id, namespace_name, generation_no, release_key_id,
+             manifest_json, artifact_id, artifact_payload, manifest_signature, warmed_at)
+        VALUES
+            (#{tenantId}, #{environmentName}, #{cellId}, #{namespaceName}, #{generationNo}, #{releaseKeyId},
+             #{manifestJson}, #{artifactId}, #{artifactPayload}, #{manifestSignature}, #{warmedAt})
+    </insert>
+    <select id="selectGeneration"
+            resultType="com.acme.marketing.journeyservice.application.JourneyRepository$GenerationRow">
+        SELECT release_key_id AS releaseKeyId, manifest_json AS manifestJson, artifact_id AS artifactId,
+               artifact_payload AS artifactPayload
+        FROM mk_journey_runtime_generation
+        WHERE tenant_id = #{tenantId} AND environment_name = #{environment} AND cell_id = #{cell}
+          AND namespace_name = #{namespace} AND generation_no = #{generation}
+    </select>
+    <insert id="insertRuntimeSlot">
+        INSERT INTO mk_journey_runtime_slot
+            (tenant_id, environment_name, cell_id, namespace_name, desired_generation, activation_sequence,
+             directive_signature, directive_json, updated_at)
+        VALUES
+            (#{tenantId}, #{environmentName}, #{cellId}, #{namespaceName}, #{desiredGeneration},
+             #{activationSequence}, #{directiveSignature}, #{directiveJson}, #{updatedAt})
+    </insert>
+    <select id="selectRuntimeSlot"
+            resultType="com.acme.marketing.journeyservice.application.JourneyRepository$RuntimeSlotRow">
+        SELECT desired_generation AS desiredGeneration, activation_sequence AS activationSequence,
+               directive_signature AS directiveSignature
+        FROM mk_journey_runtime_slot
+        WHERE tenant_id = #{tenantId} AND environment_name = #{environment} AND cell_id = #{cell}
+          AND namespace_name = #{namespace}
+        <if test="lock">FOR UPDATE</if>
+    </select>
+    <insert id="insertActivation">
+        INSERT INTO mk_journey_runtime_activation
+            (tenant_id, environment_name, cell_id, namespace_name, activation_sequence, generation_no,
+             directive_signature, directive_json, activated_at)
+        VALUES
+            (#{tenantId}, #{environmentName}, #{cellId}, #{namespaceName}, #{activationSequence},
+             #{generationNo}, #{directiveSignature}, #{directiveJson}, #{activatedAt})
+    </insert>
+    <update id="updateRuntimeSlot">
+        UPDATE mk_journey_runtime_slot
+        SET desired_generation = #{desiredGeneration}, activation_sequence = #{activationSequence},
+            directive_signature = #{directiveSignature}, directive_json = #{directiveJson}, updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND environment_name = #{environmentName} AND cell_id = #{cellId}
+          AND namespace_name = #{namespaceName}
+    </update>
+
+    <select id="selectKillSwitchForUpdate"
+            resultType="com.acme.marketing.journeyservice.application.JourneyRepository$KillSwitchRow">
+        SELECT switch_sequence AS switchSequence, directive_signature AS directiveSignature,
+               enabled_value AS enabledValue, reason_text AS reasonText
+        FROM mk_journey_runtime_kill_switch
+        WHERE tenant_id = #{tenantId} AND namespace_name = #{namespace}
+        FOR UPDATE
+    </select>
+    <insert id="insertKillSwitch">
+        INSERT INTO mk_journey_runtime_kill_switch
+            (tenant_id, namespace_name, switch_sequence, enabled_value, reason_text,
+             directive_signature, directive_json, updated_at)
+        VALUES
+            (#{tenantId}, #{namespaceName}, #{switchSequence}, #{enabledValue}, #{reasonText},
+             #{directiveSignature}, #{directiveJson}, #{updatedAt})
+    </insert>
+    <update id="updateKillSwitch">
+        UPDATE mk_journey_runtime_kill_switch
+        SET switch_sequence = #{switchSequence}, enabled_value = #{enabledValue}, reason_text = #{reasonText},
+            directive_signature = #{directiveSignature}, directive_json = #{directiveJson}, updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND namespace_name = #{namespaceName}
+    </update>
+    <select id="selectKillSwitches"
+            resultType="com.acme.marketing.journeyservice.application.JourneyRepository$PersistedKillSwitch">
+        SELECT tenant_id AS tenantId, directive_json AS directiveJson
+        FROM mk_journey_runtime_kill_switch
+        WHERE namespace_name = #{namespace}
+    </select>
+
+    <select id="selectOutputReceipt"
+            resultType="com.acme.marketing.journeyservice.application.JourneyRepository$OutputReceiptRow">
+        SELECT payload_hash AS payloadHash, event_type AS eventType
+        FROM mk_journey_output_receipt
+        WHERE source_topic = #{topic} AND source_partition = #{partition} AND source_offset = #{offset}
+    </select>
+    <insert id="insertOutputReceipt">
+        INSERT INTO mk_journey_output_receipt
+            (source_topic, source_partition, source_offset, tenant_id, enrollment_id, event_type,
+             payload_hash, consumed_at)
+        VALUES
+            (#{sourceTopic}, #{sourcePartition}, #{sourceOffset}, #{tenantId}, #{enrollmentId},
+             #{eventType}, #{payloadHash}, #{consumedAt})
+    </insert>
+    <update id="updateEnrollmentExpired">
+        UPDATE mk_enrollment SET status_name = 'EXPIRED', updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND enrollment_id = #{enrollmentId}
+    </update>
+    <update id="updateEnrollmentFailed">
+        UPDATE mk_enrollment SET status_name = 'FAILED', updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND enrollment_id = #{enrollmentId}
+    </update>
+    <select id="selectProjectedEnrollmentForUpdate"
+            resultType="com.acme.marketing.journeyservice.application.JourneyRepository$ProjectedEnrollmentRow">
+        SELECT journey_id AS journeyId, journey_version AS journeyVersion, subject_token AS subjectToken,
+               projection_topic AS projectionTopic, projection_partition AS projectionPartition,
+               projection_offset AS projectionOffset
+        FROM mk_enrollment
+        WHERE tenant_id = #{tenantId} AND enrollment_id = #{enrollmentId}
+        FOR UPDATE
+    </select>
+    <select id="countDefinition" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM mk_journey_definition
+        WHERE tenant_id = #{tenantId} AND journey_id = #{journeyId} AND version_no = #{version}
+    </select>
+    <insert id="insertProjectedEnrollment">
+        INSERT INTO mk_enrollment
+            (tenant_id, enrollment_id, journey_id, journey_version, subject_token, trigger_event_id,
+             status_name, current_node_id, snapshot_json, projection_topic, projection_partition,
+             projection_offset, created_at, updated_at)
+        VALUES
+            (#{tenantId}, #{enrollmentId}, #{journeyId}, #{journeyVersion}, #{subjectToken}, #{triggerEventId},
+             #{statusName}, #{currentNodeId}, #{snapshotJson}, #{projectionTopic}, #{projectionPartition},
+             #{projectionOffset}, #{createdAt}, #{updatedAt})
+    </insert>
+    <update id="updateProjectedEnrollment">
+        UPDATE mk_enrollment
+        SET status_name = #{statusName}, current_node_id = #{currentNodeId}, snapshot_json = #{snapshotJson},
+            projection_topic = #{projectionTopic}, projection_partition = #{projectionPartition},
+            projection_offset = #{projectionOffset}, updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND enrollment_id = #{enrollmentId}
+    </update>
+    <select id="selectEnrollmentIdentity"
+            resultType="com.acme.marketing.journeyservice.application.JourneyRepository$EnrollmentIdentityRow">
+        SELECT journey_id AS journeyId, journey_version AS journeyVersion, subject_token AS subjectToken
+        FROM mk_enrollment
+        WHERE tenant_id = #{tenantId} AND enrollment_id = #{enrollmentId}
+    </select>
+    <insert id="insertDispatchOutbox">
+        INSERT INTO mk_journey_dispatch_outbox
+            (tenant_id, outbox_id, command_id, enrollment_id, destination_topic, partition_key,
+             stream_sequence, payload_json, next_attempt_at, created_at)
+        VALUES
+            (#{tenantId}, #{outboxId}, #{commandId}, #{enrollmentId}, #{destinationTopic}, #{partitionKey},
+             #{streamSequence}, #{payloadJson}, #{nextAttemptAt}, #{createdAt})
+    </insert>
+    <update id="incrementDispatchPosition">
+        UPDATE mk_journey_dispatch_position
+        SET last_sequence = last_sequence + 1, updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND enrollment_id = #{enrollmentId}
+    </update>
+    <insert id="insertDispatchPosition">
+        INSERT INTO mk_journey_dispatch_position (tenant_id, enrollment_id, last_sequence, updated_at)
+        VALUES (#{tenantId}, #{enrollmentId}, 1, #{updatedAt})
+    </insert>
+    <select id="selectDispatchSequence" resultType="java.lang.Long">
+        SELECT last_sequence FROM mk_journey_dispatch_position
+        WHERE tenant_id = #{tenantId} AND enrollment_id = #{enrollmentId}
+    </select>
+
+    <select id="selectPendingDispatches"
+            resultType="com.acme.marketing.journeyservice.application.JourneyDispatchRepository$PendingDispatch">
+        SELECT candidate.tenant_id AS tenantId, candidate.outbox_id AS outboxId,
+               candidate.command_id AS commandId, candidate.destination_topic AS topic,
+               candidate.partition_key AS partitionKey, candidate.payload_json AS payload,
+               candidate.publish_attempts AS attempts
+        FROM mk_journey_dispatch_outbox candidate
+        WHERE candidate.published_at IS NULL
+          AND candidate.dead_lettered_at IS NULL
+          AND candidate.next_attempt_at &lt;= #{now}
+          AND NOT EXISTS (
+              SELECT 1 FROM mk_journey_dispatch_outbox predecessor
+              WHERE predecessor.tenant_id = candidate.tenant_id
+                AND predecessor.enrollment_id = candidate.enrollment_id
+                AND predecessor.published_at IS NULL
+                AND predecessor.dead_lettered_at IS NULL
+                AND predecessor.stream_sequence &lt; candidate.stream_sequence
+          )
+        ORDER BY candidate.created_at, candidate.stream_sequence
+        LIMIT #{limit}
+        FOR UPDATE SKIP LOCKED
+    </select>
+    <update id="updateDispatchPublished">
+        UPDATE mk_journey_dispatch_outbox
+        SET published_at = #{publishedAt}, publish_attempts = #{attempts}, last_error = ''
+        WHERE tenant_id = #{tenantId} AND outbox_id = #{outboxId}
+          AND published_at IS NULL AND dead_lettered_at IS NULL
+    </update>
+    <update id="updateEffectState">
+        UPDATE mk_node_effect_intent SET state_name = #{stateName}
+        WHERE tenant_id = #{tenantId} AND command_id = #{commandId}
+    </update>
+    <update id="updateDispatchDeadLettered">
+        UPDATE mk_journey_dispatch_outbox
+        SET publish_attempts = #{attempts}, dead_lettered_at = #{deadLetteredAt}, last_error = #{error}
+        WHERE tenant_id = #{tenantId} AND outbox_id = #{outboxId}
+          AND published_at IS NULL AND dead_lettered_at IS NULL
+    </update>
+    <update id="updateDispatchRetry">
+        UPDATE mk_journey_dispatch_outbox
+        SET publish_attempts = #{attempts}, next_attempt_at = #{nextAttemptAt}, last_error = #{error}
+        WHERE tenant_id = #{tenantId} AND outbox_id = #{outboxId} AND published_at IS NULL
+    </update>
+
+</mapper>

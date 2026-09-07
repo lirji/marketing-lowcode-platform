@@ -99,7 +99,10 @@ export function AwardIntentsPanel() {
         {intents.isError && <StateBanner tone="error" title="发放指令加载失败" detail={problemDetail(intents.error)} />}
         {!api.demoMode && !campaignId && <EmptyState title="请先选择活动" detail="发放列表必须带 campaignId，未选择时不会请求。" />}
         {!api.demoMode && campaignId && !intents.isPending && rows.length === 0 && !intents.isError && (
-          <EmptyState title="本活动尚无发放指令" detail="GET /api/v1/award-intents 返回空列表。" />
+          <EmptyState
+            title="本活动尚无发放指令"
+            detail="AwardIntent 由运行时或内部接口写出。控制台只读，不会提交发奖，也没有新建表单。"
+          />
         )}
         {rows.length > 0 && (
           <div className="award-intent-list">
@@ -152,9 +155,9 @@ function AwardIntentCard({ item }: { item: AwardIntentView }) {
             <ExternalLink size={13} />打开风控决策
           </a>
         ) : item.status === 'DEAD' ? (
-          <span>未配置权益台地址，仅可复制 sourceRequestId</span>
+          <span>未配置 BENEFIT_CONSOLE_ORIGIN，仅可复制 sourceRequestId</span>
         ) : blocked ? (
-          <span>未配置风控台地址，仅可复制 sourceRequestId</span>
+          <span>未配置 RISK_CONSOLE_ORIGIN，仅可复制 sourceRequestId</span>
         ) : null}
       </footer>
     </article>

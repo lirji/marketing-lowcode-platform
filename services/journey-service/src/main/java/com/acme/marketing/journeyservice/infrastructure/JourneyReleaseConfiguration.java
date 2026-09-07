@@ -2,6 +2,7 @@ package com.acme.marketing.journeyservice.infrastructure;
 
 import com.acme.marketing.journey.JourneyReleaseVerifier;
 import com.acme.marketing.journeyservice.application.JourneyKillSwitchRegistry;
+import com.acme.marketing.journeyservice.application.JourneyRepository;
 import com.acme.marketing.platform.crypto.Ed25519;
 import com.acme.marketing.platform.crypto.Ed25519KeyPairCodec;
 import com.acme.marketing.platform.crypto.SigningKeyRing;
@@ -11,7 +12,6 @@ import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.Clock;
 import tools.jackson.databind.ObjectMapper;
 
@@ -36,7 +36,8 @@ public class JourneyReleaseConfiguration {
     }
 
     @Bean
-    public JourneyKillSwitchRegistry journeyKillSwitchRegistry(JdbcTemplate jdbc, ObjectMapper mapper, Clock clock,
+    public JourneyKillSwitchRegistry journeyKillSwitchRegistry(JourneyRepository repository,
+            ObjectMapper mapper, Clock clock,
             @Value("${marketing.release.trusted-key-id:}") String releaseKeyId,
             @Value("${marketing.release.public-key-base64:}") String releasePublicKey,
             @Value("${marketing.release.trusted-public-keys:}") String additionalReleaseKeys,
@@ -44,7 +45,7 @@ public class JourneyReleaseConfiguration {
             @Value("${marketing.security.mode:DEV}") String securityMode) {
         Map<String, PublicKey> keys = trustedKeys(releaseKeyId, releasePublicKey, additionalReleaseKeys);
         requireTrustInProduction(securityMode, java.util.List.of(keys));
-        return new JourneyKillSwitchRegistry(jdbc, mapper, clock, keys, namespace);
+        return new JourneyKillSwitchRegistry(repository, mapper, clock, keys, namespace);
     }
 
     @Bean("journeyRuntimeAckSigningKeyRing")

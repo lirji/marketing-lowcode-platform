@@ -4,7 +4,7 @@
   <dependencies>
     <dependency><groupId>com.acme.marketing</groupId><artifactId>marketing-contracts</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>com.acme.marketing</groupId><artifactId>provider-connector-spi</artifactId><version>${project.version}</version></dependency>
-    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-jdbc</artifactId></dependency>
+    <dependency><groupId>org.mybatis.spring.boot</groupId><artifactId>mybatis-spring-boot-starter</artifactId></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-flyway</artifactId></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-kafka</artifactId></dependency>
     <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-mysql</artifactId></dependency>

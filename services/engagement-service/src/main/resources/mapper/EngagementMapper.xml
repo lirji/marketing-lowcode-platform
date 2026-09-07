@@ -1,0 +1,443 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.engagement.infrastructure.persistence.mapper.EngagementMapper">
+
+    <select id="selectConsentVersionForUpdate" resultType="java.lang.Long">
+        SELECT version_no
+        FROM mk_consent
+        WHERE tenant_id = #{tenantId}
+          AND subject_token = #{subjectToken}
+          AND channel_name = #{channelName}
+        FOR UPDATE
+    </select>
+
+    <insert id="insertConsent">
+        INSERT INTO mk_consent (
+            tenant_id, subject_token, channel_name, allowed_value, minor_value,
+            personalization_allowed, version_no, source_name, effective_at, updated_at
+        ) VALUES (
+            #{tenantId}, #{subjectToken}, #{channelName}, #{allowedValue}, #{minorValue},
+            #{personalizationAllowed}, #{versionNo}, #{sourceName}, #{effectiveAt}, #{updatedAt}
+        )
+    </insert>
+
+    <update id="updateConsent">
+        UPDATE mk_consent
+        SET allowed_value = #{allowedValue},
+            minor_value = #{minorValue},
+            personalization_allowed = #{personalizationAllowed},
+            version_no = #{versionNo},
+            source_name = #{sourceName},
+            effective_at = #{effectiveAt},
+            updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId}
+          AND subject_token = #{subjectToken}
+          AND channel_name = #{channelName}
+    </update>
+
+    <update id="updateSuppression">
+        UPDATE mk_suppression
+        SET reason_text = #{reasonText},
+            expires_at = #{expiresAt},
+            updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId}
+          AND subject_token = #{subjectToken}
+          AND channel_name = #{channelName}
+    </update>
+
+    <insert id="insertSuppression">
+        INSERT INTO mk_suppression (
+            tenant_id, subject_token, channel_name, reason_text, expires_at, updated_at
+        ) VALUES (
+            #{tenantId}, #{subjectToken}, #{channelName}, #{reasonText}, #{expiresAt}, #{updatedAt}
+        )
+    </insert>
+
+    <update id="updateFrequencyPolicy">
+        UPDATE mk_frequency_policy
+        SET window_seconds = #{windowSeconds},
+            max_contacts = #{maxContacts},
+            quiet_start = #{quietStart},
+            quiet_end = #{quietEnd},
+            updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId}
+          AND campaign_id = #{campaignId}
+          AND channel_name = #{channelName}
+    </update>
+
+    <insert id="insertFrequencyPolicy">
+        INSERT INTO mk_frequency_policy (
+            tenant_id, campaign_id, channel_name, window_seconds, max_contacts,
+            quiet_start, quiet_end, updated_at
+        ) VALUES (
+            #{tenantId}, #{campaignId}, #{channelName}, #{windowSeconds}, #{maxContacts},
+            #{quietStart}, #{quietEnd}, #{updatedAt}
+        )
+    </insert>
+
+    <insert id="insertTemplate">
+        INSERT INTO mk_template_version (
+            tenant_id, template_id, version_no, channel_name, content_text, required_variables,
+            state_name, created_by, created_at
+        ) VALUES (
+            #{tenantId}, #{templateId}, #{versionNo}, #{channelName}, #{contentText},
+            #{requiredVariables}, #{stateName}, #{createdBy}, #{createdAt}
+        )
+    </insert>
+
+    <select id="selectLatestTemplates"
+            resultType="com.acme.marketing.engagement.infrastructure.persistence.mapper.EngagementMapper$TemplateRow">
+        SELECT
+            current.template_id AS templateId,
+            current.version_no AS versionNo,
+            current.channel_name AS channelName,
+            current.content_text AS contentText,
+            current.required_variables AS requiredVariables,
+            current.state_name AS stateName,
+            current.created_at AS createdAt
+        FROM mk_template_version current
+        WHERE current.tenant_id = #{tenantId}
+          AND current.version_no = (
+              SELECT MAX(latest.version_no)
+              FROM mk_template_version latest
+              WHERE latest.tenant_id = current.tenant_id
+                AND latest.template_id = current.template_id
+          )
+        ORDER BY current.template_id
+    </select>
+
+    <select id="selectContacts"
+            resultType="com.acme.marketing.engagement.infrastructure.persistence.mapper.EngagementMapper$ContactRow">
+        SELECT
+            contact_id AS contactId,
+            contact_key AS contactKey,
+            state_name AS stateName,
+            provider_request_id AS providerRequestId,
+            provider_code AS providerCode,
+            updated_at AS updatedAt
+        FROM mk_contact_attempt
+        WHERE tenant_id = #{tenantId}
+        <if test="stateName != null">
+          AND state_name = #{stateName}
+        </if>
+        ORDER BY updated_at DESC, contact_id
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectCommandForUpdate"
+            resultType="com.acme.marketing.engagement.infrastructure.persistence.mapper.EngagementMapper$CommandRow">
+        SELECT
+            effect_type AS effectType,
+            enrollment_id AS enrollmentId,
+            payload_hash AS payloadHash,
+            state_name AS stateName,
+            contact_id AS contactId,
+            provider_code AS providerCode
+        FROM mk_engagement_command
+        WHERE tenant_id = #{tenantId}
+          AND command_id = #{commandId}
+        FOR UPDATE
+    </select>
+
+    <insert id="insertCommand">
+        INSERT INTO mk_engagement_command (
+            tenant_id, command_id, effect_type, enrollment_id, payload_hash, payload_json,
+            state_name, created_at, updated_at
+        ) VALUES (
+            #{tenantId}, #{commandId}, #{effectType}, #{enrollmentId}, #{payloadHash}, #{payloadJson},
+            #{stateName}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <update id="markCommandSucceeded">
+        UPDATE mk_engagement_command
+        SET state_name = 'SUCCEEDED',
+            contact_id = #{contactId},
+            provider_code = #{providerCode},
+            last_error = '',
+            updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId}
+          AND command_id = #{commandId}
+    </update>
+
+    <update id="markCommandRetry">
+        UPDATE mk_engagement_command
+        SET state_name = 'RETRY_PENDING',
+            last_error = #{lastError},
+            updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId}
+          AND command_id = #{commandId}
+    </update>
+
+    <insert id="insertContact">
+        INSERT INTO mk_contact_attempt (
+            tenant_id, contact_id, contact_key, subject_token, campaign_id, channel_name,
+            template_id, template_version, state_name, variables_json, requested_at, updated_at
+        ) VALUES (
+            #{tenantId}, #{contactId}, #{contactKey}, #{subjectToken}, #{campaignId}, #{channelName},
+            #{templateId}, #{templateVersion}, #{stateName}, #{variablesJson}, #{requestedAt}, #{updatedAt}
+        )
+    </insert>
+
+    <update id="completeContact">
+        UPDATE mk_contact_attempt
+        SET state_name = #{stateName},
+            provider_request_id = #{providerRequestId},
+            provider_code = #{providerCode},
+            updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId}
+          AND contact_id = #{contactId}
+    </update>
+
+    <insert id="insertContactDlq">
+        INSERT INTO mk_contact_dlq (
+            tenant_id, dlq_id, contact_id, reason_code, state_name, created_at
+        ) VALUES (
+            #{tenantId}, #{dlqId}, #{contactId}, #{reasonCode}, #{stateName}, #{createdAt}
+        )
+    </insert>
+
+    <select id="countProviderReceipt" resultType="int">
+        SELECT COUNT(*)
+        FROM mk_provider_receipt
+        WHERE tenant_id = #{tenantId}
+          AND provider_event_id = #{providerEventId}
+    </select>
+
+    <insert id="insertProviderReceipt">
+        INSERT INTO mk_provider_receipt (
+            tenant_id, provider_event_id, provider_request_id, status_name, occurred_at, attributes_json
+        ) VALUES (
+            #{tenantId}, #{providerEventId}, #{providerRequestId}, #{statusName}, #{occurredAt},
+            #{attributesJson}
+        )
+    </insert>
+
+    <update id="updateContactState">
+        UPDATE mk_contact_attempt
+        SET state_name = #{stateName},
+            updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId}
+          AND contact_id = #{contactId}
+    </update>
+
+    <select id="selectConsent"
+            resultType="com.acme.marketing.engagement.infrastructure.persistence.mapper.EngagementMapper$ConsentRow">
+        SELECT
+            allowed_value AS allowedValue,
+            minor_value AS minorValue,
+            personalization_allowed AS personalizationAllowed,
+            version_no AS versionNo,
+            effective_at AS effectiveAt
+        FROM mk_consent
+        WHERE tenant_id = #{tenantId}
+          AND subject_token = #{subjectToken}
+          AND channel_name = #{channelName}
+    </select>
+
+    <select id="countActiveSuppression" resultType="int">
+        SELECT COUNT(*)
+        FROM mk_suppression
+        WHERE tenant_id = #{tenantId}
+          AND subject_token = #{subjectToken}
+          AND (channel_name = #{channelName} OR channel_name = '*')
+          AND (expires_at IS NULL OR expires_at &gt; #{now})
+    </select>
+
+    <select id="selectFrequencyPolicy"
+            resultType="com.acme.marketing.engagement.infrastructure.persistence.mapper.EngagementMapper$FrequencyPolicyRow">
+        SELECT
+            window_seconds AS windowSeconds,
+            max_contacts AS maxContacts,
+            quiet_start AS quietStart,
+            quiet_end AS quietEnd
+        FROM mk_frequency_policy
+        WHERE tenant_id = #{tenantId}
+          AND campaign_id = #{campaignId}
+          AND channel_name = #{channelName}
+    </select>
+
+    <select id="selectFrequencyCountForUpdate" resultType="java.lang.Integer">
+        SELECT contact_count
+        FROM mk_frequency_bucket
+        WHERE tenant_id = #{tenantId}
+          AND campaign_id = #{campaignId}
+          AND channel_name = #{channelName}
+          AND subject_token = #{subjectToken}
+          AND window_bucket = #{windowBucket}
+        FOR UPDATE
+    </select>
+
+    <insert id="insertFrequencyBucket">
+        INSERT INTO mk_frequency_bucket (
+            tenant_id, campaign_id, channel_name, subject_token, window_bucket, contact_count, updated_at
+        ) VALUES (
+            #{tenantId}, #{campaignId}, #{channelName}, #{subjectToken}, #{windowBucket}, 1, #{updatedAt}
+        )
+    </insert>
+
+    <update id="incrementFrequencyBucket">
+        UPDATE mk_frequency_bucket
+        SET contact_count = contact_count + 1,
+            updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId}
+          AND campaign_id = #{campaignId}
+          AND channel_name = #{channelName}
+          AND subject_token = #{subjectToken}
+          AND window_bucket = #{windowBucket}
+    </update>
+
+    <select id="selectTemplate"
+            resultType="com.acme.marketing.engagement.infrastructure.persistence.mapper.EngagementMapper$TemplateRow">
+        SELECT
+            template_id AS templateId,
+            version_no AS versionNo,
+            channel_name AS channelName,
+            content_text AS contentText,
+            required_variables AS requiredVariables,
+            state_name AS stateName,
+            created_at AS createdAt
+        FROM mk_template_version
+        WHERE tenant_id = #{tenantId}
+          AND template_id = #{templateId}
+          AND version_no = #{versionNo}
+    </select>
+
+    <select id="selectContactByKey"
+            resultType="com.acme.marketing.engagement.infrastructure.persistence.mapper.EngagementMapper$ContactRow">
+        SELECT
+            contact_id AS contactId,
+            contact_key AS contactKey,
+            state_name AS stateName,
+            provider_request_id AS providerRequestId,
+            provider_code AS providerCode,
+            updated_at AS updatedAt
+        FROM mk_contact_attempt
+        WHERE tenant_id = #{tenantId}
+          AND contact_key = #{contactKey}
+    </select>
+
+    <select id="selectContactById"
+            resultType="com.acme.marketing.engagement.infrastructure.persistence.mapper.EngagementMapper$ContactRow">
+        SELECT
+            contact_id AS contactId,
+            contact_key AS contactKey,
+            state_name AS stateName,
+            provider_request_id AS providerRequestId,
+            provider_code AS providerCode,
+            updated_at AS updatedAt
+        FROM mk_contact_attempt
+        WHERE tenant_id = #{tenantId}
+          AND contact_id = #{contactId}
+    </select>
+
+    <select id="selectContactByProviderRequestForUpdate"
+            resultType="com.acme.marketing.engagement.infrastructure.persistence.mapper.EngagementMapper$ContactRow">
+        SELECT
+            contact_id AS contactId,
+            contact_key AS contactKey,
+            state_name AS stateName,
+            provider_request_id AS providerRequestId,
+            provider_code AS providerCode,
+            updated_at AS updatedAt
+        FROM mk_contact_attempt
+        WHERE tenant_id = #{tenantId}
+          AND provider_request_id = #{providerRequestId}
+        FOR UPDATE
+    </select>
+
+    <update id="incrementOutboxSequence">
+        UPDATE mk_engagement_outbox_position
+        SET last_sequence = last_sequence + 1,
+            updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId}
+          AND contact_id = #{contactId}
+    </update>
+
+    <insert id="insertOutboxSequence">
+        INSERT INTO mk_engagement_outbox_position (
+            tenant_id, contact_id, last_sequence, updated_at
+        ) VALUES (
+            #{tenantId}, #{contactId}, #{lastSequence}, #{updatedAt}
+        )
+    </insert>
+
+    <select id="selectOutboxSequence" resultType="java.lang.Long">
+        SELECT last_sequence
+        FROM mk_engagement_outbox_position
+        WHERE tenant_id = #{tenantId}
+          AND contact_id = #{contactId}
+    </select>
+
+    <insert id="insertOutbox">
+        INSERT INTO mk_engagement_outbox (
+            tenant_id, event_id, contact_id, event_type, destination_topic, partition_key,
+            stream_sequence, payload_json, next_attempt_at, created_at
+        ) VALUES (
+            #{tenantId}, #{eventId}, #{contactId}, #{eventType}, #{destinationTopic}, #{partitionKey},
+            #{streamSequence}, #{payloadJson}, #{nextAttemptAt}, #{createdAt}
+        )
+    </insert>
+
+    <select id="selectPendingOutbox"
+            resultType="com.acme.marketing.engagement.infrastructure.persistence.mapper.EngagementMapper$OutboxRow">
+        SELECT
+            candidate.tenant_id AS tenantId,
+            candidate.event_id AS eventId,
+            candidate.destination_topic AS destinationTopic,
+            candidate.partition_key AS partitionKey,
+            candidate.payload_json AS payloadJson,
+            candidate.publish_attempts AS publishAttempts
+        FROM mk_engagement_outbox candidate
+        WHERE candidate.published_at IS NULL
+          AND candidate.dead_lettered_at IS NULL
+          AND candidate.next_attempt_at &lt;= #{now}
+          AND NOT EXISTS (
+              SELECT 1
+              FROM mk_engagement_outbox predecessor
+              WHERE predecessor.tenant_id = candidate.tenant_id
+                AND predecessor.contact_id = candidate.contact_id
+                AND predecessor.published_at IS NULL
+                AND predecessor.dead_lettered_at IS NULL
+                AND predecessor.stream_sequence &lt; candidate.stream_sequence
+          )
+        ORDER BY candidate.created_at, candidate.stream_sequence
+        LIMIT #{limit}
+        FOR UPDATE SKIP LOCKED
+    </select>
+
+    <update id="markOutboxPublished">
+        UPDATE mk_engagement_outbox
+        SET published_at = #{stateAt},
+            publish_attempts = #{publishAttempts},
+            last_error = ''
+        WHERE tenant_id = #{tenantId}
+          AND event_id = #{eventId}
+          AND published_at IS NULL
+          AND dead_lettered_at IS NULL
+    </update>
+
+    <update id="markOutboxDead">
+        UPDATE mk_engagement_outbox
+        SET publish_attempts = #{publishAttempts},
+            dead_lettered_at = #{stateAt},
+            last_error = #{lastError}
+        WHERE tenant_id = #{tenantId}
+          AND event_id = #{eventId}
+          AND published_at IS NULL
+          AND dead_lettered_at IS NULL
+    </update>
+
+    <update id="markOutboxRetry">
+        UPDATE mk_engagement_outbox
+        SET publish_attempts = #{publishAttempts},
+            next_attempt_at = #{stateAt},
+            last_error = #{lastError}
+        WHERE tenant_id = #{tenantId}
+          AND event_id = #{eventId}
+          AND published_at IS NULL
+    </update>
+
+</mapper>

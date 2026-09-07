@@ -59,11 +59,12 @@ class TenantContextFilterTest {
     }
 
     @Test
-    void bindsCasdoorOwnerAndPermissionObjects() throws Exception {
+    void separatesBusinessTenantFromCasdoorOwnerAndMapsPermissionObjects() throws Exception {
         Jwt jwt = Jwt.withTokenValue("token")
                 .header("alg", "none")
                 .subject("casdoor-user")
                 .claim("owner", "marketing-platform")
+                .claim("tenant_id", "benefit-center")
                 .claim("permissions", List.of(
                         Map.of("name", "campaign.read"),
                         Map.of("name", "marketing.admin")))
@@ -81,7 +82,7 @@ class TenantContextFilterTest {
             filter.doFilter(new MockHttpServletRequest("GET", "/api/v1/campaigns"), response,
                     (ignoredRequest, ignoredResponse) -> {
                         invoked.set(true);
-                        assertEquals("marketing-platform", TenantContextHolder.requireCurrent().tenantId().value());
+                        assertEquals("benefit-center", TenantContextHolder.requireCurrent().tenantId().value());
                         assertEquals(Set.of("marketing-platform"), TenantContextHolder.requireCurrent().organizations());
                         assertEquals(Set.of("*"), TenantContextHolder.requireCurrent().permissions());
                         assertEquals("casdoor-user", TenantContextHolder.requireCurrent().actorId());
@@ -99,6 +100,7 @@ class TenantContextFilterTest {
                 .header("alg", "none")
                 .subject("casdoor-operator")
                 .claim("owner", "marketing-platform")
+                .claim("tenant_id", "retail-cn")
                 .claim("permissions", List.of(
                         Map.of("name", "campaign.read"),
                         Map.of("name", "audience-field.write")))
@@ -127,10 +129,40 @@ class TenantContextFilterTest {
     }
 
     @Test
-    void rejectsJwtWithoutTenantOrOwner() throws Exception {
+    void normalizesCasdoorBusinessTenantPropertyWithoutUsingOwner() throws Exception {
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .subject("casdoor-operator")
+                .claim("owner", "marketing-platform")
+                .claim("properties", Map.of("tenant_id", "benefit-center"))
+                .issuedAt(Instant.parse("2026-09-04T00:00:00Z"))
+                .expiresAt(Instant.parse("2026-09-04T01:00:00Z"))
+                .build();
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(new JwtAuthenticationToken(jwt, List.of()));
+        SecurityContextHolder.setContext(context);
+        try {
+            TenantContextFilter filter = new TenantContextFilter(
+                    new MarketingSecurityProperties(MarketingSecurityProperties.Mode.OIDC, false));
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            filter.doFilter(new MockHttpServletRequest("GET", "/api/v1/campaigns"), response,
+                    (ignoredRequest, ignoredResponse) -> {
+                        assertEquals("benefit-center", TenantContextHolder.requireCurrent().tenantId().value());
+                        assertEquals(Set.of("marketing-platform"),
+                                TenantContextHolder.requireCurrent().organizations());
+                    });
+            assertEquals(200, response.getStatus());
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
+    void rejectsJwtWithoutTenantIdEvenWhenLoginOwnerExists() throws Exception {
         Jwt jwt = Jwt.withTokenValue("token")
                 .header("alg", "none")
                 .subject("casdoor-user")
+                .claim("owner", "marketing-platform")
                 .issuedAt(Instant.parse("2026-09-04T00:00:00Z"))
                 .expiresAt(Instant.parse("2026-09-04T01:00:00Z"))
                 .build();

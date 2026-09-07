@@ -26,6 +26,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <spring-boot.version>4.0.2</spring-boot.version>
     <spring-cloud.version>2025.1.1</spring-cloud.version>
+    <mybatis-spring-boot.version>4.0.1</mybatis-spring-boot.version>
     <drools.version>10.2.0</drools.version>
     <flink.version>2.2.1</flink.version>
     <flink.kafka.version>5.0.0-2.2</flink.kafka.version>
@@ -53,6 +54,11 @@
         <version>${spring-cloud.version}</version>
         <type>pom</type>
         <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.mybatis.spring.boot</groupId>
+        <artifactId>mybatis-spring-boot-starter</artifactId>
+        <version>${mybatis-spring-boot.version}</version>
       </dependency>
       <dependency>
         <groupId>org.apache.flink</groupId>

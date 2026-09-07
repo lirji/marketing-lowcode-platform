@@ -192,6 +192,7 @@ test('live benefit editor SKU picker stays on-screen', async ({ page }) => {
   expect(box!.x).toBeGreaterThanOrEqual(0)
   expect(box!.x + box!.width).toBeLessThanOrEqual((viewport?.width ?? 0) + 1)
   await expect(page.getByRole('button', { name: '保存策略' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '保存' }).first()).toBeVisible()
 })
 
 test('unauthorised identity cannot open release actions', async ({ page }) => {

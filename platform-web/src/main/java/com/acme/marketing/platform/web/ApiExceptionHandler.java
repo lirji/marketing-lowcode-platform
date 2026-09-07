@@ -5,6 +5,7 @@ import com.acme.marketing.platform.error.DependencyUnavailableException;
 import com.acme.marketing.platform.error.DomainException;
 import com.acme.marketing.platform.error.ForbiddenException;
 import com.acme.marketing.platform.error.NotFoundException;
+import com.acme.marketing.platform.error.UnauthorizedException;
 import com.acme.marketing.platform.error.ValidationException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
@@ -23,11 +24,14 @@ public final class ApiExceptionHandler {
     public ProblemDetail domainException(DomainException exception, HttpServletRequest request) {
         HttpStatus status = switch (exception) {
             case NotFoundException ignored -> HttpStatus.NOT_FOUND;
+            case UnauthorizedException ignored -> HttpStatus.UNAUTHORIZED;
             case ConflictException ignored -> HttpStatus.CONFLICT;
             case ForbiddenException ignored -> HttpStatus.FORBIDDEN;
             case ValidationException ignored -> HttpStatus.UNPROCESSABLE_CONTENT;
-            // 风控不可用是调用链明确约定的 fail-closed 503；其它依赖失败继续保持现有 502 语义。
-            case DependencyUnavailableException dependency -> "RISK_UNAVAILABLE".equals(dependency.code())
+            // fail-closed 风控和入口容量保护都表示“稍后重试”；其它上游协议失败保持 502。
+            case DependencyUnavailableException dependency -> List.of(
+                            "RISK_UNAVAILABLE", "EVENT_OUTBOX_BACKPRESSURE",
+                            "AWARD_INTENT_IN_PROGRESS").contains(dependency.code())
                     ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.BAD_GATEWAY;
             default -> HttpStatus.BAD_REQUEST;
         };

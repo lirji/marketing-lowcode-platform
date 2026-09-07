@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -56,17 +57,64 @@ class AudienceIntegrationTest extends MySqlIntegrationTest {
         JsonNode member = get("/api/v1/audiences/snapshots/" + snapshotId
                 + "/memberships/s1?usedAt=" + now.plusSeconds(10) + "&stalePolicy=REJECT_CANDIDATE");
         assertTrue(member.get("member").asBoolean());
+        JsonNode updated = put("/api/v1/audiences/snapshots/" + snapshotId + "/memberships", Map.of(
+                "subjectToken", "s1", "version", 2, "member", false));
+        assertEquals("UPDATED", updated.get("freshness").asString());
+        assertEquals(2, updated.get("version").asLong());
+        JsonNode ignored = put("/api/v1/audiences/snapshots/" + snapshotId + "/memberships", Map.of(
+                "subjectToken", "s1", "version", 1, "member", true));
+        assertEquals("STALE_UPDATE_IGNORED", ignored.get("freshness").asString());
         JsonNode stale = get("/api/v1/audiences/snapshots/" + snapshotId
                 + "/memberships/s1?usedAt=" + now.plusSeconds(7200) + "&stalePolicy=GENERIC_PATH");
         assertEquals("STALE_GENERIC_PATH", stale.get("freshness").asString());
     }
 
+    @Test
+    void createApiReplaysFirstResponseAndRejectsPayloadReuse() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        String fieldId = "idempotent-" + suffix;
+        String key = "audience-idempotency-" + suffix;
+        Map<String, Object> request = Map.of(
+                "fieldId", fieldId, "valueType", "STRING", "owner", "identity",
+                "provenance", "verified-profile", "classification", "PERSONAL",
+                "allowedUses", Set.of("ELIGIBILITY"), "maxAgeSeconds", 3600,
+                "nullPolicy", "NO_MATCH", "missingPolicy", "NO_MATCH", "retentionDays", 30);
+
+        HttpResponse<String> first = postRaw("/api/v1/fields", request, key);
+        HttpResponse<String> replay = postRaw("/api/v1/fields", request, key);
+        assertEquals(201, first.statusCode());
+        assertEquals(first.body(), replay.body());
+
+        Map<String, Object> conflicting = new java.util.HashMap<>(request);
+        conflicting.put("owner", "another-owner");
+        HttpResponse<String> conflict = postRaw("/api/v1/fields", conflicting, key);
+        assertEquals(409, conflict.statusCode());
+        assertTrue(conflict.body().contains("IDEMPOTENCY_PAYLOAD_CONFLICT"));
+        long occurrences = 0;
+        for (JsonNode field : get("/api/v1/fields")) {
+            if (fieldId.equals(field.get("fieldId").asString())) occurrences++;
+        }
+        assertEquals(1, occurrences);
+    }
+
     private JsonNode post(String path, Object body) throws Exception {
         return exchange(base(path).header("Content-Type", "application/json")
+                .header("Idempotency-Key", "audience-test-" + UUID.randomUUID())
                 .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build());
     }
 
+    private HttpResponse<String> postRaw(String path, Object body, String idempotencyKey) throws Exception {
+        return client.send(base(path).header("Content-Type", "application/json")
+                .header("Idempotency-Key", idempotencyKey)
+                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
     private JsonNode get(String path) throws Exception { return exchange(base(path).GET().build()); }
+    private JsonNode put(String path, Object body) throws Exception {
+        return exchange(base(path).header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build());
+    }
     private HttpRequest.Builder base(String path) {
         return HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).timeout(Duration.ofSeconds(30))
                 .header("X-Dev-Tenant-Id", "tenant-a").header("X-Dev-Actor-Id", "audience-test")

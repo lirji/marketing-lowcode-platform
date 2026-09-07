@@ -342,6 +342,7 @@ def main() -> None:
             "missingPolicy": "NO_MATCH",
             "retentionDays": 30,
         },
+        idempotency_key=f"field-{SUFFIX}",
     )
     segment = call(
         "POST",
@@ -354,6 +355,7 @@ def main() -> None:
                 "conditions": [{"fieldId": field_id, "operator": "GTE", "value": "80"}],
             },
         },
+        idempotency_key=f"audience-{SUFFIX}",
     )
     subject = f"subject-{SUFFIX}"
     preview = call(
@@ -376,6 +378,7 @@ def main() -> None:
             "schemaVersions": ["1.0.0"],
             "maxLatenessSeconds": 3600,
         },
+        idempotency_key=f"event-source-{SUFFIX}",
     )
 
     step("authoring, approving, compiling, and activating offer policy")
@@ -499,11 +502,13 @@ def main() -> None:
         "POST",
         "/api/v1/funding/accounts",
         {"resourceKey": inventory_key, "type": "INVENTORY", "currency": "UNIT", "authorized": 100, "fencingEpoch": 1},
+        idempotency_key=f"funding-inventory-{SUFFIX}",
     )
     call(
         "POST",
         "/api/v1/funding/accounts",
         {"resourceKey": budget_key, "type": "BUDGET", "currency": "CNY", "authorized": 100000, "fencingEpoch": 1},
+        idempotency_key=f"funding-budget-{SUFFIX}",
     )
     digest = cart_digest(cart)
     fences = {inventory_key: 1, budget_key: 1}
@@ -663,6 +668,7 @@ def main() -> None:
             "content": "R1 offer for {{name}}",
             "requiredVariables": ["name"],
         },
+        idempotency_key=f"template-{SUFFIX}",
     )
     try:
         call(

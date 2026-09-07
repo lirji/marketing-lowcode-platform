@@ -33,3 +33,5 @@
 6. 完成后关联 replay manifest、处理结果和剩余项，不直接清空 DLQ。
 
 营销触达和权益 replay 默认不重新执行已成功副作用；若无法证明 provider 是否成功，状态保持 UNKNOWN 并走外部查询/人工核对。
+
+AwardIntent 需要同时核对三类事实：营销侧 CENTER outbox、`marketing.award-expected.v1` 应发事实、权益中台订单/履约事实。`LEGACY` 与 `SHADOW` 记录不产生应发事实，风险 block 也不应在权益侧出现订单；若出现，先按 `tenantId + sourceRequestId + clientItemId` 判断是否发生双写或旧链路越权。不得通过删除 `mk_award_intent_block`、重写 outbox 状态或更换幂等键来“修平”差异。

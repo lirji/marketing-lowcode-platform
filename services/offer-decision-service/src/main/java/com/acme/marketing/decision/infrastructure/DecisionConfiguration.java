@@ -3,7 +3,9 @@ package com.acme.marketing.decision.infrastructure;
 import com.acme.marketing.contracts.artifact.PinnedArtifactVerifier;
 import com.acme.marketing.decision.application.DecisionApplicationService;
 import com.acme.marketing.decision.runtime.AudienceMembershipProjection;
+import com.acme.marketing.decision.runtime.AudienceMembershipStore;
 import com.acme.marketing.decision.runtime.DecisionKillSwitchRegistry;
+import com.acme.marketing.decision.runtime.DecisionKillSwitchStore;
 import com.acme.marketing.decision.runtime.ActivationDirectiveVerifier;
 import com.acme.marketing.decision.runtime.ManifestVerifier;
 import com.acme.marketing.decision.runtime.PinnedActivationDirectiveVerifier;
@@ -24,7 +26,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.jdbc.core.JdbcTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 @Configuration
@@ -78,19 +79,20 @@ public class DecisionConfiguration {
     }
 
     @Bean
-    public AudienceMembershipProjection audienceMembershipProjection(JdbcTemplate jdbc, Clock clock) {
-        return new AudienceMembershipProjection(jdbc, clock);
+    public AudienceMembershipProjection audienceMembershipProjection(AudienceMembershipStore store, Clock clock) {
+        return new AudienceMembershipProjection(store, clock);
     }
 
     @Bean
-    public DecisionKillSwitchRegistry decisionKillSwitchRegistry(JdbcTemplate jdbc, ObjectMapper mapper, Clock clock,
+    public DecisionKillSwitchRegistry decisionKillSwitchRegistry(DecisionKillSwitchStore store,
+            ObjectMapper mapper, Clock clock,
             @Value("${marketing.release.trusted-key-id:}") String keyId,
             @Value("${marketing.release.public-key-base64:}") String encodedKey,
             @Value("${marketing.release.trusted-public-keys:}") String additionalKeys,
             @Value("${marketing.runtime.namespace:main}") String namespace,
             @Value("${marketing.security.mode:DEV}") String securityMode) {
         var keys = trustedKeys(securityMode, "kill-switch verification key", keyId, encodedKey, additionalKeys);
-        return new DecisionKillSwitchRegistry(jdbc, mapper, clock, keys, namespace);
+        return new DecisionKillSwitchRegistry(store, mapper, clock, keys, namespace);
     }
 
     @Bean

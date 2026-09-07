@@ -8,13 +8,10 @@ import com.acme.marketing.platform.error.ConflictException;
 import jakarta.annotation.PostConstruct;
 import java.security.PublicKey;
 import java.time.Clock;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
@@ -22,16 +19,16 @@ import tools.jackson.databind.ObjectMapper;
 
 public class JourneyKillSwitchRegistry {
     private static final Logger LOGGER = LoggerFactory.getLogger(JourneyKillSwitchRegistry.class);
-    private final JdbcTemplate jdbc;
+    private final JourneyRepository repository;
     private final ObjectMapper mapper;
     private final Clock clock;
     private final Map<String, PublicKey> trustedKeys;
     private final String namespace;
     private final ConcurrentHashMap<String, State> states = new ConcurrentHashMap<>();
 
-    public JourneyKillSwitchRegistry(JdbcTemplate jdbc, ObjectMapper mapper, Clock clock,
+    public JourneyKillSwitchRegistry(JourneyRepository repository, ObjectMapper mapper, Clock clock,
             Map<String, PublicKey> trustedKeys, String namespace) {
-        this.jdbc = jdbc;
+        this.repository = repository;
         this.mapper = mapper;
         this.clock = clock;
         this.trustedKeys = Map.copyOf(trustedKeys);
@@ -41,10 +38,10 @@ public class JourneyKillSwitchRegistry {
     @Transactional
     public void apply(KillSwitchDirective directive) {
         verify(directive);
-        List<State> rows = jdbc.query("select switch_sequence,directive_signature,enabled_value,reason_text from mk_journey_runtime_kill_switch where tenant_id=? and namespace_name=? for update",
-                (rs, rowNum) -> new State(rs.getLong(1), rs.getString(2), rs.getBoolean(3), rs.getString(4)),
-                directive.tenantId().value(), namespace);
-        State current = rows.isEmpty() ? null : rows.getFirst();
+        State current = repository.findKillSwitchForUpdate(directive.tenantId().value(), namespace)
+                .map(row -> new State(row.switchSequence(), row.directiveSignature(), row.enabledValue(),
+                        row.reasonText()))
+                .orElse(null);
         if (current != null && directive.switchSequence() <= current.sequence()) {
             if (directive.switchSequence() == current.sequence()
                     && !directive.signature().equals(current.signature())) {
@@ -53,18 +50,15 @@ public class JourneyKillSwitchRegistry {
             states.put(directive.tenantId().value(), current);
             return;
         }
+        JourneyRepository.KillSwitchWrite write = new JourneyRepository.KillSwitchWrite(
+                directive.tenantId().value(), namespace, directive.switchSequence(), directive.enabled(),
+                directive.reason(), directive.signature(), json(directive), format(directive.activatedAt()));
         if (current == null) {
-            try {
-                jdbc.update("insert into mk_journey_runtime_kill_switch(tenant_id,namespace_name,switch_sequence,enabled_value,reason_text,directive_signature,directive_json,updated_at) values(?,?,?,?,?,?,?,?)",
-                        directive.tenantId().value(), namespace, directive.switchSequence(), directive.enabled(),
-                        directive.reason(), directive.signature(), json(directive), format(directive.activatedAt()));
-            } catch (DuplicateKeyException race) {
+            if (!repository.trySaveKillSwitch(write)) {
                 throw new ConflictException("KILL_SWITCH_CONCURRENT_UPDATE", "kill switch changed concurrently");
             }
         } else {
-            jdbc.update("update mk_journey_runtime_kill_switch set switch_sequence=?,enabled_value=?,reason_text=?,directive_signature=?,directive_json=?,updated_at=? where tenant_id=? and namespace_name=?",
-                    directive.switchSequence(), directive.enabled(), directive.reason(), directive.signature(),
-                    json(directive), format(directive.activatedAt()), directive.tenantId().value(), namespace);
+            repository.updateKillSwitch(write);
         }
         states.put(directive.tenantId().value(), new State(directive.switchSequence(), directive.signature(),
                 directive.enabled(), directive.reason()));
@@ -80,20 +74,19 @@ public class JourneyKillSwitchRegistry {
     @PostConstruct
     @Scheduled(fixedDelayString = "${marketing.kill-switch.reconcile-interval-ms:1000}")
     public void reload() {
-        jdbc.query("select tenant_id,directive_json from mk_journey_runtime_kill_switch where namespace_name=?",
-                rs -> {
+        repository.findKillSwitches(namespace).forEach(row -> {
                     try {
-                        KillSwitchDirective directive = mapper.readValue(rs.getString(2), KillSwitchDirective.class);
+                        KillSwitchDirective directive = mapper.readValue(row.directiveJson(), KillSwitchDirective.class);
                         verify(directive);
-                        states.compute(rs.getString(1), (ignored, current) -> current == null
+                        states.compute(row.tenantId(), (ignored, current) -> current == null
                                 || directive.switchSequence() > current.sequence()
                                 ? new State(directive.switchSequence(), directive.signature(), directive.enabled(),
                                         directive.reason()) : current);
                     } catch (Exception invalid) {
                         LOGGER.error("rejected persisted journey kill-switch for tenant {}; retaining last-known-good",
-                                rs.getString(1), invalid);
+                                row.tenantId(), invalid);
                     }
-                }, namespace);
+                });
     }
 
     private void verify(KillSwitchDirective directive) {

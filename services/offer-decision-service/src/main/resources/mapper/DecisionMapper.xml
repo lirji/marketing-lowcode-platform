@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.decision.infrastructure.persistence.mapper.DecisionMapper">
+
+    <delete id="deleteExpiredCommand">
+        DELETE FROM mk_decision_command
+        WHERE tenant_id = #{tenantId}
+          AND idempotency_key = #{idempotencyKey}
+          AND expires_at &lt;= #{expiresAt}
+    </delete>
+
+    <insert id="insertCommand">
+        INSERT INTO mk_decision_command (
+            tenant_id,
+            idempotency_key,
+            payload_hash,
+            state_name,
+            response_json,
+            created_at,
+            expires_at
+        ) VALUES (
+            #{tenantId},
+            #{idempotencyKey},
+            #{payloadHash},
+            #{stateName},
+            #{responseJson},
+            #{createdAt},
+            #{expiresAt}
+        )
+    </insert>
+
+    <select id="selectCommandForUpdate"
+            resultType="com.acme.marketing.decision.infrastructure.persistence.mapper.DecisionMapper$CommandRow">
+        SELECT
+            payload_hash AS payloadHash,
+            state_name AS stateName,
+            response_json AS responseJson
+        FROM mk_decision_command
+        WHERE tenant_id = #{tenantId}
+          AND idempotency_key = #{idempotencyKey}
+        FOR UPDATE
+    </select>
+
+    <update id="completeCommand">
+        UPDATE mk_decision_command
+        SET state_name = 'COMPLETED',
+            response_json = #{responseJson}
+        WHERE tenant_id = #{tenantId}
+          AND idempotency_key = #{idempotencyKey}
+    </update>
+
+    <insert id="insertRuntimeGeneration">
+        INSERT INTO mk_runtime_generation (
+            tenant_id,
+            environment_name,
+            cell_id,
+            runtime_name,
+            namespace_name,
+            generation_no,
+            release_key_id,
+            manifest_json,
+            artifact_payload,
+            manifest_signature,
+            warmed_at
+        ) VALUES (
+            #{tenantId},
+            #{environmentName},
+            #{cellId},
+            #{runtimeName},
+            #{namespaceName},
+            #{generationNo},
+            #{releaseKeyId},
+            #{manifestJson},
+            #{artifactPayload},
+            #{manifestSignature},
+            #{warmedAt}
+        )
+    </insert>
+
+    <insert id="insertRuntimeSlot">
+        INSERT INTO mk_runtime_slot (
+            tenant_id,
+            environment_name,
+            cell_id,
+            runtime_name,
+            namespace_name,
+            desired_generation,
+            activation_sequence,
+            directive_signature,
+            directive_json,
+            updated_at
+        ) VALUES (
+            #{tenantId},
+            #{environmentName},
+            #{cellId},
+            #{runtimeName},
+            #{namespaceName},
+            #{desiredGeneration},
+            #{activationSequence},
+            #{directiveSignature},
+            #{directiveJson},
+            #{updatedAt}
+        )
+    </insert>
+
+    <select id="selectRuntimeSlotForUpdate"
+            resultType="com.acme.marketing.decision.infrastructure.persistence.mapper.DecisionMapper$SlotPointerRow">
+        SELECT
+            desired_generation AS desiredGeneration,
+            activation_sequence AS activationSequence,
+            directive_signature AS directiveSignature,
+            directive_json AS directiveJson
+        FROM mk_runtime_slot
+        WHERE tenant_id = #{tenantId}
+          AND environment_name = #{environmentName}
+          AND cell_id = #{cellId}
+          AND runtime_name = #{runtimeName}
+          AND namespace_name = #{namespaceName}
+        FOR UPDATE
+    </select>
+
+    <select id="selectRuntimeSlot"
+            resultType="com.acme.marketing.decision.infrastructure.persistence.mapper.DecisionMapper$SlotPointerRow">
+        SELECT
+            desired_generation AS desiredGeneration,
+            activation_sequence AS activationSequence,
+            directive_signature AS directiveSignature,
+            directive_json AS directiveJson
+        FROM mk_runtime_slot
+        WHERE tenant_id = #{tenantId}
+          AND environment_name = #{environmentName}
+          AND cell_id = #{cellId}
+          AND runtime_name = #{runtimeName}
+          AND namespace_name = #{namespaceName}
+    </select>
+
+    <update id="updateRuntimeSlot">
+        UPDATE mk_runtime_slot
+        SET desired_generation = #{desiredGeneration},
+            activation_sequence = #{activationSequence},
+            directive_signature = #{directiveSignature},
+            directive_json = #{directiveJson},
+            updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId}
+          AND environment_name = #{environmentName}
+          AND cell_id = #{cellId}
+          AND runtime_name = #{runtimeName}
+          AND namespace_name = #{namespaceName}
+    </update>
+
+    <select id="selectDesiredPointers"
+            resultType="com.acme.marketing.decision.infrastructure.persistence.mapper.DecisionMapper$DesiredPointerRow">
+        SELECT
+            tenant_id AS tenantId,
+            desired_generation AS desiredGeneration,
+            activation_sequence AS activationSequence
+        FROM mk_runtime_slot
+        WHERE environment_name = #{environmentName}
+          AND cell_id = #{cellId}
+          AND runtime_name = 'decision'
+          AND namespace_name = #{namespaceName}
+          AND desired_generation > 0
+    </select>
+
+    <select id="selectRuntimeGeneration"
+            resultType="com.acme.marketing.decision.infrastructure.persistence.mapper.DecisionMapper$RuntimeGenerationRow">
+        SELECT
+            release_key_id AS releaseKeyId,
+            manifest_json AS manifestJson,
+            artifact_payload AS artifactPayload
+        FROM mk_runtime_generation
+        WHERE tenant_id = #{tenantId}
+          AND environment_name = #{environmentName}
+          AND cell_id = #{cellId}
+          AND runtime_name = 'decision'
+          AND namespace_name = #{namespaceName}
+          AND generation_no = #{generationNo}
+    </select>
+
+    <update id="updateAudienceMembershipIfNewer">
+        UPDATE mk_audience_membership_projection
+        SET member_value = #{memberValue},
+            membership_version = #{membershipVersion},
+            expires_at = #{expiresAt},
+            updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId}
+          AND audience_id = #{audienceId}
+          AND subject_hash = #{subjectHash}
+          AND membership_version &lt; #{membershipVersion}
+    </update>
+
+    <insert id="insertAudienceMembership">
+        INSERT INTO mk_audience_membership_projection (
+            tenant_id,
+            audience_id,
+            subject_hash,
+            member_value,
+            membership_version,
+            expires_at,
+            updated_at
+        ) VALUES (
+            #{tenantId},
+            #{audienceId},
+            #{subjectHash},
+            #{memberValue},
+            #{membershipVersion},
+            #{expiresAt},
+            #{updatedAt}
+        )
+    </insert>
+
+    <select id="selectAudienceMembershipsChangedSince"
+            resultType="com.acme.marketing.decision.infrastructure.persistence.mapper.DecisionMapper$AudienceMembershipRow">
+        SELECT
+            tenant_id AS tenantId,
+            audience_id AS audienceId,
+            subject_hash AS subjectHash,
+            member_value AS memberValue,
+            membership_version AS membershipVersion,
+            expires_at AS expiresAt,
+            updated_at AS updatedAt
+        FROM mk_audience_membership_projection
+        WHERE updated_at >= #{updatedSince}
+        ORDER BY updated_at
+    </select>
+
+    <select id="selectKillSwitchForUpdate"
+            resultType="com.acme.marketing.decision.infrastructure.persistence.mapper.DecisionMapper$KillSwitchStateRow">
+        SELECT
+            switch_sequence AS switchSequence,
+            directive_signature AS directiveSignature,
+            enabled_value AS enabledValue,
+            reason_text AS reasonText
+        FROM mk_decision_kill_switch
+        WHERE tenant_id = #{tenantId}
+          AND namespace_name = #{namespace}
+        FOR UPDATE
+    </select>
+
+    <insert id="insertKillSwitch">
+        INSERT INTO mk_decision_kill_switch (
+            tenant_id,
+            namespace_name,
+            switch_sequence,
+            enabled_value,
+            reason_text,
+            directive_signature,
+            directive_json,
+            updated_at
+        ) VALUES (
+            #{tenantId},
+            #{namespaceName},
+            #{switchSequence},
+            #{enabledValue},
+            #{reasonText},
+            #{directiveSignature},
+            #{directiveJson},
+            #{updatedAt}
+        )
+    </insert>
+
+    <update id="updateKillSwitch">
+        UPDATE mk_decision_kill_switch
+        SET switch_sequence = #{switchSequence},
+            enabled_value = #{enabledValue},
+            reason_text = #{reasonText},
+            directive_signature = #{directiveSignature},
+            directive_json = #{directiveJson},
+            updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId}
+          AND namespace_name = #{namespaceName}
+    </update>
+
+    <select id="selectKillSwitchDirectives"
+            resultType="com.acme.marketing.decision.infrastructure.persistence.mapper.DecisionMapper$KillSwitchDirectiveRow">
+        SELECT
+            tenant_id AS tenantId,
+            directive_json AS directiveJson
+        FROM mk_decision_kill_switch
+        WHERE namespace_name = #{namespace}
+    </select>
+
+</mapper>

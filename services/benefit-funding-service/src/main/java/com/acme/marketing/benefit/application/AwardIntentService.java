@@ -15,16 +15,16 @@ import com.acme.marketing.platform.error.ConflictException;
 import com.acme.marketing.platform.error.DependencyUnavailableException;
 import com.acme.marketing.platform.web.TenantContextHolder;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
-import org.springframework.jdbc.core.JdbcTemplate;
+import java.util.concurrent.TimeUnit;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -43,24 +43,36 @@ public class AwardIntentService {
     private static final String DEGRADED_HIT = "DEGRADED_FEATURE_UNAVAILABLE";
     private static final String RISK_UNAVAILABLE = "RISK_UNAVAILABLE";
 
-    private final JdbcTemplate jdbc;
+    private final AwardIntentRepository repository;
     private final ObjectMapper mapper;
     private final Clock clock;
     private final AwardIntentAssembler assembler;
     private final AwardDispatchModeRouter modeRouter;
     private final RiskEvaluationGateway riskGateway;
     private final TransactionTemplate transactions;
+    private final Duration evaluationLease;
+    private final Duration concurrentWait;
+    private final String evaluationOwner;
 
     /** 构造使用外部风控端口和本地短事务保存首次结果的应用服务。 */
-    public AwardIntentService(JdbcTemplate jdbc, ObjectMapper mapper, Clock clock,
+    public AwardIntentService(AwardIntentRepository repository, ObjectMapper mapper, Clock clock,
             AwardIntentAssembler assembler, AwardDispatchModeRouter modeRouter,
-            RiskEvaluationGateway riskGateway, PlatformTransactionManager transactionManager) {
-        this.jdbc = jdbc;
+            RiskEvaluationGateway riskGateway, PlatformTransactionManager transactionManager,
+            @Value("${marketing.award.evaluation-lease-ms:30000}") long evaluationLeaseMillis,
+            @Value("${marketing.award.concurrent-wait-ms:5000}") long concurrentWaitMillis) {
+        if (concurrentWaitMillis < 10 || concurrentWaitMillis > 10_000
+                || evaluationLeaseMillis <= concurrentWaitMillis || evaluationLeaseMillis > 300_000) {
+            throw new IllegalArgumentException("award evaluation lease policy is invalid");
+        }
+        this.repository = repository;
         this.mapper = mapper;
         this.clock = clock;
         this.assembler = assembler;
         this.modeRouter = modeRouter;
         this.riskGateway = riskGateway;
+        this.evaluationLease = Duration.ofMillis(evaluationLeaseMillis);
+        this.concurrentWait = Duration.ofMillis(concurrentWaitMillis);
+        this.evaluationOwner = "award:" + UUID.randomUUID();
         this.transactions = new TransactionTemplate(transactionManager);
         this.transactions.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
     }
@@ -80,28 +92,44 @@ public class AwardIntentService {
         StoredResult existing = findBySource(tenantId, command.sourceRequestId());
         if (existing != null) return finish(replay(existing, requestHash));
 
-        DeliveryMode mode = modeRouter.modeFor(tenantId);
-        // LEGACY 继续不解析 OfferToken，但必须用正数哨兵通过同一风控门禁。
-        AssembledIntent assembled = mode == DeliveryMode.LEGACY ? null : assembler.assemble(scope, command);
-        String subjectHash = assembled == null
-                ? AwardIntentAssembler.subjectHash(tenantId, command.subjectRef()) : assembled.subjectHash();
-        RiskInputs riskInputs = riskInputs(assembled);
-        RiskOutcome riskOutcome;
-        try {
-            RiskDecision decision = riskGateway.evaluate(new RiskEvaluationRequest(scope.tenantId(),
-                    command.sourceRequestId(), command.subjectRef(), riskInputs.amount(),
-                    riskInputs.currency(), clock.instant()));
-            riskOutcome = classify(decision);
-        } catch (RiskEvaluationUnavailableException unavailable) {
-            riskOutcome = RiskOutcome.unavailable(unavailable.reason());
+        EvaluationClaim claim = transactions.execute(status -> claimEvaluation(
+                tenantId, command.sourceRequestId(), requestHash, clock.instant()));
+        if (claim == null) throw new IllegalStateException("award evaluation claim returned no result");
+        if (!claim.owner()) {
+            return finish(awaitFirstResult(tenantId, command.sourceRequestId(), requestHash));
         }
 
-        Instant now = clock.instant();
-        RiskOutcome finalOutcome = riskOutcome;
-        AwardIntentView stored = transactions.execute(status -> persistFirstResult(tenantId, command,
-                requestHash, mode, assembled, subjectHash, finalOutcome, now));
-        if (stored == null) throw new IllegalStateException("award intent transaction returned no result");
-        return finish(stored);
+        try {
+            DeliveryMode mode = modeRouter.modeFor(tenantId);
+            // LEGACY 继续不解析 OfferToken，但必须用正数哨兵通过同一风控门禁。
+            AssembledIntent assembled = mode == DeliveryMode.LEGACY ? null : assembler.assemble(scope, command);
+            String subjectHash = assembled == null
+                    ? AwardIntentAssembler.subjectHash(tenantId, command.subjectRef()) : assembled.subjectHash();
+            RiskInputs riskInputs = riskInputs(assembled);
+            RiskOutcome riskOutcome;
+            try {
+                RiskDecision decision = riskGateway.evaluate(new RiskEvaluationRequest(scope.tenantId(),
+                        command.sourceRequestId(), command.subjectRef(), riskInputs.amount(),
+                        riskInputs.currency(), clock.instant()));
+                riskOutcome = classify(decision);
+            } catch (RiskEvaluationUnavailableException unavailable) {
+                riskOutcome = RiskOutcome.unavailable(unavailable.reason());
+            }
+
+            Instant now = clock.instant();
+            RiskOutcome finalOutcome = riskOutcome;
+            AwardIntentView stored = transactions.execute(status -> persistFirstResult(tenantId, command,
+                    requestHash, mode, assembled, subjectHash, finalOutcome, claim, now));
+            if (stored == null) throw new IllegalStateException("award intent transaction returned no result");
+            return finish(stored);
+        } catch (EvaluationLeaseLostException lost) {
+            return finish(awaitFirstResult(tenantId, command.sourceRequestId(), requestHash));
+        } catch (RuntimeException failure) {
+            // 请求校验或外部目录失败不应留下不可恢复的 PROCESSING；CAS 确保不会删除新 owner 的租约。
+            transactions.executeWithoutResult(status -> abandonEvaluation(
+                    tenantId, command.sourceRequestId(), claim));
+            throw failure;
+        }
     }
 
     /** 按 campaignId 合并 outbox 与 block，并以 createdAt + intentId 做统一 seek 分页。 */
@@ -125,19 +153,22 @@ public class AwardIntentService {
 
     private AwardIntentView persistFirstResult(String tenantId, AssembleCommand command,
             String requestHash, DeliveryMode mode, AssembledIntent assembled, String subjectHash,
-            RiskOutcome outcome, Instant now) {
+            RiskOutcome outcome, EvaluationClaim claim, Instant now) {
         String resultType = outcome.allowed() ? "OUTBOX" : "BLOCK";
-        int claimed = jdbc.update("insert ignore into mk_award_intent_dedupe(tenant_id,source_system,source_request_id,request_hash,result_type,created_at,updated_at) values(?,?,?,?,?,?,?)",
-                tenantId, AwardIntentAssembler.SOURCE_SYSTEM, command.sourceRequestId(), requestHash,
-                resultType, format(now), format(now));
-        if (claimed == 0) {
-            // 唯一键插入会等待赢家提交；READ COMMITTED 随后即可重放它的首次持久化结果。
-            StoredResult concurrent = findBySource(tenantId, command.sourceRequestId());
-            if (concurrent == null) throw new IllegalStateException("award intent concurrent insert was lost");
-            return replay(concurrent, requestHash);
+        AwardIntentRepository.DedupeStateRow state = repository.findDedupeForUpdate(
+                tenantId, AwardIntentAssembler.SOURCE_SYSTEM, command.sourceRequestId())
+                .orElseThrow(EvaluationLeaseLostException::new);
+        if (!state.requestHash().equals(requestHash)) {
+            throw new ConflictException("AWARD_INTENT_IDEMPOTENCY_CONFLICT",
+                    "sourceRequestId was reused with a different award trigger");
+        }
+        if (!"PROCESSING".equals(state.resultType()) || !evaluationOwner.equals(state.leaseOwner())
+                || state.leaseVersion() != claim.leaseVersion()) {
+            throw new EvaluationLeaseLostException();
         }
         if (!outcome.allowed()) {
             insertBlock(tenantId, command, requestHash, mode, subjectHash, outcome, now);
+            completeEvaluation(tenantId, command.sourceRequestId(), claim, resultType, now);
             return requireBySource(tenantId, command.sourceRequestId()).view();
         }
 
@@ -150,23 +181,87 @@ public class AwardIntentService {
             case SHADOW -> "SHADOW_RECORDED";
             case CENTER -> "CENTER_ENQUEUED";
         };
-        jdbc.update("insert into mk_award_intent_outbox(tenant_id,intent_id,source_system,source_request_id,campaign_id,definition_version,subject_hash,delivery_mode,request_hash,payload_hash,payload_json,status_name,delivery_result,next_attempt_at,created_at,updated_at) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                tenantId, intentId, AwardIntentAssembler.SOURCE_SYSTEM, command.sourceRequestId(),
-                command.campaignId(), command.definitionVersion(), subjectHash, mode.name(), requestHash,
-                payloadHash, payload, status, deliveryResult, format(now), format(now), format(now));
+        repository.saveIntent(new AwardIntentRepository.IntentWrite(tenantId, intentId,
+                AwardIntentAssembler.SOURCE_SYSTEM, command.sourceRequestId(), command.campaignId(),
+                command.definitionVersion(), subjectHash, mode.name(), requestHash, payloadHash, payload,
+                status, deliveryResult, format(now), format(now), format(now)));
         if (mode == DeliveryMode.CENTER) {
             writeExpectedFacts(tenantId, intentId, command, assembled, now);
         }
+        completeEvaluation(tenantId, command.sourceRequestId(), claim, resultType, now);
         return requireBySource(tenantId, command.sourceRequestId()).view();
+    }
+
+    /** 在任何外部调用前提交 durable claim；并发 loser 只能等待或重放，不会再次查询风控。 */
+    private EvaluationClaim claimEvaluation(String tenantId, String sourceRequestId,
+            String requestHash, Instant now) {
+        Instant leaseUntil = now.plus(evaluationLease);
+        boolean created = repository.tryBeginEvaluation(new AwardIntentRepository.EvaluationWrite(
+                tenantId, AwardIntentAssembler.SOURCE_SYSTEM, sourceRequestId, requestHash, "PROCESSING",
+                evaluationOwner, format(leaseUntil), 1L, format(now), format(now)));
+        if (created) {
+            return new EvaluationClaim(true, 1L);
+        }
+        // 普通 INSERT 让并发请求等待首次 claim 提交后收到唯一键冲突；避免 INSERT IGNORE
+        // 留下多个共享锁后再统一升级 FOR UPDATE 所形成的 MySQL 死锁环。
+
+        AwardIntentRepository.ClaimStateRow state = repository.findEvaluation(
+                tenantId, AwardIntentAssembler.SOURCE_SYSTEM, sourceRequestId)
+                .orElseThrow(() -> new IllegalStateException("award evaluation claim disappeared"));
+        if (!state.requestHash().equals(requestHash)) {
+            throw new ConflictException("AWARD_INTENT_IDEMPOTENCY_CONFLICT",
+                    "sourceRequestId was reused with a different award trigger");
+        }
+        if (!"PROCESSING".equals(state.resultType())) {
+            return new EvaluationClaim(false, state.leaseVersion());
+        }
+        if (state.leaseUntil() != null && !Instant.parse(state.leaseUntil()).isAfter(now)) {
+            long nextVersion = Math.addExact(state.leaseVersion(), 1);
+            int taken = repository.takeEvaluationLease(new AwardIntentRepository.EvaluationLeaseWrite(
+                    tenantId, AwardIntentAssembler.SOURCE_SYSTEM, sourceRequestId, requestHash,
+                    evaluationOwner, format(leaseUntil), nextVersion, state.leaseVersion(),
+                    format(now), format(now)));
+            if (taken == 1) return new EvaluationClaim(true, nextVersion);
+        }
+        return new EvaluationClaim(false, state.leaseVersion());
+    }
+
+    private void completeEvaluation(String tenantId, String sourceRequestId,
+            EvaluationClaim claim, String resultType, Instant now) {
+        int updated = repository.completeEvaluation(new AwardIntentRepository.EvaluationCompletionWrite(
+                tenantId, AwardIntentAssembler.SOURCE_SYSTEM, sourceRequestId, resultType,
+                evaluationOwner, claim.leaseVersion(), format(now)));
+        if (updated != 1) throw new EvaluationLeaseLostException();
+    }
+
+    private void abandonEvaluation(String tenantId, String sourceRequestId, EvaluationClaim claim) {
+        repository.abandonEvaluation(new AwardIntentRepository.EvaluationOwnerKey(
+                tenantId, AwardIntentAssembler.SOURCE_SYSTEM, sourceRequestId,
+                evaluationOwner, claim.leaseVersion()));
+    }
+
+    private AwardIntentView awaitFirstResult(String tenantId, String sourceRequestId, String requestHash) {
+        long deadline = System.nanoTime() + concurrentWait.toNanos();
+        while (System.nanoTime() < deadline) {
+            StoredResult stored = findBySource(tenantId, sourceRequestId);
+            if (stored != null) return replay(stored, requestHash);
+            try {
+                TimeUnit.MILLISECONDS.sleep(25);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        throw new DependencyUnavailableException("AWARD_INTENT_IN_PROGRESS",
+                "the first request is still evaluating risk; retry with the same Idempotency-Key");
     }
 
     private void insertBlock(String tenantId, AssembleCommand command, String requestHash,
             DeliveryMode mode, String subjectHash, RiskOutcome outcome, Instant now) {
-        jdbc.update("insert into mk_award_intent_block(tenant_id,intent_id,source_system,source_request_id,campaign_id,definition_version,subject_hash,delivery_mode,request_hash,risk_action,risk_reason,risk_decision_id,created_at,updated_at) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                tenantId, UUID.randomUUID().toString(), AwardIntentAssembler.SOURCE_SYSTEM,
-                command.sourceRequestId(), command.campaignId(), command.definitionVersion(), subjectHash,
-                mode.name(), requestHash, outcome.action(), outcome.reason(), outcome.decisionId(),
-                format(now), format(now));
+        repository.saveBlock(new AwardIntentRepository.BlockWrite(tenantId, UUID.randomUUID().toString(),
+                AwardIntentAssembler.SOURCE_SYSTEM, command.sourceRequestId(), command.campaignId(),
+                command.definitionVersion(), subjectHash, mode.name(), requestHash, outcome.action(),
+                outcome.reason(), outcome.decisionId(), format(now), format(now)));
     }
 
     private AwardIntentView replay(StoredResult existing, String requestHash) {
@@ -186,15 +281,15 @@ public class AwardIntentService {
     }
 
     private StoredResult findBySource(String tenantId, String sourceRequestId) {
-        List<StoredIntent> outbox = jdbc.query("select intent_id,source_system,source_request_id,campaign_id,definition_version,subject_hash,delivery_mode,request_hash,status_name,delivery_result,attempt_count,benefit_order_no,last_error,created_at,updated_at,sent_at,null,null,null from mk_award_intent_outbox where tenant_id=? and source_system=? and source_request_id=?",
-                (rs, rowNum) -> stored(rs), tenantId, AwardIntentAssembler.SOURCE_SYSTEM, sourceRequestId);
-        List<StoredIntent> blocked = jdbc.query("select intent_id,source_system,source_request_id,campaign_id,definition_version,subject_hash,delivery_mode,request_hash,'RISK_BLOCKED',null,0,null,'',created_at,updated_at,null,risk_action,risk_reason,risk_decision_id from mk_award_intent_block where tenant_id=? and source_system=? and source_request_id=?",
-                (rs, rowNum) -> stored(rs), tenantId, AwardIntentAssembler.SOURCE_SYSTEM, sourceRequestId);
-        if (!outbox.isEmpty() && !blocked.isEmpty()) {
+        AwardIntentRepository.IntentRow outbox = repository.findIntentBySource(
+                tenantId, AwardIntentAssembler.SOURCE_SYSTEM, sourceRequestId).orElse(null);
+        AwardIntentRepository.IntentRow blocked = repository.findBlockBySource(
+                tenantId, AwardIntentAssembler.SOURCE_SYSTEM, sourceRequestId).orElse(null);
+        if (outbox != null && blocked != null) {
             throw new IllegalStateException("award intent exists in both outbox and block");
         }
-        StoredIntent value = outbox.isEmpty() ? (blocked.isEmpty() ? null : blocked.getFirst()) : outbox.getFirst();
-        return value == null ? null : new StoredResult(value.requestHash(), value.view());
+        AwardIntentRepository.IntentRow value = outbox == null ? blocked : outbox;
+        return value == null ? null : new StoredResult(value.requestHash(), view(value));
     }
 
     private StoredResult requireBySource(String tenantId, String sourceRequestId) {
@@ -204,30 +299,22 @@ public class AwardIntentService {
     }
 
     private CursorPoint findCursor(String tenantId, String campaignId, String cursor) {
-        List<CursorPoint> points = jdbc.query("select created_at,intent_id from mk_award_intent_outbox where tenant_id=? and campaign_id=? and intent_id=? union all select created_at,intent_id from mk_award_intent_block where tenant_id=? and campaign_id=? and intent_id=?",
-                (rs, rowNum) -> new CursorPoint(rs.getString(1), rs.getString(2)),
-                tenantId, campaignId, cursor, tenantId, campaignId, cursor);
-        if (points.isEmpty()) throw new IllegalArgumentException("cursor is invalid for campaignId");
-        return points.getFirst();
+        AwardIntentRepository.CursorRow row = repository.findCursor(tenantId, campaignId, cursor)
+                .orElseThrow(() -> new IllegalArgumentException("cursor is invalid for campaignId"));
+        return new CursorPoint(row.createdAt(), row.intentId());
     }
 
     private List<AwardIntentView> queryCombined(String tenantId, String campaignId,
             CursorPoint point, int pageSize) {
-        String union = "select intent_id,source_system,source_request_id,campaign_id,definition_version,subject_hash,delivery_mode,request_hash,status_name,delivery_result,attempt_count,benefit_order_no,last_error,created_at,updated_at,sent_at,null risk_action,null risk_reason,null risk_decision_id from mk_award_intent_outbox where tenant_id=? and campaign_id=? union all select intent_id,source_system,source_request_id,campaign_id,definition_version,subject_hash,delivery_mode,request_hash,'RISK_BLOCKED' status_name,null delivery_result,0 attempt_count,null benefit_order_no,'' last_error,created_at,updated_at,null sent_at,risk_action,risk_reason,risk_decision_id from mk_award_intent_block where tenant_id=? and campaign_id=?";
-        if (point == null) {
-            return jdbc.query("select * from (" + union + ") combined order by created_at desc,intent_id desc limit ?",
-                    (rs, rowNum) -> stored(rs).view(), tenantId, campaignId, tenantId, campaignId, pageSize);
-        }
-        return jdbc.query("select * from (" + union + ") combined where created_at<? or (created_at=? and intent_id<?) order by created_at desc,intent_id desc limit ?",
-                (rs, rowNum) -> stored(rs).view(), tenantId, campaignId, tenantId, campaignId,
-                point.createdAt(), point.createdAt(), point.intentId(), pageSize);
+        return repository.findByCampaign(tenantId, campaignId,
+                        point == null ? null : point.createdAt(), point == null ? null : point.intentId(), pageSize)
+                .stream().map(AwardIntentService::view).toList();
     }
 
     private void writeExpectedFacts(String tenantId, String intentId, AssembleCommand command,
             AssembledIntent assembled, Instant now) {
         List<AwardItemIntent> items = assembled.intent().items();
-        jdbc.update("insert into mk_benefit_outbox_position(tenant_id,aggregate_id,last_sequence,updated_at) values(?,?,?,?)",
-                tenantId, intentId, items.size(), format(now));
+        repository.saveExpectedPosition(tenantId, intentId, items.size(), format(now));
         for (int index = 0; index < items.size(); index++) {
             AwardItemIntent item = items.get(index);
             String eventId = UUID.randomUUID().toString();
@@ -247,10 +334,10 @@ public class AwardIntentService {
             if (item.currency() != null) event.put("currency", item.currency());
             event.put("quantity", item.quantity());
             event.put("occurredAt", format(now));
-            jdbc.update("insert into mk_benefit_outbox(tenant_id,event_id,aggregate_id,event_type,destination_topic,partition_key,stream_sequence,payload_json,next_attempt_at,created_at) values(?,?,?,?,?,?,?,?,?,?)",
-                    tenantId, eventId, intentId, "MARKETING_AWARD_EXPECTED", EXPECTED_TOPIC,
+            repository.saveExpectedEvent(new AwardIntentRepository.ExpectedEventWrite(tenantId, eventId,
+                    intentId, "MARKETING_AWARD_EXPECTED", EXPECTED_TOPIC,
                     tenantId + ':' + command.sourceRequestId(), index + 1L, json(event),
-                    format(now), format(now));
+                    format(now), format(now)));
         }
     }
 
@@ -291,13 +378,14 @@ public class AwardIntentService {
         return RiskOutcome.unavailable("RISK_RESPONSE_ACTION_INVALID");
     }
 
-    private static StoredIntent stored(ResultSet rs) throws SQLException {
-        return new StoredIntent(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
-                rs.getLong(5), rs.getString(6), DeliveryMode.valueOf(rs.getString(7)), rs.getString(8),
-                rs.getString(9), rs.getString(10), rs.getInt(11), rs.getString(12), rs.getString(13),
-                Instant.parse(rs.getString(14)), Instant.parse(rs.getString(15)),
-                rs.getString(16) == null ? null : Instant.parse(rs.getString(16)), rs.getString(17),
-                rs.getString(18), rs.getString(19));
+    private static AwardIntentView view(AwardIntentRepository.IntentRow row) {
+        String publicStatus = "SENDING".equals(row.internalStatus()) ? "PENDING" : row.internalStatus();
+        return new AwardIntentView(row.intentId(), row.sourceSystem(), row.sourceRequestId(), row.campaignId(),
+                row.definitionVersion(), row.subjectHash(), DeliveryMode.valueOf(row.deliveryMode()), publicStatus,
+                row.deliveryResult(), row.attempts(), row.benefitOrderNo(), row.lastError(),
+                Instant.parse(row.createdAt()), Instant.parse(row.updatedAt()),
+                row.sentAt() == null ? null : Instant.parse(row.sentAt()),
+                row.riskAction(), row.riskReason(), row.riskDecisionId());
     }
 
     private String json(Object value) {
@@ -320,18 +408,10 @@ public class AwardIntentService {
     }
 
     private record StoredResult(String requestHash, AwardIntentView view) { }
+    private record EvaluationClaim(boolean owner, long leaseVersion) { }
 
-    private record StoredIntent(String intentId, String sourceSystem, String sourceRequestId,
-            String campaignId, long definitionVersion, String subjectHash, DeliveryMode deliveryMode,
-            String requestHash, String internalStatus, String deliveryResult, int attempts,
-            String benefitOrderNo, String lastError, Instant createdAt, Instant updatedAt, Instant sentAt,
-            String riskAction, String riskReason, String riskDecisionId) {
-        private AwardIntentView view() {
-            String publicStatus = "SENDING".equals(internalStatus) ? "PENDING" : internalStatus;
-            return new AwardIntentView(intentId, sourceSystem, sourceRequestId, campaignId, definitionVersion,
-                    subjectHash, deliveryMode, publicStatus, deliveryResult, attempts, benefitOrderNo,
-                    lastError, createdAt, updatedAt, sentAt, riskAction, riskReason, riskDecisionId);
-        }
+    private static final class EvaluationLeaseLostException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
     }
 
     private record CursorPoint(String createdAt, String intentId) { }

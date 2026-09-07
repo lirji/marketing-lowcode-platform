@@ -13,6 +13,11 @@ spring:
     password: ${SPRING_FLYWAY_PASSWORD:${CONTROL_MIGRATION_DB_PASSWORD:}}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+mybatis:
+  mapper-locations: classpath*:mapper/**/*.xml
+  configuration:
+    # 所有数据库列都在 Mapper XML 中显式映射，禁止依赖隐式下划线转驼峰。
+    map-underscore-to-camel-case: false
 marketing.release-outbox:
   enabled: ${MARKETING_RELEASE_OUTBOX_ENABLED:false}
   topic: ${MARKETING_RELEASE_ACTIVATION_TOPIC:mk.release.activation.v1}
@@ -23,6 +28,10 @@ marketing.runtime-ack.trusted-public-keys: ${MARKETING_RUNTIME_ACK_TRUSTED_PUBLI
 marketing.release-policy:
   max-ready-capacity-per-runtime: ${MARKETING_RELEASE_MAX_READY_CAPACITY_PER_RUNTIME:1000}
   allowed-runtime-build-digest: ${MARKETING_RELEASE_ALLOWED_RUNTIME_BUILD_DIGEST:}
+marketing.benefit-funding:
+  base-url: ${MARKETING_BENEFIT_FUNDING_BASE_URL:http://127.0.0.1:8085}
+  connect-timeout-ms: ${MARKETING_BENEFIT_FUNDING_CONNECT_TIMEOUT_MS:1000}
+  request-timeout-ms: ${MARKETING_BENEFIT_FUNDING_REQUEST_TIMEOUT_MS:2000}
 marketing.security:
   mode: ${MARKETING_SECURITY_MODE:DEV}
   dev-headers-enabled: ${MARKETING_DEV_HEADERS_ENABLED:true}

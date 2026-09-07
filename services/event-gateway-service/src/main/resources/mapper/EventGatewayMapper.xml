@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.eventgateway.infrastructure.persistence.mapper.EventGatewayMapper">
+
+    <insert id="insertSource">
+        INSERT INTO mk_source_registration (
+            tenant_id, source_id, source_uri, source_uri_hash, allowed_types, schema_versions,
+            max_lateness_seconds, enabled_value, created_at
+        ) VALUES (
+            #{tenantId}, #{sourceId}, #{sourceUri}, #{sourceUriHash}, #{allowedTypes}, #{schemaVersions},
+            #{maxLatenessSeconds}, #{enabledValue}, #{createdAt}
+        )
+    </insert>
+
+    <select id="selectReceipt"
+            resultType="com.acme.marketing.eventgateway.infrastructure.persistence.mapper.EventGatewayMapper$ReceiptRow">
+        SELECT
+            receipt_id AS receiptId,
+            status_name AS statusName,
+            reason_code AS reasonCode,
+            ingested_at AS ingestedAt,
+            payload_hash AS payloadHash
+        FROM mk_event_receipt
+        WHERE tenant_id = #{tenantId}
+          AND source_id = #{sourceId}
+          AND event_id = #{eventId}
+    </select>
+
+    <insert id="insertReceipt">
+        INSERT INTO mk_event_receipt (
+            tenant_id, receipt_id, source_id, event_id, event_type, business_key, aggregate_version,
+            status_name, reason_code, payload_hash, event_json, occurred_at, ingested_at
+        ) VALUES (
+            #{tenantId}, #{receiptId}, #{sourceId}, #{eventId}, #{eventType}, #{businessKey},
+            #{aggregateVersion}, #{statusName}, #{reasonCode}, #{payloadHash}, #{eventJson},
+            #{occurredAt}, #{ingestedAt}
+        )
+    </insert>
+
+    <insert id="insertQuarantine">
+        INSERT INTO mk_quarantine (
+            tenant_id, quarantine_id, receipt_id, reason_code, event_json, state_name, created_at
+        ) VALUES (
+            #{tenantId}, #{quarantineId}, #{receiptId}, #{reasonCode}, #{eventJson}, #{stateName}, #{createdAt}
+        )
+    </insert>
+
+    <select id="selectQuarantineForUpdate"
+            resultType="com.acme.marketing.eventgateway.infrastructure.persistence.mapper.EventGatewayMapper$QuarantineRow">
+        SELECT
+            receipt_id AS receiptId,
+            event_json AS eventJson,
+            state_name AS stateName
+        FROM mk_quarantine
+        WHERE tenant_id = #{tenantId}
+          AND quarantine_id = #{quarantineId}
+        FOR UPDATE
+    </select>
+
+    <update id="markQuarantineReplayed">
+        UPDATE mk_quarantine
+        SET state_name = 'REPLAYED',
+            replayed_at = #{replayedAt}
+        WHERE tenant_id = #{tenantId}
+          AND quarantine_id = #{quarantineId}
+    </update>
+
+    <update id="markReceiptReplayed">
+        UPDATE mk_event_receipt
+        SET status_name = 'REPLAYED',
+            reason_code = ''
+        WHERE tenant_id = #{tenantId}
+          AND receipt_id = #{receiptId}
+    </update>
+
+    <select id="selectQuarantine"
+            resultType="com.acme.marketing.eventgateway.infrastructure.persistence.mapper.EventGatewayMapper$QuarantineItemRow">
+        SELECT
+            quarantine_id AS quarantineId,
+            receipt_id AS receiptId,
+            reason_code AS reasonCode,
+            state_name AS stateName,
+            created_at AS createdAt,
+            replayed_at AS replayedAt
+        FROM mk_quarantine
+        WHERE tenant_id = #{tenantId}
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="selectSource"
+            resultType="com.acme.marketing.eventgateway.infrastructure.persistence.mapper.EventGatewayMapper$SourceRow">
+        SELECT
+            source_uri AS sourceUri,
+            allowed_types AS allowedTypes,
+            schema_versions AS schemaVersions,
+            max_lateness_seconds AS maxLatenessSeconds,
+            enabled_value AS enabledValue
+        FROM mk_source_registration
+        WHERE tenant_id = #{tenantId}
+          AND source_id = #{sourceId}
+    </select>
+
+    <select id="selectLastAggregateVersionForUpdate" resultType="java.lang.Long">
+        SELECT last_version
+        FROM mk_event_sequence
+        WHERE tenant_id = #{tenantId}
+          AND source_id = #{sourceId}
+          AND business_key = #{businessKey}
+        FOR UPDATE
+    </select>
+
+    <update id="updateAggregateVersion">
+        UPDATE mk_event_sequence
+        SET last_version = #{lastVersion},
+            updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId}
+          AND source_id = #{sourceId}
+          AND business_key = #{businessKey}
+    </update>
+
+    <insert id="insertAggregateVersion">
+        INSERT INTO mk_event_sequence (
+            tenant_id, source_id, business_key, last_version, updated_at
+        ) VALUES (
+            #{tenantId}, #{sourceId}, #{businessKey}, #{lastVersion}, #{updatedAt}
+        )
+    </insert>
+
+    <update id="incrementStreamSequence">
+        UPDATE mk_event_stream_position
+        SET last_sequence = last_sequence + 1,
+            updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId}
+          AND destination_topic = #{destinationTopic}
+          AND partition_key = #{partitionKey}
+    </update>
+
+    <insert id="insertStreamSequence">
+        INSERT INTO mk_event_stream_position (
+            tenant_id, destination_topic, partition_key, last_sequence, updated_at
+        ) VALUES (
+            #{tenantId}, #{destinationTopic}, #{partitionKey}, #{lastSequence}, #{updatedAt}
+        )
+    </insert>
+
+    <select id="selectStreamSequence" resultType="java.lang.Long">
+        SELECT last_sequence
+        FROM mk_event_stream_position
+        WHERE tenant_id = #{tenantId}
+          AND destination_topic = #{destinationTopic}
+          AND partition_key = #{partitionKey}
+    </select>
+
+    <insert id="insertOutbox">
+        INSERT INTO mk_event_outbox (
+            tenant_id, outbox_id, receipt_id, event_type, destination_topic, partition_key,
+            stream_sequence, payload_json, created_at, next_attempt_at, depth_bucket_id
+        ) VALUES (
+            #{tenantId}, #{outboxId}, #{receiptId}, #{eventType}, #{destinationTopic}, #{partitionKey},
+            #{streamSequence}, #{payloadJson}, #{createdAt}, #{nextAttemptAt}, #{depthBucketId}
+        )
+    </insert>
+
+    <select id="selectClaimCandidates"
+            resultType="com.acme.marketing.eventgateway.infrastructure.persistence.mapper.EventGatewayMapper$OutboxCandidateRow">
+        SELECT
+            candidate.tenant_id AS tenantId,
+            candidate.outbox_id AS outboxId,
+            candidate.destination_topic AS destinationTopic,
+            candidate.partition_key AS partitionKey,
+            candidate.payload_json AS payloadJson,
+            candidate.publish_attempts AS publishAttempts,
+            candidate.lease_version AS leaseVersion,
+            candidate.depth_bucket_id AS depthBucketId
+        FROM mk_event_outbox candidate
+        WHERE candidate.published_at IS NULL
+          AND candidate.dead_lettered_at IS NULL
+          AND (
+              (candidate.publish_state = 'PENDING' AND candidate.next_attempt_at &lt;= #{now})
+              OR (candidate.publish_state = 'SENDING' AND candidate.lease_until &lt;= #{now})
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM mk_event_outbox predecessor
+              WHERE predecessor.tenant_id = candidate.tenant_id
+                AND predecessor.destination_topic = candidate.destination_topic
+                AND predecessor.partition_key = candidate.partition_key
+                AND predecessor.published_at IS NULL
+                AND predecessor.dead_lettered_at IS NULL
+                AND predecessor.stream_sequence &lt; candidate.stream_sequence
+          )
+        ORDER BY candidate.created_at, candidate.stream_sequence
+        LIMIT #{limit}
+        FOR UPDATE SKIP LOCKED
+    </select>
+
+    <update id="claimOutbox">
+        UPDATE mk_event_outbox
+        SET publish_state = 'SENDING',
+            lease_owner = #{workerId},
+            lease_until = #{leaseUntil},
+            lease_version = #{newLeaseVersion}
+        WHERE tenant_id = #{tenantId}
+          AND outbox_id = #{outboxId}
+          AND lease_version = #{expectedLeaseVersion}
+          AND published_at IS NULL
+          AND dead_lettered_at IS NULL
+          AND (
+              (publish_state = 'PENDING' AND next_attempt_at &lt;= #{now})
+              OR (publish_state = 'SENDING' AND lease_until &lt;= #{now})
+          )
+    </update>
+
+    <update id="markOutboxPublished">
+        UPDATE mk_event_outbox
+        SET publish_state = 'PUBLISHED',
+            published_at = #{publishedAt},
+            publish_attempts = #{publishAttempts},
+            last_error = '',
+            lease_owner = NULL,
+            lease_until = NULL
+        WHERE tenant_id = #{tenantId}
+          AND outbox_id = #{outboxId}
+          AND publish_state = 'SENDING'
+          AND lease_owner = #{workerId}
+          AND lease_version = #{leaseVersion}
+          AND published_at IS NULL
+          AND dead_lettered_at IS NULL
+    </update>
+
+    <update id="markOutboxDead">
+        UPDATE mk_event_outbox
+        SET publish_state = 'DEAD',
+            publish_attempts = #{publishAttempts},
+            dead_lettered_at = #{stateAt},
+            last_error = #{lastError},
+            lease_owner = NULL,
+            lease_until = NULL
+        WHERE tenant_id = #{tenantId}
+          AND outbox_id = #{outboxId}
+          AND publish_state = 'SENDING'
+          AND lease_owner = #{workerId}
+          AND lease_version = #{leaseVersion}
+          AND published_at IS NULL
+          AND dead_lettered_at IS NULL
+    </update>
+
+    <update id="markOutboxRetry">
+        UPDATE mk_event_outbox
+        SET publish_state = 'PENDING',
+            publish_attempts = #{publishAttempts},
+            next_attempt_at = #{stateAt},
+            last_error = #{lastError},
+            lease_owner = NULL,
+            lease_until = NULL
+        WHERE tenant_id = #{tenantId}
+          AND outbox_id = #{outboxId}
+          AND publish_state = 'SENDING'
+          AND lease_owner = #{workerId}
+          AND lease_version = #{leaseVersion}
+          AND published_at IS NULL
+          AND dead_lettered_at IS NULL
+    </update>
+
+    <select id="selectOldestPendingCreatedAt" resultType="java.lang.String">
+        SELECT MIN(created_at)
+        FROM mk_event_outbox
+        WHERE publish_state IN ('PENDING', 'SENDING')
+    </select>
+
+    <insert id="incrementDepth">
+        INSERT INTO mk_event_outbox_depth (
+            scope_type, scope_id, bucket_id, pending_count, updated_at
+        ) VALUES (
+            #{scopeType}, #{scopeId}, #{bucketId}, 1, #{updatedAt}
+        )
+        ON DUPLICATE KEY UPDATE
+            pending_count = pending_count + 1,
+            updated_at = #{updatedAt}
+    </insert>
+
+    <update id="decrementDepth">
+        UPDATE mk_event_outbox_depth
+        SET pending_count = pending_count - 1,
+            updated_at = #{updatedAt}
+        WHERE scope_type = #{scopeType}
+          AND scope_id = #{scopeId}
+          AND bucket_id = #{bucketId}
+          AND pending_count > 0
+    </update>
+
+    <select id="sumDepth" resultType="java.lang.Long">
+        SELECT COALESCE(SUM(pending_count), 0)
+        FROM mk_event_outbox_depth
+        WHERE scope_type = #{scopeType}
+          AND scope_id = #{scopeId}
+    </select>
+
+</mapper>

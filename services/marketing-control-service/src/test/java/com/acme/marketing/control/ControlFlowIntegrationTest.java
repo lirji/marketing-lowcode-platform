@@ -35,10 +35,16 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
+import com.acme.marketing.control.application.BenefitReleaseGate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(ControlFlowIntegrationTest.ReleaseGateTestConfiguration.class)
 class ControlFlowIntegrationTest extends MySqlIntegrationTest {
     private static final KeyPair COMPILER_KEYS = com.acme.marketing.platform.crypto.Ed25519.generateKeyPair();
     private static final KeyPair RUNTIME_KEYS = com.acme.marketing.platform.crypto.Ed25519.generateKeyPair();
@@ -218,12 +224,22 @@ class ControlFlowIntegrationTest extends MySqlIntegrationTest {
         return new GraphDefinition(definitionId, Dialect.OFFER_DECISION_DAG, "1.0.0",
                 List.of(
                         new GraphNode("start", "offer.start", "1.0.0", Map.of()),
-                        new GraphNode("discount", "offer.fixed", "1.0.0", Map.of("amountMinor", "1000")),
+                        new GraphNode("discount", "offer.fixed", "1.0.0", Map.of(
+                                "amountMinor", "1000", "benefitDefinitionVersion", "coupon-v1@1")),
                         new GraphNode("end", "offer.end", "1.0.0", Map.of())),
                 List.of(
                         new GraphEdge("e1", "start", "next", "discount", "in"),
                         new GraphEdge("e2", "discount", "next", "end", "in")),
                 Map.of(), Map.of("terms", "Spend 100 get 10 off"));
+    }
+
+    @TestConfiguration
+    static class ReleaseGateTestConfiguration {
+        @Bean
+        @Primary
+        BenefitReleaseGate benefitReleaseGate() {
+            return (scope, references) -> { };
+        }
     }
 
     private JsonNode post(String path, String actor, String idempotencyKey, Object body) throws Exception {

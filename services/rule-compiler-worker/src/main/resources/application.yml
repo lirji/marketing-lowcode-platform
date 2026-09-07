@@ -11,6 +11,10 @@ spring:
     locations: classpath:db/migration
     user: ${SPRING_FLYWAY_USER:compiler_migrator}
     password: ${SPRING_FLYWAY_PASSWORD:${COMPILER_MIGRATION_DB_PASSWORD:}}
+mybatis:
+  mapper-locations: classpath*:mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: false
 marketing.security:
   mode: ${MARKETING_SECURITY_MODE:DEV}
   dev-headers-enabled: ${MARKETING_DEV_HEADERS_ENABLED:true}

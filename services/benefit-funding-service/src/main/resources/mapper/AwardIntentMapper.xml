@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.benefit.infrastructure.persistence.mapper.AwardIntentMapper">
+
+    <select id="selectBenefitBinding"
+            resultType="com.acme.marketing.benefit.application.AwardIntentRepository$BenefitBindingRow">
+        SELECT benefit_id AS benefitId, version_no AS version, status_name AS status,
+               benefit_sku_id AS benefitSkuId, policy_json AS policyJson
+        FROM mk_benefit_definition
+        WHERE tenant_id = #{tenantId} AND benefit_id = #{benefitId} AND version_no = #{version}
+    </select>
+
+    <select id="selectDedupeForUpdate"
+            resultType="com.acme.marketing.benefit.application.AwardIntentRepository$DedupeStateRow">
+        SELECT request_hash AS requestHash, result_type AS resultType, lease_owner AS leaseOwner,
+               lease_version AS leaseVersion
+        FROM mk_award_intent_dedupe
+        WHERE tenant_id = #{tenantId} AND source_system = #{sourceSystem}
+          AND source_request_id = #{sourceRequestId}
+        FOR UPDATE
+    </select>
+    <insert id="insertEvaluation">
+        INSERT INTO mk_award_intent_dedupe
+            (tenant_id, source_system, source_request_id, request_hash, result_type, lease_owner,
+             lease_until, lease_version, created_at, updated_at)
+        VALUES
+            (#{tenantId}, #{sourceSystem}, #{sourceRequestId}, #{requestHash}, #{resultType}, #{leaseOwner},
+             #{leaseUntil}, #{leaseVersion}, #{createdAt}, #{updatedAt})
+    </insert>
+    <select id="selectEvaluation"
+            resultType="com.acme.marketing.benefit.application.AwardIntentRepository$ClaimStateRow">
+        SELECT request_hash AS requestHash, result_type AS resultType, lease_until AS leaseUntil,
+               lease_version AS leaseVersion
+        FROM mk_award_intent_dedupe
+        WHERE tenant_id = #{tenantId} AND source_system = #{sourceSystem}
+          AND source_request_id = #{sourceRequestId}
+    </select>
+    <update id="updateEvaluationLease">
+        UPDATE mk_award_intent_dedupe
+        SET lease_owner = #{leaseOwner}, lease_until = #{leaseUntil}, lease_version = #{nextLeaseVersion},
+            updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND source_system = #{sourceSystem}
+          AND source_request_id = #{sourceRequestId} AND request_hash = #{requestHash}
+          AND result_type = 'PROCESSING' AND lease_version = #{expectedLeaseVersion}
+          AND lease_until &lt;= #{now}
+    </update>
+    <update id="updateEvaluationCompleted">
+        UPDATE mk_award_intent_dedupe
+        SET result_type = #{resultType}, lease_owner = NULL, lease_until = NULL, updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND source_system = #{sourceSystem}
+          AND source_request_id = #{sourceRequestId} AND result_type = 'PROCESSING'
+          AND lease_owner = #{leaseOwner} AND lease_version = #{leaseVersion}
+    </update>
+    <delete id="deleteEvaluation">
+        DELETE FROM mk_award_intent_dedupe
+        WHERE tenant_id = #{tenantId} AND source_system = #{sourceSystem}
+          AND source_request_id = #{sourceRequestId} AND result_type = 'PROCESSING'
+          AND lease_owner = #{leaseOwner} AND lease_version = #{leaseVersion}
+    </delete>
+
+    <insert id="insertIntent">
+        INSERT INTO mk_award_intent_outbox
+            (tenant_id, intent_id, source_system, source_request_id, campaign_id, definition_version,
+             subject_hash, delivery_mode, request_hash, payload_hash, payload_json, status_name,
+             delivery_result, next_attempt_at, created_at, updated_at)
+        VALUES
+            (#{tenantId}, #{intentId}, #{sourceSystem}, #{sourceRequestId}, #{campaignId},
+             #{definitionVersion}, #{subjectHash}, #{deliveryMode}, #{requestHash}, #{payloadHash},
+             #{payloadJson}, #{statusName}, #{deliveryResult}, #{nextAttemptAt}, #{createdAt}, #{updatedAt})
+    </insert>
+    <insert id="insertBlock">
+        INSERT INTO mk_award_intent_block
+            (tenant_id, intent_id, source_system, source_request_id, campaign_id, definition_version,
+             subject_hash, delivery_mode, request_hash, risk_action, risk_reason, risk_decision_id,
+             created_at, updated_at)
+        VALUES
+            (#{tenantId}, #{intentId}, #{sourceSystem}, #{sourceRequestId}, #{campaignId},
+             #{definitionVersion}, #{subjectHash}, #{deliveryMode}, #{requestHash}, #{riskAction},
+             #{riskReason}, #{riskDecisionId}, #{createdAt}, #{updatedAt})
+    </insert>
+    <sql id="intentColumns">
+        intent_id AS intentId, source_system AS sourceSystem, source_request_id AS sourceRequestId,
+        campaign_id AS campaignId, definition_version AS definitionVersion, subject_hash AS subjectHash,
+        delivery_mode AS deliveryMode, request_hash AS requestHash, status_name AS internalStatus,
+        delivery_result AS deliveryResult, attempt_count AS attempts, benefit_order_no AS benefitOrderNo,
+        last_error AS lastError, created_at AS createdAt, updated_at AS updatedAt, sent_at AS sentAt,
+        NULL AS riskAction, NULL AS riskReason, NULL AS riskDecisionId
+    </sql>
+    <sql id="blockColumns">
+        intent_id AS intentId, source_system AS sourceSystem, source_request_id AS sourceRequestId,
+        campaign_id AS campaignId, definition_version AS definitionVersion, subject_hash AS subjectHash,
+        delivery_mode AS deliveryMode, request_hash AS requestHash, 'RISK_BLOCKED' AS internalStatus,
+        NULL AS deliveryResult, 0 AS attempts, NULL AS benefitOrderNo, '' AS lastError,
+        created_at AS createdAt, updated_at AS updatedAt, NULL AS sentAt,
+        risk_action AS riskAction, risk_reason AS riskReason, risk_decision_id AS riskDecisionId
+    </sql>
+    <select id="selectIntentBySource"
+            resultType="com.acme.marketing.benefit.application.AwardIntentRepository$IntentRow">
+        SELECT <include refid="intentColumns"/>
+        FROM mk_award_intent_outbox
+        WHERE tenant_id = #{tenantId} AND source_system = #{sourceSystem}
+          AND source_request_id = #{sourceRequestId}
+    </select>
+    <select id="selectBlockBySource"
+            resultType="com.acme.marketing.benefit.application.AwardIntentRepository$IntentRow">
+        SELECT <include refid="blockColumns"/>
+        FROM mk_award_intent_block
+        WHERE tenant_id = #{tenantId} AND source_system = #{sourceSystem}
+          AND source_request_id = #{sourceRequestId}
+    </select>
+    <select id="selectCursor"
+            resultType="com.acme.marketing.benefit.application.AwardIntentRepository$CursorRow">
+        SELECT created_at AS createdAt, intent_id AS intentId
+        FROM mk_award_intent_outbox
+        WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId} AND intent_id = #{intentId}
+        UNION ALL
+        SELECT created_at AS createdAt, intent_id AS intentId
+        FROM mk_award_intent_block
+        WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId} AND intent_id = #{intentId}
+    </select>
+    <select id="selectByCampaign"
+            resultType="com.acme.marketing.benefit.application.AwardIntentRepository$IntentRow">
+        SELECT *
+        FROM (
+            SELECT <include refid="intentColumns"/>
+            FROM mk_award_intent_outbox
+            WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId}
+            UNION ALL
+            SELECT <include refid="blockColumns"/>
+            FROM mk_award_intent_block
+            WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId}
+        ) combined
+        <if test="createdBefore != null">
+            WHERE createdAt &lt; #{createdBefore}
+               OR (createdAt = #{createdBefore} AND intentId &lt; #{cursorIntentId})
+        </if>
+        ORDER BY createdAt DESC, intentId DESC
+        LIMIT #{limit}
+    </select>
+
+    <insert id="insertExpectedPosition">
+        INSERT INTO mk_benefit_outbox_position (tenant_id, aggregate_id, last_sequence, updated_at)
+        VALUES (#{tenantId}, #{aggregateId}, #{lastSequence}, #{updatedAt})
+    </insert>
+    <insert id="insertExpectedEvent">
+        INSERT INTO mk_benefit_outbox
+            (tenant_id, event_id, aggregate_id, event_type, destination_topic, partition_key,
+             stream_sequence, payload_json, next_attempt_at, created_at)
+        VALUES
+            (#{tenantId}, #{eventId}, #{aggregateId}, #{eventType}, #{destinationTopic}, #{partitionKey},
+             #{streamSequence}, #{payloadJson}, #{nextAttemptAt}, #{createdAt})
+    </insert>
+</mapper>

@@ -21,8 +21,6 @@ import java.util.List;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
@@ -30,7 +28,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class JourneyRuntimeReleaseService {
-    private final JdbcTemplate jdbc;
+    private final JourneyRepository repository;
     private final ObjectMapper mapper;
     private final JourneyReleaseVerifier verifier;
     private final SigningKeyRing ackKeys;
@@ -39,12 +37,13 @@ public class JourneyRuntimeReleaseService {
     private final String buildDigest;
     private final long capacity;
 
-    public JourneyRuntimeReleaseService(JdbcTemplate jdbc, ObjectMapper mapper, JourneyReleaseVerifier verifier,
+    public JourneyRuntimeReleaseService(JourneyRepository repository, ObjectMapper mapper,
+            JourneyReleaseVerifier verifier,
             @Qualifier("journeyRuntimeAckSigningKeyRing") SigningKeyRing ackKeys, Clock clock,
             @Value("${marketing.runtime.id:journey-local}") String runtimeId,
             @Value("${marketing.runtime.build-digest:development}") String buildDigest,
             @Value("${marketing.runtime.capacity:1000}") long capacity) {
-        this.jdbc = jdbc;
+        this.repository = repository;
         this.mapper = mapper;
         this.verifier = verifier;
         this.ackKeys = ackKeys;
@@ -72,12 +71,11 @@ public class JourneyRuntimeReleaseService {
         JourneyPlan plan = read(payload, JourneyPlan.class);
         assertPlan(plan, artifact.reference());
         ReleaseManifest manifest = request.manifest();
-        try {
-            jdbc.update("insert into mk_journey_runtime_generation(tenant_id,environment_name,cell_id,namespace_name,generation_no,release_key_id,manifest_json,artifact_id,artifact_payload,manifest_signature,warmed_at) values(?,?,?,?,?,?,?,?,?,?,?)",
-                    scope.tenantId().value(), manifest.environment(), manifest.cell(), manifest.namespace(),
-                    manifest.generation(), request.releaseKeyId(), json(manifest), artifact.reference().artifactId(),
-                    payload, manifest.signature(), format(clock.instant()));
-        } catch (DuplicateKeyException duplicate) {
+        boolean installed = repository.trySaveGeneration(new JourneyRepository.GenerationWrite(
+                scope.tenantId().value(), manifest.environment(), manifest.cell(), manifest.namespace(),
+                manifest.generation(), request.releaseKeyId(), json(manifest), artifact.reference().artifactId(),
+                payload, manifest.signature(), format(clock.instant())));
+        if (!installed) {
             StoredGeneration existing = generation(scope.tenantId().value(), manifest, manifest.generation());
             if (!existing.manifest().signature().equals(manifest.signature())
                     || !Arrays.equals(existing.payload(), payload)) {
@@ -125,33 +123,26 @@ public class JourneyRuntimeReleaseService {
             }
             return view(installed, directive);
         }
-        jdbc.update("insert into mk_journey_runtime_activation(tenant_id,environment_name,cell_id,namespace_name,activation_sequence,generation_no,directive_signature,directive_json,activated_at) values(?,?,?,?,?,?,?,?,?)",
-                tenantId, directive.environment(), directive.cell(), directive.namespace(),
-                directive.activationSequence(), directive.generation(), directive.signature(), json(directive),
-                format(clock.instant()));
-        jdbc.update("update mk_journey_runtime_slot set desired_generation=?,activation_sequence=?,directive_signature=?,directive_json=?,updated_at=? where tenant_id=? and environment_name=? and cell_id=? and namespace_name=?",
-                directive.generation(), directive.activationSequence(), directive.signature(), json(directive),
-                format(clock.instant()), tenantId, directive.environment(), directive.cell(),
-                directive.namespace());
+        repository.saveActivation(new JourneyRepository.ActivationWrite(tenantId, directive.environment(),
+                directive.cell(), directive.namespace(), directive.activationSequence(), directive.generation(),
+                directive.signature(), json(directive), format(clock.instant())));
+        repository.updateRuntimeSlot(new JourneyRepository.RuntimeSlotActivationWrite(tenantId,
+                directive.environment(), directive.cell(), directive.namespace(), directive.generation(),
+                directive.activationSequence(), directive.signature(), json(directive), format(clock.instant())));
         return view(installed, directive);
     }
 
     private void ensureSlot(ActivationDirective directive) {
-        try {
-            jdbc.update("insert into mk_journey_runtime_slot(tenant_id,environment_name,cell_id,namespace_name,desired_generation,activation_sequence,directive_signature,directive_json,updated_at) values(?,?,?,?,?,?,?,?,?)",
-                    directive.tenantId().value(), directive.environment(), directive.cell(), directive.namespace(),
-                    0, 0, "", "", format(clock.instant()));
-        } catch (DuplicateKeyException exists) {
-            // Locked reread below serializes activation writers.
-        }
+        repository.tryCreateRuntimeSlot(new JourneyRepository.RuntimeSlotWrite(directive.tenantId().value(),
+                directive.environment(), directive.cell(), directive.namespace(), 0, 0, "", "",
+                format(clock.instant())));
     }
 
     private Slot slot(ActivationDirective directive, boolean lock) {
-        List<Slot> rows = jdbc.query("select desired_generation,activation_sequence,directive_signature from mk_journey_runtime_slot where tenant_id=? and environment_name=? and cell_id=? and namespace_name=?" + (lock ? " for update" : ""),
-                (rs, rowNum) -> new Slot(rs.getLong(1), rs.getLong(2), rs.getString(3)),
-                directive.tenantId().value(), directive.environment(), directive.cell(), directive.namespace());
-        if (rows.isEmpty()) throw new IllegalStateException("journey runtime slot was not created");
-        return rows.getFirst();
+        JourneyRepository.RuntimeSlotRow row = repository.findRuntimeSlot(directive.tenantId().value(),
+                directive.environment(), directive.cell(), directive.namespace(), lock)
+                .orElseThrow(() -> new IllegalStateException("journey runtime slot was not created"));
+        return new Slot(row.desiredGeneration(), row.activationSequence(), row.directiveSignature());
     }
 
     private StoredGeneration generation(String tenantId, ReleaseManifest slot, long generation) {
@@ -164,12 +155,12 @@ public class JourneyRuntimeReleaseService {
 
     private StoredGeneration generation(String tenantId, String environment, String cell, String namespace,
             long generation) {
-        List<StoredGeneration> rows = jdbc.query("select release_key_id,manifest_json,artifact_id,artifact_payload from mk_journey_runtime_generation where tenant_id=? and environment_name=? and cell_id=? and namespace_name=? and generation_no=?",
-                (rs, rowNum) -> new StoredGeneration(rs.getString(1), read(rs.getString(2), ReleaseManifest.class),
-                        rs.getString(3), rs.getBytes(4)), tenantId, environment, cell, namespace, generation);
-        if (rows.isEmpty()) throw new NotFoundException("JOURNEY_GENERATION_NOT_WARM",
-                "journey generation is not installed");
-        return rows.getFirst();
+        JourneyRepository.GenerationRow row = repository.findGeneration(
+                        tenantId, environment, cell, namespace, generation)
+                .orElseThrow(() -> new NotFoundException("JOURNEY_GENERATION_NOT_WARM",
+                        "journey generation is not installed"));
+        return new StoredGeneration(row.releaseKeyId(), read(row.manifestJson(), ReleaseManifest.class),
+                row.artifactId(), row.artifactPayload());
     }
 
     private static void assertPlan(JourneyPlan plan, ArtifactReference reference) {
@@ -181,25 +172,22 @@ public class JourneyRuntimeReleaseService {
     }
 
     private void installDefinition(String tenantId, JourneyPlan plan, String releaseKeyId) {
-        List<String> installed = jdbc.query("select plan_json from mk_journey_definition where tenant_id=? and journey_id=? and version_no=?",
-                (rs, rowNum) -> rs.getString(1), tenantId, plan.journeyId(), plan.version());
+        var installed = repository.findPlanJson(tenantId, plan.journeyId(), plan.version());
         String encoded = json(plan);
-        if (!installed.isEmpty()) {
-            JourneyPlan existing = read(installed.getFirst(), JourneyPlan.class);
+        if (installed.isPresent()) {
+            JourneyPlan existing = read(installed.orElseThrow(), JourneyPlan.class);
             if (!existing.equals(plan)) {
                 throw new ConflictException("JOURNEY_VERSION_IMMUTABLE",
                         "journey id and version already identify another plan");
             }
             return;
         }
-        try {
-            jdbc.update("insert into mk_journey_definition(tenant_id,journey_id,version_no,plan_json,state_name,created_by,created_at) values(?,?,?,?,?,?,?)",
-                    tenantId, plan.journeyId(), plan.version(), encoded, "ACTIVE", "release:" + releaseKeyId,
-                    format(clock.instant()));
-        } catch (DuplicateKeyException race) {
-            List<String> winner = jdbc.query("select plan_json from mk_journey_definition where tenant_id=? and journey_id=? and version_no=?",
-                    (rs, rowNum) -> rs.getString(1), tenantId, plan.journeyId(), plan.version());
-            if (winner.isEmpty() || !read(winner.getFirst(), JourneyPlan.class).equals(plan)) {
+        boolean saved = repository.trySaveDefinition(new JourneyRepository.DefinitionWrite(tenantId,
+                plan.journeyId(), plan.version(), encoded, "ACTIVE", "release:" + releaseKeyId,
+                format(clock.instant())));
+        if (!saved) {
+            var winner = repository.findPlanJson(tenantId, plan.journeyId(), plan.version());
+            if (winner.isEmpty() || !read(winner.orElseThrow(), JourneyPlan.class).equals(plan)) {
                 throw new ConflictException("JOURNEY_VERSION_IMMUTABLE",
                         "journey id and version were concurrently assigned to another plan");
             }

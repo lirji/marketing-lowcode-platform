@@ -17,8 +17,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,7 +25,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class JourneyApplicationService {
-    private final JdbcTemplate jdbc;
+    private final JourneyRepository repository;
     private final ObjectMapper mapper;
     private final Clock clock;
     private final boolean directRegistrationEnabled;
@@ -35,11 +33,11 @@ public class JourneyApplicationService {
     private final JourneyKillSwitchRegistry killSwitch;
     private final JourneyRuntime runtime = new JourneyRuntime();
 
-    public JourneyApplicationService(JdbcTemplate jdbc, ObjectMapper mapper, Clock clock,
+    public JourneyApplicationService(JourneyRepository repository, ObjectMapper mapper, Clock clock,
             JourneyKillSwitchRegistry killSwitch,
             @Value("${marketing.security.mode:DEV}") String securityMode,
             @Value("${marketing.journey.execution-mode:DIRECT}") ExecutionMode executionMode) {
-        this.jdbc = jdbc;
+        this.repository = repository;
         this.mapper = mapper;
         this.clock = clock;
         this.killSwitch = killSwitch;
@@ -58,9 +56,8 @@ public class JourneyApplicationService {
             throw new ConflictException("DIRECT_JOURNEY_REGISTRATION_DISABLED",
                     "production journey plans must be installed through the signed release runtime");
         }
-        jdbc.update("insert into mk_journey_definition(tenant_id,journey_id,version_no,plan_json,state_name,created_by,created_at) values(?,?,?,?,?,?,?)",
-                scope.tenantId().value(), plan.journeyId(), plan.version(), json(plan), "ACTIVE", scope.actorId(),
-                format(clock.instant()));
+        repository.saveDefinition(new JourneyRepository.DefinitionWrite(scope.tenantId().value(), plan.journeyId(),
+                plan.version(), json(plan), "ACTIVE", scope.actorId(), format(clock.instant())));
         return plan;
     }
 
@@ -71,23 +68,24 @@ public class JourneyApplicationService {
         requireDirectStateWriter();
         killSwitch.requireEnabled(scope.tenantId().value());
         JourneyPlan plan = plan(scope.tenantId().value(), request.journeyId(), request.journeyVersion(), true);
-        List<EnrollmentView> duplicate = jdbc.query("select enrollment_id,snapshot_json,created_at from mk_enrollment where tenant_id=? and journey_id=? and journey_version=? and subject_token=? and trigger_event_id=?",
-                (rs, rowNum) -> view(read(rs.getString(2), EnrollmentSnapshot.class), List.of(), Map.of(), true,
-                        Instant.parse(rs.getString(3))), scope.tenantId().value(), request.journeyId(),
+        var duplicate = repository.findDuplicateEnrollment(scope.tenantId().value(), request.journeyId(),
                 request.journeyVersion(), request.subjectToken(), request.triggerEventId());
-        if (!duplicate.isEmpty()) return duplicate.getFirst();
+        if (duplicate.isPresent()) {
+            var row = duplicate.orElseThrow();
+            return view(read(row.snapshotJson(), EnrollmentSnapshot.class), List.of(), Map.of(), true,
+                    Instant.parse(row.createdAt()));
+        }
         Instant now = clock.instant();
         String enrollmentId = UUID.randomUUID().toString();
         EnrollmentSnapshot start = EnrollmentSnapshot.start(scope.tenantId().value(), enrollmentId,
                 request.subjectToken(), plan, now);
         JourneyTransition transition = runtime.advance(plan, start,
                 new JourneySignal.Start(request.triggerEventId(), request.occurredAt()));
-        try {
-            jdbc.update("insert into mk_enrollment(tenant_id,enrollment_id,journey_id,journey_version,subject_token,trigger_event_id,status_name,current_node_id,snapshot_json,created_at,updated_at) values(?,?,?,?,?,?,?,?,?,?,?)",
-                    scope.tenantId().value(), enrollmentId, plan.journeyId(), plan.version(), request.subjectToken(),
-                    request.triggerEventId(), transition.snapshot().status().name(), transition.snapshot().currentNodeId(),
-                    json(transition.snapshot()), format(now), format(now));
-        } catch (DuplicateKeyException race) {
+        boolean saved = repository.trySaveEnrollment(new JourneyRepository.EnrollmentWrite(
+                scope.tenantId().value(), enrollmentId, plan.journeyId(), plan.version(), request.subjectToken(),
+                request.triggerEventId(), transition.snapshot().status().name(), transition.snapshot().currentNodeId(),
+                json(transition.snapshot()), "", -1, -1L, format(now), format(now)));
+        if (!saved) {
             throw new ConflictException("ENROLLMENT_CONCURRENT_DUPLICATE", "trigger is already enrolling");
         }
         persistEffects(scope.tenantId().value(), enrollmentId, transition, now);
@@ -104,9 +102,9 @@ public class JourneyApplicationService {
         JourneyPlan plan = plan(scope.tenantId().value(), snapshot.journeyId(), snapshot.journeyVersion());
         JourneyTransition transition = runtime.advance(plan, snapshot, signal);
         if (!transition.duplicate()) {
-            jdbc.update("update mk_enrollment set status_name=?,current_node_id=?,snapshot_json=?,updated_at=? where tenant_id=? and enrollment_id=?",
-                    transition.snapshot().status().name(), transition.snapshot().currentNodeId(),
-                    json(transition.snapshot()), format(clock.instant()), scope.tenantId().value(), enrollmentId);
+            repository.updateEnrollmentState(new JourneyRepository.EnrollmentStateWrite(
+                    scope.tenantId().value(), enrollmentId, transition.snapshot().status().name(),
+                    transition.snapshot().currentNodeId(), json(transition.snapshot()), format(clock.instant())));
             persistEffects(scope.tenantId().value(), enrollmentId, transition, clock.instant());
         }
         return view(transition.snapshot(), transition.commands(), transition.timers(), transition.duplicate(), clock.instant());
@@ -119,11 +117,9 @@ public class JourneyApplicationService {
         requireDirectStateWriter();
         JourneyPlan target = plan(scope.tenantId().value(), journeyId, request.toVersion());
         if (!request.dryRun()) freezeSourceVersion(scope.tenantId().value(), journeyId, request.fromVersion());
-        String query = "select snapshot_json from mk_enrollment where tenant_id=? and journey_id=? and journey_version=? and status_name in ('RUNNING','WAITING') and enrollment_id>? order by enrollment_id limit ?"
-                + (request.dryRun() ? "" : " for update");
-        List<EnrollmentSnapshot> snapshots = jdbc.query(query,
-                (rs, rowNum) -> read(rs.getString(1), EnrollmentSnapshot.class), scope.tenantId().value(), journeyId,
-                request.fromVersion(), request.afterEnrollmentId(), request.batchSize());
+        List<EnrollmentSnapshot> snapshots = repository.findMigrationSnapshots(scope.tenantId().value(), journeyId,
+                        request.fromVersion(), request.afterEnrollmentId(), request.batchSize(), !request.dryRun())
+                .stream().map(value -> read(value, EnrollmentSnapshot.class)).toList();
         List<MigrationIssue> issues = new ArrayList<>();
         for (EnrollmentSnapshot snapshot : snapshots) {
             String mapped = request.nodeMapping().getOrDefault(snapshot.currentNodeId(), snapshot.currentNodeId());
@@ -140,24 +136,23 @@ public class JourneyApplicationService {
                         snapshot.subjectToken(), snapshot.journeyId(), target.version(), mapped, snapshot.status(),
                         snapshot.variables(), snapshot.processedSignalIds(), snapshot.iterations(),
                         snapshot.nodeExecutions(), now);
-                jdbc.update("insert into mk_journey_migration(tenant_id,migration_id,enrollment_id,from_version,to_version,previous_snapshot_json,state_name,created_by,created_at) values(?,?,?,?,?,?,?,?,?)",
-                        scope.tenantId().value(), UUID.randomUUID().toString(), snapshot.enrollmentId(),
-                        request.fromVersion(), request.toVersion(), json(snapshot), "APPLIED", scope.actorId(), format(now));
-                jdbc.update("update mk_enrollment set journey_version=?,current_node_id=?,snapshot_json=?,updated_at=? where tenant_id=? and enrollment_id=?",
-                        target.version(), mapped, json(migrated), format(now), scope.tenantId().value(), snapshot.enrollmentId());
+                repository.saveMigration(new JourneyRepository.MigrationWrite(scope.tenantId().value(),
+                        UUID.randomUUID().toString(), snapshot.enrollmentId(), request.fromVersion(),
+                        request.toVersion(), json(snapshot), "APPLIED", scope.actorId(), format(now)));
+                repository.updateEnrollmentMigration(new JourneyRepository.EnrollmentMigrationWrite(
+                        scope.tenantId().value(), snapshot.enrollmentId(), target.version(), mapped,
+                        json(migrated), format(now)));
             }
         }
-        Integer remaining = jdbc.query("select count(*) from mk_enrollment where tenant_id=? and journey_id=? and journey_version=? and status_name in ('RUNNING','WAITING')",
-                rs -> rs.next() ? rs.getInt(1) : 0, scope.tenantId().value(), journeyId,
-                request.fromVersion());
-        String nextCursor = snapshots.isEmpty() && remaining != null && remaining > 0 ? ""
+        int remaining = repository.countActiveEnrollments(
+                scope.tenantId().value(), journeyId, request.fromVersion());
+        String nextCursor = snapshots.isEmpty() && remaining > 0 ? ""
                 : snapshots.isEmpty() ? request.afterEnrollmentId() : snapshots.getLast().enrollmentId();
-        if (!request.dryRun() && compatible && (remaining == null || remaining == 0)) {
-            jdbc.update("update mk_journey_definition set state_name='MIGRATED' where tenant_id=? and journey_id=? and version_no=? and state_name='MIGRATING'",
-                    scope.tenantId().value(), journeyId, request.fromVersion());
+        if (!request.dryRun() && compatible && remaining == 0) {
+            repository.markDefinitionMigrated(scope.tenantId().value(), journeyId, request.fromVersion());
         }
         return new MigrationReport(journeyId, request.fromVersion(), request.toVersion(), request.dryRun(),
-                compatible, snapshots.size(), nextCursor, remaining != null && remaining > 0, issues, clock.instant());
+                compatible, snapshots.size(), nextCursor, remaining > 0, issues, clock.instant());
     }
 
     public EnrollmentView get(String enrollmentId) {
@@ -171,10 +166,7 @@ public class JourneyApplicationService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("journey:read");
         if (limit < 1 || limit > 200) throw new IllegalArgumentException("limit must be in [1,200]");
-        StringBuilder sql = new StringBuilder(
-                "select snapshot_json,updated_at from mk_enrollment where tenant_id=?");
-        List<Object> arguments = new ArrayList<>();
-        arguments.add(scope.tenantId().value());
+        String statusName = null;
         if (status != null && !status.isBlank()) {
             EnrollmentSnapshot.Status parsed;
             try {
@@ -182,18 +174,12 @@ public class JourneyApplicationService {
             } catch (IllegalArgumentException invalid) {
                 throw new IllegalArgumentException("enrollment status is invalid", invalid);
             }
-            sql.append(" and status_name=?");
-            arguments.add(parsed.name());
+            statusName = parsed.name();
         }
-        if (journeyId != null && !journeyId.isBlank()) {
-            sql.append(" and journey_id=?");
-            arguments.add(journeyId);
-        }
-        sql.append(" order by updated_at desc,enrollment_id limit ?");
-        arguments.add(limit);
-        return jdbc.query(sql.toString(), (rs, rowNum) -> view(
-                read(rs.getString(1), EnrollmentSnapshot.class), List.of(), Map.of(), false,
-                Instant.parse(rs.getString(2))), arguments.toArray());
+        return repository.findEnrollments(scope.tenantId().value(), statusName, journeyId, limit).stream()
+                .map(row -> view(read(row.snapshotJson(), EnrollmentSnapshot.class), List.of(), Map.of(), false,
+                        Instant.parse(row.updatedAt())))
+                .toList();
     }
 
     private JourneyPlan plan(String tenantId, String journeyId, long version) {
@@ -201,24 +187,20 @@ public class JourneyApplicationService {
     }
 
     private JourneyPlan plan(String tenantId, String journeyId, long version, boolean lock) {
-        List<JourneyPlan> plans = jdbc.query("select plan_json from mk_journey_definition where tenant_id=? and journey_id=? and version_no=? and state_name='ACTIVE'"
-                        + (lock ? " for update" : ""),
-                (rs, rowNum) -> read(rs.getString(1), JourneyPlan.class), tenantId, journeyId, version);
-        if (plans.isEmpty()) throw new NotFoundException("JOURNEY_VERSION_NOT_FOUND", "journey version not found");
-        return plans.getFirst();
+        String encoded = repository.findActivePlanJson(tenantId, journeyId, version, lock)
+                .orElseThrow(() -> new NotFoundException("JOURNEY_VERSION_NOT_FOUND", "journey version not found"));
+        return read(encoded, JourneyPlan.class);
     }
 
     private void freezeSourceVersion(String tenantId, String journeyId, long version) {
-        List<String> states = jdbc.query("select state_name from mk_journey_definition where tenant_id=? and journey_id=? and version_no=? for update",
-                (rs, rowNum) -> rs.getString(1), tenantId, journeyId, version);
-        if (states.isEmpty()) throw new NotFoundException("JOURNEY_VERSION_NOT_FOUND", "source journey version not found");
-        String state = states.getFirst();
+        String state = repository.findDefinitionStateForUpdate(tenantId, journeyId, version)
+                .orElseThrow(() -> new NotFoundException("JOURNEY_VERSION_NOT_FOUND",
+                        "source journey version not found"));
         if (!"ACTIVE".equals(state) && !"MIGRATING".equals(state)) {
             throw new ConflictException("JOURNEY_VERSION_NOT_MIGRATABLE", "source journey version is not migratable");
         }
         if ("ACTIVE".equals(state)) {
-            jdbc.update("update mk_journey_definition set state_name='MIGRATING' where tenant_id=? and journey_id=? and version_no=?",
-                    tenantId, journeyId, version);
+            repository.markDefinitionMigrating(tenantId, journeyId, version);
         }
     }
 
@@ -227,25 +209,23 @@ public class JourneyApplicationService {
     }
 
     private EnrollmentSnapshot enrollment(String tenantId, String enrollmentId, boolean lock) {
-        List<EnrollmentSnapshot> rows = jdbc.query("select snapshot_json from mk_enrollment where tenant_id=? and enrollment_id=?"
-                        + (lock ? " for update" : ""),
-                (rs, rowNum) -> read(rs.getString(1), EnrollmentSnapshot.class), tenantId, enrollmentId);
-        if (rows.isEmpty()) throw new NotFoundException("ENROLLMENT_NOT_FOUND", "journey enrollment not found");
-        return rows.getFirst();
+        String encoded = repository.findEnrollmentSnapshot(tenantId, enrollmentId, lock)
+                .orElseThrow(() -> new NotFoundException("ENROLLMENT_NOT_FOUND", "journey enrollment not found"));
+        return read(encoded, EnrollmentSnapshot.class);
     }
 
     private void persistEffects(String tenantId, String enrollmentId, JourneyTransition transition, Instant now) {
         for (JourneyCommand command : transition.commands()) {
-            jdbc.update("insert into mk_node_effect_intent(tenant_id,command_id,enrollment_id,node_id,effect_type,payload_json,state_name,created_at) values(?,?,?,?,?,?,?,?)",
-                    tenantId, command.commandId(), enrollmentId, command.nodeId(), command.type().name(),
-                    json(command.payload()), "PENDING", format(now));
+            repository.saveEffectIntent(new JourneyRepository.EffectWrite(tenantId, command.commandId(),
+                    enrollmentId, command.nodeId(), command.type().name(), json(command.payload()),
+                    "PENDING", format(now)));
         }
         transition.timers().forEach((timerKey, fireAt) -> {
-            int updated = jdbc.update("update mk_journey_timer set fire_at=?,state_name='SCHEDULED' where tenant_id=? and timer_key=?",
-                    format(fireAt), tenantId, timerKey);
+            JourneyRepository.TimerWrite write = new JourneyRepository.TimerWrite(tenantId, timerKey,
+                    enrollmentId, format(fireAt), "SCHEDULED", format(now));
+            int updated = repository.updateTimer(write);
             if (updated == 0) {
-                jdbc.update("insert into mk_journey_timer(tenant_id,timer_key,enrollment_id,fire_at,state_name,created_at) values(?,?,?,?,?,?)",
-                        tenantId, timerKey, enrollmentId, format(fireAt), "SCHEDULED", format(now));
+                repository.saveTimer(write);
             }
         });
     }

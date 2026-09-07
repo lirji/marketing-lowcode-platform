@@ -15,10 +15,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.jdbc.core.JdbcTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -26,14 +28,29 @@ import tools.jackson.databind.ObjectMapper;
 class MeasurementIntegrationTest extends MySqlIntegrationTest {
     @LocalServerPort private int port;
     @Autowired private ObjectMapper mapper;
+    @Autowired private JdbcTemplate jdbc;
     private final HttpClient client = HttpClient.newHttpClient();
 
     @Test
     void assignmentFactDedupAttributionDashboardAndTraceAreConsistent() throws Exception {
-        post("/api/v1/experiments", Map.of("experimentId", "exp-1", "version", "1", "layer", "pricing",
+        Map<String, Object> experiment = Map.of("experimentId", "exp-1", "version", "1", "layer", "pricing",
                 "salt", "a-secure-test-salt", "variants", List.of(
                         new ExperimentAssigner.Variant("A", 5_000, false),
-                        new ExperimentAssigner.Variant("HOLDOUT", 5_000, true))));
+                        new ExperimentAssigner.Variant("HOLDOUT", 5_000, true)));
+        JsonNode createdExperiment = post("/api/v1/experiments", experiment, "experiment-create-command-001");
+        assertEquals(createdExperiment,
+                post("/api/v1/experiments", experiment, "experiment-create-command-001"));
+        HttpResponse<String> experimentConflict = postRaw("/api/v1/experiments", Map.of(
+                "experimentId", "exp-1", "version", "1", "layer", "changed",
+                "salt", "a-secure-test-salt", "variants", List.of(
+                        new ExperimentAssigner.Variant("A", 5_000, false),
+                        new ExperimentAssigner.Variant("HOLDOUT", 5_000, true))),
+                "experiment-create-command-001");
+        assertEquals(409, experimentConflict.statusCode());
+        assertTrue(experimentConflict.body().contains("IDEMPOTENCY_PAYLOAD_CONFLICT"));
+        assertEquals(1, jdbc.queryForObject(
+                "select count(*) from mk_experiment where tenant_id=? and experiment_id=? and version_no=?",
+                Integer.class, "tenant-a", "exp-1", 1L));
         JsonNode assignment = post("/api/v1/experiments/exp-1/versions/1:assign", Map.of("unit", "subject-1"));
         JsonNode replay = post("/api/v1/experiments/exp-1/versions/1:assign", Map.of("unit", "subject-1"));
         assertEquals(assignment.get("variantId").asString(), replay.get("variantId").asString());
@@ -119,12 +136,17 @@ class MeasurementIntegrationTest extends MySqlIntegrationTest {
     }
     private JsonNode post(String path, Object body) throws Exception {
         return exchange(base(path).header("Content-Type", "application/json")
+                .header("Idempotency-Key", "measurement-test-" + UUID.randomUUID())
                 .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build());
     }
     private JsonNode post(String path, Object body, String idempotencyKey) throws Exception {
-        return exchange(base(path).header("Content-Type", "application/json")
+        return successful(postRaw(path, body, idempotencyKey));
+    }
+    private HttpResponse<String> postRaw(String path, Object body, String idempotencyKey) throws Exception {
+        return client.send(base(path).header("Content-Type", "application/json")
                 .header("Idempotency-Key", idempotencyKey)
-                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build());
+                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build(),
+                HttpResponse.BodyHandlers.ofString());
     }
     private JsonNode get(String path) throws Exception { return exchange(base(path).GET().build()); }
     private HttpRequest.Builder base(String path) {
@@ -134,6 +156,9 @@ class MeasurementIntegrationTest extends MySqlIntegrationTest {
     }
     private JsonNode exchange(HttpRequest request) throws Exception {
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        return successful(response);
+    }
+    private JsonNode successful(HttpResponse<String> response) throws Exception {
         assertTrue(response.statusCode() >= 200 && response.statusCode() < 300,
                 () -> response.statusCode() + ": " + response.body());
         return mapper.readTree(response.body());

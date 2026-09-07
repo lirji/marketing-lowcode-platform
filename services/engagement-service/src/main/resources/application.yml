@@ -19,6 +19,10 @@ spring:
         isolation.level: read_committed
     listener:
       ack-mode: record
+mybatis:
+  mapper-locations: classpath*:mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: false
 marketing.kafka.consumers-enabled: ${MARKETING_KAFKA_CONSUMERS_ENABLED:false}
 marketing.engagement.outbox-enabled: ${MARKETING_ENGAGEMENT_OUTBOX_ENABLED:false}
 marketing.security:

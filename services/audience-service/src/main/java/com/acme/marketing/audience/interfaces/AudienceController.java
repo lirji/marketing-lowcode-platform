@@ -1,6 +1,8 @@
 package com.acme.marketing.audience.interfaces;
 
 import com.acme.marketing.audience.application.AudienceService;
+import com.acme.marketing.platform.web.PersistentIdempotentCommandExecutor;
+import com.acme.marketing.platform.web.TenantContextHolder;
 import jakarta.validation.Valid;
 import java.time.Instant;
 import java.util.List;
@@ -11,6 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,12 +22,18 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1")
 public class AudienceController {
     private final AudienceService service;
+    private final PersistentIdempotentCommandExecutor commands;
 
-    public AudienceController(AudienceService service) { this.service = service; }
+    public AudienceController(AudienceService service, PersistentIdempotentCommandExecutor commands) {
+        this.service = service;
+        this.commands = commands;
+    }
 
     @PostMapping("/fields") @ResponseStatus(HttpStatus.CREATED)
-    public AudienceService.FieldDefinition register(@Valid @RequestBody AudienceService.FieldDefinition request) {
-        return service.registerField(request);
+    public AudienceService.FieldDefinition register(@RequestHeader("Idempotency-Key") String key,
+            @Valid @RequestBody AudienceService.FieldDefinition request) {
+        return commands.execute(TenantContextHolder.requireCurrent().tenantId(), "audience.field.create",
+                key, request, AudienceService.FieldDefinition.class, () -> service.registerField(request));
     }
 
     @GetMapping("/fields")
@@ -33,8 +42,10 @@ public class AudienceController {
     }
 
     @PostMapping("/audiences") @ResponseStatus(HttpStatus.CREATED)
-    public AudienceService.SegmentView create(@Valid @RequestBody AudienceService.CreateSegmentRequest request) {
-        return service.createSegment(request);
+    public AudienceService.SegmentView create(@RequestHeader("Idempotency-Key") String key,
+            @Valid @RequestBody AudienceService.CreateSegmentRequest request) {
+        return commands.execute(TenantContextHolder.requireCurrent().tenantId(), "audience.segment.create",
+                key, request, AudienceService.SegmentView.class, () -> service.createSegment(request));
     }
 
     @GetMapping("/audiences")

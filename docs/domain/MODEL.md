@@ -66,6 +66,13 @@ lineFinal >= 0
 
 Decision 返回签名 OfferToken，至少绑定 `tenantId`、subject/order/cart digest、quoteId、release generation、artifact digest、benefit version、金额、币种、数量、expiry 和 nonce。Benefit/Funding 在 reserve 前重新计算 payload digest、验签、检查 expiry/tenant/generation，并用 nonce/commandId 阻止重放。任何失败返回机器可处理的 `REPRICE_REQUIRED` 或明确领域错误，不形成“订单价格已成功、权益却未保留”的隐式状态。
 
+## AwardIntent、SKU 世代与发奖切流
+
+- 营销权益定义以 `benefitDefinitionVersion=benefitId@version` 绑定权益中台的 `benefitSkuId + skuVersion`；发布 ACTIVE 定义时只接受仍为 ACTIVE 的 SKU，发奖时再从签名 OfferToken 重建权威项，内部触发请求不能自报金额。
+- `sourceRequestId` 同时是营销侧首次结果幂等键和权益中台请求幂等键。首次结果只能落在 `mk_award_intent_outbox` 或 `mk_award_intent_block` 之一；重放不得重新风控、改模式或改 payload。
+- `LEGACY` 表示旧链路拥有发放，`SHADOW` 只保存对比记录，`CENTER` 才进入权益中台 relay。模式在首次写入时固化，后续配置变更不能改变已受理意图的所有权。
+- 发奖前风控使用 `sourceId=MARKETING_AWARD`。现金权益按 OfferToken 中同币种金额求和；无现金项使用正数哨兵 `amount=1,currency=XXX` 通过既有正金额契约，但哨兵不进入权益或对账金额。
+
 ReservationGroup 默认全成全败。只有 Offer 明确选择 partial policy 才能部分成功，响应必须列出每个 applied/rejected item 与补偿状态。
 
 ## 资金和库存守恒
@@ -78,6 +85,8 @@ returned/reversed 通过成对流水回到策略指定 bucket
 ```
 
 每次变更持有唯一 commandId、业务引用、版本、fencing token 和借贷方向。应用事务写 aggregate 与 ledger/outbox；对账从不可变流水独立重算余额，差异非零即冻结相关资源并告警。区域/分片 bucket 只能在 escrow 额度内消费，网络分区时不能从多个 region 同时借用同一余额。
+
+`BUDGET` 账户根行只保存身份、状态和 fencing 元数据；新建账户按 `MARKETING_FUNDING_BUDGET_BUCKET_COUNT`（默认 16）把可用额度守恒分配到 `mk_resource_escrow_bucket`。常规 reserve 通过稳定散列选择一个容量足够的桶并执行条件更新，跨桶大额 reserve 才按固定顺序锁定多个桶；`mk_reservation_escrow_allocation` 固化每个预占的桶归属，使 confirm/release/refund 回写原桶。账户读模型与对账均以桶总和为余额权威，ledger 记录 bucket/version，根 fencing 推进时同步推进所有桶，既分散热点又保持总账守恒。
 
 ## Audience、Journey 与 Experiment
 

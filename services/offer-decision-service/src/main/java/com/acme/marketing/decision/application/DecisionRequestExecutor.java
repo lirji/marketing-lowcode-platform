@@ -1,19 +1,16 @@
 package com.acme.marketing.decision.application;
 
-import static com.acme.marketing.platform.time.SqlTime.format;
-
+import com.acme.marketing.decision.application.DecisionCommandRepository.StoredCommand;
 import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.error.ConflictException;
 import com.acme.marketing.platform.identity.TenantScope;
 import java.time.Clock;
 import java.util.List;
 import java.util.Locale;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -48,20 +45,20 @@ public class DecisionRequestExecutor {
             end
             return 0
             """, Long.class);
-    private final JdbcTemplate jdbc;
-    private final ObjectMapper mapper;
+    private final DecisionCommandRepository commandRepository;
+    private final ObjectMapper objectMapper;
     private final Clock clock;
     private final DecisionApplicationService decisions;
     private final TransactionTemplate transactions;
     private final StringRedisTemplate redis;
     private final Store store;
 
-    public DecisionRequestExecutor(JdbcTemplate jdbc, ObjectMapper mapper, Clock clock,
+    public DecisionRequestExecutor(DecisionCommandRepository commandRepository, ObjectMapper objectMapper, Clock clock,
             DecisionApplicationService decisions, PlatformTransactionManager transactionManager,
             ObjectProvider<StringRedisTemplate> redisProvider,
             @Value("${marketing.decision.idempotency-store:JDBC}") String store) {
-        this.jdbc = jdbc;
-        this.mapper = mapper;
+        this.commandRepository = commandRepository;
+        this.objectMapper = objectMapper;
         this.clock = clock;
         this.decisions = decisions;
         this.transactions = new TransactionTemplate(transactionManager);
@@ -91,22 +88,12 @@ public class DecisionRequestExecutor {
             TenantScope scope, DecisionApplicationService.DecisionRequest request) {
         String tenantId = scope.tenantId().value();
         String payloadHash = Digests.sha256Hex(json(request));
-        jdbc.update("delete from mk_decision_command where tenant_id=? and idempotency_key=? and expires_at<=?",
-                tenantId, request.idempotencyKey(), format(clock.instant()));
-        boolean owner = false;
-        try {
-            jdbc.update("insert into mk_decision_command(tenant_id,idempotency_key,payload_hash,state_name,response_json,created_at,expires_at) values(?,?,?,?,?,?,?)",
-                    tenantId, request.idempotencyKey(), payloadHash, "PROCESSING", null,
-                    format(clock.instant()), format(clock.instant().plusSeconds(RETENTION_SECONDS)));
-            owner = true;
-        } catch (DuplicateKeyException duplicate) {
-            // The locked read below waits for the winning transaction and returns its byte-equivalent response.
-        }
-        List<StoredCommand> rows = jdbc.query("select payload_hash,state_name,response_json from mk_decision_command where tenant_id=? and idempotency_key=? for update",
-                (rs, rowNum) -> new StoredCommand(rs.getString(1), rs.getString(2), rs.getString(3)),
-                tenantId, request.idempotencyKey());
-        if (rows.isEmpty()) throw new ConflictException("DECISION_COMMAND_LOST", "idempotency row disappeared");
-        StoredCommand stored = rows.getFirst();
+        commandRepository.deleteExpired(tenantId, request.idempotencyKey(), clock.instant());
+        boolean owner = commandRepository.tryClaim(tenantId, request.idempotencyKey(), payloadHash,
+                clock.instant(), clock.instant().plusSeconds(RETENTION_SECONDS));
+        // 加锁读取会等待赢得唯一键竞争的事务完成，从而重放字节等价响应。
+        StoredCommand stored = commandRepository.lock(tenantId, request.idempotencyKey())
+                .orElseThrow(() -> new ConflictException("DECISION_COMMAND_LOST", "idempotency row disappeared"));
         if (!stored.payloadHash().equals(payloadHash)) {
             throw new ConflictException("IDEMPOTENCY_PAYLOAD_CONFLICT",
                     "idempotency key was used with another decision request");
@@ -118,8 +105,7 @@ public class DecisionRequestExecutor {
             return read(stored.responseJson());
         }
         DecisionApplicationService.DecisionResponse response = decisions.evaluate(scope, request);
-        jdbc.update("update mk_decision_command set state_name='COMPLETED',response_json=? where tenant_id=? and idempotency_key=?",
-                json(response), tenantId, request.idempotencyKey());
+        commandRepository.complete(tenantId, request.idempotencyKey(), json(response));
         return response;
     }
 
@@ -157,15 +143,14 @@ public class DecisionRequestExecutor {
     }
 
     private String json(Object value) {
-        try { return mapper.writeValueAsString(value); }
+        try { return objectMapper.writeValueAsString(value); }
         catch (JacksonException failure) { throw new IllegalArgumentException("decision cannot be serialized", failure); }
     }
 
     private DecisionApplicationService.DecisionResponse read(String value) {
-        try { return mapper.readValue(value, DecisionApplicationService.DecisionResponse.class); }
+        try { return objectMapper.readValue(value, DecisionApplicationService.DecisionResponse.class); }
         catch (JacksonException failure) { throw new IllegalStateException("stored decision is invalid", failure); }
     }
 
-    private record StoredCommand(String payloadHash, String state, String responseJson) { }
     private enum Store { JDBC, REDIS }
 }

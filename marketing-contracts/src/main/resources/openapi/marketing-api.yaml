@@ -97,30 +97,45 @@ paths:
   /api/v1/registries/nodes:
     get: {tags: [Control], operationId: listNodeDefinitions, responses: *list}
   /api/v1/releases:
-    get: {tags: [Release], operationId: listReleases, responses: *list}
+    get:
+      tags: [Release]
+      operationId: listReleases
+      x-required-permission: release:read
+      responses: *list
     post:
       tags: [Release]
       operationId: stageRelease
+      description: Stage only an approved, compiler-attested artifact closure. Offer artifacts are rejected unless every frozen BenefitDefinition version is ACTIVE and remains bound to an ACTIVE same-tenant SKU.
+      x-required-permission: release:write
       parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
       requestBody: {$ref: '#/components/requestBodies/StageRelease'}
-      responses: *created
+      responses:
+        '201': {$ref: '#/components/responses/JsonObject'}
+        '409':
+          description: RELEASE_NOT_APPROVED, APPROVAL_CASE_INVALID, BENEFIT_RELEASE_UNBOUND, BENEFIT_RELEASE_NOT_ACTIVE, SKU_NOT_ACTIVE, BENEFIT_SKU_TYPE_MISMATCH, or artifact closure/provenance rejection.
+          content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/releases/{manifestId}:ack:
     post:
       tags: [Release]
       operationId: acknowledgeRelease
+      x-required-permission: runtime:ack
       parameters: [{$ref: '#/components/parameters/ManifestId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
-      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RuntimeAck'}}}}
       responses: *ok
   /api/v1/releases/{manifestId}:activate:
     post:
       tags: [Release]
       operationId: activateRelease
+      description: Activation is allowed only after a trusted READY runtime ACK satisfies quorum and capacity.
+      x-required-permission: release:activate
       parameters: [{$ref: '#/components/parameters/ManifestId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
       responses: *ok
   /api/v1/releases/{manifestId}:rollback:
     post:
       tags: [Release]
       operationId: rollbackRelease
+      x-required-permission: release:rollback
       parameters: [{$ref: '#/components/parameters/ManifestId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
       requestBody: {$ref: '#/components/requestBodies/JsonObject'}
       responses: *ok
@@ -138,19 +153,35 @@ paths:
     put:
       tags: [Release]
       operationId: setKillSwitch
+      x-required-permission: release:kill-switch
       parameters: [{in: path, name: namespace, required: true, schema: {type: string}}, {$ref: '#/components/parameters/IdempotencyKey'}]
       requestBody: {$ref: '#/components/requestBodies/JsonObject'}
       responses: *ok
   /api/v1/compile:
-    post: {tags: [Compiler], operationId: compileArtifact, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+    post:
+      tags: [Compiler]
+      operationId: compileArtifact
+      description: Compile the exact approved graph version into a signed immutable artifact. A valid=false report is not stageable.
+      x-required-permission: definition:compile
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CompileRequest'}}}}
+      responses:
+        '200': {description: Deterministic compiler report, content: {application/json: {schema: {$ref: '#/components/schemas/CompileReport'}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/artifacts/{artifactId}:
-    get: {tags: [Compiler], operationId: getArtifact, parameters: [{$ref: '#/components/parameters/ArtifactId'}], responses: *ok}
+    get:
+      tags: [Compiler]
+      operationId: getArtifact
+      x-required-permission: artifact:read
+      parameters: [{$ref: '#/components/parameters/ArtifactId'}]
+      responses:
+        '200': {description: Signed artifact and provenance used to build the stage request, content: {application/json: {schema: {$ref: '#/components/schemas/ArtifactView'}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/fields:
     get: {tags: [Audience], operationId: listAudienceFields, responses: *list}
-    post: {tags: [Audience], operationId: registerAudienceField, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
+    post: {tags: [Audience], operationId: registerAudienceField, parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
   /api/v1/audiences:
     get: {tags: [Audience], operationId: listAudiences, responses: *list}
-    post: {tags: [Audience], operationId: createAudience, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
+    post: {tags: [Audience], operationId: createAudience, parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
   /api/v1/audiences/{segmentId}/versions/{version}:preview:
     post:
       tags: [Audience]
@@ -197,7 +228,15 @@ paths:
     put: {tags: [Decision], operationId: updateDecisionAudienceProjection, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
   /api/v1/funding/accounts:
     get: {tags: [Benefit], operationId: listFundingAccounts, responses: *list}
-    post: {tags: [Benefit], operationId: createFundingAccount, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
+    post:
+      tags: [Benefit]
+      operationId: createFundingAccount
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CreateFundingAccountRequest'}}}}
+      responses:
+        '201': {$ref: '#/components/responses/JsonObject'}
+        '400': {description: Missing or non-positive fencingEpoch returns INVALID_ARGUMENT with a readable detail, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/benefits:
     get:
       tags: [Benefit]
@@ -211,6 +250,7 @@ paths:
     get:
       tags: [Benefit]
       operationId: listBenefitSkus
+      x-required-permission: benefit:read
       parameters:
         - in: query
           name: status
@@ -218,8 +258,14 @@ paths:
           schema: {$ref: '#/components/schemas/BenefitSkuStatus', default: ACTIVE}
       responses:
         '200':
-          description: Tenant-scoped benefit center SKU templates
+          description: Tenant-scoped benefit center SKU templates. An empty array means this tenant has no matching ACTIVE SKU and is not an error.
           content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/BenefitSkuView'}}}}
+        '401':
+          description: BENEFIT_CATALOG_AUTH_REQUIRED — the dedicated benefit catalog machine authentication is missing or invalid.
+          content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+        '403':
+          description: BENEFIT_CATALOG_TENANT_MISMATCH when the delegated tenant is rejected; BENEFIT_CATALOG_ACCESS_DENIED for other authorization failures.
+          content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/benefits/{benefitId}:
     get:
@@ -264,6 +310,18 @@ paths:
         '202': {description: Recorded, risk-blocked, or idempotently replayed, content: {application/json: {schema: {$ref: '#/components/schemas/AwardIntentView'}}}}
         '503': {description: Risk evaluation is unavailable and the fail-closed result was recorded, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
         default: {$ref: '#/components/responses/Problem'}
+  /internal/v1/benefits:assert-releasable:
+    post:
+      tags: [Benefit]
+      operationId: assertBenefitReleaseEligibility
+      description: Internal fail-closed release gate for immutable BenefitDefinition references.
+      x-internal: true
+      x-required-permission: release:write
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/BenefitReleaseEligibilityRequest'}}}}
+      responses:
+        '200': {description: All referenced benefit versions remain releasable, content: {application/json: {schema: {$ref: '#/components/schemas/BenefitReleaseEligibility'}}}}
+        '409': {description: Referenced benefit is missing, inactive, unbound, type-incompatible, or its SKU is no longer ACTIVE, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/funding/accounts/{resourceKey}:advance-fence:
     post: {tags: [Benefit], operationId: advanceFundingFence, parameters: [{$ref: '#/components/parameters/ResourceKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
   /api/v1/promotion-applications:
@@ -286,7 +344,7 @@ paths:
   /api/v1/funding/reconciliation:
     get: {tags: [Benefit], operationId: reconcileFunding, responses: *ok}
   /api/v1/events/sources:
-    post: {tags: [Event], operationId: registerEventSource, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
+    post: {tags: [Event], operationId: registerEventSource, parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
   /api/v1/events:
     post: {tags: [Event], operationId: ingestEvent, requestBody: {$ref: '#/components/requestBodies/InboundEvent'}, responses: *accepted}
   /api/v1/quarantine:
@@ -346,7 +404,7 @@ paths:
     put: {tags: [Engagement], operationId: setFrequencyPolicy, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
   /api/v1/templates:
     get: {tags: [Engagement], operationId: listTemplates, responses: *list}
-    post: {tags: [Engagement], operationId: createTemplate, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
+    post: {tags: [Engagement], operationId: createTemplate, parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
   /api/v1/contacts:
     get:
       tags: [Engagement]
@@ -369,7 +427,7 @@ paths:
       requestBody: {$ref: '#/components/requestBodies/JsonObject'}
       responses: *ok
   /api/v1/experiments:
-    post: {tags: [Measurement], operationId: createExperiment, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
+    post: {tags: [Measurement], operationId: createExperiment, parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
   /api/v1/experiments/{experimentId}/versions/{version}:assign:
     post: {tags: [Measurement], operationId: assignExperiment, parameters: [{$ref: '#/components/parameters/ExperimentId'}, {$ref: '#/components/parameters/StringVersion'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
   /api/v1/experiments/{experimentId}/versions/{version}:check-srm:
@@ -418,7 +476,7 @@ components:
   securitySchemes:
     oidc: {type: openIdConnect, openIdConnectUrl: https://identity.example.invalid/.well-known/openid-configuration}
   parameters:
-    IdempotencyKey: {in: header, name: Idempotency-Key, required: true, schema: {type: string, minLength: 1, maxLength: 128}}
+    IdempotencyKey: {in: header, name: Idempotency-Key, required: true, schema: {type: string, minLength: 8, maxLength: 128, pattern: '^[a-zA-Z0-9_.:-]+$'}}
     DefinitionId: {in: path, name: definitionId, required: true, schema: {type: string}}
     Version: {in: path, name: version, required: true, schema: {type: integer, format: int64, minimum: 1}}
     StringVersion: {in: path, name: version, required: true, schema: {type: string}}
@@ -457,6 +515,16 @@ components:
     JsonObject: {type: object, additionalProperties: true}
     BenefitStatus: {type: string, enum: [DRAFT, ACTIVE, RETIRED]}
     BenefitSkuStatus: {type: string, enum: [DRAFT, PENDING_APPROVAL, ACTIVE, PAUSED, RETIRED]}
+    CreateFundingAccountRequest:
+      type: object
+      additionalProperties: false
+      required: [resourceKey, type, currency, authorized, fencingEpoch]
+      properties:
+        resourceKey: {type: string, minLength: 1}
+        type: {type: string, enum: [INVENTORY, BUDGET]}
+        currency: {type: string, minLength: 1}
+        authorized: {type: integer, format: int64, minimum: 0}
+        fencingEpoch: {type: integer, format: int64, minimum: 1}
     BenefitRequest:
       type: object
       additionalProperties: false
@@ -466,7 +534,11 @@ components:
         status: {$ref: '#/components/schemas/BenefitStatus'}
         resourceKey: {type: string, maxLength: 256}
         benefitSkuId: {type: [string, 'null'], maxLength: 128}
-        policy: {type: object, additionalProperties: true}
+        policy:
+          type: object
+          required: [type]
+          properties: {type: {type: string, enum: [CASH, COUPON, SERVICE_VOUCHER, REDEMPTION_CODE, PHYSICAL]}}
+          additionalProperties: true
     BenefitView:
       type: object
       additionalProperties: false
@@ -566,11 +638,87 @@ components:
         cell: {type: string}
         runtime: {type: string}
         namespace: {type: string}
-        artifacts: {type: array, items: {$ref: '#/components/schemas/JsonObject'}}
+        artifacts: {type: array, minItems: 1, items: {$ref: '#/components/schemas/ArtifactReference'}}
         schemaVersions: {type: object, additionalProperties: {type: string}}
         canaryBasisPoints: {type: integer, minimum: 0, maximum: 10000}
         activationAt: {type: string, format: date-time}
         approvalCaseIds: {type: array, items: {type: string}}
+    CompileRequest:
+      type: object
+      additionalProperties: false
+      required: [definitionId, definitionVersion, format, namespace, modelName]
+      properties:
+        definitionId: {type: string, minLength: 1}
+        definitionVersion: {type: integer, format: int64, minimum: 1}
+        format: {type: string, enum: [GRAPH, DRL, DMN, OFFER_POLICY, JOURNEY_PLAN]}
+        namespace: {type: string, minLength: 1}
+        modelName: {type: string, minLength: 1}
+        source: {type: [string, 'null'], maxLength: 1048576}
+        graph: {$ref: '../schema/graph/graph-definition.schema.json'}
+    CompileReport:
+      type: object
+      additionalProperties: false
+      required: [valid, artifactId, checksum, signatureKeyId, signature, abi, messages]
+      properties:
+        valid: {type: boolean}
+        artifactId: {type: [string, 'null']}
+        checksum: {type: [string, 'null'], pattern: '^sha256:[a-f0-9]{64}$'}
+        signatureKeyId: {type: [string, 'null']}
+        signature: {type: [string, 'null']}
+        abi: {type: [string, 'null']}
+        messages: {type: array, items: {type: string}}
+    ArtifactReference:
+      type: object
+      additionalProperties: false
+      required: [artifactId, type, uri, checksum, sourceDigest, signatureKeyId, signature, abi, definitionId, definitionVersion]
+      properties:
+        artifactId: {type: string, minLength: 1}
+        type: {type: string, minLength: 1}
+        uri: {type: string, minLength: 1}
+        checksum: {type: string, pattern: '^sha256:[a-f0-9]{64}$'}
+        sourceDigest: {type: string, pattern: '^sha256:[a-f0-9]{64}$'}
+        signatureKeyId: {type: string, minLength: 1}
+        signature: {type: string, minLength: 1}
+        abi: {type: string, minLength: 1}
+        definitionId: {type: string, minLength: 1}
+        definitionVersion: {type: integer, format: int64, minimum: 1}
+    ArtifactView:
+      allOf:
+        - {$ref: '#/components/schemas/ArtifactReference'}
+        - type: object
+          required: [payload, compiledAt]
+          properties:
+            payload: {type: string, contentEncoding: base64}
+            compiledAt: {type: string, format: date-time}
+    RuntimeAck:
+      type: object
+      additionalProperties: false
+      required: [manifestId, generation, runtimeId, cell, status, buildDigest, supportedAbis, warmedArtifactIds, capacity, acknowledgedAt, signatureKeyId, signature]
+      properties:
+        manifestId: {type: string, minLength: 1}
+        generation: {type: integer, format: int64, minimum: 1}
+        runtimeId: {type: string, minLength: 1}
+        cell: {type: string, minLength: 1}
+        status: {type: string, enum: [DOWNLOADING, VERIFIED, WARMING, READY, REJECTED]}
+        buildDigest: {type: string, minLength: 1}
+        supportedAbis: {type: array, uniqueItems: true, items: {type: string}}
+        warmedArtifactIds: {type: array, uniqueItems: true, items: {type: string}}
+        capacity: {type: integer, format: int64, minimum: 0}
+        acknowledgedAt: {type: string, format: date-time}
+        signatureKeyId: {type: string, minLength: 1}
+        signature: {type: string}
+    BenefitReleaseEligibilityRequest:
+      type: object
+      additionalProperties: false
+      required: [references]
+      properties: {references: {type: array, minItems: 1, uniqueItems: true, items: {type: string, pattern: '^.+@[1-9][0-9]*$'}}}
+    BenefitReleaseEligibility:
+      type: object
+      additionalProperties: false
+      required: [releasable, references]
+      properties:
+        releasable: {type: boolean, const: true}
+        references: {type: array, minItems: 1, uniqueItems: true, items: {type: string}}
     DecisionRequest:
       type: object
       additionalProperties: false

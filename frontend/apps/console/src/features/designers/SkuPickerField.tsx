@@ -78,7 +78,7 @@ export function SkuPickerField({
   if (skus.length === 0 && !value) {
     return (
       <div className="sku-bind">
-        <EmptyState title="权益中台尚无 ACTIVE 模板" detail="到权益发放中台投放模板后，再绑定到本权益。草稿可以先不绑。" />
+        <EmptyState title="本货主尚无已投放模板" detail="请用同一业务租户在权益中台创建并上线。其他租户的商品不会出现在这里。草稿可以先不绑。" />
       </div>
     )
   }

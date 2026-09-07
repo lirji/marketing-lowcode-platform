@@ -3,7 +3,9 @@ package com.acme.marketing.benefit.infrastructure;
 import com.acme.marketing.benefit.application.BenefitSkuCatalog;
 import com.acme.marketing.platform.error.ConflictException;
 import com.acme.marketing.platform.error.DependencyUnavailableException;
+import com.acme.marketing.platform.error.DomainException;
 import com.acme.marketing.platform.error.ForbiddenException;
+import com.acme.marketing.platform.error.UnauthorizedException;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import java.io.IOException;
@@ -17,14 +19,10 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * 通过权益中台 Admin API 提供营销只读 SKU 目录，并隔离每个租户的短时列表缓存。
+ * 通过权益中台内部只读 API 提供营销 SKU 目录，并隔离每个业务租户的短时列表缓存。
  */
 public final class HttpBenefitSkuCatalog implements BenefitSkuCatalog {
     private static final int PAGE_SIZE = 100;
@@ -93,7 +91,7 @@ public final class HttpBenefitSkuCatalog implements BenefitSkuCatalog {
     }
 
     private List<BenefitSkuView> fetchPage(String tenantId, SkuStatus status, String afterSkuId) {
-        StringBuilder path = new StringBuilder("/admin/v1/skus?status=")
+        StringBuilder path = new StringBuilder("/internal/v1/catalog/skus?status=")
                 .append(status.name()).append("&limit=").append(PAGE_SIZE);
         if (afterSkuId != null) {
             path.append("&afterSkuId=").append(URLEncoder.encode(afterSkuId, StandardCharsets.UTF_8));
@@ -101,14 +99,22 @@ public final class HttpBenefitSkuCatalog implements BenefitSkuCatalog {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(baseUrl + path))
                 .timeout(requestTimeout)
                 .header("Accept", "application/json")
-                // tenant 来自营销服务已验证的上下文，不能透传客户端自报 header。
+                // 该值来自营销已验证上下文；机器 Token 只认证调用者，不代表业务租户。
                 .header("X-Tenant-Id", tenantId)
                 .GET();
-        String authorization = bearerToken.isBlank() ? currentAuthorization() : "Bearer " + bearerToken;
-        if (authorization != null) request.header("Authorization", authorization);
+        // 目录是 M2M 契约：只使用专用机器身份，不能把当前人类会话 JWT 转发给权益中台。
+        if (!bearerToken.isBlank()) request.header("Authorization", "Bearer " + bearerToken);
         try {
             HttpResponse<String> response = http.send(request.build(), HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() == 401 || response.statusCode() == 403) {
+            if (response.statusCode() == 401) {
+                throw new UnauthorizedException("BENEFIT_CATALOG_AUTH_REQUIRED",
+                        "benefit catalog machine authentication is missing or invalid");
+            }
+            if (response.statusCode() == 403 && isTenantProblem(response.body())) {
+                throw new ForbiddenException("BENEFIT_CATALOG_TENANT_MISMATCH",
+                        "benefit catalog rejected the delegated business tenant");
+            }
+            if (response.statusCode() == 403) {
                 throw new ForbiddenException("BENEFIT_CATALOG_ACCESS_DENIED",
                         "current identity cannot read the tenant benefit catalog");
             }
@@ -122,17 +128,21 @@ public final class HttpBenefitSkuCatalog implements BenefitSkuCatalog {
             throw unavailable("benefit center request was interrupted", interrupted);
         } catch (IOException | RuntimeException failure) {
             if (failure instanceof DependencyUnavailableException dependencyFailure) throw dependencyFailure;
-            if (failure instanceof ForbiddenException forbidden) throw forbidden;
+            if (failure instanceof DomainException domainFailure) throw domainFailure;
             throw unavailable("benefit center request failed", failure);
         }
     }
 
-    private static String currentAuthorization() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        Jwt jwt = authentication instanceof JwtAuthenticationToken token
-                ? token.getToken()
-                : authentication != null && authentication.getPrincipal() instanceof Jwt value ? value : null;
-        return jwt == null ? null : "Bearer " + jwt.getTokenValue();
+    /** 下游租户问题有稳定 code；解析失败时按普通权限不足处理，避免把任意 403 误标为串租户。 */
+    private boolean isTenantProblem(String body) {
+        try {
+            String code = mapper.readTree(body).path("code").asString();
+            return "BENEFIT_TENANT_REQUIRED".equals(code)
+                    || "BENEFIT_TENANT_MISMATCH".equals(code)
+                    || "BENEFIT_TENANT_UNMAPPED".equals(code);
+        } catch (RuntimeException ignored) {
+            return false;
+        }
     }
 
     private static DependencyUnavailableException unavailable(String message, Throwable cause) {

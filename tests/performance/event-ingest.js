@@ -44,7 +44,7 @@ export function setup() {
       schemaVersions: ['1.0.0'],
       maxLatenessSeconds: 300,
     }),
-    { headers },
+    { headers: { ...headers, 'Idempotency-Key': `event-source-${runId}` } },
   );
   if (response.status !== 201) {
     fail(`event load setup failed (${response.status}): ${response.body}`);

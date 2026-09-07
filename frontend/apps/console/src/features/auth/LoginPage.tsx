@@ -93,13 +93,13 @@ export function LoginPage() {
           <h2 className="login-form-title">{isOidc ? '欢迎进入营销中枢' : '进入本地开发模式'}</h2>
           <p className="login-form-sub">
             {isOidc
-              ? '输入已开通的组织，继续前往统一身份认证。'
-              : '当前为本地免登录模式。开发租户会写入 X-Dev-Tenant-Id，默认 retail-cn。'}
+              ? '这里填登录组织 marketing-platform，不是货主。货主来自 JWT 的 tenant_id。'
+              : '这里填货主业务租户，写入 X-Dev-Tenant-Id。必须与权益中台建商品时相同，目录才会有货。权益 DEV 默认是 dev-tenant；填不一样则列表为空，不要去换登录组织。'}
           </p>
 
           <form onSubmit={(event) => void submit(event)}>
             <label className="login-field">
-              <span>{isOidc ? '所属组织 / 租户' : '开发租户 ID'}</span>
+              <span>{isOidc ? '登录组织' : '货主业务租户'}</span>
               <span className={`login-input ${tenantError ? 'is-invalid' : ''}`}>
                 <Building2 size={16} aria-hidden />
                 <input
@@ -111,7 +111,7 @@ export function LoginPage() {
                   disabled={auth.redirecting}
                   autoComplete="organization"
                   spellCheck={false}
-                  aria-label={isOidc ? '所属组织 / 租户' : '开发租户 ID'}
+                  aria-label={isOidc ? '登录组织' : '货主业务租户'}
                   placeholder={isOidc ? '例如 marketing-platform' : DEFAULT_DEV_TENANT}
                 />
               </span>
@@ -120,7 +120,7 @@ export function LoginPage() {
 
             {suggested ? (
               <div className="login-tenants">
-                <span className="login-tenants-label">可用组织</span>
+                <span className="login-tenants-label">{isOidc ? '可用组织' : '建议货主'}</span>
                 <button
                   type="button"
                   className={`login-tenant-chip ${tenant.trim() === suggested ? 'is-active' : ''}`}

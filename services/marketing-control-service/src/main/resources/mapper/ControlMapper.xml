@@ -1,0 +1,386 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.control.infrastructure.persistence.mapper.ControlMapper">
+
+    <insert id="insertCampaign">
+        INSERT INTO mk_campaign
+            (tenant_id, campaign_id, name, objective, status, organization_id, shop_id, created_at, updated_at)
+        VALUES
+            (#{tenantId}, #{campaignId}, #{name}, #{objective}, #{status}, #{organizationId}, #{shopId},
+             #{createdAt}, #{updatedAt})
+    </insert>
+    <select id="selectCampaigns"
+            resultType="com.acme.marketing.control.application.ControlRepository$CampaignRow">
+        SELECT campaign_id AS campaignId, name, objective, status, created_at AS createdAt, updated_at AS updatedAt
+        FROM mk_campaign
+        WHERE tenant_id = #{tenantId}
+        <if test="!organizations.contains('*')">
+            AND organization_id IN
+            <foreach collection="organizations" item="organization" open="(" separator="," close=")">
+                #{organization}
+            </foreach>
+        </if>
+        <if test="!shops.contains('*')">
+            <choose>
+                <when test="shops.isEmpty()">AND (shop_id IS NULL OR shop_id = '')</when>
+                <otherwise>
+                    AND (shop_id IS NULL OR shop_id = '' OR shop_id IN
+                    <foreach collection="shops" item="shop" open="(" separator="," close=")">
+                        #{shop}
+                    </foreach>)
+                </otherwise>
+            </choose>
+        </if>
+        ORDER BY created_at DESC
+    </select>
+    <select id="selectCampaignOwnership"
+            resultType="com.acme.marketing.control.application.ControlRepository$CampaignOwnershipRow">
+        SELECT organization_id AS organizationId, shop_id AS shopId
+        FROM mk_campaign
+        WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId}
+        <if test="lock">FOR UPDATE</if>
+    </select>
+
+    <select id="selectDefinitionOwners" resultType="java.lang.String">
+        SELECT DISTINCT campaign_id FROM mk_definition_version
+        WHERE tenant_id = #{tenantId} AND definition_id = #{definitionId}
+    </select>
+    <sql id="definitionColumns">
+        campaign_id AS campaignId, definition_id AS definitionId, version_no AS versionNo, dialect,
+        graph_json AS graphJson, semantic_hash AS semanticHash, status, created_by AS createdBy,
+        created_at AS createdAt, updated_at AS updatedAt
+    </sql>
+    <select id="selectDefinitionBySemanticHash"
+            resultType="com.acme.marketing.control.application.ControlRepository$DefinitionRow">
+        SELECT <include refid="definitionColumns"/> FROM mk_definition_version
+        WHERE tenant_id = #{tenantId} AND definition_id = #{definitionId} AND semantic_hash = #{semanticHash}
+        LIMIT 1
+    </select>
+    <select id="selectLatestDefinitionVersion" resultType="java.lang.Long">
+        SELECT MAX(version_no) FROM mk_definition_version
+        WHERE tenant_id = #{tenantId} AND definition_id = #{definitionId}
+    </select>
+    <insert id="insertDefinition">
+        INSERT INTO mk_definition_version
+            (tenant_id, definition_id, campaign_id, version_no, dialect, graph_json, semantic_hash,
+             status, created_by, created_at, updated_at)
+        VALUES
+            (#{tenantId}, #{definitionId}, #{campaignId}, #{versionNo}, #{dialect}, #{graphJson},
+             #{semanticHash}, #{status}, #{createdBy}, #{createdAt}, #{updatedAt})
+    </insert>
+    <select id="selectLatestDefinition"
+            resultType="com.acme.marketing.control.application.ControlRepository$DefinitionRow">
+        SELECT <include refid="definitionColumns"/> FROM mk_definition_version
+        WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId} AND dialect = #{dialect}
+        ORDER BY version_no DESC, updated_at DESC, definition_id
+        LIMIT 1
+    </select>
+    <select id="selectDefinition"
+            resultType="com.acme.marketing.control.application.ControlRepository$DefinitionRow">
+        SELECT <include refid="definitionColumns"/> FROM mk_definition_version
+        WHERE tenant_id = #{tenantId} AND definition_id = #{definitionId} AND version_no = #{version}
+    </select>
+    <update id="updateDefinitionStatus">
+        UPDATE mk_definition_version SET status = #{status}, updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND definition_id = #{definitionId} AND version_no = #{version}
+    </update>
+
+    <insert id="insertApprovalCase">
+        INSERT INTO mk_approval_case
+            (tenant_id, case_id, definition_id, definition_version, submitted_by, required_roles,
+             status, created_at, updated_at)
+        VALUES
+            (#{tenantId}, #{caseId}, #{definitionId}, #{definitionVersion}, #{submittedBy},
+             #{requiredRoles}, #{status}, #{createdAt}, #{updatedAt})
+    </insert>
+    <insert id="insertTerms">
+        INSERT INTO mk_terms_snapshot
+            (tenant_id, terms_id, definition_id, definition_version, content_json, content_hash, created_at)
+        VALUES
+            (#{tenantId}, #{termsId}, #{definitionId}, #{definitionVersion}, #{contentJson},
+             #{contentHash}, #{createdAt})
+    </insert>
+    <insert id="insertApprovalDecision">
+        INSERT INTO mk_approval_decision (tenant_id, case_id, role_name, actor_id, decided_at)
+        VALUES (#{tenantId}, #{caseId}, #{roleName}, #{actorId}, #{decidedAt})
+    </insert>
+    <update id="updateApprovalCase">
+        UPDATE mk_approval_case SET status = #{status}, updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND case_id = #{caseId}
+    </update>
+    <sql id="approvalColumns">
+        case_id AS caseId, definition_id AS definitionId, definition_version AS definitionVersion,
+        submitted_by AS submittedBy, required_roles AS requiredRoles, status, updated_at AS updatedAt
+    </sql>
+    <select id="selectApprovalCase"
+            resultType="com.acme.marketing.control.application.ControlRepository$ApprovalCaseRow">
+        SELECT <include refid="approvalColumns"/> FROM mk_approval_case
+        WHERE tenant_id = #{tenantId} AND case_id = #{caseId}
+        <if test="lock">FOR UPDATE</if>
+    </select>
+    <select id="selectApprovalCases"
+            resultType="com.acme.marketing.control.application.ControlRepository$ApprovalCaseRow">
+        SELECT <include refid="approvalColumns"/> FROM mk_approval_case
+        WHERE tenant_id = #{tenantId}
+        ORDER BY updated_at DESC
+        LIMIT #{limit}
+    </select>
+    <select id="selectApprovalDecisions"
+            resultType="com.acme.marketing.control.application.ControlRepository$ApprovalDecisionRow">
+        SELECT role_name AS roleName, actor_id AS actorId
+        FROM mk_approval_decision WHERE tenant_id = #{tenantId} AND case_id = #{caseId}
+    </select>
+    <select id="selectLatestTerms"
+            resultType="com.acme.marketing.control.application.ControlRepository$TermsRow">
+        SELECT terms_id AS termsId, content_json AS contentJson, content_hash AS contentHash,
+               created_at AS createdAt
+        FROM mk_terms_snapshot
+        WHERE tenant_id = #{tenantId} AND definition_id = #{definitionId} AND definition_version = #{version}
+        ORDER BY created_at DESC
+        LIMIT 1
+    </select>
+
+    <insert id="upsertAuditHead">
+        INSERT INTO mk_audit_head (tenant_id, last_chain_index, last_entry_hash, updated_at)
+        VALUES (#{tenantId}, 0, 'GENESIS', #{updatedAt})
+        ON DUPLICATE KEY UPDATE tenant_id = tenant_id
+    </insert>
+    <select id="selectAuditHeadForUpdate"
+            resultType="com.acme.marketing.control.application.ControlRepository$AuditHeadRow">
+        SELECT last_chain_index AS chainIndex, last_entry_hash AS entryHash
+        FROM mk_audit_head WHERE tenant_id = #{tenantId} FOR UPDATE
+    </select>
+    <insert id="insertAudit">
+        INSERT INTO mk_audit
+            (tenant_id, audit_id, chain_index, actor_id, action_name, resource_ref, occurred_at,
+             previous_hash, entry_hash)
+        VALUES
+            (#{tenantId}, #{auditId}, #{chainIndex}, #{actorId}, #{actionName}, #{resourceRef},
+             #{occurredAt}, #{previousHash}, #{entryHash})
+    </insert>
+    <update id="updateAuditHead">
+        UPDATE mk_audit_head
+        SET last_chain_index = #{chainIndex}, last_entry_hash = #{entryHash}, updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND last_chain_index = #{expectedChainIndex}
+          AND last_entry_hash = #{expectedEntryHash}
+    </update>
+
+    <insert id="insertManifest">
+        INSERT INTO mk_release_manifest
+            (tenant_id, manifest_id, environment_name, cell_id, runtime_name, namespace_name,
+             generation_no, state_name, manifest_json, created_at)
+        VALUES
+            (#{tenantId}, #{manifestId}, #{environmentName}, #{cellId}, #{runtimeName}, #{namespaceName},
+             #{generationNo}, #{stateName}, #{manifestJson}, #{createdAt})
+    </insert>
+    <update id="updateSlotLatestGeneration">
+        UPDATE mk_release_slot SET latest_generation = #{latestGeneration}, updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND environment_name = #{environmentName} AND cell_id = #{cellId}
+          AND runtime_name = #{runtimeName} AND namespace_name = #{namespaceName}
+    </update>
+    <update id="updateRuntimeAck">
+        UPDATE mk_runtime_ack
+        SET status_name = #{statusName}, build_digest = #{buildDigest}, supported_abis = #{supportedAbis},
+            warmed_artifact_ids = #{warmedArtifactIds}, capacity_value = #{capacityValue},
+            acknowledged_at = #{acknowledgedAt}, signature_key_id = #{signatureKeyId},
+            signature_value = #{signatureValue}
+        WHERE tenant_id = #{tenantId} AND manifest_id = #{manifestId} AND runtime_id = #{runtimeId}
+    </update>
+    <insert id="insertRuntimeAck">
+        INSERT INTO mk_runtime_ack
+            (tenant_id, manifest_id, runtime_id, status_name, build_digest, supported_abis,
+             warmed_artifact_ids, capacity_value, acknowledged_at, signature_key_id, signature_value)
+        VALUES
+            (#{tenantId}, #{manifestId}, #{runtimeId}, #{statusName}, #{buildDigest}, #{supportedAbis},
+             #{warmedArtifactIds}, #{capacityValue}, #{acknowledgedAt}, #{signatureKeyId}, #{signatureValue})
+    </insert>
+    <update id="compareAndSetSlot">
+        UPDATE mk_release_slot
+        SET stable_generation = #{stableGeneration}, desired_generation = #{desiredGeneration},
+            activation_sequence = #{activationSequence}, updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND environment_name = #{environmentName} AND cell_id = #{cellId}
+          AND runtime_name = #{runtimeName} AND namespace_name = #{namespaceName}
+          AND desired_generation = #{expectedDesiredGeneration}
+          AND activation_sequence = #{expectedActivationSequence}
+    </update>
+    <update id="updateManifestState">
+        UPDATE mk_release_manifest SET state_name = #{stateName}
+        WHERE tenant_id = #{tenantId} AND manifest_id = #{manifestId}
+    </update>
+    <insert id="insertKillSwitch">
+        INSERT INTO mk_kill_switch
+            (tenant_id, namespace_name, switch_sequence, enabled_value, reason_text,
+             updated_by, updated_at, directive_json)
+        VALUES
+            (#{tenantId}, #{namespaceName}, #{switchSequence}, #{enabledValue}, #{reasonText},
+             #{updatedBy}, #{updatedAt}, #{directiveJson})
+    </insert>
+    <select id="selectKillSwitchSequenceForUpdate" resultType="java.lang.Long">
+        SELECT switch_sequence FROM mk_kill_switch
+        WHERE tenant_id = #{tenantId} AND namespace_name = #{namespace}
+        FOR UPDATE
+    </select>
+    <update id="updateKillSwitch">
+        UPDATE mk_kill_switch
+        SET switch_sequence = #{switchSequence}, enabled_value = #{enabledValue}, reason_text = #{reasonText},
+            updated_by = #{updatedBy}, updated_at = #{updatedAt}, directive_json = #{directiveJson}
+        WHERE tenant_id = #{tenantId} AND namespace_name = #{namespaceName}
+    </update>
+    <select id="selectManifests"
+            resultType="com.acme.marketing.control.application.ControlRepository$ManifestRow">
+        SELECT manifest_json AS manifestJson, state_name AS stateName
+        FROM mk_release_manifest WHERE tenant_id = #{tenantId}
+        ORDER BY created_at DESC LIMIT #{limit}
+    </select>
+    <select id="selectReadiness"
+            resultType="com.acme.marketing.control.application.ControlRepository$ReadinessRow">
+        SELECT COUNT(*) AS readyCount, COALESCE(SUM(capacity_value), 0) AS totalCapacity
+        FROM mk_runtime_ack
+        WHERE tenant_id = #{tenantId} AND manifest_id = #{manifestId}
+          AND status_name = #{statusName} AND acknowledged_at &gt;= #{leaseFloor}
+    </select>
+    <select id="selectDefinitionScopes"
+            resultType="com.acme.marketing.control.application.ControlRepository$ResourceScopeRow">
+        SELECT campaign.organization_id AS organizationId, campaign.shop_id AS shopId
+        FROM mk_definition_version definition
+        JOIN mk_campaign campaign
+          ON campaign.tenant_id = definition.tenant_id AND campaign.campaign_id = definition.campaign_id
+        WHERE definition.tenant_id = #{tenantId} AND definition.definition_id = #{definitionId}
+          AND definition.version_no = #{version}
+        <if test="approvedOnly">AND definition.status = 'APPROVED'</if>
+    </select>
+    <select id="countApprovedCase" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM mk_approval_case
+        WHERE tenant_id = #{tenantId} AND case_id = #{caseId} AND definition_id = #{definitionId}
+          AND definition_version = #{version} AND status = 'APPROVED'
+    </select>
+    <select id="selectApprovedSemanticHash" resultType="java.lang.String">
+        SELECT semantic_hash FROM mk_definition_version
+        WHERE tenant_id = #{tenantId} AND definition_id = #{definitionId} AND version_no = #{version}
+          AND status = 'APPROVED'
+    </select>
+    <select id="selectApprovedGraphJson" resultType="java.lang.String">
+        SELECT graph_json FROM mk_definition_version
+        WHERE tenant_id = #{tenantId} AND definition_id = #{definitionId} AND version_no = #{version}
+          AND status = 'APPROVED'
+    </select>
+    <insert id="insertReleaseSlot">
+        INSERT INTO mk_release_slot
+            (tenant_id, environment_name, cell_id, runtime_name, namespace_name, stable_generation,
+             desired_generation, latest_generation, activation_sequence, updated_at)
+        VALUES
+            (#{tenantId}, #{environmentName}, #{cellId}, #{runtimeName}, #{namespaceName},
+             #{stableGeneration}, #{desiredGeneration}, #{latestGeneration}, #{activationSequence}, #{updatedAt})
+    </insert>
+    <select id="selectReleaseSlot"
+            resultType="com.acme.marketing.control.application.ControlRepository$ReleaseSlotRow">
+        SELECT stable_generation AS stableGeneration, desired_generation AS desiredGeneration,
+               latest_generation AS latestGeneration, activation_sequence AS activationSequence
+        FROM mk_release_slot
+        WHERE tenant_id = #{tenantId} AND environment_name = #{environment} AND cell_id = #{cell}
+          AND runtime_name = #{runtime} AND namespace_name = #{namespace}
+        <if test="lock">FOR UPDATE</if>
+    </select>
+    <select id="selectRetainedGenerations" resultType="java.lang.Long">
+        SELECT generation_no FROM mk_release_manifest
+        WHERE tenant_id = #{tenantId} AND environment_name = #{environment} AND cell_id = #{cell}
+          AND runtime_name = #{runtime} AND namespace_name = #{namespace} AND state_name = 'ACTIVE'
+        ORDER BY generation_no DESC LIMIT #{limit}
+    </select>
+    <select id="selectManifest"
+            resultType="com.acme.marketing.control.application.ControlRepository$ManifestRow">
+        SELECT manifest_json AS manifestJson, state_name AS stateName
+        FROM mk_release_manifest WHERE tenant_id = #{tenantId} AND manifest_id = #{manifestId}
+        <if test="lock">FOR UPDATE</if>
+    </select>
+    <select id="selectManifestByGeneration"
+            resultType="com.acme.marketing.control.application.ControlRepository$ManifestRow">
+        SELECT manifest_json AS manifestJson, state_name AS stateName
+        FROM mk_release_manifest
+        WHERE tenant_id = #{tenantId} AND environment_name = #{environment} AND cell_id = #{cell}
+          AND runtime_name = #{runtime} AND namespace_name = #{namespace} AND generation_no = #{generation}
+    </select>
+    <insert id="insertDirective">
+        INSERT INTO mk_activation_directive
+            (tenant_id, directive_id, environment_name, cell_id, runtime_name, namespace_name,
+             activation_sequence, generation_no, directive_json, created_at)
+        VALUES
+            (#{tenantId}, #{directiveId}, #{environmentName}, #{cellId}, #{runtimeName}, #{namespaceName},
+             #{activationSequence}, #{generationNo}, #{directiveJson}, #{createdAt})
+    </insert>
+    <insert id="insertOutbox">
+        INSERT INTO mk_outbox
+            (tenant_id, event_id, aggregate_type, aggregate_id, event_type, payload_json, occurred_at,
+             published_at, destination_topic, partition_key, stream_sequence, publish_attempts,
+             next_attempt_at, last_error)
+        VALUES
+            (#{tenantId}, #{eventId}, #{aggregateType}, #{aggregateId}, #{eventType}, #{payloadJson},
+             #{occurredAt}, #{publishedAt}, #{destinationTopic}, #{partitionKey}, #{streamSequence},
+             #{publishAttempts}, #{nextAttemptAt}, #{lastError})
+    </insert>
+    <select id="selectLatestDirectiveJson" resultType="java.lang.String">
+        SELECT directive_json FROM mk_activation_directive
+        WHERE tenant_id = #{tenantId} AND environment_name = #{environment} AND cell_id = #{cell}
+          AND runtime_name = #{runtime} AND namespace_name = #{namespace} AND generation_no = #{generation}
+        ORDER BY activation_sequence DESC LIMIT 1
+    </select>
+
+    <insert id="insertCommand">
+        INSERT INTO mk_control_command
+            (tenant_id, operation_name, idempotency_key, payload_hash, state_name,
+             response_json, created_at, expires_at)
+        VALUES
+            (#{tenantId}, #{operationName}, #{idempotencyKey}, #{payloadHash}, #{stateName},
+             #{responseJson}, #{createdAt}, #{expiresAt})
+    </insert>
+    <select id="selectCommandForUpdate"
+            resultType="com.acme.marketing.control.application.ControlRepository$CommandRow">
+        SELECT payload_hash AS payloadHash, state_name AS stateName, response_json AS responseJson,
+               expires_at AS expiresAt
+        FROM mk_control_command
+        WHERE tenant_id = #{tenantId} AND operation_name = #{operationName}
+          AND idempotency_key = #{idempotencyKey}
+        FOR UPDATE
+    </select>
+    <delete id="deleteCommand">
+        DELETE FROM mk_control_command
+        WHERE tenant_id = #{tenantId} AND operation_name = #{operationName}
+          AND idempotency_key = #{idempotencyKey}
+    </delete>
+    <update id="updateCommandCompleted">
+        UPDATE mk_control_command SET state_name = 'COMPLETED', response_json = #{responseJson}
+        WHERE tenant_id = #{tenantId} AND operation_name = #{operationName}
+          AND idempotency_key = #{idempotencyKey}
+    </update>
+
+    <select id="selectNextOutbox"
+            resultType="com.acme.marketing.control.application.ReleaseOutboxRepository$PendingEvent">
+        SELECT candidate.tenant_id AS tenantId, candidate.event_id AS eventId,
+               candidate.destination_topic AS topic, candidate.partition_key AS partitionKey,
+               candidate.payload_json AS payload, candidate.publish_attempts AS attempts
+        FROM mk_outbox candidate
+        WHERE candidate.published_at IS NULL AND candidate.next_attempt_at &lt;= #{now}
+          AND NOT EXISTS (
+              SELECT 1 FROM mk_outbox predecessor
+              WHERE predecessor.tenant_id = candidate.tenant_id
+                AND predecessor.partition_key = candidate.partition_key
+                AND predecessor.published_at IS NULL
+                AND predecessor.stream_sequence &lt; candidate.stream_sequence
+          )
+        ORDER BY candidate.occurred_at, candidate.stream_sequence
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+    </select>
+    <update id="updateOutboxPublished">
+        UPDATE mk_outbox SET published_at = #{publishedAt}, publish_attempts = #{attempts}, last_error = ''
+        WHERE tenant_id = #{tenantId} AND event_id = #{eventId} AND published_at IS NULL
+    </update>
+    <update id="updateOutboxRetry">
+        UPDATE mk_outbox
+        SET publish_attempts = #{attempts}, next_attempt_at = #{nextAttemptAt}, last_error = #{error}
+        WHERE tenant_id = #{tenantId} AND event_id = #{eventId} AND published_at IS NULL
+    </update>
+
+</mapper>

@@ -9,25 +9,22 @@ import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.error.ConflictException;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-/** Materializes exactly-once Flink output through idempotent Kafka coordinates and a local dispatch outbox. */
+/** 通过 Kafka 坐标幂等和本地 dispatch outbox 投影 Flink 旅程输出。 */
 @Service
 public class JourneyOutputProjector {
-    private final JdbcTemplate jdbc;
+    private final JourneyRepository repository;
     private final ObjectMapper mapper;
     private final Clock clock;
 
-    public JourneyOutputProjector(JdbcTemplate jdbc, ObjectMapper mapper, Clock clock) {
-        this.jdbc = jdbc;
+    public JourneyOutputProjector(JourneyRepository repository, ObjectMapper mapper, Clock clock) {
+        this.repository = repository;
         this.mapper = mapper;
         this.clock = clock;
     }
@@ -44,25 +41,21 @@ public class JourneyOutputProjector {
         String tenantId = tenant(root, eventType);
         String enrollmentId = enrollment(root, eventType);
         String payloadHash = Digests.sha256Hex(payload);
-        List<Receipt> received = jdbc.query("select payload_hash,event_type from mk_journey_output_receipt where source_topic=? and source_partition=? and source_offset=?",
-                (rs, rowNum) -> new Receipt(rs.getString(1), rs.getString(2)), topic, partition, offset);
-        if (!received.isEmpty()) {
-            Receipt prior = received.getFirst();
+        var received = repository.findOutputReceipt(topic, partition, offset);
+        if (received.isPresent()) {
+            JourneyRepository.OutputReceiptRow prior = received.orElseThrow();
             if (!prior.payloadHash().equals(payloadHash) || !prior.eventType().equals(eventType)) {
                 throw new ConflictException("JOURNEY_OUTPUT_OFFSET_COLLISION",
                         "journey output coordinate was reused with another payload");
             }
             return new ProjectionResult(eventType, false, true);
         }
-        try {
-            jdbc.update("insert into mk_journey_output_receipt(source_topic,source_partition,source_offset,tenant_id,enrollment_id,event_type,payload_hash,consumed_at) values(?,?,?,?,?,?,?,?)",
-                    topic, partition, offset, tenantId, enrollmentId, eventType, payloadHash,
-                    format(clock.instant()));
-        } catch (DuplicateKeyException race) {
-            List<Receipt> winner = jdbc.query("select payload_hash,event_type from mk_journey_output_receipt where source_topic=? and source_partition=? and source_offset=?",
-                    (rs, rowNum) -> new Receipt(rs.getString(1), rs.getString(2)), topic, partition, offset);
-            if (!winner.isEmpty() && winner.getFirst().payloadHash().equals(payloadHash)
-                    && winner.getFirst().eventType().equals(eventType)) {
+        boolean saved = repository.trySaveOutputReceipt(new JourneyRepository.OutputReceiptWrite(topic,
+                partition, offset, tenantId, enrollmentId, eventType, payloadHash, format(clock.instant())));
+        if (!saved) {
+            var winner = repository.findOutputReceipt(topic, partition, offset);
+            if (winner.isPresent() && winner.orElseThrow().payloadHash().equals(payloadHash)
+                    && winner.orElseThrow().eventType().equals(eventType)) {
                 return new ProjectionResult(eventType, false, true);
             }
             throw new ConflictException("JOURNEY_OUTPUT_OFFSET_COLLISION",
@@ -72,12 +65,10 @@ public class JourneyOutputProjector {
             case "JOURNEY_STATE_CHANGED" -> applyState(value(payload, JourneyStateChangedEvent.class),
                     topic, partition, offset);
             case "JOURNEY_EFFECT_COMMAND" -> applyEffect(value(payload, JourneyEffectCommand.class));
-            case "JOURNEY_STATE_EXPIRED" -> jdbc.update(
-                    "update mk_enrollment set status_name='EXPIRED',updated_at=? where tenant_id=? and enrollment_id=?",
-                    format(clock.instant()), tenantId, enrollmentId);
-            case "JOURNEY_TIMER_RETRIES_EXHAUSTED" -> jdbc.update(
-                    "update mk_enrollment set status_name='FAILED',updated_at=? where tenant_id=? and enrollment_id=?",
-                    format(clock.instant()), tenantId, enrollmentId);
+            case "JOURNEY_STATE_EXPIRED" -> repository.markEnrollmentExpired(
+                    tenantId, enrollmentId, format(clock.instant()));
+            case "JOURNEY_TIMER_RETRIES_EXHAUSTED" -> repository.markEnrollmentFailed(
+                    tenantId, enrollmentId, format(clock.instant()));
             case "JOURNEY_EXECUTION_PAUSED" -> { /* receipt is the operational audit trail */ }
             default -> throw new IllegalArgumentException("unsupported journey output event: " + eventType);
         }
@@ -86,52 +77,44 @@ public class JourneyOutputProjector {
 
     private void applyState(JourneyStateChangedEvent event, String topic, int partition, long offset) {
         EnrollmentSnapshot snapshot = event.snapshot();
-        List<EnrollmentRow> rows = jdbc.query("select journey_id,journey_version,subject_token,projection_topic,projection_partition,projection_offset from mk_enrollment where tenant_id=? and enrollment_id=? for update",
-                (rs, rowNum) -> new EnrollmentRow(rs.getString(1), rs.getLong(2), rs.getString(3),
-                        rs.getString(4), rs.getInt(5), rs.getLong(6)),
-                snapshot.tenantId(), snapshot.enrollmentId());
-        if (rows.isEmpty()) {
-            Integer plan = jdbc.query("select count(*) from mk_journey_definition where tenant_id=? and journey_id=? and version_no=?",
-                    rs -> rs.next() ? rs.getInt(1) : 0, snapshot.tenantId(), snapshot.journeyId(),
-                    snapshot.journeyVersion());
-            if (plan == null || plan == 0) {
+        var currentRow = repository.findProjectedEnrollmentForUpdate(snapshot.tenantId(), snapshot.enrollmentId());
+        if (currentRow.isEmpty()) {
+            int plan = repository.countDefinition(
+                    snapshot.tenantId(), snapshot.journeyId(), snapshot.journeyVersion());
+            if (plan == 0) {
                 throw new ConflictException("JOURNEY_PLAN_NOT_INSTALLED",
                         "state arrived before its signed journey plan was installed");
             }
-            jdbc.update("insert into mk_enrollment(tenant_id,enrollment_id,journey_id,journey_version,subject_token,trigger_event_id,status_name,current_node_id,snapshot_json,projection_topic,projection_partition,projection_offset,created_at,updated_at) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    snapshot.tenantId(), snapshot.enrollmentId(), snapshot.journeyId(), snapshot.journeyVersion(),
-                    snapshot.subjectToken(), event.sourceSignalId(), snapshot.status().name(),
-                    snapshot.currentNodeId(), json(snapshot), topic, partition, offset,
-                    format(Instant.ofEpochMilli(event.projectedAtEpochMillis())), format(snapshot.updatedAt()));
+            repository.saveProjectedEnrollment(new JourneyRepository.ProjectedEnrollmentWrite(snapshot.tenantId(),
+                    snapshot.enrollmentId(), snapshot.journeyId(), snapshot.journeyVersion(), snapshot.subjectToken(),
+                    event.sourceSignalId(), snapshot.status().name(), snapshot.currentNodeId(), json(snapshot),
+                    topic, partition, offset, format(Instant.ofEpochMilli(event.projectedAtEpochMillis())),
+                    format(snapshot.updatedAt())));
             return;
         }
-        EnrollmentRow current = rows.getFirst();
+        JourneyRepository.ProjectedEnrollmentRow current = currentRow.orElseThrow();
         if (!current.journeyId().equals(snapshot.journeyId())
                 || current.journeyVersion() != snapshot.journeyVersion()
                 || !current.subjectToken().equals(snapshot.subjectToken())) {
             throw new ConflictException("JOURNEY_OUTPUT_IDENTITY_CONFLICT",
                     "projected journey state changed an immutable enrollment identity");
         }
-        if (!current.topic().isBlank()
-                && (!current.topic().equals(topic) || current.partition() != partition)) {
+        if (!current.projectionTopic().isBlank()
+                && (!current.projectionTopic().equals(topic) || current.projectionPartition() != partition)) {
             throw new ConflictException("JOURNEY_OUTPUT_PARTITION_CHANGED",
                     "journey output topic partition count requires a controlled state migration");
         }
-        if (current.partition() == partition && current.offset() >= offset) return;
-        jdbc.update("update mk_enrollment set status_name=?,current_node_id=?,snapshot_json=?,projection_topic=?,projection_partition=?,projection_offset=?,updated_at=? where tenant_id=? and enrollment_id=?",
-                snapshot.status().name(), snapshot.currentNodeId(), json(snapshot), topic, partition, offset,
-                format(snapshot.updatedAt()), snapshot.tenantId(), snapshot.enrollmentId());
+        if (current.projectionPartition() == partition && current.projectionOffset() >= offset) return;
+        repository.updateProjectedEnrollment(new JourneyRepository.ProjectedEnrollmentUpdate(snapshot.tenantId(),
+                snapshot.enrollmentId(), snapshot.status().name(), snapshot.currentNodeId(), json(snapshot),
+                topic, partition, offset, format(snapshot.updatedAt())));
     }
 
     private void applyEffect(JourneyEffectCommand event) {
-        List<EnrollmentIdentity> enrollments = jdbc.query("select journey_id,journey_version,subject_token from mk_enrollment where tenant_id=? and enrollment_id=?",
-                (rs, rowNum) -> new EnrollmentIdentity(rs.getString(1), rs.getLong(2), rs.getString(3)),
-                event.tenantId(), event.enrollmentId());
-        if (enrollments.isEmpty()) {
-            throw new ConflictException("JOURNEY_STATE_NOT_PROJECTED",
-                    "effect cannot be dispatched before enrollment state");
-        }
-        EnrollmentIdentity identity = enrollments.getFirst();
+        JourneyRepository.EnrollmentIdentityRow identity = repository.findEnrollmentIdentity(
+                        event.tenantId(), event.enrollmentId())
+                .orElseThrow(() -> new ConflictException("JOURNEY_STATE_NOT_PROJECTED",
+                        "effect cannot be dispatched before enrollment state"));
         if (!identity.journeyId().equals(event.journeyId())
                 || identity.journeyVersion() != event.journeyVersion()
                 || !identity.subjectToken().equals(event.subjectToken())) {
@@ -139,45 +122,36 @@ public class JourneyOutputProjector {
                     "effect does not match its enrollment identity");
         }
         String commandPayload = json(event.payload());
-        List<EffectRow> existing = jdbc.query("select enrollment_id,node_id,effect_type,payload_json from mk_node_effect_intent where tenant_id=? and command_id=?",
-                (rs, rowNum) -> new EffectRow(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4)),
-                event.tenantId(), event.commandId());
-        if (!existing.isEmpty()) {
-            EffectRow current = existing.getFirst();
+        var existing = repository.findEffect(event.tenantId(), event.commandId());
+        if (existing.isPresent()) {
+            JourneyRepository.EffectRow current = existing.orElseThrow();
             if (!current.enrollmentId().equals(event.enrollmentId()) || !current.nodeId().equals(event.nodeId())
-                    || !current.effectType().equals(event.effectType()) || !current.payload().equals(commandPayload)) {
+                    || !current.effectType().equals(event.effectType())
+                    || !current.payloadJson().equals(commandPayload)) {
                 throw new ConflictException("JOURNEY_COMMAND_COLLISION",
                         "journey command id was reused with another effect");
             }
             return;
         }
         Instant now = clock.instant();
-        jdbc.update("insert into mk_node_effect_intent(tenant_id,command_id,enrollment_id,node_id,effect_type,payload_json,state_name,created_at) values(?,?,?,?,?,?,?,?)",
-                event.tenantId(), event.commandId(), event.enrollmentId(), event.nodeId(), event.effectType(),
-                commandPayload, "PENDING", format(now));
+        repository.saveEffectIntent(new JourneyRepository.EffectWrite(event.tenantId(), event.commandId(),
+                event.enrollmentId(), event.nodeId(), event.effectType(), commandPayload, "PENDING", format(now)));
         long sequence = nextSequence(event.tenantId(), event.enrollmentId(), now);
-        jdbc.update("insert into mk_journey_dispatch_outbox(tenant_id,outbox_id,command_id,enrollment_id,destination_topic,partition_key,stream_sequence,payload_json,next_attempt_at,created_at) values(?,?,?,?,?,?,?,?,?,?)",
-                event.tenantId(), UUID.randomUUID().toString(), event.commandId(), event.enrollmentId(),
+        repository.saveDispatchOutbox(new JourneyRepository.DispatchOutboxWrite(event.tenantId(),
+                UUID.randomUUID().toString(), event.commandId(), event.enrollmentId(),
                 destination(event.effectType()), event.tenantId() + ':' + event.enrollmentId(), sequence,
-                json(event), format(now), format(now));
+                json(event), format(now), format(now)));
     }
 
     private long nextSequence(String tenantId, String enrollmentId, Instant now) {
-        int updated = jdbc.update("update mk_journey_dispatch_position set last_sequence=last_sequence+1,updated_at=? where tenant_id=? and enrollment_id=?",
-                format(now), tenantId, enrollmentId);
+        int updated = repository.incrementDispatchPosition(tenantId, enrollmentId, format(now));
         if (updated == 0) {
-            try {
-                jdbc.update("insert into mk_journey_dispatch_position(tenant_id,enrollment_id,last_sequence,updated_at) values(?,?,?,?)",
-                        tenantId, enrollmentId, 1, format(now));
-            } catch (DuplicateKeyException race) {
-                jdbc.update("update mk_journey_dispatch_position set last_sequence=last_sequence+1,updated_at=? where tenant_id=? and enrollment_id=?",
-                        format(now), tenantId, enrollmentId);
+            if (!repository.tryCreateDispatchPosition(tenantId, enrollmentId, format(now))) {
+                repository.incrementDispatchPosition(tenantId, enrollmentId, format(now));
             }
         }
-        Long sequence = jdbc.query("select last_sequence from mk_journey_dispatch_position where tenant_id=? and enrollment_id=?",
-                rs -> rs.next() ? rs.getLong(1) : null, tenantId, enrollmentId);
-        if (sequence == null) throw new IllegalStateException("journey dispatch sequence allocation failed");
-        return sequence;
+        return repository.findDispatchSequence(tenantId, enrollmentId)
+                .orElseThrow(() -> new IllegalStateException("journey dispatch sequence allocation failed"));
     }
 
     private static String destination(String effectType) {
@@ -223,9 +197,4 @@ public class JourneyOutputProjector {
     }
 
     public record ProjectionResult(String eventType, boolean applied, boolean duplicate) { }
-    private record Receipt(String payloadHash, String eventType) { }
-    private record EnrollmentRow(String journeyId, long journeyVersion, String subjectToken,
-            String topic, int partition, long offset) { }
-    private record EnrollmentIdentity(String journeyId, long journeyVersion, String subjectToken) { }
-    private record EffectRow(String enrollmentId, String nodeId, String effectType, String payload) { }
 }

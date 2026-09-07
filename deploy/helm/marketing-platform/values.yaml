@@ -68,10 +68,15 @@ services:
     database: marketing_decision
     replicas: 3
     tracingSampleProbability: "0.01"
+    businessMetrics:
+      pods:
+        - {name: marketing_http_server_p99_milliseconds, averageValue: "24"}
+        - {name: hikaricp_connections_pending, averageValue: "1"}
   benefit-funding-service:
     port: 8085
     database: marketing_benefit
     replicas: 3
+    budgetBucketCount: 16
     benefitCenterBaseUrl: http://benefit-center:8083
     riskPlatformBaseUrl: http://fraud-gateway.risk-platform.svc:8082
     awardDefaultMode: LEGACY
@@ -81,18 +86,60 @@ services:
     awardRelayTenantBatchSize: 10
     awardRelayCircuitFailureThreshold: 5
     awardRelayCircuitOpenMs: 30000
+    awardEvaluationLeaseMs: 30000
+    awardConcurrentWaitMs: 5000
+    businessMetrics:
+      pods:
+        - {name: marketing_http_server_p99_milliseconds, averageValue: "120"}
+        - {name: hikaricp_connections_pending, averageValue: "1"}
+      external:
+        - name: marketing_outbox_oldest_age_seconds
+          targetType: Value
+          value: "30"
+          matchLabels: {service: benefit-funding-service}
   event-gateway-service:
     port: 8086
     database: marketing_events
     replicas: 3
+    outbox:
+      maxPending: 1000000
+      maxPendingPerTenant: 100000
+      maxOldestAgeSeconds: 300
+      backpressureRefreshMs: 250
+      backpressureMaxCachedTenants: 10000
+    businessMetrics:
+      pods:
+        - {name: marketing_http_server_p99_milliseconds, averageValue: "160"}
+        - {name: hikaricp_connections_pending, averageValue: "1"}
+      external:
+        - name: marketing_outbox_pending
+          targetType: Value
+          value: "200000"
+          matchLabels: {service: event-gateway-service}
+        - name: marketing_outbox_oldest_age_seconds
+          targetType: Value
+          value: "30"
+          matchLabels: {service: event-gateway-service}
   journey-service:
     port: 8087
     database: marketing_journey
     replicas: 2
+    businessMetrics:
+      external:
+        - name: marketing_kafka_consumer_lag
+          averageValue: "5000"
+          matchLabels: {consumer_group: mk-journey-output-projector-v1}
   engagement-service:
     port: 8088
     database: marketing_engagement
     replicas: 2
+    businessMetrics:
+      pods:
+        - {name: hikaricp_connections_pending, averageValue: "1"}
+      external:
+        - name: marketing_kafka_consumer_lag
+          averageValue: "5000"
+          matchLabels: {consumer_group: mk-engagement-journey-effects-v1}
   measurement-service:
     port: 8089
     database: marketing_measurement
@@ -101,6 +148,20 @@ services:
     port: 8080
     database: ""
     replicas: 3
+    gateway:
+      redisConnectTimeout: 500ms
+      redisCommandTimeout: 500ms
+      connectTimeout: 1s
+      responseTimeout: 3s
+      rateLimit:
+        eventsPerSecond: 10000
+        eventsBurst: 10000
+        decisionsPerSecond: 30000
+        decisionsBurst: 30000
+        writesPerSecond: 2000
+        writesBurst: 4000
+        readsPerSecond: 5000
+        readsBurst: 10000
 
 defaults:
   resources:
@@ -116,6 +177,11 @@ defaults:
     enabled: true
     maxUnavailable: 1
   terminationGracePeriodSeconds: 45
+
+autoscaling:
+  businessMetrics:
+    # 生产集群安装并验证 Prometheus Adapter 指标规则后启用；CPU/内存始终保留为兜底信号。
+    enabled: false
 
 releasePolicy:
   maxReadyCapacityPerRuntime: 1000

@@ -6,6 +6,14 @@ import com.acme.marketing.benefit.application.RiskEvaluationGateway.RiskEvaluati
 import com.acme.marketing.benefit.application.RiskEvaluationGateway.RiskEvaluationUnavailableException;
 import com.acme.marketing.platform.error.DomainException;
 import com.acme.marketing.platform.isolation.TenantBulkhead;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
+import io.opentelemetry.context.propagation.TextMapPropagator;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.net.URI;
@@ -51,13 +59,16 @@ public final class HttpRiskEvaluationGateway implements RiskEvaluationGateway {
     private final TenantBulkhead bulkhead;
     private final ThreadPoolExecutor executor;
     private final HttpClient http;
+    private final Tracer tracer;
+    private final TextMapPropagator propagator;
     private final AtomicInteger consecutiveFailures = new AtomicInteger();
     private final AtomicReference<Instant> circuitOpenUntil = new AtomicReference<>();
 
     /** 构造完全独立于发奖 Relay 的有界风控客户端资源。 */
     public HttpRiskEvaluationGateway(ObjectMapper mapper, Clock clock, String baseUrl, String bearerToken,
             Duration connectTimeout, Duration requestTimeout, int permitsPerTenant, Duration bulkheadWait,
-            int threadCount, int queueCapacity, int circuitFailureThreshold, Duration circuitOpenDuration) {
+            int threadCount, int queueCapacity, int circuitFailureThreshold, Duration circuitOpenDuration,
+            OpenTelemetry openTelemetry) {
         if (requestTimeout.isZero() || requestTimeout.isNegative() || threadCount < 1 || queueCapacity < 1
                 || circuitFailureThreshold < 1 || circuitOpenDuration.isNegative()) {
             throw new IllegalArgumentException("invalid risk client configuration");
@@ -69,6 +80,8 @@ public final class HttpRiskEvaluationGateway implements RiskEvaluationGateway {
         this.requestTimeout = requestTimeout;
         this.circuitFailureThreshold = circuitFailureThreshold;
         this.circuitOpenDuration = circuitOpenDuration;
+        this.tracer = openTelemetry.getTracer("marketing-benefit-risk-client");
+        this.propagator = openTelemetry.getPropagators().getTextMapPropagator();
         this.bulkhead = new TenantBulkhead(permitsPerTenant, bulkheadWait);
         AtomicInteger sequence = new AtomicInteger();
         ThreadFactory factory = task -> {
@@ -101,8 +114,9 @@ public final class HttpRiskEvaluationGateway implements RiskEvaluationGateway {
         Instant now = clock.instant();
         if (!circuitAllows(now)) throw unavailable("RISK_CIRCUIT_OPEN", null);
         Future<RiskDecision> future;
+        Context callerContext = Context.current();
         try {
-            future = executor.submit(() -> send(request));
+            future = executor.submit(() -> sendTraced(request, callerContext));
         } catch (RuntimeException rejected) {
             recordFailure(now);
             throw unavailable("RISK_CLIENT_CAPACITY_EXCEEDED", rejected);
@@ -129,7 +143,31 @@ public final class HttpRiskEvaluationGateway implements RiskEvaluationGateway {
         }
     }
 
-    private RiskDecision send(RiskEvaluationRequest request) {
+    private RiskDecision sendTraced(RiskEvaluationRequest request, Context parent) {
+        Span span = tracer.spanBuilder("POST /api/v1/risk/evaluations")
+                .setParent(parent)
+                .setSpanKind(SpanKind.CLIENT)
+                .startSpan();
+        span.setAttribute("http.request.method", "POST");
+        span.setAttribute("server.address", URI.create(baseUrl).getHost());
+        span.setAttribute("marketing.tenant.id", request.tenantId().value());
+        Context context = parent.with(span);
+        Scope scope = context.makeCurrent();
+        try {
+            RiskDecision decision = send(request, context);
+            span.setStatus(StatusCode.OK);
+            return decision;
+        } catch (RuntimeException failure) {
+            span.recordException(failure);
+            span.setStatus(StatusCode.ERROR, failure.getMessage() == null ? "risk request failed" : failure.getMessage());
+            throw failure;
+        } finally {
+            scope.close();
+            span.end();
+        }
+    }
+
+    private RiskDecision send(RiskEvaluationRequest request, Context context) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("sourceId", SOURCE_ID);
         body.put("txnId", request.transactionId());
@@ -147,6 +185,7 @@ public final class HttpRiskEvaluationGateway implements RiskEvaluationGateway {
                 .header("X-Tenant-Id", request.tenantId().value())
                 .POST(HttpRequest.BodyPublishers.ofString(json(body)));
         if (!bearerToken.isBlank()) builder.header("Authorization", "Bearer " + bearerToken);
+        propagator.inject(context, builder, HttpRequest.Builder::header);
         try {
             HttpResponse<String> response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {

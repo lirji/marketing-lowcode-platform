@@ -27,6 +27,9 @@ flowchart TB
   MF --> K
   DEC --> RP[(Local/Redis projections)]
   BEN --> DB[(Context-owned MySQL)]
+  BEN --> RISK[Risk Platform]
+  BEN --> BC[Enterprise Benefit Center]
+  BEN --> K
   MF --> CH[(ClickHouse)]
 ```
 
@@ -38,7 +41,7 @@ flowchart TB
 | `rule-compiler-worker` | 编译请求、报告、ArtifactBundle | worker 无外网；不读取运行时数据库 | S3 artifact；本地实现为内存 adapter |
 | `audience-service` | 字段注册、人群版本、导入、快照 metadata | preview 可访问许可的数据 adapter | `marketing_audience` + S3/Redis projection |
 | `offer-decision-service` | 已激活 generation、决策 trace handle | evaluate 禁止同步访问控制库/画像/Benefit | 进程内不可变快照 + Redis 有界 fallback |
-| `benefit-funding-service` | PromotionApplication、Reservation、ResourceAccount、资金/库存流水 | 验签 OfferToken 后改变资源 | `marketing_benefit` |
+| `benefit-funding-service` | PromotionApplication、Reservation、ResourceAccount、资金/库存流水、AwardIntent 与风险拦截记录 | 验签 OfferToken；发奖前调用风控；仅 CENTER 模式异步投递权益中台 | `marketing_benefit` |
 | `event-gateway-service` | 接入幂等、schema 结果、quarantine | 只做验证和路由 | `marketing_events` + Kafka |
 | `journey-service` | Journey 投影、实例查询、迁移命令 | 状态机执行在 Flink | `marketing_journey` + Flink state |
 | `engagement-service` | Consent、Suppression、Template、ContactAttempt、Provider receipt | 副作用前重新检查策略 | `marketing_engagement` |
@@ -46,6 +49,10 @@ flowchart TB
 | `edge-gateway` | 路由、边界身份传播 | 不拥有领域状态 | 无 |
 
 每个有数据库的服务拥有独立 schema/账号；即使本地共享一个 MySQL 实例，也禁止跨 schema join。公共模块只允许共享技术值对象、事件信封、错误和 SPI，禁止共享 JPA entity、repository 或领域 aggregate。
+
+## 持久化分层
+
+有数据库的服务统一采用 `Application Service → Repository Port → MyBatis Repository Adapter → Mapper Interface → Mapper XML`。应用层定义面向业务语义的持久化端口，只负责事务编排和领域规则；`infrastructure/persistence` 实现端口并处理重复键、影响行数等数据库语义；SQL 只能放在 `src/main/resources` 下的 Mapper XML，Java Mapper 只声明类型安全的方法签名。架构测试同时阻止 application 依赖 JDBC、MyBatis 或持久化适配器，并扫描 Java 主代码中的内联 SQL。
 
 ## 控制面到运行面的发布协议
 
@@ -77,6 +84,8 @@ Kafka 通知不是真相源。Runtime 启动或检测到 generation gap 时读�
 - 跨上下文：at-least-once 事件 + eventId 去重 + 幂等 command；不使用 XA。
 - 在线决策：规范化输入 + 固定 artifact/generation 的纯函数，结果可字节级复现。
 - 外部副作用：`enrollmentId + nodeExecutionId + attemptPurpose` 或订单 commandId 作为业务幂等键；超时结果进入 UNKNOWN 并以查询/回执收敛，不能盲重试。
+- 发奖切流：租户默认只能是 `LEGACY` 或 `SHADOW`；只有逐租户显式配置为 `CENTER` 才写待投递 AwardIntent。组装、风控调用均在数据库事务外完成，短事务只保存首次 outbox 或 block 结果，两者不能同时存在。
+- 权益中台投递：CENTER outbox 与 `marketing.award-expected.v1` 应发事实同事务提交；HTTP relay 通过租约版本 fencing、原 `sourceRequestId` 幂等键、单租户批量上限和熔断收敛，成功后回填权益订单号。
 - 资金/库存：数据库条件更新、fencing token、不可变流水和周期对账；Redis bucket 只做预分配加速，不是最终账本。
 - 分析：原始事实可重放，ClickHouse projection 可重建；所有查询带 watermark。
 

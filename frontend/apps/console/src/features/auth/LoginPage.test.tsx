@@ -27,7 +27,8 @@ describe('LoginPage', () => {
 
   it('keeps unknown organizations from submitting in the form copy', async () => {
     renderLogin()
-    expect(screen.getByLabelText('开发租户 ID')).toHaveValue('retail-cn')
+    expect(screen.getByLabelText('货主业务租户')).toHaveValue('retail-cn')
+    expect(screen.getByText(/权益 DEV 默认是 dev-tenant/)).toBeInTheDocument()
     expect(screen.getByText(/本地开发模式免登录/)).toBeInTheDocument()
   })
 })

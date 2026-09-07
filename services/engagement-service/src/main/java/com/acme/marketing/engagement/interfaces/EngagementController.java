@@ -3,6 +3,8 @@ package com.acme.marketing.engagement.interfaces;
 import com.acme.marketing.engagement.application.EngagementService;
 import com.acme.marketing.engagement.infrastructure.ProviderCallbackAuthenticator;
 import com.acme.marketing.provider.ProviderCallback;
+import com.acme.marketing.platform.web.PersistentIdempotentCommandExecutor;
+import com.acme.marketing.platform.web.TenantContextHolder;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,9 +23,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class EngagementController {
     private final EngagementService service;
     private final ProviderCallbackAuthenticator callbackAuthenticator;
-    public EngagementController(EngagementService service, ProviderCallbackAuthenticator callbackAuthenticator) {
+    private final PersistentIdempotentCommandExecutor commands;
+    public EngagementController(EngagementService service, ProviderCallbackAuthenticator callbackAuthenticator,
+            PersistentIdempotentCommandExecutor commands) {
         this.service = service;
         this.callbackAuthenticator = callbackAuthenticator;
+        this.commands = commands;
     }
 
     @PutMapping("/consents")
@@ -42,8 +47,10 @@ public class EngagementController {
     }
 
     @PostMapping("/templates") @ResponseStatus(HttpStatus.CREATED)
-    public EngagementService.TemplateView template(@RequestBody EngagementService.TemplateRequest request) {
-        return service.createTemplate(request);
+    public EngagementService.TemplateView template(@RequestHeader("Idempotency-Key") String key,
+            @RequestBody EngagementService.TemplateRequest request) {
+        return commands.execute(TenantContextHolder.requireCurrent().tenantId(), "engagement.template.create",
+                key, request, EngagementService.TemplateView.class, () -> service.createTemplate(request));
     }
 
     @GetMapping("/templates")

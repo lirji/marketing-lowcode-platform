@@ -16,8 +16,25 @@ import { useAuth } from '../../shared/auth/useAuth'
 export type DesignerNode = Node<{ label: string; subtitle: string; tone: 'teal'|'blue'|'amber'|'violet'|'slate'; config: Record<string, string>; stableTypeId?: string }, 'marketing'>
 type Snapshot = { nodes: DesignerNode[]; edges: Edge[] }
 
+function isGrantNode(data: DesignerNode['data']) {
+  const label = data.label ?? ''
+  const typeId = data.stableTypeId ?? ''
+  return label.includes('发放权益') || label.includes('发召回') || /grant|award|benefit/i.test(typeId)
+}
+
 function MarketingNode({ data, selected }: NodeProps<DesignerNode>) {
-  return <div className={`flow-node ${data.tone} ${selected ? 'selected' : ''}`} tabIndex={0}><Handle type="target" position={Position.Left} /><span>{data.label.slice(0, 1)}</span><div><strong>{data.label}</strong><small>{data.subtitle}</small></div><Handle type="source" position={Position.Right} /></div>
+  return (
+    <div className={`flow-node ${data.tone} ${selected ? 'selected' : ''}`} tabIndex={0}>
+      <Handle type="target" position={Position.Left} />
+      <span>{data.label.slice(0, 1)}</span>
+      <div>
+        <strong>{data.label}</strong>
+        <small>{data.subtitle}</small>
+        {isGrantNode(data) && <em className="flow-node-badge">尚未接入 AwardIntent</em>}
+      </div>
+      <Handle type="source" position={Position.Right} />
+    </div>
+  )
 }
 const nodeTypes = { marketing: MarketingNode }
 
@@ -171,7 +188,7 @@ export function LowCodeDesigner({
         <div className="canvas-toolbar"><button onClick={undo} disabled={!history.current.length} aria-label="撤销"><Undo2 size={15} /></button><button onClick={redo} disabled={!future.current.length} aria-label="重做"><Redo2 size={15} /></button><button onClick={remove} disabled={!selectedId} aria-label="删除节点"><Trash2 size={15} /></button><span /><button className={outline ? 'active' : ''} onClick={() => setOutline(!outline)}>线性大纲</button></div>
         {outline ? <ol className="graph-outline">{nodes.map((node) => <li key={node.id}><button onClick={() => { setSelectedId(node.id); setOutline(false) }}><span>{node.data.label}</span><small>{node.data.subtitle}</small></button></li>)}</ol> : <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={connect} onNodeClick={(_, node) => setSelectedId(node.id)} fitView minZoom={0.35} maxZoom={1.8} deleteKeyCode={null}><Background color="#cad7d5" gap={22} size={1} /><MiniMap pannable zoomable nodeColor={(node) => ({ teal: '#188e81', blue: '#377fbd', amber: '#d18a27', violet: '#7659b1', slate: '#647681' }[String(node.data?.tone)] ?? '#647681')} /><Controls /></ReactFlow>}
       </section>
-      <aside className="inspector"><div className="designer-section-title"><span>属性与治理</span><Badge tone="info">Schema 驱动</Badge></div>{selected ? <><div className="selected-node"><i className={selected.data.tone}>{selected.data.label.slice(0,1)}</i><div><strong>{selected.data.label}</strong><small>{selected.id}</small></div></div><label className="field"><span>业务字段</span><select value={selected.data.config.field ?? 'member.level'} onChange={(event) => updateConfig('field', event.target.value)}><option>member.level</option><option>product.category</option><option>cart.amount</option><option>audience.snapshot</option></select><small>来源：会员域 · 新鲜度 ≤ 5m</small></label><label className="field"><span>匹配值</span><input value={selected.data.config.value ?? 'PLUS'} onChange={(event) => updateConfig('value', event.target.value)} /></label><label className="field"><span>缺失值策略</span><select value={selected.data.config.missing ?? 'REJECT'} onChange={(event) => updateConfig('missing', event.target.value)}><option value="REJECT">拒绝候选</option><option value="NO_MATCH">按未命中</option><option value="GENERIC">通用路径</option></select></label><div className="governance-note"><ShieldIcon /><div><strong>运行时约束</strong><p>纯函数、禁止 I/O；P99 deadline 20ms；失败时 fail-closed。</p></div></div></> : <div className="empty-inspector">选择节点查看属性</div>}</aside>
+      <aside className="inspector"><div className="designer-section-title"><span>属性与治理</span><Badge tone="info">Schema 驱动</Badge></div>{selected ? isGrantNode(selected.data) ? <><div className="selected-node"><i className={selected.data.tone}>{selected.data.label.slice(0,1)}</i><div><strong>{selected.data.label}</strong><small>{selected.id}</small></div></div><Badge tone="warn">尚未接入 AwardIntent</Badge><p className="grant-intent-note">Journey「发放权益」还不会写出 AwardIntent。这里不能重选金额或 SKU，也不要当成已经发奖。</p></> : <><div className="selected-node"><i className={selected.data.tone}>{selected.data.label.slice(0,1)}</i><div><strong>{selected.data.label}</strong><small>{selected.id}</small></div></div><label className="field"><span>业务字段</span><select value={selected.data.config.field ?? 'member.level'} onChange={(event) => updateConfig('field', event.target.value)}><option>member.level</option><option>product.category</option><option>cart.amount</option><option>audience.snapshot</option></select><small>来源：会员域 · 新鲜度 ≤ 5m</small></label><label className="field"><span>匹配值</span><input value={selected.data.config.value ?? 'PLUS'} onChange={(event) => updateConfig('value', event.target.value)} /></label><label className="field"><span>缺失值策略</span><select value={selected.data.config.missing ?? 'REJECT'} onChange={(event) => updateConfig('missing', event.target.value)}><option value="REJECT">拒绝候选</option><option value="NO_MATCH">按未命中</option><option value="GENERIC">通用路径</option></select></label><div className="governance-note"><ShieldIcon /><div><strong>运行时约束</strong><p>纯函数、禁止 I/O；P99 deadline 20ms；失败时 fail-closed。</p></div></div></> : <div className="empty-inspector">选择节点查看属性</div>}</aside>
     </div>
     <section className={`problems-drawer ${showProblems ? 'open' : ''}`}><button className="problems-title" type="button" onClick={() => setShowProblems(!showProblems)}><AlertTriangle size={15} /><strong>Problems {displayedProblems.length}</strong><span>{live ? '来自控制面校验' : '演示问题列表'}</span></button>{showProblems && <div className="problem-list">{displayedProblems.map((problem) => <button key={problem.code} type="button" onClick={() => setSelectedId(nodes[Math.min(nodes.length - 1, 1)]?.id ?? '')}><Badge tone={problem.severity === 'ERROR' ? 'danger' : 'warn'}>{problem.severity}</Badge><strong>{problem.message}</strong><code>{problem.pointer}</code></button>)}</div>}</section>
   </div>

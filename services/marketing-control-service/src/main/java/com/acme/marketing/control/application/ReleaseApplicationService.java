@@ -18,6 +18,7 @@ import com.acme.marketing.platform.error.NotFoundException;
 import com.acme.marketing.platform.identity.TenantId;
 import com.acme.marketing.platform.identity.TenantScope;
 import com.acme.marketing.platform.web.TenantContextHolder;
+import com.acme.marketing.lowcode.model.GraphDefinition;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -25,9 +26,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.LinkedHashSet;
 import java.util.UUID;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,12 +36,13 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class ReleaseApplicationService {
-    private final JdbcTemplate jdbc;
+    private final ControlRepository repository;
     private final ObjectMapper mapper;
     private final Clock clock;
     private final SigningKeyRing keys;
     private final PinnedArtifactVerifier artifactVerifier;
     private final PinnedRuntimeAckVerifier ackVerifier;
+    private final BenefitReleaseGate benefitReleaseGate;
     private final int minimumReadyReplicas;
     private final long minimumReadyCapacity;
     private final long maxReadyCapacityPerRuntime;
@@ -50,20 +51,23 @@ public class ReleaseApplicationService {
     private final String killSwitchTopic;
     private final ReleaseManifestSigner signer = new ReleaseManifestSigner();
 
-    public ReleaseApplicationService(JdbcTemplate jdbc, ObjectMapper mapper, Clock clock, SigningKeyRing keys,
+    public ReleaseApplicationService(ControlRepository repository, ObjectMapper mapper, Clock clock,
+            SigningKeyRing keys,
             PinnedArtifactVerifier artifactVerifier, PinnedRuntimeAckVerifier ackVerifier,
+            BenefitReleaseGate benefitReleaseGate,
             @Value("${marketing.release-policy.minimum-ready-replicas:1}") int minimumReadyReplicas,
             @Value("${marketing.release-policy.minimum-ready-capacity:1}") long minimumReadyCapacity,
             @Value("${marketing.release-policy.max-ready-capacity-per-runtime:1000}") long maxReadyCapacityPerRuntime,
             @Value("${marketing.release-policy.allowed-runtime-build-digest:}") String allowedRuntimeBuildDigest,
             @Value("${marketing.release-outbox.topic:mk.release.activation.v1}") String activationTopic,
             @Value("${marketing.release-outbox.kill-switch-topic:mk.release.kill-switch.v1}") String killSwitchTopic) {
-        this.jdbc = jdbc;
+        this.repository = repository;
         this.mapper = mapper;
         this.clock = clock;
         this.keys = keys;
         this.artifactVerifier = artifactVerifier;
         this.ackVerifier = ackVerifier;
+        this.benefitReleaseGate = benefitReleaseGate;
         if (minimumReadyReplicas < 1 || minimumReadyCapacity < 1 || maxReadyCapacityPerRuntime < 1
                 || activationTopic.isBlank()
                 || killSwitchTopic.isBlank()) {
@@ -83,6 +87,7 @@ public class ReleaseApplicationService {
         scope.requirePermission("release:write");
         assertApproved(scope, request.definitionId(), request.definitionVersion(),
                 request.approvalCaseIds());
+        assertBenefitClosure(scope, request);
         assertArtifacts(scope.tenantId().value(), request);
         Slot slot = lockSlot(scope.tenantId().value(), request.environment(), request.cell(),
                 request.runtime(), request.namespace());
@@ -101,13 +106,12 @@ public class ReleaseApplicationService {
                 request.canaryBasisPoints(), request.activationAt() == null ? now : request.activationAt(),
                 now.plus(30, ChronoUnit.DAYS), scope.actorId(), request.approvalCaseIds(), now, "");
         ReleaseManifest manifest = signer.sign(unsigned, keys.activePrivateKey());
-        jdbc.update("insert into mk_release_manifest(tenant_id,manifest_id,environment_name,cell_id,runtime_name,namespace_name,generation_no,state_name,manifest_json,created_at) values(?,?,?,?,?,?,?,?,?,?)",
-                scope.tenantId().value(), manifest.manifestId(), manifest.environment(), manifest.cell(),
-                manifest.runtime(), manifest.namespace(), manifest.generation(), State.STAGED.name(),
-                json(manifest), format(now));
-        jdbc.update("update mk_release_slot set latest_generation=?,updated_at=? where tenant_id=? and environment_name=? and cell_id=? and runtime_name=? and namespace_name=?",
-                generation, format(now), scope.tenantId().value(), request.environment(), request.cell(),
-                request.runtime(), request.namespace());
+        repository.saveManifest(new ControlRepository.ManifestWrite(scope.tenantId().value(), manifest.manifestId(),
+                manifest.environment(), manifest.cell(), manifest.runtime(), manifest.namespace(),
+                manifest.generation(), State.STAGED.name(), json(manifest), format(now)));
+        repository.updateSlotLatestGeneration(new ControlRepository.SlotLatestWrite(scope.tenantId().value(),
+                request.environment(), request.cell(), request.runtime(), request.namespace(), generation,
+                format(now)));
         return new ReleaseView(manifest, State.STAGED, 0, 0, null);
     }
 
@@ -154,15 +158,13 @@ public class ReleaseApplicationService {
         if (ack.status() != RuntimeAck.Status.READY && ack.capacity() != 0) {
             throw new ConflictException("ACK_CAPACITY_INVALID", "non-ready runtime capacity must be zero");
         }
-        int updated = jdbc.update("update mk_runtime_ack set status_name=?,build_digest=?,supported_abis=?,warmed_artifact_ids=?,capacity_value=?,acknowledged_at=?,signature_key_id=?,signature_value=? where tenant_id=? and manifest_id=? and runtime_id=?",
-                ack.status().name(), ack.buildDigest(), String.join(",", ack.supportedAbis()),
-                String.join(",", ack.warmedArtifactIds()), ack.capacity(), format(ack.acknowledgedAt()),
-                ack.signatureKeyId(), ack.signature(), scope.tenantId().value(), manifestId, ack.runtimeId());
+        ControlRepository.RuntimeAckWrite write = new ControlRepository.RuntimeAckWrite(scope.tenantId().value(),
+                manifestId, ack.runtimeId(), ack.status().name(), ack.buildDigest(),
+                String.join(",", ack.supportedAbis()), String.join(",", ack.warmedArtifactIds()), ack.capacity(),
+                format(ack.acknowledgedAt()), ack.signatureKeyId(), ack.signature());
+        int updated = repository.updateRuntimeAck(write);
         if (updated == 0) {
-            jdbc.update("insert into mk_runtime_ack(tenant_id,manifest_id,runtime_id,status_name,build_digest,supported_abis,warmed_artifact_ids,capacity_value,acknowledged_at,signature_key_id,signature_value) values(?,?,?,?,?,?,?,?,?,?,?)",
-                    scope.tenantId().value(), manifestId, ack.runtimeId(), ack.status().name(), ack.buildDigest(),
-                    String.join(",", ack.supportedAbis()), String.join(",", ack.warmedArtifactIds()), ack.capacity(),
-                    format(ack.acknowledgedAt()), ack.signatureKeyId(), ack.signature());
+            repository.saveRuntimeAck(write);
         }
         return view(scope.tenantId().value(), stored);
     }
@@ -198,16 +200,15 @@ public class ReleaseApplicationService {
         ActivationDirective directive = directive(stored.manifest(), activationSequence, stableGeneration,
                 stored.manifest().canaryBasisPoints(), scope.actorId(), now);
         saveDirective(directive);
-        int advanced = jdbc.update("update mk_release_slot set stable_generation=?,desired_generation=?,activation_sequence=?,updated_at=? where tenant_id=? and environment_name=? and cell_id=? and runtime_name=? and namespace_name=? and desired_generation=? and activation_sequence=?",
-                stableGeneration, stored.manifest().generation(), activationSequence, format(now),
-                scope.tenantId().value(),
-                stored.manifest().environment(), stored.manifest().cell(), stored.manifest().runtime(),
-                stored.manifest().namespace(), slot.desiredGeneration(), slot.activationSequence());
+        int advanced = repository.compareAndSetSlot(new ControlRepository.SlotAdvanceWrite(
+                scope.tenantId().value(), stored.manifest().environment(), stored.manifest().cell(),
+                stored.manifest().runtime(), stored.manifest().namespace(), stableGeneration,
+                stored.manifest().generation(), activationSequence, format(now), slot.desiredGeneration(),
+                slot.activationSequence()));
         if (advanced != 1) {
             throw new ConflictException("ACTIVATION_POINTER_CONFLICT", "release desired state changed concurrently");
         }
-        jdbc.update("update mk_release_manifest set state_name=? where tenant_id=? and manifest_id=?",
-                State.ACTIVE.name(), scope.tenantId().value(), manifestId);
+        repository.updateManifestState(scope.tenantId().value(), manifestId, State.ACTIVE.name());
         enqueueActivation(directive);
         return new ReleaseView(stored.manifest(), State.ACTIVE, readiness.readyReplicas(), readiness.capacity(), directive);
     }
@@ -239,16 +240,15 @@ public class ReleaseApplicationService {
         ActivationDirective directive = directive(target.manifest(), activationSequence, targetGeneration,
                 0, scope.actorId(), now);
         saveDirective(directive);
-        int rewound = jdbc.update("update mk_release_slot set stable_generation=?,desired_generation=?,activation_sequence=?,updated_at=? where tenant_id=? and environment_name=? and cell_id=? and runtime_name=? and namespace_name=? and desired_generation=? and activation_sequence=?",
-                targetGeneration, targetGeneration, activationSequence, format(now), scope.tenantId().value(),
-                current.manifest().environment(), current.manifest().cell(), current.manifest().runtime(),
-                current.manifest().namespace(), slot.desiredGeneration(), slot.activationSequence());
+        int rewound = repository.compareAndSetSlot(new ControlRepository.SlotAdvanceWrite(
+                scope.tenantId().value(), current.manifest().environment(), current.manifest().cell(),
+                current.manifest().runtime(), current.manifest().namespace(), targetGeneration, targetGeneration,
+                activationSequence, format(now), slot.desiredGeneration(), slot.activationSequence()));
         if (rewound != 1) {
             throw new ConflictException("ROLLBACK_POINTER_CONFLICT", "release desired state changed concurrently");
         }
         enqueueActivation(directive);
-        jdbc.update("update mk_release_manifest set state_name=? where tenant_id=? and manifest_id=?",
-                State.ROLLED_BACK.name(), scope.tenantId().value(), manifestId);
+        repository.updateManifestState(scope.tenantId().value(), manifestId, State.ROLLED_BACK.name());
         Readiness readiness = readiness(scope.tenantId().value(), target.manifest().manifestId());
         return new ReleaseView(target.manifest(), State.ACTIVE, readiness.readyReplicas(), readiness.capacity(), directive);
     }
@@ -258,22 +258,16 @@ public class ReleaseApplicationService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("release:kill-switch");
         Instant now = clock.instant();
-        try {
-            jdbc.update("insert into mk_kill_switch(tenant_id,namespace_name,switch_sequence,enabled_value,reason_text,updated_by,updated_at,directive_json) values(?,?,?,?,?,?,?,?)",
-                    scope.tenantId().value(), namespace, 0, false, "INITIAL", scope.actorId(), format(now), "{}");
-        } catch (DuplicateKeyException exists) {
-            // Locked below so concurrent emergency changes receive distinct monotonic sequences.
-        }
-        Long current = jdbc.query("select switch_sequence from mk_kill_switch where tenant_id=? and namespace_name=? for update",
-                rs -> rs.next() ? rs.getLong(1) : null, scope.tenantId().value(), namespace);
+        repository.tryCreateKillSwitch(new ControlRepository.KillSwitchWrite(scope.tenantId().value(), namespace,
+                0, false, "INITIAL", scope.actorId(), format(now), "{}"));
+        Long current = repository.findKillSwitchSequenceForUpdate(scope.tenantId().value(), namespace).orElse(null);
         if (current == null) throw new IllegalStateException("kill switch state was not created");
         long sequence = Math.addExact(current, 1);
         KillSwitchDirective unsigned = new KillSwitchDirective(UUID.randomUUID().toString(), scope.tenantId(),
                 namespace, sequence, enabled, reason, now, scope.actorId(), keys.activeKeyId(), "");
         KillSwitchDirective directive = KillSwitchDirectiveSigner.sign(keys.activePrivateKey(), unsigned);
-        jdbc.update("update mk_kill_switch set switch_sequence=?,enabled_value=?,reason_text=?,updated_by=?,updated_at=?,directive_json=? where tenant_id=? and namespace_name=?",
-                sequence, enabled, reason, scope.actorId(), format(now), json(directive),
-                scope.tenantId().value(), namespace);
+        repository.updateKillSwitch(new ControlRepository.KillSwitchWrite(scope.tenantId().value(), namespace,
+                sequence, enabled, reason, scope.actorId(), format(now), json(directive)));
         enqueueKillSwitch(directive);
         return new KillSwitchView(namespace, enabled, reason, scope.actorId(), now, sequence, directive);
     }
@@ -281,10 +275,8 @@ public class ReleaseApplicationService {
     public List<ReleaseView> manifests() {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("release:read");
-        List<StoredManifest> stored = jdbc.query(
-                "select manifest_json,state_name from mk_release_manifest where tenant_id=? order by created_at desc limit 50",
-                (rs, rowNum) -> new StoredManifest(read(rs.getString(1)), State.valueOf(rs.getString(2))),
-                scope.tenantId().value());
+        List<StoredManifest> stored = repository.findManifests(scope.tenantId().value(), 50).stream()
+                .map(this::storedManifest).toList();
         List<ReleaseView> views = new ArrayList<>();
         for (StoredManifest item : stored) {
             try {
@@ -319,25 +311,22 @@ public class ReleaseApplicationService {
 
     private Readiness readiness(String tenantId, String manifestId) {
         Instant leaseFloor = clock.instant().minus(5, ChronoUnit.MINUTES);
-        return jdbc.query("select count(*) ready_count,coalesce(sum(capacity_value),0) total_capacity from mk_runtime_ack where tenant_id=? and manifest_id=? and status_name=? and acknowledged_at>=?",
-                rs -> rs.next() ? new Readiness(rs.getInt("ready_count"), rs.getLong("total_capacity"))
-                        : new Readiness(0, 0), tenantId, manifestId, RuntimeAck.Status.READY.name(),
-                format(leaseFloor));
+        ControlRepository.ReadinessRow row = repository.summarizeReadiness(tenantId, manifestId,
+                RuntimeAck.Status.READY.name(), format(leaseFloor));
+        return new Readiness(row.readyCount(), row.totalCapacity());
     }
 
     private void assertApproved(TenantScope scope, String definitionId, long version, List<String> caseIds) {
-        List<ResourceScope> definitions = jdbc.query("select campaign.organization_id,campaign.shop_id from mk_definition_version definition join mk_campaign campaign on campaign.tenant_id=definition.tenant_id and campaign.campaign_id=definition.campaign_id where definition.tenant_id=? and definition.definition_id=? and definition.version_no=? and definition.status=?",
-                (rs, rowNum) -> new ResourceScope(rs.getString(1), rs.getString(2)), scope.tenantId().value(),
-                definitionId, version, "APPROVED");
+        List<ControlRepository.ResourceScopeRow> definitions = repository.findDefinitionScopes(
+                scope.tenantId().value(), definitionId, version, true);
         if (definitions.size() != 1 || caseIds.isEmpty()) {
             throw new ConflictException("RELEASE_NOT_APPROVED", "approved definition and approval cases are required");
         }
-        requireScope(scope, definitions.getFirst());
+        requireScope(scope, resourceScope(definitions.getFirst()));
         for (String caseId : caseIds) {
-            Integer count = jdbc.query("select count(*) from mk_approval_case where tenant_id=? and case_id=? and definition_id=? and definition_version=? and status=?",
-                    rs -> rs.next() ? rs.getInt(1) : 0, scope.tenantId().value(), caseId, definitionId, version,
-                    "APPROVED");
-            if (count == null || count != 1) {
+            int count = repository.countApprovedCase(
+                    scope.tenantId().value(), caseId, definitionId, version);
+            if (count != 1) {
                 throw new ConflictException("APPROVAL_CASE_INVALID", "approval case does not cover release input");
             }
         }
@@ -347,8 +336,8 @@ public class ReleaseApplicationService {
         if (request.artifacts().isEmpty()) {
             throw new ConflictException("ARTIFACT_CLOSURE_EMPTY", "release requires compiled artifacts");
         }
-        String approvedSourceDigest = jdbc.query("select semantic_hash from mk_definition_version where tenant_id=? and definition_id=? and version_no=? and status='APPROVED'",
-                rs -> rs.next() ? rs.getString(1) : null, tenantId, request.definitionId(), request.definitionVersion());
+        String approvedSourceDigest = repository.findApprovedSemanticHash(
+                tenantId, request.definitionId(), request.definitionVersion()).orElse(null);
         for (ArtifactReference artifact : request.artifacts()) {
             if (!request.definitionId().equals(artifact.definitionId())
                     || request.definitionVersion() != artifact.definitionVersion()) {
@@ -378,40 +367,67 @@ public class ReleaseApplicationService {
         }
     }
 
+    /**
+     * 从已经审核冻结的图中提取权益版本，服务端核验发布资格；不信任控制台另传一份 closure。
+     */
+    private void assertBenefitClosure(TenantScope scope, StageReleaseRequest request) {
+        if (!"decision".equals(request.runtime())) return;
+        String graphJson = repository.findApprovedGraphJson(scope.tenantId().value(),
+                request.definitionId(), request.definitionVersion()).orElse(null);
+        if (graphJson == null) {
+            throw new ConflictException("RELEASE_NOT_APPROVED", "approved release graph is unavailable");
+        }
+        GraphDefinition graph;
+        try {
+            graph = mapper.readValue(graphJson, GraphDefinition.class);
+        } catch (JacksonException invalid) {
+            throw new IllegalStateException("approved release graph is invalid", invalid);
+        }
+        Set<String> references = graph.nodes().stream()
+                .filter(node -> "offer.fixed".equals(node.stableTypeId())
+                        || "offer.percentage".equals(node.stableTypeId()))
+                .map(node -> node.config().get("benefitDefinitionVersion"))
+                .filter(value -> value != null && !value.isBlank())
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        boolean missingReference = graph.nodes().stream()
+                .filter(node -> "offer.fixed".equals(node.stableTypeId())
+                        || "offer.percentage".equals(node.stableTypeId()))
+                .anyMatch(node -> node.config().get("benefitDefinitionVersion") == null
+                        || node.config().get("benefitDefinitionVersion").isBlank());
+        if (references.isEmpty() || missingReference) {
+            throw new ConflictException("BENEFIT_RELEASE_UNBOUND",
+                    "every offer artifact must reference a BenefitDefinition version bound to an ACTIVE SKU");
+        }
+        benefitReleaseGate.assertReleasable(scope, Set.copyOf(references));
+    }
+
     private Slot lockSlot(String tenantId, String environment, String cell, String runtime, String namespace) {
         List<Slot> slots = slotQuery(tenantId, environment, cell, runtime, namespace, true);
         if (slots.isEmpty()) {
-            try {
-                jdbc.update("insert into mk_release_slot(tenant_id,environment_name,cell_id,runtime_name,namespace_name,stable_generation,desired_generation,latest_generation,activation_sequence,updated_at) values(?,?,?,?,?,?,?,?,?,?)",
-                        tenantId, environment, cell, runtime, namespace, 0, 0, 0, 0, format(clock.instant()));
-            } catch (DuplicateKeyException concurrentCreator) {
-                // A concurrent transaction created the slot; the locked reread below serializes generation allocation.
-            }
+            repository.tryCreateReleaseSlot(new ControlRepository.ReleaseSlotWrite(tenantId, environment, cell,
+                    runtime, namespace, 0, 0, 0, 0, format(clock.instant())));
             slots = slotQuery(tenantId, environment, cell, runtime, namespace, true);
         }
+        if (slots.isEmpty()) throw new IllegalStateException("release slot was not created");
         return slots.getFirst();
     }
 
     private List<Slot> slotQuery(String tenantId, String environment, String cell, String runtime,
             String namespace, boolean lock) {
-        return jdbc.query("select stable_generation,desired_generation,latest_generation,activation_sequence from mk_release_slot where tenant_id=? and environment_name=? and cell_id=? and runtime_name=? and namespace_name=?" + (lock ? " for update" : ""),
-                (rs, rowNum) -> new Slot(rs.getLong(1), rs.getLong(2), rs.getLong(3), rs.getLong(4)),
-                tenantId, environment, cell, runtime, namespace);
+        return repository.findReleaseSlot(tenantId, environment, cell, runtime, namespace, lock)
+                .map(row -> List.of(new Slot(row.stableGeneration(), row.desiredGeneration(),
+                        row.latestGeneration(), row.activationSequence())))
+                .orElseGet(List::of);
     }
 
     private List<Long> retained(String tenantId, StageReleaseRequest request, int limit) {
-        return jdbc.query("select generation_no from mk_release_manifest where tenant_id=? and environment_name=? and cell_id=? and runtime_name=? and namespace_name=? and state_name='ACTIVE' order by generation_no desc limit ?",
-                (rs, rowNum) -> rs.getLong(1), tenantId, request.environment(), request.cell(), request.runtime(),
+        return repository.findRetainedGenerations(tenantId, request.environment(), request.cell(), request.runtime(),
                 request.namespace(), limit);
     }
 
     private StoredManifest stored(String tenantId, String manifestId, boolean lock) {
-        List<StoredManifest> manifests = jdbc.query(
-                "select manifest_json,state_name from mk_release_manifest where tenant_id=? and manifest_id=?" + (lock ? " for update" : ""),
-                (rs, rowNum) -> new StoredManifest(read(rs.getString(1)), State.valueOf(rs.getString(2))),
-                tenantId, manifestId);
-        if (manifests.isEmpty()) throw new NotFoundException("MANIFEST_NOT_FOUND", "release manifest not found");
-        return manifests.getFirst();
+        return repository.findManifest(tenantId, manifestId, lock).map(this::storedManifest)
+                .orElseThrow(() -> new NotFoundException("MANIFEST_NOT_FOUND", "release manifest not found"));
     }
 
     private StoredManifest byGeneration(String tenantId, ReleaseManifest slot, long generation) {
@@ -420,12 +436,13 @@ public class ReleaseApplicationService {
 
     private StoredManifest byGeneration(String tenantId, String environment, String cell, String runtime,
             String namespace, long generation) {
-        List<StoredManifest> manifests = jdbc.query(
-                "select manifest_json,state_name from mk_release_manifest where tenant_id=? and environment_name=? and cell_id=? and runtime_name=? and namespace_name=? and generation_no=?",
-                (rs, rowNum) -> new StoredManifest(read(rs.getString(1)), State.valueOf(rs.getString(2))),
-                tenantId, environment, cell, runtime, namespace, generation);
-        if (manifests.isEmpty()) throw new NotFoundException("GENERATION_NOT_FOUND", "release generation not found");
-        return manifests.getFirst();
+        return repository.findManifestByGeneration(tenantId, environment, cell, runtime, namespace, generation)
+                .map(this::storedManifest)
+                .orElseThrow(() -> new NotFoundException("GENERATION_NOT_FOUND", "release generation not found"));
+    }
+
+    private StoredManifest storedManifest(ControlRepository.ManifestRow row) {
+        return new StoredManifest(read(row.manifestJson()), State.valueOf(row.stateName()));
     }
 
     private String json(ReleaseManifest manifest) {
@@ -450,35 +467,33 @@ public class ReleaseApplicationService {
     }
 
     private void saveDirective(ActivationDirective directive) {
-        jdbc.update("insert into mk_activation_directive(tenant_id,directive_id,environment_name,cell_id,runtime_name,namespace_name,activation_sequence,generation_no,directive_json,created_at) values(?,?,?,?,?,?,?,?,?,?)",
-                directive.tenantId().value(), directive.directiveId(), directive.environment(), directive.cell(),
-                directive.runtime(), directive.namespace(), directive.activationSequence(), directive.generation(),
-                json(directive), format(directive.activatedAt()));
+        repository.saveDirective(new ControlRepository.DirectiveWrite(directive.tenantId().value(),
+                directive.directiveId(), directive.environment(), directive.cell(), directive.runtime(),
+                directive.namespace(), directive.activationSequence(), directive.generation(), json(directive),
+                format(directive.activatedAt())));
     }
 
     private void enqueueActivation(ActivationDirective directive) {
         String partitionKey = String.join(":", directive.tenantId().value(), directive.environment(),
                 directive.cell(), directive.runtime(), directive.namespace());
-        jdbc.update("insert into mk_outbox(tenant_id,event_id,aggregate_type,aggregate_id,event_type,payload_json,occurred_at,published_at,destination_topic,partition_key,stream_sequence,publish_attempts,next_attempt_at,last_error) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                directive.tenantId().value(), directive.directiveId(), "ReleaseSlot", partitionKey,
-                "RUNTIME_ACTIVATION_DIRECTIVE", json(directive), format(directive.activatedAt()), null,
-                activationTopic, partitionKey, directive.activationSequence(), 0,
-                format(directive.activatedAt()), "");
+        repository.saveOutbox(new ControlRepository.OutboxWrite(directive.tenantId().value(),
+                directive.directiveId(), "ReleaseSlot", partitionKey, "RUNTIME_ACTIVATION_DIRECTIVE",
+                json(directive), format(directive.activatedAt()), null, activationTopic, partitionKey,
+                directive.activationSequence(), 0, format(directive.activatedAt()), ""));
     }
 
     private void enqueueKillSwitch(KillSwitchDirective directive) {
         String partitionKey = "kill:" + directive.streamKey();
-        jdbc.update("insert into mk_outbox(tenant_id,event_id,aggregate_type,aggregate_id,event_type,payload_json,occurred_at,published_at,destination_topic,partition_key,stream_sequence,publish_attempts,next_attempt_at,last_error) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                directive.tenantId().value(), directive.directiveId(), "KillSwitch", directive.streamKey(),
-                "KILL_SWITCH_DIRECTIVE", json(directive), format(directive.activatedAt()), null,
-                killSwitchTopic, partitionKey, directive.switchSequence(), 0, format(directive.activatedAt()), "");
+        repository.saveOutbox(new ControlRepository.OutboxWrite(directive.tenantId().value(),
+                directive.directiveId(), "KillSwitch", directive.streamKey(), "KILL_SWITCH_DIRECTIVE",
+                json(directive), format(directive.activatedAt()), null, killSwitchTopic, partitionKey,
+                directive.switchSequence(), 0, format(directive.activatedAt()), ""));
     }
 
     private ActivationDirective latestDirective(String tenantId, ReleaseManifest manifest) {
-        List<ActivationDirective> rows = jdbc.query("select directive_json from mk_activation_directive where tenant_id=? and environment_name=? and cell_id=? and runtime_name=? and namespace_name=? and generation_no=? order by activation_sequence desc limit 1",
-                (rs, rowNum) -> read(rs.getString(1), ActivationDirective.class), tenantId, manifest.environment(),
-                manifest.cell(), manifest.runtime(), manifest.namespace(), manifest.generation());
-        return rows.isEmpty() ? null : rows.getFirst();
+        return repository.findLatestDirectiveJson(tenantId, manifest.environment(), manifest.cell(),
+                        manifest.runtime(), manifest.namespace(), manifest.generation())
+                .map(value -> read(value, ActivationDirective.class)).orElse(null);
     }
 
     private String json(Object value) {
@@ -493,12 +508,15 @@ public class ReleaseApplicationService {
 
     private void requireManifestScope(TenantScope scope, ReleaseManifest manifest) {
         ArtifactReference artifact = manifest.artifacts().getFirst();
-        List<ResourceScope> rows = jdbc.query("select campaign.organization_id,campaign.shop_id from mk_definition_version definition join mk_campaign campaign on campaign.tenant_id=definition.tenant_id and campaign.campaign_id=definition.campaign_id where definition.tenant_id=? and definition.definition_id=? and definition.version_no=?",
-                (rs, rowNum) -> new ResourceScope(rs.getString(1), rs.getString(2)), scope.tenantId().value(),
-                artifact.definitionId(), artifact.definitionVersion());
+        List<ControlRepository.ResourceScopeRow> rows = repository.findDefinitionScopes(scope.tenantId().value(),
+                artifact.definitionId(), artifact.definitionVersion(), false);
         if (rows.size() != 1) throw new NotFoundException("RELEASE_DEFINITION_NOT_FOUND",
                 "release definition scope is unavailable");
-        requireScope(scope, rows.getFirst());
+        requireScope(scope, resourceScope(rows.getFirst()));
+    }
+
+    private static ResourceScope resourceScope(ControlRepository.ResourceScopeRow row) {
+        return new ResourceScope(row.organizationId(), row.shopId());
     }
 
     private static void requireScope(TenantScope scope, ResourceScope resource) {

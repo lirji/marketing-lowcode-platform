@@ -17,7 +17,11 @@ if [[ "${wait_mode}" == true ]]; then
   wait_http gateway "${GATEWAY_URL}/actuator/health/readiness" 150
   wait_http console "${CONSOLE_URL}/healthz" 60
   wait_http flink "${FLINK_URL}/overview" 120
-  wait_http keycloak "${KEYCLOAK_URL}/realms/marketing/.well-known/openid-configuration" 120
+  # DEV 模式使用本地开发请求头，不依赖 Keycloak；此时强制等待 Keycloak 会让
+  # smoke 在与其他项目共用 8180 端口时无意义地超时。
+  if [[ "${MARKETING_SECURITY_MODE:-DEV}" != "DEV" ]]; then
+    wait_http keycloak "${KEYCLOAK_URL}/realms/marketing/.well-known/openid-configuration" 120
+  fi
   if [[ "${with_observability}" == true ]]; then
     wait_http prometheus "${PROMETHEUS_URL}/-/ready" 60
     wait_http grafana "${GRAFANA_URL}/api/health" 90

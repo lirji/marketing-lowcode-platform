@@ -51,7 +51,7 @@ function TraceSearch() {
   const [searched, setSearched] = useState(api.demoMode)
   const trace = useMutation({ mutationFn: (id: string) => kind === 'order' ? api.traceByOrder(id) : api.traceByRequest(id) })
   const runSearch = () => { setSearched(true); if (!api.demoMode) trace.mutate(searchId.trim()) }
-  return <div id="tab-全链路查询" role="tabpanel"><Panel className="ops-search"><div className="lookup"><label><span className="sr-only">查询类型</span><select value={kind} onChange={(event) => setKind(event.target.value as 'request' | 'order')}><option value="request">Request ID</option><option value="order">Order ID</option></select></label><label><Search size={16} /><span className="sr-only">查询值</span><input value={searchId} onChange={(event) => setSearchId(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && runSearch()} /></label><Button tone="primary" onClick={runSearch} disabled={!searchId.trim()}>查询</Button></div></Panel>{trace.isError && <StateBanner tone="error" title="轨迹查询失败" detail={problemDetail(trace.error)} />}{searched && <TraceResult requestId={searchId} live={trace.data} />}</div>
+  return <div id="tab-全链路查询" role="tabpanel"><StateBanner tone="info" title="这是营销 Request ID 业务轨迹" detail="不是 Grafana Tempo。跨服务 span 请到 http://127.0.0.1:3001 的 Explore / Tempo 查看。" /><Panel className="ops-search"><div className="lookup"><label><span className="sr-only">查询类型</span><select value={kind} onChange={(event) => setKind(event.target.value as 'request' | 'order')}><option value="request">Request ID</option><option value="order">Order ID</option></select></label><label><Search size={16} /><span className="sr-only">查询值</span><input value={searchId} onChange={(event) => setSearchId(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && runSearch()} /></label><Button tone="primary" onClick={runSearch} disabled={!searchId.trim()}>查询</Button></div></Panel>{trace.isError && <StateBanner tone="error" title="轨迹查询失败" detail={problemDetail(trace.error)} />}{searched && <TraceResult requestId={searchId} live={trace.data} />}</div>
 }
 
 function TraceResult({ requestId, live }: { requestId: string; live?: TraceView }) {
@@ -139,12 +139,22 @@ function QuarantineRow({ item, canReplay, onReplay }: { item: QuarantineView; ca
   return <button type="button" onClick={canReplay ? onReplay : undefined}><TriangleAlert /><div><strong>{item.reasonCode}</strong><small>{item.quarantineId} · {item.receiptId ?? ''}</small></div><code>{item.createdAt ?? ''}</code><Badge tone={item.state === 'REPLAYED' ? 'good' : 'warn'}>{item.state}</Badge><span>{canReplay ? '重放' : ''}</span></button>
 }
 
-function ReconciliationPanel() {
+export function ReconciliationPanel() {
   const reconcile = useQuery({ queryKey: ['reconciliation'], queryFn: api.reconciliation, enabled: !api.demoMode })
   if (api.demoMode) return <ReconciliationDemo />
   if (reconcile.isError) return <StateBanner tone="error" title="对账失败" detail={problemDetail(reconcile.error)} />
   if (!reconcile.data) return <EmptyState title="正在核对资金守恒" detail="读取 /api/v1/funding/reconciliation。" />
-  return <StateBanner tone={reconcile.data.balanced ? 'success' : 'error'} title={reconcile.data.balanced ? '资金守恒成立' : '存在不变量差异'} detail={reconcile.data.violations[0] ?? `checkedAt ${reconcile.data.checkedAt ?? ''}`} />
+  return <Panel className="reconciliation-report">
+    <PanelHeader eyebrow="LEDGER RECONCILIATION" title={reconcile.data.balanced ? '本货主资金守恒成立' : '存在不变量差异'} aside={<Badge tone={reconcile.data.balanced ? 'good' : 'danger'}>{reconcile.data.balanced ? 'PASS' : `${reconcile.data.violations.length} VIOLATIONS`}</Badge>} />
+    <dl className="reconciliation-summary">
+      <div><dt>Ledger movement</dt><dd>{reconcile.data.ledgerMovement ?? '—'}</dd></div>
+      <div><dt>Checked at</dt><dd>{reconcile.data.checkedAt ?? '—'}</dd></div>
+    </dl>
+    {reconcile.data.violations.length > 0
+      ? <ol className="reconciliation-violations" aria-label="全部对账差异">{reconcile.data.violations.map((violation, index) => <li key={`${index}-${violation}`}><TriangleAlert size={15} /><span>{violation}</span></li>)}</ol>
+      : <StateBanner tone="success" title="未发现差异" detail="本次校验返回 violations=[]。" />}
+    <p className="reconciliation-footnote">有差异请按业务键到权益账本或流程实例继续排查；对账只报告差异，不执行补发。</p>
+  </Panel>
 }
 
 function ReconciliationDemo() {

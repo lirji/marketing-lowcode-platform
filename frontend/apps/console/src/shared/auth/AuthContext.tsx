@@ -5,7 +5,7 @@ import { UserManager, WebStorageStateStore, type User } from 'oidc-client-ts'
 import { runtimeConfig } from '../config/runtime'
 import { setAccessTokenProvider, setIdentityProvider, setUnauthorizedHandler } from '../api/client'
 import { AuthStateContext, devAuthState, permits, type AuthState, type IdentityClaims } from './auth-context'
-import { decodeJwtPayload, permissionNames, splitClaim } from './claims'
+import { businessTenantFromPayload, decodeJwtPayload, permissionNames, splitClaim } from './claims'
 import { getDevTenantId } from './devTenant'
 import { completeOidcRedirect, returnToFromState } from './oidcCallback'
 import { sanitizeReturnTo } from './tenantSelection'
@@ -13,7 +13,7 @@ import { sanitizeReturnTo } from './tenantSelection'
 function claimsFromUser(user: User | null): IdentityClaims {
   const payload = user?.access_token ? decodeJwtPayload(user.access_token) : {}
   const owner = String(payload.owner ?? '').trim()
-  const tenantId = String(payload.tenant_id ?? owner)
+  const tenantId = businessTenantFromPayload(payload)
   const organizations = splitClaim(payload.org_ids)
   return {
     tenantId,

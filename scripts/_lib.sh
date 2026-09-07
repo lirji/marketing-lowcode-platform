@@ -8,6 +8,7 @@ ENV_FILE="${PROJECT_ROOT}/.env"
 DEV_INFRA_ROOT="${DEV_INFRA_ROOT:-$(cd "${PROJECT_ROOT}/.." && pwd)/dev-infra}"
 DEV_INFRA_ENV_FILE="${DEV_INFRA_ENV_FILE:-${DEV_INFRA_ROOT}/.env}"
 DEV_INFRA_COMPOSE_FILE="${DEV_INFRA_ROOT}/compose.yaml"
+DEV_INFRA_COMPOSE_PROJECT_NAME="${DEV_INFRA_COMPOSE_PROJECT_NAME:-dev-infra}"
 MARKETING_INFRA_COMPOSE_FILE="${DEV_INFRA_ROOT}/marketing/compose.yaml"
 MARKETING_INFRA_TOOL="${DEV_INFRA_ROOT}/bin/marketing-infra"
 
@@ -63,7 +64,10 @@ infra_compose() {
     echo "Missing dev-infra checkout or .env under ${DEV_INFRA_ROOT}" >&2
     return 1
   }
-  docker compose --env-file "${DEV_INFRA_ENV_FILE}" -f "${DEV_INFRA_COMPOSE_FILE}" "$@"
+  # marketing 的 .env 会导出 COMPOSE_PROJECT_NAME=marketing-r1；共享基础设施必须
+  # 显式锁定自己的 Compose 项目名，否则 exec/ps 会误查 marketing-r1 项目。
+  docker compose --project-name "${DEV_INFRA_COMPOSE_PROJECT_NAME}" \
+    --env-file "${DEV_INFRA_ENV_FILE}" -f "${DEV_INFRA_COMPOSE_FILE}" "$@"
 }
 
 marketing_infra_compose() {

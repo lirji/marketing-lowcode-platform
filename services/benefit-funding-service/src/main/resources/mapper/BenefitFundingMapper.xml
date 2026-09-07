@@ -1,0 +1,413 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.benefit.infrastructure.persistence.mapper.BenefitFundingMapper">
+
+    <sql id="accountColumns">
+        resource_key AS resourceKey, resource_type AS type, currency_code AS currency,
+        authorized_amount AS authorized, available_amount AS available, reserved_amount AS reserved,
+        consumed_amount AS consumed, returned_amount AS returned, fencing_epoch AS fencingEpoch,
+        version_no AS version, state_name AS state
+    </sql>
+    <insert id="insertAccount">
+        INSERT INTO mk_resource_account
+            (tenant_id, resource_key, resource_type, currency_code, authorized_amount, available_amount,
+             reserved_amount, consumed_amount, returned_amount, fencing_epoch, version_no, state_name, updated_at)
+        VALUES
+            (#{tenantId}, #{resourceKey}, #{resourceType}, #{currencyCode}, #{authorizedAmount},
+             #{availableAmount}, #{reservedAmount}, #{consumedAmount}, #{returnedAmount}, #{fencingEpoch},
+             #{versionNo}, #{stateName}, #{updatedAt})
+    </insert>
+    <select id="selectAccounts" resultType="com.acme.marketing.benefit.domain.ResourceAccount">
+        SELECT <include refid="accountColumns"/> FROM mk_resource_account WHERE tenant_id = #{tenantId}
+        <if test="ordered">ORDER BY resource_key</if>
+    </select>
+    <select id="selectAccount" resultType="com.acme.marketing.benefit.domain.ResourceAccount">
+        SELECT <include refid="accountColumns"/> FROM mk_resource_account
+        WHERE tenant_id = #{tenantId} AND resource_key = #{resourceKey}
+        <if test="lock">FOR UPDATE</if>
+    </select>
+    <update id="updateAccountFence">
+        UPDATE mk_resource_account
+        SET fencing_epoch = #{fencingEpoch}, version_no = #{versionNo}, state_name = #{stateName},
+            updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND resource_key = #{resourceKey}
+          AND fencing_epoch = #{expectedFencingEpoch} AND version_no = #{expectedVersionNo}
+    </update>
+    <update id="updateAccountBalance">
+        UPDATE mk_resource_account
+        SET available_amount = #{availableAmount}, reserved_amount = #{reservedAmount},
+            consumed_amount = #{consumedAmount}, returned_amount = #{returnedAmount},
+            version_no = #{versionNo}, updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND resource_key = #{resourceKey}
+          AND version_no = #{expectedVersionNo}
+    </update>
+
+    <sql id="benefitColumns">
+        benefit_id AS benefitId, version_no AS version, name_text AS name, status_name AS status,
+        resource_key AS resourceKey, benefit_sku_id AS benefitSkuId, policy_json AS policyJson,
+        created_by AS createdBy, created_at AS createdAt
+    </sql>
+    <select id="selectLatestBenefits"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$BenefitRow">
+        SELECT <include refid="benefitColumns"/>
+        FROM mk_benefit_definition current
+        WHERE tenant_id = #{tenantId}
+          AND version_no = (
+              SELECT MAX(latest.version_no) FROM mk_benefit_definition latest
+              WHERE latest.tenant_id = current.tenant_id AND latest.benefit_id = current.benefit_id
+          )
+        ORDER BY name_text, benefit_id
+    </select>
+    <select id="selectLatestBenefit"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$BenefitRow">
+        SELECT <include refid="benefitColumns"/> FROM mk_benefit_definition
+        WHERE tenant_id = #{tenantId} AND benefit_id = #{benefitId}
+        ORDER BY version_no DESC LIMIT 1
+    </select>
+    <select id="selectReleaseBenefit"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$ReleaseBenefitRow">
+        SELECT status_name AS status, benefit_sku_id AS benefitSkuId, policy_json AS policyJson
+        FROM mk_benefit_definition
+        WHERE tenant_id = #{tenantId} AND benefit_id = #{benefitId} AND version_no = #{version}
+    </select>
+    <insert id="upsertBenefitHead">
+        INSERT INTO mk_benefit_definition_head (tenant_id, benefit_id, latest_version)
+        VALUES (#{tenantId}, #{benefitId}, 0)
+        ON DUPLICATE KEY UPDATE benefit_id = benefit_id
+    </insert>
+    <select id="selectBenefitHeadForUpdate" resultType="java.lang.Long">
+        SELECT latest_version FROM mk_benefit_definition_head
+        WHERE tenant_id = #{tenantId} AND benefit_id = #{benefitId}
+        FOR UPDATE
+    </select>
+    <select id="countResource" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM mk_resource_account
+        WHERE tenant_id = #{tenantId} AND resource_key = #{resourceKey}
+    </select>
+    <insert id="insertBenefit">
+        INSERT INTO mk_benefit_definition
+            (tenant_id, benefit_id, version_no, name_text, status_name, resource_key,
+             benefit_sku_id, policy_json, created_by, created_at)
+        VALUES
+            (#{tenantId}, #{benefitId}, #{versionNo}, #{name}, #{status}, #{resourceKey},
+             #{benefitSkuId}, #{policyJson}, #{createdBy}, #{createdAt})
+    </insert>
+    <update id="updateBenefitHead">
+        UPDATE mk_benefit_definition_head SET latest_version = #{version}
+        WHERE tenant_id = #{tenantId} AND benefit_id = #{benefitId}
+    </update>
+
+    <select id="countBuckets" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM mk_resource_escrow_bucket
+        WHERE tenant_id = #{tenantId} AND resource_key = #{resourceKey}
+    </select>
+    <update id="updateBucketFence">
+        UPDATE mk_resource_escrow_bucket
+        SET fencing_epoch = #{fencingEpoch}, state_name = #{stateName},
+            version_no = version_no + 1, updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND resource_key = #{resourceKey}
+          AND fencing_epoch = #{expectedFencingEpoch}
+    </update>
+    <insert id="insertBucket">
+        INSERT INTO mk_resource_escrow_bucket
+            (tenant_id, resource_key, bucket_id, authorized_amount, available_amount, reserved_amount,
+             consumed_amount, returned_amount, fencing_epoch, version_no, state_name, updated_at)
+        VALUES
+            (#{tenantId}, #{resourceKey}, #{bucketId}, #{authorizedAmount}, #{availableAmount},
+             #{reservedAmount}, #{consumedAmount}, #{returnedAmount}, #{fencingEpoch}, #{versionNo},
+             #{stateName}, #{updatedAt})
+    </insert>
+    <select id="selectEligibleBucketIds" resultType="java.lang.Integer">
+        SELECT bucket_id FROM mk_resource_escrow_bucket
+        WHERE tenant_id = #{tenantId} AND resource_key = #{resourceKey} AND state_name = 'ACTIVE'
+          AND fencing_epoch = #{fencingEpoch} AND available_amount &gt;= #{amount}
+        ORDER BY bucket_id
+    </select>
+    <update id="reserveBucket">
+        UPDATE mk_resource_escrow_bucket
+        SET available_amount = available_amount - #{amount}, reserved_amount = reserved_amount + #{amount},
+            version_no = version_no + 1, updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND resource_key = #{resourceKey} AND bucket_id = #{bucketId}
+          AND state_name = 'ACTIVE' AND fencing_epoch = #{fencingEpoch}
+          AND available_amount &gt;= #{amount}
+    </update>
+    <select id="selectBucketVersion" resultType="java.lang.Long">
+        SELECT version_no FROM mk_resource_escrow_bucket
+        WHERE tenant_id = #{tenantId} AND resource_key = #{resourceKey} AND bucket_id = #{bucketId}
+    </select>
+    <sql id="bucketColumns">
+        bucket_id AS bucketId, authorized_amount AS authorized, available_amount AS available,
+        reserved_amount AS reserved, consumed_amount AS consumed, returned_amount AS returned,
+        fencing_epoch AS fencingEpoch, version_no AS version, state_name AS state
+    </sql>
+    <select id="selectBucketsForUpdate"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$BudgetBucketRow">
+        SELECT <include refid="bucketColumns"/> FROM mk_resource_escrow_bucket
+        WHERE tenant_id = #{tenantId} AND resource_key = #{resourceKey}
+        ORDER BY bucket_id FOR UPDATE
+    </select>
+    <select id="selectBucketForUpdate"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$BudgetBucketRow">
+        SELECT <include refid="bucketColumns"/> FROM mk_resource_escrow_bucket
+        WHERE tenant_id = #{tenantId} AND resource_key = #{resourceKey} AND bucket_id = #{bucketId}
+        FOR UPDATE
+    </select>
+    <update id="updateBucketBalance">
+        UPDATE mk_resource_escrow_bucket
+        SET available_amount = #{available}, reserved_amount = #{reserved}, consumed_amount = #{consumed},
+            returned_amount = #{returned}, version_no = #{version}, updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND resource_key = #{resourceKey} AND bucket_id = #{bucketId}
+          AND version_no = #{expectedVersion} AND fencing_epoch = #{fencingEpoch}
+    </update>
+    <select id="selectBucketTotals"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$BucketTotals">
+        SELECT COUNT(*) AS `count`, COALESCE(SUM(authorized_amount), 0) AS authorized,
+               COALESCE(SUM(available_amount), 0) AS available,
+               COALESCE(SUM(reserved_amount), 0) AS reserved,
+               COALESCE(SUM(consumed_amount), 0) AS consumed,
+               COALESCE(SUM(returned_amount), 0) AS returned,
+               COALESCE(MAX(version_no), 0) AS maxVersion,
+               COALESCE(MIN(fencing_epoch), 0) AS minFencingEpoch,
+               COALESCE(MAX(fencing_epoch), 0) AS maxFencingEpoch,
+               COUNT(DISTINCT state_name) AS distinctStates, MIN(state_name) AS state
+        FROM mk_resource_escrow_bucket
+        WHERE tenant_id = #{tenantId} AND resource_key = #{resourceKey}
+    </select>
+
+    <insert id="insertJourneyGrant">
+        INSERT INTO mk_journey_benefit_grant
+            (tenant_id, command_id, enrollment_id, subject_token, journey_id, journey_version,
+             resource_key, benefit_id, quantity_value, fencing_epoch, state_name, created_at)
+        VALUES
+            (#{tenantId}, #{commandId}, #{enrollmentId}, #{subjectToken}, #{journeyId}, #{journeyVersion},
+             #{resourceKey}, #{benefitId}, #{quantity}, #{fencingEpoch}, #{stateName}, #{createdAt})
+    </insert>
+    <insert id="insertApplication">
+        INSERT INTO mk_promotion_application
+            (tenant_id, application_id, quote_id, decision_request_id, order_id, organization_id,
+             shop_ids_json, cart_digest, token_digest, generation_no, state_name, total_discount,
+             currency_code, expires_at, created_at, updated_at, expiry_next_attempt_at)
+        VALUES
+            (#{tenantId}, #{applicationId}, #{quoteId}, #{decisionRequestId}, #{orderId}, #{organizationId},
+             #{shopIdsJson}, #{cartDigest}, #{tokenDigest}, #{generationNo}, #{stateName}, #{totalDiscount},
+             #{currencyCode}, #{expiresAt}, #{createdAt}, #{updatedAt}, #{expiryNextAttemptAt})
+    </insert>
+    <insert id="insertReservationItem">
+        INSERT INTO mk_reservation_item
+            (tenant_id, application_id, resource_key, resource_type, currency_code, original_amount,
+             reserved_amount, consumed_amount, refunded_amount, released_amount, reservation_epoch)
+        VALUES
+            (#{tenantId}, #{applicationId}, #{resourceKey}, #{resourceType}, #{currencyCode},
+             #{originalAmount}, #{reservedAmount}, #{consumedAmount}, #{refundedAmount},
+             #{releasedAmount}, #{reservationEpoch})
+    </insert>
+    <insert id="insertEscrowAllocation">
+        INSERT INTO mk_reservation_escrow_allocation
+            (tenant_id, application_id, resource_key, bucket_id, original_amount, reserved_amount,
+             consumed_amount, refunded_amount, released_amount, reservation_epoch)
+        VALUES
+            (#{tenantId}, #{applicationId}, #{resourceKey}, #{bucketId}, #{originalAmount},
+             #{reservedAmount}, #{consumedAmount}, #{refundedAmount}, #{releasedAmount}, #{reservationEpoch})
+    </insert>
+    <select id="selectExpiredApplications"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$ExpiredApplicationRow">
+        SELECT tenant_id AS tenantId, application_id AS applicationId
+        FROM mk_promotion_application
+        WHERE state_name = 'RESERVED' AND expires_at &lt;= #{now} AND expiry_next_attempt_at &lt;= #{now}
+        <if test="tenantId != null">AND tenant_id = #{tenantId}</if>
+        ORDER BY expires_at LIMIT #{limit}
+    </select>
+    <update id="expireApplication">
+        UPDATE mk_promotion_application SET state_name = 'EXPIRED', updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND application_id = #{applicationId} AND state_name = 'RESERVED'
+    </update>
+    <select id="selectExpiryAttemptsForUpdate" resultType="java.lang.Integer">
+        SELECT expiry_attempts FROM mk_promotion_application
+        WHERE tenant_id = #{tenantId} AND application_id = #{applicationId}
+        FOR UPDATE
+    </select>
+    <update id="updateExpiryFailure">
+        UPDATE mk_promotion_application
+        SET expiry_attempts = #{attempts}, expiry_next_attempt_at = #{nextAttemptAt},
+            expiry_last_error = #{lastError}
+        WHERE tenant_id = #{tenantId} AND application_id = #{applicationId} AND state_name = 'RESERVED'
+    </update>
+    <update id="updateApplicationState">
+        UPDATE mk_promotion_application SET state_name = #{stateName}, updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND application_id = #{applicationId}
+    </update>
+    <select id="selectApplicationForUpdate"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$StoredApplicationRow">
+        SELECT application_id AS applicationId, order_id AS orderId, organization_id AS organizationId,
+               shop_ids_json AS shopIdsJson, state_name AS state, expires_at AS expiresAt
+        FROM mk_promotion_application
+        WHERE tenant_id = #{tenantId} AND application_id = #{applicationId}
+        FOR UPDATE
+    </select>
+    <select id="selectReservationItems"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$ReservationItemRow">
+        SELECT resource_key AS resourceKey, original_amount AS originalAmount,
+               reserved_amount AS reservedAmount, consumed_amount AS consumedAmount,
+               refunded_amount AS refundedAmount, released_amount AS releasedAmount,
+               reservation_epoch AS reservationEpoch
+        FROM mk_reservation_item
+        WHERE tenant_id = #{tenantId} AND application_id = #{applicationId}
+        ORDER BY resource_key
+        <if test="lock">FOR UPDATE</if>
+    </select>
+    <select id="selectApplication"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$ApplicationRow">
+        SELECT quote_id AS quoteId, order_id AS orderId, cart_digest AS cartDigest,
+               generation_no AS generation, state_name AS state, total_discount AS totalDiscount,
+               currency_code AS currency, expires_at AS expiresAt, created_at AS createdAt,
+               updated_at AS updatedAt
+        FROM mk_promotion_application
+        WHERE tenant_id = #{tenantId} AND application_id = #{applicationId}
+    </select>
+    <select id="selectItems"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$ItemRow">
+        SELECT resource_key AS resourceKey, resource_type AS type, currency_code AS currency,
+               original_amount AS originalAmount, reserved_amount AS reservedAmount,
+               consumed_amount AS consumedAmount, refunded_amount AS refundedAmount,
+               released_amount AS releasedAmount, reservation_epoch AS reservationEpoch
+        FROM mk_reservation_item
+        WHERE tenant_id = #{tenantId} AND application_id = #{applicationId}
+        ORDER BY resource_key
+    </select>
+    <select id="selectEscrowAllocationsForUpdate"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$EscrowAllocationRow">
+        SELECT bucket_id AS bucketId, original_amount AS original, reserved_amount AS reserved,
+               consumed_amount AS consumed, refunded_amount AS refunded, released_amount AS released,
+               reservation_epoch AS reservationEpoch
+        FROM mk_reservation_escrow_allocation
+        WHERE tenant_id = #{tenantId} AND application_id = #{applicationId} AND resource_key = #{resourceKey}
+        ORDER BY bucket_id FOR UPDATE
+    </select>
+    <update id="updateReservationAmounts">
+        UPDATE mk_reservation_item
+        <choose>
+            <when test="operation == 'CONFIRM'">
+                SET reserved_amount = reserved_amount - #{amount}, consumed_amount = consumed_amount + #{amount}
+            </when>
+            <when test="operation == 'RELEASE'">
+                SET reserved_amount = reserved_amount - #{amount}, released_amount = released_amount + #{amount}
+            </when>
+            <otherwise>
+                SET consumed_amount = consumed_amount - #{amount}, refunded_amount = refunded_amount + #{amount}
+            </otherwise>
+        </choose>
+        WHERE tenant_id = #{tenantId} AND application_id = #{applicationId} AND resource_key = #{resourceKey}
+        <choose>
+            <when test="operation == 'REFUND'">AND consumed_amount &gt;= #{amount}</when>
+            <otherwise>AND reserved_amount &gt;= #{amount}</otherwise>
+        </choose>
+    </update>
+    <update id="updateEscrowAllocationAmounts">
+        UPDATE mk_reservation_escrow_allocation
+        <choose>
+            <when test="operation == 'CONFIRM'">
+                SET reserved_amount = reserved_amount - #{amount}, consumed_amount = consumed_amount + #{amount}
+            </when>
+            <when test="operation == 'RELEASE'">
+                SET reserved_amount = reserved_amount - #{amount}, released_amount = released_amount + #{amount}
+            </when>
+            <otherwise>
+                SET consumed_amount = consumed_amount - #{amount}, refunded_amount = refunded_amount + #{amount}
+            </otherwise>
+        </choose>
+        WHERE tenant_id = #{tenantId} AND application_id = #{applicationId} AND resource_key = #{resourceKey}
+          AND bucket_id = #{bucketId}
+        <choose>
+            <when test="operation == 'REFUND'">AND consumed_amount &gt;= #{amount}</when>
+            <otherwise>AND reserved_amount &gt;= #{amount}</otherwise>
+        </choose>
+    </update>
+
+    <select id="selectLedger"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$LedgerRow">
+        SELECT application_id AS applicationId, resource_key AS resourceKey,
+               escrow_bucket_id AS escrowBucketId, operation_name AS operation,
+               debit_bucket AS debitBucket, credit_bucket AS creditBucket,
+               amount_value AS amount, account_version AS accountVersion
+        FROM mk_funding_ledger WHERE tenant_id = #{tenantId}
+        ORDER BY resource_key, escrow_bucket_id, account_version, ledger_id
+    </select>
+    <select id="selectReconcileItems"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$ReconcileItemRow">
+        SELECT application_id AS applicationId, resource_key AS resourceKey,
+               original_amount AS original, reserved_amount AS reserved, consumed_amount AS consumed,
+               refunded_amount AS refunded, released_amount AS released, reservation_epoch AS reservationEpoch
+        FROM mk_reservation_item WHERE tenant_id = #{tenantId}
+    </select>
+    <select id="selectEscrowReconcileItems"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$EscrowReconcileRow">
+        SELECT application_id AS applicationId, resource_key AS resourceKey,
+               SUM(original_amount) AS original, SUM(reserved_amount) AS reserved,
+               SUM(consumed_amount) AS consumed, SUM(refunded_amount) AS refunded,
+               SUM(released_amount) AS released, MIN(reservation_epoch) AS minReservationEpoch,
+               MAX(reservation_epoch) AS maxReservationEpoch
+        FROM mk_reservation_escrow_allocation
+        WHERE tenant_id = #{tenantId}
+        GROUP BY application_id, resource_key
+    </select>
+    <select id="selectOutboxTypes"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$OutboxTypeRow">
+        SELECT aggregate_id AS aggregateId, event_type AS eventType
+        FROM mk_benefit_outbox WHERE tenant_id = #{tenantId}
+    </select>
+    <select id="selectApplicationStates"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$ApplicationStateRow">
+        SELECT application_id AS applicationId, state_name AS stateName
+        FROM mk_promotion_application WHERE tenant_id = #{tenantId}
+    </select>
+
+    <insert id="insertCommand">
+        INSERT INTO mk_command_dedup
+            (tenant_id, command_id, payload_hash, state_name, created_at, expires_at)
+        VALUES
+            (#{tenantId}, #{commandId}, #{payloadHash}, #{stateName}, #{createdAt}, #{expiresAt})
+    </insert>
+    <select id="selectCommandForUpdate"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$CommandRow">
+        SELECT payload_hash AS payloadHash, state_name AS state, response_json AS responseJson
+        FROM mk_command_dedup
+        WHERE tenant_id = #{tenantId} AND command_id = #{commandId}
+        FOR UPDATE
+    </select>
+    <update id="updateCommandCompleted">
+        UPDATE mk_command_dedup SET state_name = 'COMPLETED', response_json = #{responseJson}
+        WHERE tenant_id = #{tenantId} AND command_id = #{commandId}
+    </update>
+    <insert id="insertLedger">
+        INSERT INTO mk_funding_ledger
+            (tenant_id, ledger_id, application_id, order_id, resource_key, escrow_bucket_id,
+             operation_name, debit_bucket, credit_bucket, amount_value, account_version,
+             correction_of, occurred_at)
+        VALUES
+            (#{tenantId}, #{ledgerId}, #{applicationId}, #{orderId}, #{resourceKey}, #{escrowBucketId},
+             #{operation}, #{debitBucket}, #{creditBucket}, #{amount}, #{accountVersion},
+             #{correctionOf}, #{occurredAt})
+    </insert>
+    <insert id="insertOutbox">
+        INSERT INTO mk_benefit_outbox
+            (tenant_id, event_id, aggregate_id, event_type, destination_topic, partition_key,
+             stream_sequence, payload_json, next_attempt_at, created_at)
+        VALUES
+            (#{tenantId}, #{eventId}, #{aggregateId}, #{eventType}, #{destinationTopic}, #{partitionKey},
+             #{streamSequence}, #{payloadJson}, #{nextAttemptAt}, #{createdAt})
+    </insert>
+    <update id="incrementOutboxPosition">
+        UPDATE mk_benefit_outbox_position SET last_sequence = last_sequence + 1, updated_at = #{updatedAt}
+        WHERE tenant_id = #{tenantId} AND aggregate_id = #{aggregateId}
+    </update>
+    <insert id="insertOutboxPosition">
+        INSERT INTO mk_benefit_outbox_position (tenant_id, aggregate_id, last_sequence, updated_at)
+        VALUES (#{tenantId}, #{aggregateId}, 1, #{updatedAt})
+    </insert>
+    <select id="selectOutboxPosition" resultType="java.lang.Long">
+        SELECT last_sequence FROM mk_benefit_outbox_position
+        WHERE tenant_id = #{tenantId} AND aggregate_id = #{aggregateId}
+    </select>
+</mapper>

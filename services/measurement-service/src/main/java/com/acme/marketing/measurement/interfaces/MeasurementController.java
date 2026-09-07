@@ -3,6 +3,7 @@ package com.acme.marketing.measurement.interfaces;
 import com.acme.marketing.contracts.event.MarketingFact;
 import com.acme.marketing.measurement.application.MeasurementService;
 import com.acme.marketing.platform.web.TenantContextHolder;
+import com.acme.marketing.platform.web.PersistentIdempotentCommandExecutor;
 import java.time.Instant;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -20,11 +21,18 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1")
 public class MeasurementController {
     private final MeasurementService service;
-    public MeasurementController(MeasurementService service) { this.service = service; }
+    private final PersistentIdempotentCommandExecutor commands;
+    public MeasurementController(MeasurementService service, PersistentIdempotentCommandExecutor commands) {
+        this.service = service;
+        this.commands = commands;
+    }
 
     @PostMapping("/experiments") @ResponseStatus(HttpStatus.CREATED)
-    public MeasurementService.ExperimentView create(@RequestBody MeasurementService.ExperimentRequest request) {
-        return service.createExperiment(request);
+    public MeasurementService.ExperimentView create(@RequestHeader("Idempotency-Key") String key,
+            @RequestBody MeasurementService.ExperimentRequest request) {
+        return commands.execute(TenantContextHolder.requireCurrent().tenantId(), "measurement.experiment.create",
+                key, request, MeasurementService.ExperimentView.class,
+                () -> service.createExperiment(request));
     }
 
     @PostMapping("/experiments/{experimentId}/versions/{version}:assign")

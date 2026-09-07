@@ -76,6 +76,37 @@ export const approvalViewSchema = z.object({
 })
 export type ApprovalView = z.infer<typeof approvalViewSchema>
 
+export const artifactReferenceSchema = z.object({
+  artifactId: z.string(),
+  type: z.string(),
+  uri: z.string().optional(),
+  checksum: z.string(),
+  sourceDigest: z.string(),
+  signatureKeyId: z.string(),
+  signature: z.string(),
+  abi: z.string(),
+  definitionId: z.string(),
+  definitionVersion: z.number().int().positive(),
+})
+export type ArtifactReference = z.infer<typeof artifactReferenceSchema>
+
+export const compileReportSchema = z.object({
+  valid: z.boolean(),
+  artifactId: z.string().nullable(),
+  checksum: z.string().nullable(),
+  signatureKeyId: z.string().nullable(),
+  signature: z.string().nullable(),
+  abi: z.string().nullable(),
+  messages: z.array(z.string()).default([]),
+})
+export type CompileReport = z.infer<typeof compileReportSchema>
+
+export const artifactViewSchema = artifactReferenceSchema.omit({ uri: true }).extend({
+  payload: z.string(),
+  compiledAt: z.string(),
+})
+export type ArtifactView = z.infer<typeof artifactViewSchema>
+
 export const releaseViewSchema = z.object({
   manifest: z.object({
     manifestId: z.string(),
@@ -86,7 +117,7 @@ export const releaseViewSchema = z.object({
     generation: z.number(),
     stableGeneration: z.number().optional(),
     canaryBasisPoints: z.number().optional(),
-    artifacts: z.array(z.unknown()).default([]),
+    artifacts: z.array(artifactReferenceSchema).default([]),
     signature: z.string().optional(),
     createdBy: z.string().optional(),
   }),
@@ -95,6 +126,30 @@ export const releaseViewSchema = z.object({
   readyCapacity: z.number().optional().default(0),
 })
 export type ReleaseView = z.infer<typeof releaseViewSchema>
+
+export type CompileRequest = {
+  definitionId: string
+  definitionVersion: number
+  format: 'GRAPH' | 'DRL' | 'DMN' | 'OFFER_POLICY' | 'JOURNEY_PLAN'
+  namespace: string
+  modelName: string
+  source: string | null
+  graph: GraphDefinition
+}
+
+export type StageReleaseRequest = {
+  definitionId: string
+  definitionVersion: number
+  environment: string
+  cell: string
+  runtime: 'decision' | 'journey'
+  namespace: string
+  artifacts: ArtifactReference[]
+  schemaVersions: Record<string, string>
+  canaryBasisPoints: number
+  activationAt: string
+  approvalCaseIds: string[]
+}
 
 export const killSwitchViewSchema = z.object({
   namespace: z.string(),

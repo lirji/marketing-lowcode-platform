@@ -3,6 +3,8 @@ package com.acme.marketing.benefit.interfaces;
 import com.acme.marketing.benefit.application.BenefitFundingService;
 import com.acme.marketing.benefit.application.BenefitSkuCatalog.BenefitSkuView;
 import com.acme.marketing.benefit.application.BenefitSkuCatalog.SkuStatus;
+import com.acme.marketing.platform.web.PersistentIdempotentCommandExecutor;
+import com.acme.marketing.platform.web.TenantContextHolder;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -21,14 +23,20 @@ import org.springframework.web.bind.annotation.PutMapping;
 @RequestMapping("/api/v1")
 public class BenefitController {
     private final BenefitFundingService service;
+    private final PersistentIdempotentCommandExecutor commands;
 
-    public BenefitController(BenefitFundingService service) { this.service = service; }
+    public BenefitController(BenefitFundingService service, PersistentIdempotentCommandExecutor commands) {
+        this.service = service;
+        this.commands = commands;
+    }
 
     @PostMapping("/funding/accounts")
     @ResponseStatus(HttpStatus.CREATED)
     public BenefitFundingService.AccountView createAccount(
+            @RequestHeader("Idempotency-Key") String key,
             @Valid @RequestBody BenefitFundingService.CreateAccountRequest request) {
-        return service.createAccount(request);
+        return commands.execute(TenantContextHolder.requireCurrent().tenantId(), "benefit.account.create",
+                key, request, BenefitFundingService.AccountView.class, () -> service.createAccount(request));
     }
 
     @GetMapping("/funding/accounts")
