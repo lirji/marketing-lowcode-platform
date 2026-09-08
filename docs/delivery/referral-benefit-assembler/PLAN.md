@@ -1,0 +1,9 @@
+# 裂变奖励候选纯组装切片
+
+依据冻结10-FINAL_PLAN §6.3与referral-benefit-intake/PREIMPLEMENTATION_REVIEW。本切片只接受签名令牌、已认证scope与sourceRequestId，输出不可投递的候选；不新增HTTP、持久受理、Outbox、风险调用或资格消费。
+
+复用ReferralAwardAuthorizationCodec/Identity及ReferralPolicyValidator。独立TrustPort只由固定服务配置提供issuer、maxLifetime、不可变kid→公钥；默认拒绝。ProofPort需由未来可信适配器验证历史发布签名、制品ABI/hash、scope、完整计划和冻结目录关系；不能由普通请求构造proof。验证完整计划中的唯一rule及role/mode/threshold/quantity，精确映射benefit和SKU版本。真实目录引用格式与来源未确认，不添加生产默认值。
+
+旧AwardIntentAssembler、AwardIntentService、drools-activity常量和payload均不变。新DTO单COUPON、quantity1、expectedSkuVersion。CENTER之外拒绝，主体保持Unicode原值，日志脱敏，异常不携带原token/内部来源地址。先拒绝外层事务，再验签/读取证明；证明返回后完整精度复查所有时间。
+
+独立快照专项包含真实Ed25519、错误scope/签名/规则/目录/CENTER、事务外调用、读取期间过期、稳定重签候选及旧来源兼容。新候选永远不等于授权受理、风控放行、确认receipt或真实发奖。

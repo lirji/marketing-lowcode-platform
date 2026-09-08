@@ -1,0 +1,27 @@
+# 裂变耐久HELD受理编排计划
+
+依据冻结10§6.3及referral-benefit-intake/PREIMPLEMENTATION_REVIEW。V10受保护准备仓储21专项已独立终审；本片在其上增加应用编排，不修改旧Drools入口/SQL/relay，不启动实际渠道。
+
+## 现有代码核对与隔离决策
+
+旧mk_award_intent_outbox保存明文AwardIntent且旧Relay不筛sourceSystem，旧mk_benefit_outbox也全来源发布。直接将新来源CENTER/PENDING写入会意外被旧worker扫描，且违背受保护候选边界。因此新增V11专用context、HELD outbox及expected-fact；只引用V10密文与非主体元数据，没有自动投递入口。旧多来源查询结构可参考，但不能复用其明文/投递条件猜测兼容。
+
+## 可信输入与首次冻结
+
+新增默认拒绝IntakeIdentityPort，只从已认证机器Scope和永久奖励账本解析完整固定Identity及tenant/org/shop/campaign/definition/version/generation/artifact/hash/participant/role/rule/relation或milestone。绝不从未验签或过期token解析身份用于回放。初次与assembler新ValidatedCandidate（兼容原assembleCandidate）中的全部验证claims逐项核对，context首次写入后不可被新Port结果覆盖。原成功无需旧token，但仍需完整受信身份+Scope相等。
+
+候选保护继续事务外；V10prepare+V11固定context同事务提交，之后才评估风险并登记CONFIRMING，再事务外请求confirm。旧abandon从不调用；unknown/crash保留同一准备和来源身份，恢复查询同一远端确认。
+
+## 风险与确认响应
+
+新RiskPort默认UNAVAILABLE，返回绑定完整Identity的ALLOW/REJECT/REVIEW/CHALLENGE/UNAVAILABLE和decisionId/时窗，未来适配器验证固定来源；不同于旧Drools首次风控固化逻辑。明确REJECT保留阻断，暂不可用/人工待处理保持准备可恢复。
+
+新ConfirmationPort返回完整Identity、永久receiptId/confirmedAt/authorizationSequence，以及currentState/currentRevision/cancelRevision和响应issuedAt/expiresAt。CONFIRM_UNKNOWN不冒充拒绝；恢复不以旧token过期取消原确认。currentRevision单调，低水位拒绝用于新accept，同水位不同稳定内容隔离。CANCEL_REQUESTED永久保留receipt并在独立context保存取消栅栏；不能只抛异常使取消观测丢失，也不能摘receipt单独accept。
+
+## 本地原子落地
+
+最后短事务锁prepare/context，复核fence/完整身份、固定上下文、风险/确认水位和原始时刻。确认receipt+当前取消上下文+V10 ACCEPTED引用+HELD outbox+expected-fact同事务保存；任一失败整事务回滚，已有CONFIRMING/UNKNOWN仍可同身份恢复远端已确认结果。提交前再次raw时间复查。取消栅栏先持久，阻止HELD受理，后续投递也必须使用该栅栏。
+
+## 范围与验证
+
+默认开关关闭，仅CENTER，无HTTP、实际HTTP客户端、自动worker或发送。输出只表示本地HELD耐久受理，不表示风控/资格/渠道生产签收或权益履约成功。事务外端口调用、先准备提交后confirm、超时unknown、回执恢复、取消先后、高水位冲突、锁后过期、receipt/intent/outbox/expected原子回滚及原成功回放通过纯与独立MySQL专项验证。DB启动前与root/mapper错峰；不重复全仓库全量。真实参数、渠道/密钥、在线来源与隐私仍待确认。
