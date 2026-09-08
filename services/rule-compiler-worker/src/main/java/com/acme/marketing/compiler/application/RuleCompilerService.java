@@ -6,6 +6,7 @@ import com.acme.marketing.decision.rule.DecisionTableAdapter;
 import com.acme.marketing.decision.rule.RuleEngineAdapter;
 import com.acme.marketing.lowcode.compiler.CanonicalGraphHasher;
 import com.acme.marketing.lowcode.model.GraphDefinition;
+import com.acme.marketing.referral.ReferralPlanCompiler;
 import com.acme.marketing.journey.JourneyCompiler;
 import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.crypto.SigningKeyRing;
@@ -39,9 +40,14 @@ public final class RuleCompilerService {
         this.keys = keys;
     }
 
+    /** 编译并按既有签名协议保存产物；裂变图必须通过专用纯规则降级，不允许借 GRAPH 格式绕过。 */
     public CompileReport compile(String tenantId, CompileRequest request) {
         if (request.definitionVersion() < 1 || request.definitionId() == null || request.definitionId().isBlank()) {
             throw new IllegalArgumentException("definition identity is required");
+        }
+        if (request.graph() != null && request.graph().dialect() == com.acme.marketing.lowcode.model.Dialect.REFERRAL_POLICY
+                && request.format() != Format.REFERRAL_PLAN) {
+            return CompileReport.invalid(List.of("REFERRAL_PLAN_FORMAT_REQUIRED"));
         }
         byte[] executable;
         List<String> messages;
@@ -97,6 +103,20 @@ public final class RuleCompilerService {
                 abi = "marketing-offer-policy/1";
                 sourceDigest = new CanonicalGraphHasher().semanticHash(request.graph());
             }
+            case REFERRAL_PLAN -> {
+                if (request.graph() == null || !request.definitionId().equals(request.graph().definitionId()))
+                    return CompileReport.invalid(List.of("REFERRAL_GRAPH_IDENTITY_REQUIRED"));
+                if (json(request.graph()).length > MAX_SOURCE_BYTES)
+                    return CompileReport.invalid(List.of("REFERRAL_GRAPH_TOO_LARGE"));
+                try {
+                    executable = json(new ReferralPlanCompiler().compile(request.graph()));
+                    sourceDigest = new CanonicalGraphHasher().semanticHash(request.graph());
+                } catch (RuntimeException invalid) {
+                    return CompileReport.invalid(List.of("REFERRAL_PLAN_LOWERING_FAILED: " + invalid.getMessage()));
+                }
+                messages = List.of("semanticHash=" + sourceDigest);
+                abi = "marketing-referral-plan/1";
+            }
             case JOURNEY_PLAN -> {
                 if (request.graph() == null) return CompileReport.invalid(List.of("JOURNEY_GRAPH_REQUIRED"));
                 try {
@@ -149,7 +169,8 @@ public final class RuleCompilerService {
         }
     }
 
-    public enum Format { GRAPH, DRL, DMN, OFFER_POLICY, JOURNEY_PLAN }
+    /** 显式产物格式；REFERRAL_PLAN 只能来自严格验证的 REFERRAL_POLICY 图。 */
+    public enum Format { GRAPH, DRL, DMN, OFFER_POLICY, JOURNEY_PLAN, REFERRAL_PLAN }
     public record CompileRequest(String definitionId, long definitionVersion, Format format,
             String namespace, String modelName, String source, GraphDefinition graph) { }
     public record CompileReport(boolean valid, String artifactId, String checksum, String signatureKeyId, String signature,

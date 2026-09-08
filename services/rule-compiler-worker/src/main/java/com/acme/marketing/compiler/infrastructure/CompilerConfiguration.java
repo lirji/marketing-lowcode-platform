@@ -10,6 +10,12 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class CompilerConfiguration {
+    /** JSON 转成 Map 前拒绝重复属性，防止两个 role/ruleId 静默覆盖后被编译器签名。 */
+    @Bean
+    public org.springframework.boot.jackson.autoconfigure.JsonMapperBuilderCustomizer compilerStrictJson() {
+        return builder -> builder.enable(tools.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION);
+    }
+
     @Bean
     public SigningKeyRing compilerSigningKeyRing(
             @Value("${marketing.compiler.signing-key-id:}") String keyId,
