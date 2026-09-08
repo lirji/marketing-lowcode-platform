@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralFanoutMapper">
+ <sql id="taskColumns">tenant_id AS tenantId,resource_id AS resourceId,desired_version AS desiredVersion,reason,status,
+  cursor_relation_id AS cursor,lease_owner AS owner,DATE_FORMAT(lease_until,'%Y-%m-%d %H:%i:%s.%f') AS leaseUntil,
+  lease_fence AS fence,row_version AS rowVersion</sql>
+ <select id="next" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralFanoutMapper$TaskRow">
+  SELECT <include refid="taskColumns"/> FROM mk_referral_evidence_fanout
+  WHERE tenant_id=#{tenant} AND (status='PENDING' OR (status='PROCESSING' AND lease_until&lt;=#{now}))
+  ORDER BY updated_at,resource_id LIMIT 1 FOR UPDATE SKIP LOCKED
+ </select>
+ <select id="task" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralFanoutMapper$TaskRow">
+  SELECT <include refid="taskColumns"/> FROM mk_referral_evidence_fanout WHERE tenant_id=#{tenant} AND resource_id=#{resource} FOR UPDATE
+ </select>
+ <select id="current" resultType="com.acme.marketing.referral.application.fanout.ReferralFanoutRepository$Current">
+  SELECT tenant_id AS tenantId,resource_id AS resourceId,subject_key AS subjectKey,subject_key_version AS keyVersion,
+   organization_id AS organizationId,shop_id AS shopId,row_version AS rowVersion
+  FROM mk_referral_order_evidence_current WHERE tenant_id=#{tenant} AND resource_id=#{resource} AND row_version&gt;0
+ </select>
+ <update id="claim">UPDATE mk_referral_evidence_fanout SET status='PROCESSING',lease_owner=#{owner},lease_until=#{until},
+  lease_fence=#{nextFence},row_version=#{nextVersion},updated_at=#{now}
+  WHERE tenant_id=#{tenant} AND resource_id=#{resource} AND desired_version=#{desired} AND lease_fence=#{fence} AND row_version=#{version}</update>
+ <select id="targets" resultType="com.acme.marketing.referral.application.fanout.ReferralFanoutRepository$Target">
+  SELECT tenantId,participantId,relationId,organizationId,shopId FROM (
+   SELECT r.tenant_id AS tenantId,r.participant_id AS participantId,r.relation_id AS relationId,r.organization_id AS organizationId,r.shop_id AS shopId
+   FROM mk_referral_relation r WHERE r.tenant_id=#{tenant} AND r.invitee_key=#{subject} AND r.subject_key_version=#{keyVersion}
+    AND BINARY r.organization_id=BINARY #{organization} AND BINARY r.shop_id=BINARY #{shop}
+   UNION
+   SELECT r.tenant_id AS tenantId,r.participant_id AS participantId,r.relation_id AS relationId,r.organization_id AS organizationId,r.shop_id AS shopId
+   FROM mk_referral_qualification q JOIN mk_referral_relation r ON r.tenant_id=q.tenant_id AND r.relation_id=q.relation_id AND r.participant_id=q.participant_id
+   WHERE q.tenant_id=#{tenant} AND q.evidence_resource_id=#{resource}
+  ) candidate
+  <if test="cursor != null">WHERE relationId&gt;#{cursor}</if>
+  ORDER BY relationId LIMIT #{limit}
+ </select>
+ <update id="finish">UPDATE mk_referral_evidence_fanout SET status=#{status},cursor_relation_id=#{cursor},lease_owner=NULL,lease_until=NULL,
+  row_version=#{nextVersion},updated_at=#{now}
+  WHERE tenant_id=#{tenant} AND resource_id=#{resource} AND desired_version=#{desired} AND lease_fence=#{fence} AND row_version=#{version}
+   AND status='PROCESSING' AND lease_owner=#{owner} AND lease_until&gt;#{now}</update>
+</mapper>

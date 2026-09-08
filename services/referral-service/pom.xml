@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>
+<parent><groupId>com.acme.marketing</groupId><artifactId>services</artifactId><version>1.0.0-SNAPSHOT</version><relativePath>../pom.xml</relativePath></parent><artifactId>referral-service</artifactId>
+<dependencies>
+<dependency><groupId>com.acme.marketing</groupId><artifactId>marketing-contracts</artifactId><version>${project.version}</version></dependency>
+<dependency><groupId>com.acme.marketing</groupId><artifactId>referral-runtime-spi</artifactId><version>${project.version}</version></dependency>
+<dependency><groupId>org.mybatis.spring.boot</groupId><artifactId>mybatis-spring-boot-starter</artifactId></dependency>
+<dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-flyway</artifactId></dependency>
+<dependency><groupId>org.flywaydb</groupId><artifactId>flyway-mysql</artifactId></dependency>
+<dependency><groupId>com.mysql</groupId><artifactId>mysql-connector-j</artifactId><scope>runtime</scope></dependency>
+</dependencies></project>

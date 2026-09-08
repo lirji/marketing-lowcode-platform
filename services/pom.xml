@@ -15,6 +15,7 @@
     <module>journey-service</module>
     <module>engagement-service</module>
     <module>measurement-service</module>
+    <module>referral-service</module>
   </modules>
   <dependencies>
     <dependency><groupId>com.acme.marketing</groupId><artifactId>platform-web</artifactId><version>${project.version}</version></dependency>

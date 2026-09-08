@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralMapper">
+  <select id="subjectIndexVersion" resultType="java.lang.Long">SELECT subject_key_version FROM mk_referral_subject_index_anchor WHERE tenant_id=#{tenant} FOR SHARE</select>
+  <insert id="reserveCommand">INSERT INTO mk_referral_join_command(tenant_id,subject_key,idempotency_key,request_hash,created_at,updated_at)
+    VALUES(#{tenant},#{subjectKey},#{key},#{requestHash},#{now},#{now}) ON DUPLICATE KEY UPDATE row_version=row_version</insert>
+  <select id="command" resultType="com.acme.marketing.referral.application.ReferralRepository$Command">
+    SELECT request_hash AS requestHash,participant_id AS participantId FROM mk_referral_join_command
+    WHERE tenant_id=#{tenant} AND subject_key=#{subjectKey} AND idempotency_key=#{key} FOR UPDATE</select>
+  <insert id="reserveRole">INSERT INTO mk_referral_subject_role(tenant_id,campaign_id,subject_key,subject_key_version,role,created_at,updated_at)
+    VALUES(#{tenant},#{campaign},#{subjectKey},#{keyVersion},'INVITER',#{now},#{now}) ON DUPLICATE KEY UPDATE row_version=row_version</insert>
+  <select id="role" resultType="com.acme.marketing.referral.application.ReferralRepository$Role">
+    SELECT role,participant_id AS participantId,subject_key_version AS keyVersion FROM mk_referral_subject_role
+    WHERE tenant_id=#{tenant} AND campaign_id=#{campaign} AND subject_key=#{subjectKey} FOR UPDATE</select>
+  <select id="participant" resultType="com.acme.marketing.referral.domain.ReferralParticipant">
+    SELECT tenant_id AS tenantId,participant_id AS participantId,campaign_id AS campaignId,organization_id AS organizationId,shop_id AS shopId,
+      definition_id AS definitionId,definition_version AS definitionVersion,generation,artifact_id AS artifactId,policy_hash AS policyHash,
+      route_epoch AS routeEpoch,state,created_at AS createdAt
+    FROM mk_referral_participant WHERE tenant_id=#{tenant} AND participant_id=#{participantId} FOR UPDATE</select>
+  <insert id="insertParticipant">INSERT INTO mk_referral_participant(tenant_id,participant_id,campaign_id,organization_id,shop_id,subject_key,subject_key_version,subject_cipher,encryption_key_id,
+    definition_id,definition_version,generation,artifact_id,policy_hash,route_epoch,state,created_at,updated_at)
+    VALUES(#{p.tenantId},#{p.participantId},#{p.campaignId},#{p.organizationId},#{p.shopId},#{subjectKey},#{keyVersion},#{cipher},#{encryptionKeyId},
+      #{p.definitionId},#{p.definitionVersion},#{p.generation},#{p.artifactId},#{p.policyHash},#{p.routeEpoch},#{p.state},#{now},#{now})</insert>
+  <update id="attachRole">UPDATE mk_referral_subject_role SET participant_id=#{p.participantId},row_version=row_version+1,updated_at=#{now}
+    WHERE tenant_id=#{p.tenantId} AND campaign_id=#{p.campaignId} AND subject_key=#{subjectKey} AND role='INVITER' AND participant_id IS NULL</update>
+  <update id="complete">UPDATE mk_referral_join_command SET participant_id=#{participantId},row_version=row_version+1,updated_at=#{now}
+    WHERE tenant_id=#{tenant} AND subject_key=#{subjectKey} AND idempotency_key=#{key} AND participant_id IS NULL</update>
+  <insert id="audit">INSERT INTO mk_referral_audit(tenant_id,audit_id,actor_id,action,resource_ref,reason,after_hash,trace_id,occurred_at,created_at,updated_at)
+    VALUES(#{p.tenantId},#{auditId},#{actorId},'PARTICIPANT_JOINED',#{p.participantId},'首次固定活动版本',#{payloadHash},#{traceId},#{now},#{now},#{now})</insert>
+  <insert id="outbox">INSERT INTO mk_referral_outbox(tenant_id,event_id,aggregate_id,aggregate_revision,event_type,topic,partition_key,payload,payload_hash,next_retry_at,created_at,updated_at)
+    VALUES(#{p.tenantId},#{eventId},#{p.participantId},1,'PARTICIPANT_JOINED','mk.referral.participation.internal.v1',CONCAT(#{p.tenantId},':',#{p.participantId}),#{payload},#{payloadHash},#{now},#{now},#{now})</insert>
+</mapper>

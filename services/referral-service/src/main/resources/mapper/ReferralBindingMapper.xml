@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralBindingMapper">
+  <insert id="reserveCommand">INSERT INTO mk_referral_bind_command(tenant_id,invitee_key,idempotency_key,request_hash,created_at,updated_at)
+    VALUES(#{tenant},#{invitee},#{key},#{hash},#{now},#{now}) ON DUPLICATE KEY UPDATE row_version=row_version</insert>
+  <select id="command" resultType="com.acme.marketing.referral.application.ReferralBindingRepository$Command">
+    SELECT request_hash AS requestHash,relation_id AS relationId FROM mk_referral_bind_command WHERE tenant_id=#{tenant} AND invitee_key=#{invitee} AND idempotency_key=#{key} FOR UPDATE
+  </select>
+  <insert id="reserveInvitee">INSERT INTO mk_referral_subject_role(tenant_id,campaign_id,subject_key,subject_key_version,role,created_at,updated_at)
+    VALUES(#{tenant},#{campaign},#{subject},#{keyVersion},'INVITEE',#{now},#{now}) ON DUPLICATE KEY UPDATE row_version=row_version</insert>
+  <select id="role" resultType="com.acme.marketing.referral.application.ReferralBindingRepository$Role">
+    SELECT role,participant_id AS participantId,relation_id AS relationId,subject_key_version AS keyVersion FROM mk_referral_subject_role
+    WHERE tenant_id=#{tenant} AND campaign_id=#{campaign} AND subject_key=#{subject} FOR UPDATE
+  </select>
+  <select id="relation" resultType="com.acme.marketing.referral.domain.ReferralRelation">
+    SELECT tenant_id AS tenantId,relation_id AS relationId,campaign_id AS campaignId,organization_id AS organizationId,shop_id AS shopId,
+      participant_id AS participantId,token_id AS tokenId,definition_id AS definitionId,definition_version AS definitionVersion,generation,
+      artifact_id AS artifactId,policy_hash AS policyHash,bound_at AS boundAt,deadline_at AS qualifyDeadline,consent_version AS consentVersion,consent_hash AS consentHash,state
+    FROM mk_referral_relation WHERE tenant_id=#{tenant}
+    <choose><when test="relationId != null">AND relation_id=#{relationId}</when><otherwise>AND campaign_id=#{campaign} AND invitee_key=#{invitee}</otherwise></choose>
+    FOR UPDATE
+  </select>
+  <insert id="insertRelation">INSERT INTO mk_referral_relation(tenant_id,relation_id,campaign_id,organization_id,shop_id,participant_id,token_id,invitee_key,subject_key_version,invitee_cipher,encryption_key_id,
+      definition_id,definition_version,generation,artifact_id,policy_hash,bound_at,deadline_at,consent_version,consent_hash,state,created_at,updated_at)
+    VALUES(#{r.tenantId},#{r.relationId},#{r.campaignId},#{r.organizationId},#{r.shopId},#{r.participantId},#{r.tokenId},#{subject},#{keyVersion},#{cipher},#{encryptionKeyId},
+      #{r.definitionId},#{r.definitionVersion},#{r.generation},#{r.artifactId},#{r.policyHash},#{now},#{deadline},#{r.consentVersion},#{r.consentHash},#{r.state},#{now},#{now})</insert>
+  <update id="attachInvitee">UPDATE mk_referral_subject_role SET relation_id=#{r.relationId},updated_at=#{now},row_version=row_version+1
+    WHERE tenant_id=#{r.tenantId} AND campaign_id=#{r.campaignId} AND subject_key=#{subject} AND role='INVITEE' AND relation_id IS NULL AND participant_id IS NULL</update>
+  <insert id="audit">INSERT INTO mk_referral_audit(tenant_id,audit_id,actor_id,action,resource_ref,reason,after_hash,trace_id,occurred_at,created_at,updated_at)
+    VALUES(#{r.tenantId},#{auditId},#{actorId},'RELATION_BOUND',#{r.relationId},'首次有效归因固定，资格待评估',#{payloadHash},#{traceId},#{now},#{now},#{now})</insert>
+  <insert id="outbox">INSERT INTO mk_referral_outbox(tenant_id,event_id,aggregate_id,aggregate_revision,event_type,topic,partition_key,payload,payload_hash,next_retry_at,created_at,updated_at)
+    VALUES(#{r.tenantId},#{eventId},#{r.relationId},1,'RELATION_BOUND','mk.referral.binding.internal.v1',CONCAT(#{r.tenantId},':',#{r.participantId}),#{payload},#{payloadHash},#{now},#{now},#{now})</insert>
+  <update id="complete">UPDATE mk_referral_bind_command SET relation_id=#{relationId},row_version=row_version+1,updated_at=#{now}
+    WHERE tenant_id=#{tenant} AND invitee_key=#{invitee} AND idempotency_key=#{key} AND relation_id IS NULL</update>
+</mapper>
