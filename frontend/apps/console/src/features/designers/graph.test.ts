@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { fromGraphDefinition, toGraphDefinition, toneForType } from './graph'
-import type { DesignerNode } from './LowCodeDesigner'
+import type { DesignerNode } from './designerTypes'
 
 const nodes: DesignerNode[] = [
   { id: 'start', type: 'marketing', position: { x: 0, y: 0 }, data: { label: '开始', subtitle: 'start', tone: 'slate', config: {}, stableTypeId: 'offer.start' } },

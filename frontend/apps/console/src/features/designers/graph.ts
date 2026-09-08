@@ -1,6 +1,6 @@
 import type { Edge } from '@xyflow/react'
 import type { GraphDefinition } from '../../shared/api/schemas'
-import type { DesignerNode } from './LowCodeDesigner'
+import type { DesignerNode } from './designerTypes'
 
 const TYPE_BY_TONE: Record<DesignerNode['data']['tone'], string> = {
   slate: 'offer.start',

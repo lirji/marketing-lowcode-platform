@@ -1,4 +1,5 @@
 import type { ProblemDetail } from '@marketing/contracts'
+import { campaignCreateBody } from '../auth/scopeChoices'
 import { runtimeConfig } from '../config/runtime'
 import { getDevTenantId } from '../auth/devTenant'
 import { reportClientError } from '../observability/report'
@@ -152,7 +153,11 @@ export const api = {
   demoMode: runtimeConfig.demoMode,
   campaigns: () => request('/api/v1/campaigns', undefined, (value) => zArray(campaignSchema, value)),
   createCampaign: (payload: { name: string; objective: string; organizationId: string; shopId: string }) =>
-    request('/api/v1/campaigns', { method: 'POST', headers: commandHeaders(), body: JSON.stringify(payload) }, (value) => parseWith(campaignSchema, value)),
+    request('/api/v1/campaigns', {
+      method: 'POST',
+      headers: commandHeaders(),
+      body: JSON.stringify(campaignCreateBody(payload)),
+    }, (value) => parseWith(campaignSchema, value)),
   saveDefinition: (payload: { campaignId: string; graph: GraphDefinition }) =>
     request('/api/v1/definitions', { method: 'POST', headers: commandHeaders(), body: JSON.stringify(payload) }, (value) => parseWith(definitionBundleSchema, value)),
   latestDefinition: (campaignId: string, dialect: string) =>
