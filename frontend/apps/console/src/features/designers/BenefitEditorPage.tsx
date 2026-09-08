@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArchiveRestore, CircleDollarSign, Save, ShieldCheck } from 'lucide-react'
+import { ArchiveRestore, Save } from 'lucide-react'
 import { Badge, Button, DemoBanner, EmptyState, PageHeader, Panel, PanelHeader, StateBanner } from '../../components/ui'
 import { ApiProblem, api } from '../../shared/api/client'
 import { catalogProblemDetail, problemDetail } from '../../shared/api/problem'
@@ -27,26 +27,6 @@ type Form = {
   reverseLedger: boolean
   reclaimGift: boolean
   expireReturn: boolean
-}
-
-const DEFAULT_FORM: Form = {
-  benefitId: 'coupon-ha-80',
-  name: '家电满 500 减 80 券',
-  status: 'DRAFT',
-  resourceKey: '',
-  benefitSkuId: '',
-  type: 'COUPON',
-  validity: 'relative',
-  thresholdMinor: 50000,
-  discountMinor: 8000,
-  scope: 'category:LARGE_APPLIANCE AND shop:SELF_OPERATED',
-  platformShare: 60,
-  cancelUnlock: true,
-  partialRefund: true,
-  fullRefundReturn: true,
-  reverseLedger: true,
-  reclaimGift: false,
-  expireReturn: true,
 }
 
 function emptyForm(): Form {
@@ -149,10 +129,10 @@ export function BenefitEditorPage() {
   const auth = useAuth()
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
-  const [form, setForm] = useState<Form>(() => (api.demoMode ? DEFAULT_FORM : emptyForm()))
+  const [form, setForm] = useState<Form>(emptyForm)
   const [notice, setNotice] = useState('')
   const [hydrated, setHydrated] = useState(false)
-  const [baseline, setBaseline] = useState(() => JSON.stringify(api.demoMode ? DEFAULT_FORM : emptyForm()))
+  const [baseline, setBaseline] = useState(() => JSON.stringify(emptyForm()))
   const [benefitQuery, setBenefitQuery] = useState('')
   const canWrite = auth.hasPermission('benefit:write')
   const merchantShare = 100 - form.platformShare
@@ -223,7 +203,7 @@ export function BenefitEditorPage() {
   return (
     <div className="workspace benefit-page">
       <PageHeader
-        eyebrow={api.demoMode ? 'BENEFIT_POLICY · Coupon v9' : `BENEFIT_POLICY · ${form.status}`}
+        eyebrow={`BENEFIT_POLICY · ${form.status}`}
         title={form.name || '权益定义'}
         description="权益状态、资金来源、库存 bucket、退款与追回共同构成可对账的履约策略。"
         actions={(
@@ -257,7 +237,7 @@ export function BenefitEditorPage() {
               <span>筛选已有权益</span>
               <input
                 aria-label="筛选已有权益"
-                placeholder="输入 ID 或名称，例如 coupon-trace-ha-80"
+                placeholder="输入 ID 或名称"
                 value={benefitQuery}
                 onChange={(event) => setBenefitQuery(event.target.value)}
               />
@@ -304,31 +284,25 @@ export function BenefitEditorPage() {
         <div className="benefit-main">
           <Panel>
             <PanelHeader eyebrow="SKU TEMPLATE" title="绑定权益模板" aside={<>{dirty && <Badge tone="warn">有未保存更改</Badge>}{saveButton('保存')}</>} />
-            {api.demoMode ? (
-              <StateBanner tone="info" title="演示模式不绑定真实 SKU" detail="关闭 DEMO_MODE 后从 GET /api/v1/benefit-skus 读取已投放模板。" />
-            ) : (
-              <>
-                <SkuPickerField
-                  value={form.benefitSkuId}
-                  onChange={(benefitSkuId) => patch({ benefitSkuId })}
-                  disabled={!canWrite}
-                  skus={skus.data ?? []}
-                  loading={skus.isPending}
-                  error={skus.isError ? catalogProblemDetail(skus.error, auth.tenantId) : undefined}
-                />
-                {typeMismatch && (
-                  <StateBanner
-                    tone="error"
-                    title="权益类型与模板类型不一致"
-                    detail={`当前权益是 ${form.type}，所选 SKU ${selectedSku?.skuId} 是 ${selectedSku?.benefitType}。保存已禁用，请改类型或换模板。`}
-                  />
-                )}
-                <div className="sku-bind-actions">
-                  <p>选完模板只改本地表单，必须点保存才会写入 benefitSkuId。{dirty ? ' 当前有未保存更改。' : ''}</p>
-                  {saveButton('保存')}
-                </div>
-              </>
+            <SkuPickerField
+              value={form.benefitSkuId}
+              onChange={(benefitSkuId) => patch({ benefitSkuId })}
+              disabled={!canWrite || api.demoMode}
+              skus={skus.data ?? []}
+              loading={skus.isFetching}
+              error={skus.isError ? catalogProblemDetail(skus.error, auth.tenantId) : undefined}
+            />
+            {typeMismatch && (
+              <StateBanner
+                tone="error"
+                title="权益类型与模板类型不一致"
+                detail={`当前权益是 ${form.type}，所选 SKU ${selectedSku?.skuId} 是 ${selectedSku?.benefitType}。保存已禁用，请改类型或换模板。`}
+              />
             )}
+            <div className="sku-bind-actions">
+              <p>选完模板只改本地表单，必须点保存才会写入 benefitSkuId。{dirty ? ' 当前有未保存更改。' : ''}</p>
+              {saveButton('保存')}
+            </div>
           </Panel>
           <Panel>
             <PanelHeader eyebrow="DEFINITION" title="权益定义" aside={<Badge tone={form.status === 'ACTIVE' ? 'good' : 'warn'}>{form.status}</Badge>} />
@@ -388,22 +362,15 @@ export function BenefitEditorPage() {
                 <progress max="100" value={merchantShare} />
               </label>
             </div>
-            {api.demoMode ? (
-              <div className="funding-centers">
-                <div><CircleDollarSign size={16} /><span>平台营销中心 / CC-PROMO-2026</span><Badge tone="good">预算 ¥12M</Badge></div>
-                <div><CircleDollarSign size={16} /><span>家电事业部 / CC-HA-1101</span><Badge tone="good">预算 ¥8M</Badge></div>
-              </div>
-            ) : (
-              <label className="field">
-                <span>绑定资金账户</span>
-                <select value={form.resourceKey} onChange={(event) => patch({ resourceKey: event.target.value })}>
-                  <option value="">不绑定</option>
-                  {(accounts.data ?? []).map((item) => (
-                    <option key={item.resourceKey} value={item.resourceKey}>{item.resourceKey} · {item.currency ?? ''} · 可用 {item.available}</option>
-                  ))}
-                </select>
-              </label>
-            )}
+            <label className="field">
+              <span>绑定资金账户</span>
+              <select value={form.resourceKey} onChange={(event) => patch({ resourceKey: event.target.value })}>
+                <option value="">不绑定</option>
+                {(accounts.data ?? []).map((item) => (
+                  <option key={item.resourceKey} value={item.resourceKey}>{item.resourceKey} · {item.currency ?? ''} · 可用 {item.available}</option>
+                ))}
+              </select>
+            </label>
           </Panel>
           <Panel>
             <PanelHeader eyebrow="LIFECYCLE" title="状态与补偿策略" />
@@ -419,58 +386,33 @@ export function BenefitEditorPage() {
           </Panel>
         </div>
         <aside>
-          {api.demoMode ? (
-            <>
-              <Panel>
-                <PanelHeader eyebrow="RESOURCE GUARD" title="资源守恒" />
+          <Panel>
+            <PanelHeader eyebrow="RESOURCE GUARD" title="资源守恒" />
+            {account ? (
+              <>
                 <div className="conservation">
-                  <div><span>授权</span><strong>1,000,000</strong></div>
+                  <div><span>授权</span><strong>{account.authorized}</strong></div>
                   <b>=</b>
-                  <div><span>可用</span><strong>731,420</strong></div>
+                  <div><span>可用</span><strong>{account.available}</strong></div>
                   <b>+</b>
-                  <div><span>预占</span><strong>84,220</strong></div>
+                  <div><span>预占</span><strong>{account.reserved}</strong></div>
                   <b>+</b>
-                  <div><span>已耗</span><strong>184,360</strong></div>
+                  <div><span>已耗</span><strong>{account.consumed}</strong></div>
                 </div>
-                <StateBanner tone="success" title="守恒式成立" detail="最近一次 reconciliation：10:36:12，差异 0。" />
-              </Panel>
-              <Panel>
-                <PanelHeader eyebrow="REGIONAL ESCROW" title="区域库存" />
-                <div className="bucket-list">{[['华东', '420K', '42%'], ['华北', '260K', '26%'], ['华南', '240K', '24%'], ['机动池', '80K', '8%']].map(([name, value, width]) => <div key={name}><span>{name}</span><i><b style={{ width }} /></i><strong>{value}</strong></div>)}</div>
-                <div className="governance-note"><ShieldCheck /><div><strong>Fencing epoch 42</strong><p>资源 home region：cn-east；跨区切换前必须隔离旧 epoch。</p></div></div>
-              </Panel>
-            </>
-          ) : (
-            <>
-              <Panel>
-                <PanelHeader eyebrow="RESOURCE GUARD" title="资源守恒" />
-                {account ? (
-                  <>
-                    <div className="conservation">
-                      <div><span>授权</span><strong>{account.authorized}</strong></div>
-                      <b>=</b>
-                      <div><span>可用</span><strong>{account.available}</strong></div>
-                      <b>+</b>
-                      <div><span>预占</span><strong>{account.reserved}</strong></div>
-                      <b>+</b>
-                      <div><span>已耗</span><strong>{account.consumed}</strong></div>
-                    </div>
-                    <StateBanner
-                      tone={account.authorized === account.available + account.reserved + account.consumed + account.returned ? 'success' : 'warn'}
-                      title={account.authorized === account.available + account.reserved + account.consumed + account.returned ? '守恒式成立' : '账户分项与授权不一致'}
-                      detail={`returned ${account.returned} · fencing ${account.fencingEpoch ?? '—'}`}
-                    />
-                  </>
-                ) : (
-                  <EmptyState title="未绑定资金账户" detail="选择 resourceKey 后显示授权 / 可用 / 预占 / 已耗。" />
-                )}
-              </Panel>
-              <Panel>
-                <PanelHeader eyebrow="REGIONAL ESCROW" title="区域库存" />
-                <EmptyState title="没有区域分桶接口" detail="账户只返回合计fencing，不按华东/华北拆分。" />
-              </Panel>
-            </>
-          )}
+                <StateBanner
+                  tone={account.authorized === account.available + account.reserved + account.consumed + account.returned ? 'success' : 'warn'}
+                  title={account.authorized === account.available + account.reserved + account.consumed + account.returned ? '守恒式成立' : '账户分项与授权不一致'}
+                  detail={`returned ${account.returned} · fencing ${account.fencingEpoch ?? '—'}`}
+                />
+              </>
+            ) : (
+              <EmptyState title="未绑定资金账户" detail="选择 resourceKey 后显示授权 / 可用 / 预占 / 已耗。" />
+            )}
+          </Panel>
+          <Panel>
+            <PanelHeader eyebrow="REGIONAL ESCROW" title="区域库存" />
+            <EmptyState title="没有区域分桶接口" detail="账户只返回合计 fencing，不按华东/华北拆分。" />
+          </Panel>
         </aside>
       </div>
     </div>

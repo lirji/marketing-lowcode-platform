@@ -82,12 +82,14 @@ describe('BenefitEditorPage SKU binding', () => {
     mocks.putBenefit.mockReset()
   })
 
-  it('does not request benefit-skus in demo mode', async () => {
+  it('does not seed the 家电券 mock or request SKUs in demo mode', async () => {
     renderEditor()
-    expect(await screen.findByText('演示模式不绑定真实 SKU')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '绑定权益模板' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: '权益定义' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '家电满 500 减 80 券' })).not.toBeInTheDocument()
+    expect(screen.queryByText('平台营销中心 / CC-PROMO-2026')).not.toBeInTheDocument()
+    expect(screen.queryByText('1,000,000')).not.toBeInTheDocument()
+    expect(screen.getByText('本货主尚无已投放模板')).toBeInTheDocument()
     expect(mocks.benefitSkus).not.toHaveBeenCalled()
-    expect(screen.queryByLabelText('已投放 SKU')).not.toBeInTheDocument()
   })
 
   it('shows empty state when the live catalog has no ACTIVE templates', async () => {
