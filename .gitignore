@@ -1,9 +1,13 @@
 # OS and editor metadata
 .DS_Store
+._*
 Thumbs.db
+Desktop.ini
 .idea/
 .vscode/
 *.iml
+*.ipr
+*.iws
 *.swp
 *.swo
 *~
@@ -11,32 +15,70 @@ Thumbs.db
 # Local configuration and secrets
 .env
 .env.*
-!.env.example
 *.local
+# Keep shareable environment examples and templates
+!.env.example
+!.env.sample
+!.env.template
+!.env.*.example
+!.env.*.sample
+!.env.*.template
 
 # Java / Maven
 target/
-**/target/
+# Test reports, including copies under delivery documentation
+surefire-reports/
+failsafe-reports/
+# Generated test evidence copied outside Maven target directories
+/docs/delivery/**/TEST-*.xml
+/docs/delivery/**/result.json
+/docs/delivery/**/*-result.json
+/docs/delivery/**/source-evidence.json
+/docs/delivery/**/*-digests.json
+/docs/delivery/**/compose-default.json
+/docs/delivery/**/compose-enabled.json
+/docs/delivery/**/v*-ddl-static.json
+/docs/delivery/**/helm-baseline.yaml
+/docs/delivery/**/helm-default.yaml
+/docs/delivery/**/helm-enabled.yaml
+*.class
+*.hprof
+*.jfr
 .jqwik-database
 dependency-reduced-pom.xml
 .flattened-pom.xml
+pom.xml.versionsBackup
+pom.xml.releaseBackup
+pom.xml.next
+pom.xml.tag
+release.properties
+.mvn/timing.properties
 hs_err_pid*
 replay_pid*
 
 # JavaScript / TypeScript
 node_modules/
 .pnpm-store/
+.vite/
+.vite-temp/
 dist/
 coverage/
 *.tsbuildinfo
 .eslintcache
+.stylelintcache
+.nyc_output/
 playwright-report/
+blob-report/
 test-results/
 
 # Python tooling
 __pycache__/
+.venv/
+venv/
 *.py[cod]
 .coverage
+.coverage.*
+htmlcov/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -47,8 +89,21 @@ __pycache__/
 /checkpoints/
 /data/
 /savepoints/
+/logs/
+/tmp/
+/temp/
+/trivy.sarif
+/source-sbom.cdx.json
 *.log
+*.log.*
 *.pid
+*.pid.lock
+*.tmp
 
-# Codex session hand-off state
+# Local agent configuration and session state (keep shared configuration)
+.claude/settings.local.json
+/.codex/tasks/
 CODEX_PROGRESS.md
+
+# Plain text files
+*.txt
