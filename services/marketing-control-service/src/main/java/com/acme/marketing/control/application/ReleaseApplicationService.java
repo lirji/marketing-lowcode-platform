@@ -85,6 +85,13 @@ public class ReleaseApplicationService {
     public ReleaseView stage(StageReleaseRequest request) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("release:write");
+        // 本切片只交付编译产物，不能因新增枚举走旧默认 runtime 发布分支。
+        boolean referralDefinition = repository.findDefinition(scope.tenantId().value(), request.definitionId(),
+                request.definitionVersion()).map(row -> "REFERRAL_POLICY".equals(row.dialect())).orElse(false);
+        if (referralDefinition || "referral".equals(request.runtime()) || request.artifacts().stream().anyMatch(
+                artifact -> "REFERRAL_PLAN".equals(artifact.type()) || "marketing-referral-plan/1".equals(artifact.abi())))
+            throw new ConflictException("REFERRAL_RELEASE_NOT_AVAILABLE",
+                    "referral runtime capability, approval and activation integration is not available");
         assertApproved(scope, request.definitionId(), request.definitionVersion(),
                 request.approvalCaseIds());
         assertBenefitClosure(scope, request);
@@ -121,6 +128,7 @@ public class ReleaseApplicationService {
         scope.requirePermission("runtime:ack");
         StoredManifest stored = stored(scope.tenantId().value(), manifestId, true);
         requireManifestScope(scope, stored.manifest());
+        requireReferralReleaseUnavailable(stored.manifest());
         if (!manifestId.equals(ack.manifestId()) || stored.manifest().generation() != ack.generation()
                 || !stored.manifest().cell().equals(ack.cell())) {
             throw new ConflictException("ACK_MANIFEST_MISMATCH", "runtime ACK does not match staged manifest");
@@ -175,6 +183,7 @@ public class ReleaseApplicationService {
         scope.requirePermission("release:activate");
         StoredManifest stored = stored(scope.tenantId().value(), manifestId, true);
         requireManifestScope(scope, stored.manifest());
+        requireReferralReleaseUnavailable(stored.manifest());
         if (stored.state() != State.STAGED) {
             throw new ConflictException("MANIFEST_NOT_STAGED", "only staged manifest can be activated");
         }
@@ -219,6 +228,7 @@ public class ReleaseApplicationService {
         scope.requirePermission("release:rollback");
         StoredManifest current = stored(scope.tenantId().value(), manifestId, true);
         requireManifestScope(scope, current.manifest());
+        requireReferralReleaseUnavailable(current.manifest());
         if (current.state() != State.ACTIVE) {
             throw new ConflictException("ROLLBACK_SOURCE_NOT_ACTIVE", "rollback source manifest must be active");
         }
@@ -226,6 +236,7 @@ public class ReleaseApplicationService {
             throw new ConflictException("GENERATION_NOT_RETAINED", "rollback generation is not retained");
         }
         StoredManifest target = byGeneration(scope.tenantId().value(), current.manifest(), targetGeneration);
+        requireReferralReleaseUnavailable(target.manifest());
         Instant now = clock.instant();
         if (target.state() != State.ACTIVE || !target.manifest().expiresAt().isAfter(now)) {
             throw new ConflictException("ROLLBACK_TARGET_UNAVAILABLE",
@@ -504,6 +515,13 @@ public class ReleaseApplicationService {
     private <T> T read(String value, Class<T> type) {
         try { return mapper.readValue(value, type); }
         catch (JacksonException failure) { throw new IllegalStateException("stored release object is invalid", failure); }
+    }
+
+    // 即使存在历史/导入manifest，也不能通过ACK、激活或回滚绕过当前未交付的发布闭包。
+    private static void requireReferralReleaseUnavailable(ReleaseManifest manifest) {
+        if ("referral".equals(manifest.runtime()) || manifest.artifacts().stream().anyMatch(artifact ->
+                "REFERRAL_PLAN".equals(artifact.type()) || "marketing-referral-plan/1".equals(artifact.abi())))
+            throw new ConflictException("REFERRAL_RELEASE_NOT_AVAILABLE", "referral release integration is not available");
     }
 
     private void requireManifestScope(TenantScope scope, ReleaseManifest manifest) {
