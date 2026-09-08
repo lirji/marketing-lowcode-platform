@@ -1,0 +1,9 @@
+# 裂变准备与确认恢复纯状态机
+
+依据冻结10-FINAL_PLAN §6.3/§12和referral-benefit-intake/PREIMPLEMENTATION_REVIEW。原161基线与原Drools首次风控结果语义保留；旧AwardIntentRepository.abandonEvaluation属于旧临时评估，本切片不调用、不修改，不用于裂变准备。
+
+永久业务身份包含tenant、固定marketing-referral来源、稳定sourceRequest/reward、稳定claims摘要、固定payload摘要、qualificationRevision。准备先于远端确认，未知结果和崩溃后CONFIRMING都必须保留原身份查询/重放。租约owner/fence/expiry仅用于本地并发所有权，接管不能重置阶段或清掉receipt。
+
+PREPARED→CONFIRMING→CONFIRM_UNKNOWN/CONFIRMED→ACCEPTED；可信远端明确未确认才可终止REJECTED，确认之后不得用取消/超时回退为未确认。CONFIRMED的永久receipt允许原短token过期后恢复同一意图；ACCEPTED原引用永久回放。所有转换纯函数，返回新state不代表已持久提交。未来服务必须数据库唯一键+版本CAS，先提交CONFIRMING后网络，receipt+intent+Outbox/expected-fact在同一短事务提交。
+
+Receipt与风险/时间许可类型仅是可信适配器验证后交给领域的结构输入，不完成验签或在线权威校验。默认不注册应用bean、没有HTTP/Repository/数据库/发送接口。配置寿命和租约均显式参数，无生产默认值；真实确认receipt合同、风险来源和取消补偿未签收仍是后续门禁。

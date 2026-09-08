@@ -1,0 +1,22 @@
+CREATE TABLE mk_referral_award_held_review (
+ tenant_id varchar(64) NOT NULL COMMENT '租户隔离键',
+ source_system varchar(32) NOT NULL DEFAULT 'marketing-referral' COMMENT '固定裂变来源',
+ source_request_id varchar(128) NOT NULL COMMENT '永久来源请求ID，不随复核变化',
+ binding_digest char(64) NOT NULL COMMENT 'V11首次固定完整Scope和Identity摘要',
+ check_sequence bigint NOT NULL DEFAULT 0 COMMENT '持锁后最近复核观察CAS序号',
+ state_name varchar(24) NOT NULL DEFAULT 'UNKNOWN' COMMENT 'UNKNOWN或CHECKED或BLOCKED或CANCELLED或QUARANTINED，仅观察不授权发送',
+ current_revision bigint NOT NULL DEFAULT 0 COMMENT 'V11当前可信确认水位',
+ cancel_revision bigint NOT NULL DEFAULT 0 COMMENT 'V11永久取消栅栏水位',
+ checked datetime(6) NOT NULL COMMENT '本次检查原始UTC时间微秒部分',
+ checked_nanos smallint NOT NULL COMMENT '检查原始纳秒余数0至999',
+ valid_until datetime(6) NULL COMMENT 'CHECKED观察最早失效时刻UTC微秒部分，不是可缓存投递许可',
+ valid_until_nanos smallint NULL COMMENT '观察失效时刻纳秒余数0至999',
+ PRIMARY KEY (tenant_id,source_system,source_request_id),
+ FOREIGN KEY (tenant_id,source_system,source_request_id) REFERENCES mk_referral_award_intake(tenant_id,source_system,source_request_id),
+ CHECK (source_system='marketing-referral'),
+ CHECK (check_sequence>=0 AND current_revision>=0 AND cancel_revision>=0 AND cancel_revision<=current_revision),
+ CHECK (checked_nanos BETWEEN 0 AND 999),
+ CHECK ((valid_until IS NULL AND valid_until_nanos IS NULL) OR (valid_until IS NOT NULL AND valid_until_nanos IS NOT NULL AND valid_until_nanos BETWEEN 0 AND 999)),
+ CHECK (state_name IN ('UNKNOWN','CHECKED','BLOCKED','CANCELLED','QUARANTINED')),
+ CHECK ((state_name='CHECKED' AND valid_until IS NOT NULL AND (valid_until>checked OR (valid_until=checked AND valid_until_nanos>checked_nanos))) OR (state_name<>'CHECKED' AND valid_until IS NULL))
+) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin COMMENT='裂变HELD在线复核观察与取消同步，不产生可投递状态';
