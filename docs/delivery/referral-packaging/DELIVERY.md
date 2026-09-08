@@ -1,0 +1,9 @@
+# 裂变可选运行模型
+
+完成Compose独立referral profile和Helm默认enabled=false。复用既有非root JVM Dockerfile与dev-infra网络，不新增公共组件；不发布host port、不新增网关/Ingress。显式启用使用8090/专属数据库和迁移账号，固定OIDC、DEV头关闭；资格/身份/保护等业务Ports仍默认拒绝。
+
+服务PORT/health probes及含db的readiness已配置；Prometheus端点供后续内部监控。Helm启用时旧NetworkPolicy排除referral以免额外Ingress规则叠加，新策略只允许同release平台Pod；Prometheus端点仍需OIDC身份，真实监控来源允许策略与抓取尚未验证。四个Secret键与REFERRAL_*属性一致，旧9库脚本尚未创建新库或账号。
+
+离线验证：Compose默认模型排除referral、profile模型包含且通过原有和新增语义检查；Helm lint/默认/显式启用模板通过；默认46个旧Helm资源与HEAD渲染结构完全一致。启用模型50资源，新HPA默认关闭。模型使用隔离占位密码和空env文件，未读取真实密钥。scripts/verify-deployment.sh增加profile及启用模板检查；本次未执行其包含promtool容器的全量脚本，只有受影响离线检查。无Docker build/镜像拉取、应用启动、共享初始化、Helm apply或生产验收。
+
+Compose显式启动前需自行配置REFERRAL_DB_URL/USER/PASSWORD及REFERRAL_MIGRATION_DB_USER/PASSWORD，且先完成专属库账号与来源验收；空默认值不能作为可运行配置。详细模型及model-result.json保留本目录，独立终审已关闭，9配置输入SHA一致。

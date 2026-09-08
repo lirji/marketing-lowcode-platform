@@ -1,4 +1,5 @@
 {{- range $name, $service := .Values.services }}
+{{- if or (not (hasKey $service "enabled")) $service.enabled }}
 ---
 apiVersion: v1
 kind: Service
@@ -85,7 +86,19 @@ spec:
             {{- if eq $name "offer-decision-service" }}
             - {name: REDIS_URL, value: {{ $.Values.external.redis.url | quote }}}
             {{- end }}
-            {{- if $service.database }}
+            {{- if eq $name "referral-service" }}
+            - {name: MARKETING_SECURITY_DEV_HEADERS_ENABLED, value: "false"}
+            - name: REFERRAL_DB_URL
+              value: {{ printf "jdbc:mysql://%s:%v/%s?%s" $.Values.external.mysql.host $.Values.external.mysql.port $service.database $.Values.external.mysql.parameters | quote }}
+            - name: REFERRAL_DB_USER
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: referral-service-database-username}}
+            - name: REFERRAL_DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: referral-service-database-password}}
+            - name: REFERRAL_MIGRATION_DB_USER
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: referral-service-migration-username}}
+            - name: REFERRAL_MIGRATION_DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: referral-service-migration-password}}
+            {{- else if $service.database }}
             - name: MARKETING_DB_URL
               value: {{ printf "jdbc:mysql://%s:%v/%s?%s" $.Values.external.mysql.host $.Values.external.mysql.port $service.database $.Values.external.mysql.parameters | quote }}
             - name: MARKETING_DB_USER
@@ -313,4 +326,5 @@ spec:
               app.kubernetes.io/name: {{ $name }}
               app.kubernetes.io/instance: {{ $.Release.Name }}
         {{- end }}
+{{- end }}
 {{- end }}

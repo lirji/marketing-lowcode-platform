@@ -65,6 +65,8 @@ java_services = {
     "engagement-service",
     "measurement-service",
 }
+if "referral-service" in services:
+    java_services.add("referral-service")
 for service_name in java_services:
     service = services[service_name]
     require(service.get("read_only") is True, f"{service_name} root filesystem must be read-only")
@@ -113,5 +115,20 @@ for service_name, database_name in mysql_databases.items():
         f"infra-mysql84:3306/{database_name}?" in database_url,
         f"{service_name} must use its own database on shared MySQL",
     )
+
+
+# 新裂变只有显式profile才进入模型，身份与数据库环境不可沿用旧DEV默认。
+if "referral-service" in services:
+    referral = services["referral-service"]
+    env = referral["environment"]
+    require(referral.get("profiles") == ["referral"], "referral must remain opt-in")
+    require(not referral.get("ports"), "referral must not publish a host port")
+    require(env.get("MARKETING_SECURITY_MODE") == "OIDC", "referral requires OIDC")
+    require(env.get("MARKETING_DEV_HEADERS_ENABLED") == "false", "referral forbids DEV headers")
+    require(env.get("MARKETING_SECURITY_DEV_HEADERS_ENABLED") == "false", "referral nested DEV setting must be false")
+    require(env.get("PORT") == "8090", "referral probe and application port must agree")
+    require("REFERRAL_DB_USER" in env and "REFERRAL_MIGRATION_DB_USER" in env, "referral needs separate runtime/migration accounts")
+    for name in ("edge-gateway", "console"):
+        require("referral-service" not in services[name].get("depends_on", {}), "default R1 must not start referral implicitly")
 
 print("compose semantic model verified")

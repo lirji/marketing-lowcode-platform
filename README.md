@@ -4,6 +4,8 @@
 
 > 当前结论是 **production candidate / conditional-go**。代码与部署资产可以进入企业环境验证；真实上线仍必须完成目标环境压测、灾备演练、资金不变量验证、安全扫描、密钥接入和法务合规签字。本仓库不声称已达到京东真实规模。
 
+新增裂变能力正在分阶段实施，当前能力、专项证据和未开放门禁见[裂变后端实施导航](docs/REFERRAL_IMPLEMENTATION_STATUS.md)。完整裂变尚未达到上述R1生产候选结论。
+
 ## 五分钟体验
 
 前置条件：Docker Desktop、Java 21、pnpm 9，以及同级目录的 `dev-infra`。数据库与中间件统一复用 `dev-infra`；首次启动会生成仅本机可读的 `.env`、初始化隔离资源并构建业务镜像：

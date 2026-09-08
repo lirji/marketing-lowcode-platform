@@ -144,6 +144,13 @@ services:
     port: 8089
     database: marketing_measurement
     replicas: 2
+  # 新裂变默认不部署；真实来源/账号/容量需另行签收。
+  referral-service:
+    enabled: false
+    port: 8090
+    database: marketing_referral
+    replicas: 1
+    hpa: {enabled: false}
   edge-gateway:
     port: 8080
     database: ""
