@@ -3,8 +3,6 @@ package com.acme.marketing.compiler.interfaces;
 import com.acme.marketing.compiler.application.RuleCompilerService;
 import com.acme.marketing.contracts.artifact.ArtifactBundle;
 import com.acme.marketing.platform.web.TenantContextHolder;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
 import java.util.Base64;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,17 +16,21 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1")
 public class CompilerController {
     private final RuleCompilerService service;
+    private final com.acme.marketing.compiler.application.ReferralCompileRequestReader requestReader;
 
-    public CompilerController(RuleCompilerService service) {
+    /** 原始 JSON 先做裂变字符串合同检查，避免绑定成 Map 后丢失原类型。 */
+    public CompilerController(RuleCompilerService service, tools.jackson.databind.ObjectMapper mapper) {
         this.service = service;
+        this.requestReader = new com.acme.marketing.compiler.application.ReferralCompileRequestReader(mapper);
     }
 
+    /** 权限通过后验证原始配置类型，再交给共享编译/签名流程。 */
     @PostMapping("/compile")
     public RuleCompilerService.CompileReport compile(
-            @Valid @RequestBody RuleCompilerService.CompileRequest request) {
+            @RequestBody tools.jackson.databind.JsonNode request) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("definition:compile");
-        return service.compile(scope.tenantId().value(), request);
+        return service.compile(scope.tenantId().value(), requestReader.read(request));
     }
 
     @GetMapping("/artifacts/{artifactId}")

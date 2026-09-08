@@ -131,6 +131,7 @@ class RuleCompilerServiceTest {
                     List.of(new GraphNode("trigger", "journey.trigger", "1.0.0", Map.of()),
                             new GraphNode("end", "journey.end", "1.0.0", Map.of())),
                     List.of(new GraphEdge("edge-1", "trigger", "next", "end", "in")), Map.of(), Map.of());
+            case REFERRAL_PLAN -> ReferralPlanCompilerTest.graph();
             case DRL, DMN -> null;
         };
         String source = format == RuleCompilerService.Format.DRL ? DRL

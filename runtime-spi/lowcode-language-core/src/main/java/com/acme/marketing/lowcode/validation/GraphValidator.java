@@ -207,7 +207,8 @@ public final class GraphValidator {
     private static boolean isPureDialect(Dialect dialect) {
         return dialect == Dialect.OFFER_DECISION_DAG
                 || dialect == Dialect.AUDIENCE_EXPRESSION
-                || dialect == Dialect.DMN_DECISION_TABLE;
+                || dialect == Dialect.DMN_DECISION_TABLE
+                || dialect == Dialect.REFERRAL_POLICY;
     }
 
     private static ValidationIssue error(String code, String pointer, String nodeId, String message) {

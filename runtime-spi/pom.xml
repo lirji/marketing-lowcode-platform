@@ -12,6 +12,7 @@
     <module>decision-runtime-spi</module>
     <module>provider-connector-spi</module>
     <module>journey-runtime-spi</module>
+    <module>referral-runtime-spi</module>
     <module>drools-runtime-adapter</module>
     <module>dmn-runtime-adapter</module>
   </modules>
