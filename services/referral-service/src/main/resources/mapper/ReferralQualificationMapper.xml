@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralQualificationMapper">
+  <select id="relation" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralQualificationMapper$RelationRow">
+    SELECT tenant_id AS tenantId,relation_id AS relationId,campaign_id AS campaignId,organization_id AS organizationId,shop_id AS shopId,
+    participant_id AS participantId,token_id AS tokenId,definition_id AS definitionId,definition_version AS definitionVersion,generation,
+    artifact_id AS artifactId,policy_hash AS policyHash,bound_at AS boundAt,deadline_at AS qualifyDeadline,consent_version AS consentVersion,
+    consent_hash AS consentHash,state,invitee_key AS subjectKey,subject_key_version AS keyVersion,invitee_cipher AS cipher,encryption_key_id AS encryptionKeyId
+    FROM mk_referral_relation WHERE tenant_id=#{tenant} AND relation_id=#{relation} <if test="lock">FOR UPDATE</if>
+  </select>
+  <insert id="enqueue">
+    INSERT INTO mk_referral_evaluation_task(tenant_id,relation_id,participant_id,organization_id,shop_id,requested_revision,trigger_resource_id,
+      trigger_version,reason,status,available_at,available_seconds,available_nanos,created_at,updated_at)
+    VALUES(#{tenant},#{relation},#{participant},#{organization},#{shop},1,#{resource},#{version},#{reason},'PENDING',#{now},#{seconds},#{nanos},#{now},#{now})
+    ON DUPLICATE KEY UPDATE requested_revision=requested_revision+1,trigger_resource_id=#{resource},trigger_version=#{version},reason=#{reason},
+      status='PENDING',available_at=#{now},available_seconds=#{seconds},available_nanos=#{nanos},lease_owner=NULL,lease_until=NULL,fence=fence+1,row_version=row_version+1,updated_at=#{now}
+  </insert>
+  <select id="task" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralQualificationMapper$TaskRow">
+    SELECT tenant_id AS tenantId,relation_id AS relationId,participant_id AS participantId,organization_id AS organizationId,shop_id AS shopId,
+      requested_revision AS requestedRevision,processed_revision AS processedRevision,status,available_seconds AS availableSeconds,available_nanos AS availableNanos,
+      lease_owner AS leaseOwner,lease_until AS leaseUntil,fence FROM mk_referral_evaluation_task WHERE tenant_id=#{tenant} AND relation_id=#{relation} FOR UPDATE
+  </select>
+  <update id="claim">UPDATE mk_referral_evaluation_task SET status='PROCESSING',lease_owner=#{owner},lease_until=#{until},fence=fence+1,row_version=row_version+1,updated_at=#{now}
+    WHERE tenant_id=#{tenant} AND relation_id=#{relation} AND fence=#{fence} AND requested_revision=#{requested}</update>
+  <select id="qualification" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralQualificationMapper$QualificationRow">
+    SELECT tenant_id AS tenantId,relation_id AS relationId,participant_id AS participantId,goal_type AS goalType,policy_hash AS policyHash,state,reason,counted,
+      ever_qualified AS everQualified,qualification_revision AS revision,evidence_resource_id AS evidenceResourceId,evidence_state_version AS evidenceVersion,
+      member_revision AS memberRevision,member_policy AS memberPolicy,first_order_policy AS firstOrderPolicy,proof_id AS proofId,due_seconds AS dueSeconds,due_nanos AS dueNanos,task_revision AS taskRevision,member_evidence_digest AS memberEvidenceDigest,member_quarantined AS memberQuarantined,registration_anchor_digest AS registrationAnchorDigest
+    FROM mk_referral_qualification WHERE tenant_id=#{tenant} AND relation_id=#{relation} <if test="lock">FOR UPDATE</if>
+  </select>
+  <insert id="reserveProgress">INSERT INTO mk_referral_progress(tenant_id,participant_id,created_at,updated_at) VALUES(#{tenant},#{participant},#{now},#{now}) ON DUPLICATE KEY UPDATE progress_revision=progress_revision</insert>
+  <select id="progress" resultType="com.acme.marketing.referral.domain.qualification.ReferralProgressTransition$Progress">
+    SELECT tenant_id AS tenantId,participant_id AS participantId,valid_count AS validCount,ever_qualified_count AS everQualifiedCount,progress_revision AS revision
+    FROM mk_referral_progress WHERE tenant_id=#{tenant} AND participant_id=#{participant} FOR UPDATE
+  </select>
+  <insert id="insertQualification">INSERT INTO mk_referral_qualification(tenant_id,relation_id,participant_id,goal_type,policy_hash,state,reason,counted,ever_qualified,
+      qualification_revision,evidence_resource_id,evidence_state_version,member_revision,member_policy,first_order_policy,proof_id,due_seconds,due_nanos,task_revision,member_evidence_digest,member_quarantined,registration_anchor_digest,created_at,updated_at)
+    VALUES(#{q.tenantId},#{q.relationId},#{q.participantId},#{q.goalType},#{q.policyHash},#{q.state},#{q.reason},#{q.counted},#{q.everQualified},#{q.revision},
+      #{q.evidenceResourceId},#{q.evidenceVersion},#{q.memberRevision},#{q.memberPolicy},#{q.firstOrderPolicy},#{q.proofId},#{dueSeconds},#{dueNanos},#{q.taskRevision},#{q.memberEvidenceDigest},#{q.memberQuarantined},#{q.registrationAnchorDigest},#{now},#{now})</insert>
+  <update id="updateQualification">UPDATE mk_referral_qualification SET goal_type=#{q.goalType},state=#{q.state},reason=#{q.reason},counted=#{q.counted},ever_qualified=#{q.everQualified},
+      qualification_revision=#{q.revision},evidence_resource_id=#{q.evidenceResourceId},evidence_state_version=#{q.evidenceVersion},member_revision=#{q.memberRevision},
+      member_policy=#{q.memberPolicy},first_order_policy=#{q.firstOrderPolicy},proof_id=#{q.proofId},due_seconds=#{dueSeconds},due_nanos=#{dueNanos},task_revision=#{q.taskRevision},member_evidence_digest=#{q.memberEvidenceDigest},member_quarantined=#{q.memberQuarantined},registration_anchor_digest=#{q.registrationAnchorDigest},updated_at=#{now}
+    WHERE tenant_id=#{q.tenantId} AND relation_id=#{q.relationId} AND participant_id=#{q.participantId} AND qualification_revision=#{previousRevision}
+      AND policy_hash=#{q.policyHash} AND (goal_type IS NULL OR goal_type=#{q.goalType})</update>
+  <update id="updateProgress">UPDATE mk_referral_progress SET valid_count=#{p.validCount},ever_qualified_count=#{p.everQualifiedCount},progress_revision=#{p.revision},updated_at=#{now}
+    WHERE tenant_id=#{p.tenantId} AND participant_id=#{p.participantId} AND progress_revision=#{progressRevision}</update>
+  <update id="completeTask">UPDATE mk_referral_evaluation_task SET processed_revision=#{requested},status=#{status},available_at=#{available},available_seconds=#{seconds},available_nanos=#{nanos},
+      lease_owner=NULL,lease_until=NULL,row_version=row_version+1,updated_at=#{now}
+    WHERE tenant_id=#{tenant} AND relation_id=#{relation} AND requested_revision=#{requested} AND fence=#{fence} AND status='PROCESSING' AND lease_owner=#{owner}</update>
+  <insert id="audit">INSERT INTO mk_referral_audit(tenant_id,audit_id,actor_id,action,resource_ref,reason,after_hash,trace_id,occurred_at,created_at,updated_at)
+    VALUES(#{tenant},#{auditId},#{actor},#{type},#{aggregate},#{reason},#{hash},#{trace},#{now},#{now},#{now})</insert>
+  <insert id="outbox">INSERT INTO mk_referral_outbox(tenant_id,event_id,aggregate_id,aggregate_revision,event_type,topic,partition_key,payload,payload_hash,next_retry_at,created_at,updated_at)
+    VALUES(#{tenant},#{eventId},#{aggregate},#{revision},#{type},'mk.referral.qualification.internal.v1',CONCAT(#{tenant},':',#{participant}),#{payload},#{hash},#{now},#{now},#{now})</insert>
+</mapper>

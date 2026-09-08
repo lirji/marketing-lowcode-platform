@@ -1,0 +1,13 @@
+# 后续持久服务接入约束
+
+纯入口为 `merge(current, observation, historyLookup, now)`；不存在默认跳过history的三参生产重载。now和receivedAt来自可信处理上下文；sourceVerified必须在来源验签/绑定完成后设置，mappingConfirmed须有实际paid/completed→SETTLED口径确认。
+
+HistoryLookup由同一数据库短事务的同scope/revision查询提供：NotSeen是已查明不存在，Seen携带完整稳定Snapshot，Unavailable是未查/不可用。纯函数不执行查询、不保留无界Map。来源未验或scope不符拒绝，不污染原可信状态。未来输入不得抢占firstReceived或firstSettlementReceived。
+
+后续调用者必须原子保存所有返回State（包含REJECTED时的historyPendingRevision以及CONFLICT时的quarantine），并保存原始冲突/拒绝证据与审计。NotSeen且输入为旧revision时即使结果IGNORED_OLDER，也需在证据历史/Inbox记录该可信观察，以保证后续同revision不同内容可由Seen检测；latest和时间锚不能被旧数据覆盖。持久设计仍未实现，此文不是数据库验收。
+
+historyPendingRevision可恢复但旧修订不能清掉更新水位；已quarantine不能靠更高revision自动恢复。历史Seen但current缺失/落后需从持久记录恢复原State/锚点，不以本次重试receivedAt重建历史首接收。
+
+`toEvaluatorEvidence`只是订单侧投影：不完整、pending、quarantine、未确认映射均verified=false；newCustomerAtBind始终UNKNOWN。会员权威新客事实须另做租户、canonicalSubject、活动绑定时点及policyVersion关联后组合，不能直接把UNKNOWN改YES。pendingRefund不冒充confirmedRefund；不会擅自以保守金额替换合同净额。
+
+六维Scope采用精确字符串比较，没有通配语义；canonicalSubject不超过256 Unicode码点，禁止非法代理项，不trim/NFC/casefold。toString只提供脱敏Scope，完整主体仍仅供受信业务关联，不应记录完整JSON到日志。真实证据保留/删除和隐私治理仍待确认。

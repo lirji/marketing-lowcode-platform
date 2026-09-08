@@ -1,0 +1,9 @@
+# 后续首绑接口衔接
+
+分享邀请token是可被多个好友使用的随机邀请凭证；与订单归因jti单次消费是不同合同。V2没有consumed标志，后续绑定不得把token整体单次消费，否则第2位好友会被错误拒绝。
+
+baseline10明确活动绑定窗口为[活动开始,活动结束)，达标截止为min(绑定+配置天数,活动结算截止)；仅列出maxBindAgeSeconds字段，没有定义其年龄起点。当前未把participant.createdAt、会员registeredAt或token.createdAt擅自当起点，用户答复仍待确认。后续历史绑定许可Port应返回可信条款已确定的absolute bindUntil及许可有效期，缺失默认拒绝；测试明确标注该截止为fixture。
+
+当前ReferralInviteRepository.token是无锁展示读取，不能直接作为首绑的最终裁决依据。后续可先无锁读取token及inviter以准备事务外可信许可，再按已审查角色/参与者锁序取得角色、参与者，最后通过专门事务内锁读token接口核对tenant、participant、hash、expiresAt、revokedAt及createdAt。任何外部可信来源均在事务前，锁后重新判断当前时间与许可有效性；token发生撤销/过期必须拒绝。最终统一锁序须与PREIMPLEMENTATION_REVIEW对齐，不把此建议当已经实现的绑定Port。
+
+发行中的tokenExpiresAt仅来自原参与者冻结版本的历史许可；不代表绑定绝对截止，也不表示好友已接受条款或通过新客/首单/风控。解析最小视图只用于展示，没有资格、关系或奖励副作用。

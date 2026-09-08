@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralEvidenceMapper">
+ <insert id="reserveInbox">INSERT INTO mk_referral_evidence_inbox(tenant_id,issuer,source_system,event_id,business_digest,order_id,created_at,updated_at)
+  VALUES(#{tenant},#{issuer},#{source},#{eventId},#{digest},#{orderId},#{now},#{now}) ON DUPLICATE KEY UPDATE event_id=event_id</insert>
+ <select id="inbox" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralEvidenceMapper$InboxRow">
+  SELECT tenant_id AS tenant,issuer,source_system AS source,event_id AS eventId,business_digest AS businessDigest,order_id AS orderId,
+   result_resource_id AS resourceId,result_outcome AS outcome,result_reason AS reason,result_state_version AS stateVersion
+  FROM mk_referral_evidence_inbox WHERE tenant_id=#{tenant} AND issuer=#{issuer} AND source_system=#{source} AND event_id=#{eventId}
+  <if test="lock">FOR UPDATE</if>
+ </select>
+ <insert id="reserveOrder">INSERT INTO mk_referral_order_evidence_current(tenant_id,source_system,order_id,resource_id,created_at,updated_at)
+  VALUES(#{tenant},#{source},#{orderId},#{resourceId},#{now},#{now}) ON DUPLICATE KEY UPDATE row_version=row_version</insert>
+ <select id="current" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralEvidenceMapper$OrderRow">
+  SELECT tenant_id AS tenant,source_system AS source,order_id AS orderId,resource_id AS resourceId,row_version AS rowVersion,quarantined,
+   subject_key AS subject,subject_key_version AS keyVersion,organization_id AS organization,shop_id AS shop,business_revision AS revision,
+   state_cipher AS cipher,encryption_key_id AS keyId,state_digest AS businessDigest
+  FROM mk_referral_order_evidence_current WHERE tenant_id=#{tenant} AND source_system=#{source} AND order_id=#{orderId}
+  <if test="lock">FOR UPDATE</if>
+ </select>
+ <select id="history" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralEvidenceMapper$CipherRow">
+  SELECT tenant_id AS tenant,source_system AS source,order_id AS orderId,subject_key AS subject,subject_key_version AS keyVersion,
+   organization_id AS organization,shop_id AS shop,business_revision AS revision,snapshot_cipher AS cipher,encryption_key_id AS keyId,business_digest AS businessDigest
+  FROM mk_referral_order_evidence_history WHERE tenant_id=#{tenant} AND source_system=#{source} AND order_id=#{orderId} AND business_revision=#{revision}
+  <if test="lock">FOR UPDATE</if>
+ </select>
+ <insert id="insertHistory">INSERT INTO mk_referral_order_evidence_history(tenant_id,source_system,order_id,business_revision,subject_key,subject_key_version,organization_id,shop_id,
+   snapshot_cipher,encryption_key_id,business_digest,first_received_at,first_received_seconds,first_received_nanos,created_at)
+  VALUES(#{tenant},#{source},#{orderId},#{revision},#{subject},#{keyVersion},#{organization},#{shop},#{cipher},#{keyId},#{digest},#{receivedAt},#{receivedSeconds},#{receivedNanos},#{now})</insert>
+ <update id="replaceOrder">UPDATE mk_referral_order_evidence_current SET subject_key=#{subject},subject_key_version=#{keyVersion},organization_id=#{organization},shop_id=#{shop},
+   business_revision=#{revision},state_cipher=#{cipher},encryption_key_id=#{keyId},state_digest=#{digest},quarantined=#{quarantined},row_version=#{nextVersion},updated_at=#{now}
+  WHERE tenant_id=#{tenant} AND source_system=#{source} AND order_id=#{orderId} AND resource_id=#{resourceId} AND row_version=#{expectedVersion}</update>
+ <update id="completeInbox">UPDATE mk_referral_evidence_inbox SET result_resource_id=#{resourceId},result_outcome=#{outcome},result_reason=#{reason},result_state_version=#{stateVersion},updated_at=#{now}
+  WHERE tenant_id=#{tenant} AND issuer=#{issuer} AND source_system=#{source} AND event_id=#{eventId} AND result_resource_id IS NULL</update>
+ <insert id="fanout">INSERT INTO mk_referral_evidence_fanout(tenant_id,resource_id,desired_version,reason,created_at,updated_at)
+  VALUES(#{tenant},#{resourceId},#{version},#{reason},#{now},#{now}) ON DUPLICATE KEY UPDATE desired_version=GREATEST(desired_version,VALUES(desired_version)),reason=VALUES(reason),
+   status='PENDING',cursor_relation_id=NULL,lease_owner=NULL,lease_until=NULL,lease_fence=lease_fence+1,row_version=row_version+1,updated_at=VALUES(updated_at)</insert>
+ <insert id="outbox">INSERT INTO mk_referral_outbox(tenant_id,event_id,aggregate_id,aggregate_revision,event_type,topic,partition_key,payload,payload_hash,next_retry_at,created_at,updated_at)
+  VALUES(#{tenant},#{eventId},#{resourceId},#{version},'ORDER_EVIDENCE_CHANGED','mk.referral.evidence.internal.v1',CONCAT(#{tenant},':',#{resourceId}),#{payload},#{payloadHash},#{now},#{now},#{now})</insert>
+ <insert id="audit">INSERT INTO mk_referral_audit(tenant_id,audit_id,actor_id,action,resource_ref,reason,after_hash,trace_id,occurred_at,created_at,updated_at)
+  VALUES(#{tenant},#{auditId},#{actor},#{action},#{resourceId},#{reason},#{payloadHash},#{trace},#{now},#{now},#{now})</insert>
+</mapper>

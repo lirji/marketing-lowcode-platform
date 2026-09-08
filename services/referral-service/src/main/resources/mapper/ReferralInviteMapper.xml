@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralInviteMapper">
+  <select id="replay" resultType="com.acme.marketing.referral.application.ReferralInviteRepository$Replay">
+    SELECT tenant_id AS tenantId,subject_key AS subjectKey,idempotency_key AS idempotencyKey,request_hash AS requestHash,token_id AS tokenId,token_hash AS tokenHash,
+      token_expires_at AS tokenExpiresAt,replay_until AS replayUntil,response_cipher AS responseCipher,encryption_key_id AS encryptionKeyId
+    FROM mk_referral_invite_replay WHERE tenant_id=#{tenant} AND subject_key=#{subject} AND idempotency_key=#{key}
+    <if test="lock">FOR UPDATE</if>
+  </select>
+  <insert id="reserve">INSERT INTO mk_referral_invite_replay(tenant_id,subject_key,idempotency_key,request_hash,created_at,updated_at)
+    VALUES(#{tenant},#{subject},#{key},#{hash},#{now},#{now}) ON DUPLICATE KEY UPDATE row_version=row_version</insert>
+  <select id="participant" resultType="com.acme.marketing.referral.domain.ReferralParticipant">
+    SELECT tenant_id AS tenantId,participant_id AS participantId,campaign_id AS campaignId,organization_id AS organizationId,shop_id AS shopId,
+      definition_id AS definitionId,definition_version AS definitionVersion,generation,artifact_id AS artifactId,policy_hash AS policyHash,
+      route_epoch AS routeEpoch,state,created_at AS createdAt FROM mk_referral_participant WHERE tenant_id=#{tenant} AND participant_id=#{participantId}
+    <if test="lock">FOR UPDATE</if>
+  </select>
+  <select id="ownership" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralInviteMapper$Ownership">
+    SELECT subject_key AS subjectKey,subject_key_version AS keyVersion FROM mk_referral_participant WHERE tenant_id=#{tenant} AND participant_id=#{participantId}
+  </select>
+  <insert id="insertToken">INSERT INTO mk_referral_invite_token(tenant_id,token_id,token_hash,participant_id,expires_at,token_version,created_at,updated_at)
+    VALUES(#{r.tenantId},#{r.tokenId},#{r.tokenHash},#{participantId},#{tokenExpiresAt},1,#{now},#{now})</insert>
+  <update id="complete">UPDATE mk_referral_invite_replay SET token_id=#{r.tokenId},token_hash=#{r.tokenHash},token_expires_at=#{tokenExpiresAt},replay_until=#{replayUntil},
+      response_cipher=#{r.responseCipher},encryption_key_id=#{r.encryptionKeyId},updated_at=#{now},row_version=row_version+1
+    WHERE tenant_id=#{r.tenantId} AND subject_key=#{r.subjectKey} AND idempotency_key=#{r.idempotencyKey} AND request_hash=#{r.requestHash} AND token_id IS NULL</update>
+  <insert id="audit">INSERT INTO mk_referral_audit(tenant_id,audit_id,actor_id,action,resource_ref,reason,trace_id,occurred_at,created_at,updated_at)
+    VALUES(#{r.tenantId},#{auditId},#{actorId},'INVITE_TOKEN_ISSUED',#{r.tokenId},'按原固定规则发行邀请令牌',#{traceId},#{now},#{now},#{now})</insert>
+  <select id="token" resultType="com.acme.marketing.referral.application.ReferralInviteRepository$Token">
+    SELECT token_id AS tokenId,participant_id AS participantId,token_hash AS tokenHash,expires_at AS expiresAt,revoked_at AS revokedAt
+    FROM mk_referral_invite_token WHERE tenant_id=#{tenant} AND token_hash=#{tokenHash}
+  </select>
+  <select id="lockToken" resultType="com.acme.marketing.referral.application.ReferralInviteRepository$Token">
+    SELECT token_id AS tokenId,participant_id AS participantId,token_hash AS tokenHash,expires_at AS expiresAt,revoked_at AS revokedAt
+    FROM mk_referral_invite_token WHERE tenant_id=#{tenant} AND token_hash=#{tokenHash} FOR UPDATE
+  </select>
+</mapper>
