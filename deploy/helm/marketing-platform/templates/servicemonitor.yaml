@@ -1,5 +1,6 @@
 {{- if .Values.serviceMonitor.enabled }}
 {{- range $name, $service := .Values.services }}
+{{- if or (not (hasKey $service "enabled")) $service.enabled }}
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -15,5 +16,6 @@ spec:
   selector: {matchLabels: {app.kubernetes.io/name: {{ $name }}}}
   endpoints:
     - {port: http, path: /actuator/prometheus, interval: {{ $.Values.serviceMonitor.interval }}}
+{{- end }}
 {{- end }}
 {{- end }}

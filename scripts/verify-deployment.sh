@@ -16,6 +16,8 @@ require_command helm
 docker compose --env-file .env.example -f deploy/compose.yaml config --quiet
 docker compose --env-file .env.example -f deploy/compose.yaml config --format json \
   | python3 scripts/verify-compose-model.py
+docker compose --env-file .env.example -f deploy/compose.yaml --profile referral config --format json \
+  | python3 scripts/verify-compose-model.py
 docker compose --env-file "${DEV_INFRA_ROOT}/.env.example" \
   -f "${DEV_INFRA_ROOT}/compose.yaml" config --quiet
 docker compose --env-file "${DEV_INFRA_ROOT}/.env.example" --env-file .env.example \
@@ -35,6 +37,7 @@ if rg -l 'jdbc:h2|com\.h2database' services \
 fi
 helm lint deploy/helm/marketing-platform
 helm template marketing deploy/helm/marketing-platform >/dev/null
+helm template marketing deploy/helm/marketing-platform --set services.referral-service.enabled=true >/dev/null
 helm template marketing deploy/helm/marketing-platform \
   -f deploy/helm/marketing-platform/values-production.example.yaml >/dev/null
 helm template marketing deploy/helm/marketing-platform \

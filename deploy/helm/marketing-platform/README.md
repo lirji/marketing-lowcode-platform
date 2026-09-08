@@ -25,3 +25,11 @@ helm upgrade --install marketing deploy/helm/marketing-platform \
 `marketing_http_server_p99_milliseconds`、`hikaricp_connections_pending`、
 `marketing_outbox_pending`、`marketing_outbox_oldest_age_seconds` 和 `marketing_kafka_consumer_lag`。指标缺失时 HPA 仍可按 CPU/内存扩容，
 但会阻止安全缩容，因此发布准入必须执行 `kubectl describe hpa` 并确认所有 target 都有当前值。
+
+## 可选裂变服务（尚未生产验收）
+
+`services.referral-service.enabled` 默认 `false`，旧服务默认渲染保持一致。显式启用才创建内部 Service/Deployment 等资源，不增加网关或公网 Ingress。新服务读取四个独立 Secret 键：`referral-service-database-username`、`referral-service-database-password`、`referral-service-migration-username`、`referral-service-migration-password`，运行与迁移账号分离。数据库/账号尚未由旧九库初始化脚本创建，不能直接以该脚本成功作为裂变库部署证据。
+
+网络策略启用时，新服务只接受同 release 平台 Pod 的内部端口流量；旧 Ingress 放行规则排除它，避免 NetworkPolicy 叠加越权。此处是模型约束，真实集群网络、监控抓取、身份/许可/KMS及容量仍须单独验收。固定 OIDC、禁止 DEV 头，业务来源配置仍默认拒绝。
+
+可先离线审阅 `helm template marketing deploy/helm/marketing-platform --set services.referral-service.enabled=true`。该命令只渲染，不部署。详细证据见 `docs/delivery/referral-packaging/`。

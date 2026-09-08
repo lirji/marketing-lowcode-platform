@@ -4,7 +4,13 @@ kind: NetworkPolicy
 metadata:
   name: marketing-default-deny-ingress
 spec:
-  podSelector: {matchLabels: {app.kubernetes.io/part-of: marketing-platform}}
+  podSelector:
+    matchLabels: {app.kubernetes.io/part-of: marketing-platform}
+    {{- if (index .Values.services "referral-service").enabled }}
+    # NetworkPolicy规则相加；排除新服务，避免旧Ingress端口规则为它额外授权。
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: NotIn, values: [referral-service]}
+    {{- end }}
   policyTypes: [Ingress]
   ingress:
     - from:
@@ -21,4 +27,20 @@ spec:
         - {protocol: TCP, port: 8087}
         - {protocol: TCP, port: 8088}
         - {protocol: TCP, port: 8089}
+{{- end }}
+
+{{- if and .Values.networkPolicy.enabled (index .Values.services "referral-service").enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: marketing-referral-internal-only
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: referral-service, app.kubernetes.io/instance: {{ .Release.Name }}}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/part-of: marketing-platform, app.kubernetes.io/instance: {{ .Release.Name }}}}
+      ports:
+        - {protocol: TCP, port: {{ (index .Values.services "referral-service").port }}}
 {{- end }}

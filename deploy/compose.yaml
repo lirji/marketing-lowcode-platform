@@ -296,6 +296,28 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: ${MARKETING_KAFKA_BOOTSTRAP_SERVERS:-infra-kafka38:9092}
       MARKETING_KAFKA_CONSUMERS_ENABLED: "true"
 
+  # 仅显式--profile referral启动；账号/来源未配置时保持拒绝，不归入R1默认发布。
+  referral-service:
+    <<: *java-service
+    profiles: [referral]
+    image: marketing/referral-service:${IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.jvm
+      target: service
+      args: { SERVICE: referral-service, SERVICE_PORT: 8090 }
+    environment:
+      <<: *java-environment
+      PORT: 8090
+      MARKETING_SECURITY_MODE: OIDC
+      MARKETING_DEV_HEADERS_ENABLED: "false"
+      MARKETING_SECURITY_DEV_HEADERS_ENABLED: "false"
+      REFERRAL_DB_URL: ${REFERRAL_DB_URL:-}
+      REFERRAL_DB_USER: ${REFERRAL_DB_USER:-}
+      REFERRAL_DB_PASSWORD: ${REFERRAL_DB_PASSWORD:-}
+      REFERRAL_MIGRATION_DB_USER: ${REFERRAL_MIGRATION_DB_USER:-}
+      REFERRAL_MIGRATION_DB_PASSWORD: ${REFERRAL_MIGRATION_DB_PASSWORD:-}
+
   edge-gateway:
     <<: *java-service
     image: marketing/edge-gateway:${IMAGE_TAG:-local}
