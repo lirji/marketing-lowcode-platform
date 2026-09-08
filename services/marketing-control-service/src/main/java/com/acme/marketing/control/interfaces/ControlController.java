@@ -31,12 +31,14 @@ public class ControlController {
     private final ControlApplicationService service;
     private final DefaultNodeRegistry registry;
     private final ControlCommandExecutor commands;
+    private final tools.jackson.databind.ObjectMapper mapper;
 
     public ControlController(ControlApplicationService service, DefaultNodeRegistry registry,
-            ControlCommandExecutor commands) {
+            ControlCommandExecutor commands, tools.jackson.databind.ObjectMapper mapper) {
         this.service = service;
         this.registry = registry;
         this.commands = commands;
+        this.mapper = mapper;
     }
 
     @PostMapping("/campaigns")
@@ -59,7 +61,9 @@ public class ControlController {
     @ResponseStatus(HttpStatus.CREATED)
     public ControlApplicationService.DefinitionView saveDefinition(
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @Valid @RequestBody SaveDefinitionRequest request) {
+            @Valid @RequestBody SaveDefinitionInput input) {
+        com.acme.marketing.lowcode.validation.ReferralGraphInputGuard.validate(mapper.convertValue(input.graph(), Map.class));
+        SaveDefinitionRequest request = new SaveDefinitionRequest(input.campaignId(), mapper.treeToValue(input.graph(), GraphDefinition.class));
         return commands.execute(TenantContextHolder.requireCurrent().tenantId(), "definition.save", idempotencyKey,
                 request, ControlApplicationService.DefinitionView.class,
                 () -> service.saveDefinition(request.campaignId(), request.graph()));
@@ -88,8 +92,8 @@ public class ControlController {
     }
 
     @PostMapping("/definitions/{definitionId}/versions/{version}:simulate")
-    public GraphSimulationService.Simulation simulate(@PathVariable String definitionId, @PathVariable long version,
-            @RequestBody Map<String, String> facts) {
+    public GraphSimulationService.SimulationResult simulate(@PathVariable String definitionId, @PathVariable long version,
+            @RequestBody Map<String, Object> facts) {
         return service.simulate(definitionId, version, facts);
     }
 
@@ -131,6 +135,8 @@ public class ControlController {
 
     public record CreateCampaignRequest(@NotBlank String name, @NotBlank String objective,
             @NotBlank String organizationId, String shopId) { }
+    /** 保留原始图值类型直到共享检查完成；不能在Map<String,String>绑定后检查。 */
+    public record SaveDefinitionInput(@NotBlank String campaignId, @NotNull tools.jackson.databind.JsonNode graph) { }
     public record SaveDefinitionRequest(@NotBlank String campaignId, @NotNull GraphDefinition graph) { }
     public record ApprovalRequest(@NotNull ApprovalCase.Role role,
             ControlApplicationService.ApprovalDecision decision, @Size(max = 128) String comment) {

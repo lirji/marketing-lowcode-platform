@@ -48,6 +48,8 @@ public final class DefaultNodeRegistry {
         result.add(node("journey.webhook", Set.of(Dialect.JOURNEY_STATE_MACHINE), Map.of("in", "flow"),
                 Map.of("next", "flow"), SideEffect.WEBHOOK));
         result.add(node("journey.end", Set.of(Dialect.JOURNEY_STATE_MACHINE), Map.of("in", "flow"), Map.of(), SideEffect.NONE));
+        // 编译器和节点查询共享同一纯节点目录，避免控制面误将奖励节点标为即时副作用。
+        result.addAll(com.acme.marketing.lowcode.model.ReferralNodeDefinitions.all());
         return List.copyOf(result);
     }
 

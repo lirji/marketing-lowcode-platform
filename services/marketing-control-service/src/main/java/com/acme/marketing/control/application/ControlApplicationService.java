@@ -122,11 +122,30 @@ public class ControlApplicationService {
         return definition(scope, definitionId, version).view();
     }
 
+    /** 裂变校验只确认共享规则语义；真实目录与发布闭包未完成时返回明确告警，不授予审批资格。 */
     @Transactional
     public ValidationResult validate(String definitionId, long version) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("definition:write");
         StoredDefinition stored = definition(scope, definitionId, version);
+        if (stored.graph().dialect() == Dialect.REFERRAL_POLICY) {
+            List<ValidationIssue> issues = new ArrayList<>();
+            try {
+                new com.acme.marketing.referral.ReferralPlanCompiler().compile(stored.graph());
+                // 使用同一新方言摘要验证字符串编码合法性，不能校验通过后才在签名阶段报错。
+                hasher.semanticHash(stored.graph());
+            } catch (IllegalArgumentException invalid) {
+                issues.add(new ValidationIssue(ValidationIssue.Severity.ERROR, "REFERRAL_POLICY_INVALID", "/nodes", null,
+                        invalid.getMessage()));
+            }
+            boolean valid = issues.isEmpty();
+            if (valid) issues.add(new ValidationIssue(ValidationIssue.Severity.WARNING, "REFERRAL_CATALOG_UNVERIFIED", "/nodes", null,
+                    "仅通过规则语义校验；真实SKU/权益版本目录尚未核验，审批与发布仍关闭"));
+            if (valid && stored.view().status() == DefinitionVersion.Status.DRAFT)
+                updateDefinitionStatus(scope.tenantId().value(), definitionId, version,
+                        DefinitionVersion.Status.VALIDATED, clock.instant());
+            return new ValidationResult(valid, stored.view().semanticHash(), issues);
+        }
         List<ValidationIssue> issues = new ArrayList<>(new GraphValidator(
                 registry.all(), GraphValidator.Limits.productionDefaults()).validate(stored.graph()));
         issues.addAll(governanceValidator.validate(stored.graph()));
@@ -138,7 +157,8 @@ public class ControlApplicationService {
         return new ValidationResult(valid, stored.view().semanticHash(), issues);
     }
 
-    public GraphSimulationService.Simulation simulate(String definitionId, long version, Map<String, String> facts) {
+    /** 原始facts保留JSON值类型直到方言检查；裂变只返回带模拟标识的纯计算结果。 */
+    public GraphSimulationService.SimulationResult simulate(String definitionId, long version, Map<String, ?> facts) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("definition:simulate");
         StoredDefinition stored = definition(scope, definitionId, version);
@@ -147,7 +167,11 @@ public class ControlApplicationService {
         if (issues.stream().anyMatch(issue -> issue.severity() == ValidationIssue.Severity.ERROR)) {
             throw new ConflictException("DEFINITION_INVALID", "definition must pass validation before simulation");
         }
-        return simulationService.simulate(stored.graph(), facts);
+        if (stored.graph().dialect() == Dialect.REFERRAL_POLICY && (facts == null
+                || facts.values().stream().anyMatch(value -> !(value instanceof String))))
+            throw new IllegalArgumentException("REFERRAL_SIMULATION_STRING_VALUES_REQUIRED");
+        Map<String, String> typedFacts = mapper.convertValue(facts, new tools.jackson.core.type.TypeReference<Map<String, String>>() { });
+        return simulationService.preview(stored.graph(), typedFacts);
     }
 
     @Transactional
@@ -155,6 +179,7 @@ public class ControlApplicationService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("definition:submit");
         StoredDefinition stored = definition(scope, definitionId, version);
+        requireControlDialectSupported(stored.graph());
         if (stored.view().status() != DefinitionVersion.Status.VALIDATED) {
             throw new ConflictException("DEFINITION_NOT_VALIDATED", "validate definition before submission");
         }
@@ -181,7 +206,7 @@ public class ControlApplicationService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("approval:" + role.name().toLowerCase(java.util.Locale.ROOT));
         ApprovalCase approval = approval(scope.tenantId().value(), caseId, true);
-        definition(scope, approval.definitionId(), approval.definitionVersion());
+        requireControlDialectSupported(definition(scope, approval.definitionId(), approval.definitionVersion()).graph());
         Instant now = clock.instant();
         ApprovalDecision resolved = decision == null ? ApprovalDecision.APPROVE : decision;
         if (resolved == ApprovalDecision.REJECT) {
@@ -373,6 +398,13 @@ public class ControlApplicationService {
                     campaign.createdAt(), campaign.updatedAt());
         }
     }
+    // 注册节点只用于发现与编译；控制面虽可同源校验/预览，尚未接入真实SKU闭包及冻结条款前不得产生批准资格。
+    private static void requireControlDialectSupported(GraphDefinition graph) {
+        if (graph.dialect() == Dialect.REFERRAL_POLICY)
+            throw new ConflictException("REFERRAL_GOVERNANCE_NOT_AVAILABLE",
+                    "referral approval and release integration is not available");
+    }
+
     public record DefinitionView(String definitionId, String campaignId, long version, Dialect dialect,
             String semanticHash, DefinitionVersion.Status status, String createdBy, Instant createdAt, Instant updatedAt,
             GraphDefinition graph) { }
