@@ -42,7 +42,8 @@ class ReferralAwardIntakeMySqlTest {
         assertTrue(oldRelay.selectCandidates("9999-01-01T00:00:00Z",10,100).isEmpty());
         assertEquals(0,ReferralPreparationMySqlTest.jdbc.queryForObject("SELECT COUNT(*) FROM mk_award_intent_outbox",Integer.class));
         assertEquals(0,ReferralPreparationMySqlTest.jdbc.queryForObject("SELECT COUNT(*) FROM mk_benefit_outbox",Integer.class));
-        assertEquals(11,ReferralPreparationMySqlTest.jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE success=1 AND type='SQL'",Integer.class));
+        // 验证本切片 V11 已应用，不把后续合法迁移视为失败。
+        assertEquals(1,ReferralPreparationMySqlTest.jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE success=1 AND type='SQL' AND version='11'",Integer.class));
         assertEquals(0,ReferralPreparationMySqlTest.jdbc.queryForObject("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name IN ('mk_referral_award_intake','mk_referral_award_held_outbox','mk_referral_award_expected_fact') AND column_comment=''",Integer.class));
     }
     @Test void expiredTokenOriginalReplayKeepsOneCipherReceiptIntentAndExpectedFact() {

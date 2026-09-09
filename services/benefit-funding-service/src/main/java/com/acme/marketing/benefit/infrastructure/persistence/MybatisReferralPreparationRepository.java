@@ -12,7 +12,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 /** 当前读+封闭领域转换+全身份CAS；仓储不解密、不访问KMS、不提交独立事务。 */
 @Repository
-public final class MybatisReferralPreparationRepository implements ReferralPreparationRepository {
+// Spring 的异常转换使用类代理，仓储实现必须允许代理继承。
+public class MybatisReferralPreparationRepository implements ReferralPreparationRepository {
     private final ReferralPreparationMapper mapper;private final Clock clock;
     public MybatisReferralPreparationRepository(ReferralPreparationMapper mapper,Clock clock){this.mapper=mapper;this.clock=clock;}
     @Override public Stored prepare(Identity identity,Snapshot snapshot,String owner,Instant leaseUntil) {

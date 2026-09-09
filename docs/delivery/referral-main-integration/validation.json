@@ -1,0 +1,71 @@
+{
+  "date": "2026-09-09",
+  "scope": "main integration; targeted reactor verify plus affected startup/intake regression; not full repository test acceptance",
+  "commands": [
+    {
+      "command": "TESTCONTAINERS_RYUK_DISABLED=true ./mvnw -o -q -pl services/benefit-funding-service -am -Dtest=BenefitFundingIntegrationTest,ReferralAwardIntakeMySqlTest,ReferralHeldReviewMySqlTest,ReferralPreparationMySqlTest -Dsurefire.failIfNoSpecifiedTests=false test",
+      "exitCode": 0,
+      "log": "/tmp/referral-main-benefit-fix.log"
+    },
+    {
+      "command": "TESTCONTAINERS_RYUK_DISABLED=true ./mvnw -o -q -pl services/referral-service,services/marketing-control-service,architecture-tests,services/edge-gateway -am -Dtest=Referral*,ControlFlowIntegrationTest,ArchitectureRulesTest,ContractSpecificationsTest,ClusterRateLimitFilterIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false verify",
+      "exitCode": 0,
+      "log": "/tmp/referral-main-marketing-final.log"
+    }
+  ],
+  "resolvedInitialFailures": [
+    "CGLIB cannot subclass final referral repositories",
+    "obsolete migration count expected 11, actual 12"
+  ],
+  "finalReportTotals": {
+    "runtime-spi/referral-runtime-spi": {
+      "tests": 93,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "services/referral-service": {
+      "tests": 226,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "services/marketing-control-service": {
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "services/benefit-funding-service": {
+      "tests": 80,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "marketing-contracts": {
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "architecture-tests": {
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "services/edge-gateway": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "verifiedPrerequisiteFiles": 53,
+  "fixSourceSha256": {
+    "services/benefit-funding-service/src/main/java/com/acme/marketing/benefit/infrastructure/persistence/MybatisReferralHeldReviewRepository.java": "314894368bfb02732f344ea24f561b74b596c10f84b65553a4bf65f025f701f6",
+    "services/benefit-funding-service/src/main/java/com/acme/marketing/benefit/infrastructure/persistence/MybatisReferralIntakeRepository.java": "fb1419c279ed0a6c75fcdcbcdaeeb3223805d670979a6d0869a02ee8cf8a57f5",
+    "services/benefit-funding-service/src/main/java/com/acme/marketing/benefit/infrastructure/persistence/MybatisReferralPreparationRepository.java": "f3ef0d0419bbec1db49b924441e3105dde06fd9b89ae1503321ad1cf06d78147",
+    "services/benefit-funding-service/src/test/java/com/acme/marketing/benefit/ReferralAwardIntakeMySqlTest.java": "47fb7d7e726456926ed35bde05197e556bc394ff5d43f1944c982eed9fb35012"
+  }
+}

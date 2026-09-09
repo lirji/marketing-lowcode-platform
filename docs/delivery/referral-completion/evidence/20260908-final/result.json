@@ -1,0 +1,59 @@
+{
+  "recordedAt": "2026-09-08T07:44:00.818270+00:00",
+  "branch": "feat/referral-completion",
+  "baseCommit": "87947bfd0a98be15176a9e95f1338dd0753d4fa4",
+  "commands": [
+    {
+      "command": "./mvnw -o -q -pl services/referral-service -am test",
+      "log": "referral-v11-full-retest.log",
+      "exitCode": 0
+    },
+    {
+      "command": "./mvnw -o -q -pl services/marketing-control-service -am test",
+      "log": "referral-campaign-type-test.log",
+      "exitCode": 0
+    },
+    {
+      "command": "./mvnw -o -q -pl architecture-tests,services/edge-gateway -am -Dtest=ArchitectureRulesTest,ContractSpecificationsTest,ClusterRateLimitFilterIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test",
+      "log": "referral-v11-final-gates.log",
+      "exitCode": 0
+    }
+  ],
+  "reportCounts": {
+    "services/referral-service": {
+      "tests": 196,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "services/marketing-control-service": {
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "architecture-tests": {
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "services/edge-gateway": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "marketing-contracts": {
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "notes": [
+    "Counts are per module and run; do not sum into a full-reactor or production acceptance claim.",
+    "ArchUnit and JUnit share the same report class name; the XML retains only two JUnit methods. The successful gate command also executed all seven ArchUnit rules.",
+    "No remote CI, shared database deployment, frontend verification or real provider delivery was performed."
+  ]
+}

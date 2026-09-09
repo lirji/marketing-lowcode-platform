@@ -13,7 +13,8 @@ import tools.jackson.databind.ObjectMapper;
 
 /** 固定上下文、当前确认水位及HELD意图原子仓储；取消栅栏不会被低水位或刷新时间覆盖。 */
 @Repository
-public final class MybatisReferralIntakeRepository implements ReferralIntakeRepository {
+// Spring 的异常转换使用类代理，仓储实现必须允许代理继承。
+public class MybatisReferralIntakeRepository implements ReferralIntakeRepository {
     private final ReferralIntakeMapper mapper;private final ObjectMapper json;
     public MybatisReferralIntakeRepository(ReferralIntakeMapper mapper,ObjectMapper json){this.mapper=mapper;this.json=json;}
     @Override public Context reserve(Binding binding,Instant issued,Instant expires) {

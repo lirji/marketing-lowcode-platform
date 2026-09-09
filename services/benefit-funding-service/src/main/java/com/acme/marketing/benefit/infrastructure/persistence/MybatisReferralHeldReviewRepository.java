@@ -10,7 +10,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import tools.jackson.databind.ObjectMapper;
 /** 最近复核观察使用永久固定身份和序号CAS；取消/隔离不因一次成功查询被抹除。 */
 @Repository
-public final class MybatisReferralHeldReviewRepository implements ReferralHeldReviewRepository {
+// Spring 的异常转换使用类代理，仓储实现必须允许代理继承。
+public class MybatisReferralHeldReviewRepository implements ReferralHeldReviewRepository {
     private final ReferralHeldReviewMapper mapper;private final ReferralIntakeRepository intake;private final ObjectMapper json;
     public MybatisReferralHeldReviewRepository(ReferralHeldReviewMapper mapper,ReferralIntakeRepository intake,ObjectMapper json){this.mapper=mapper;this.intake=intake;this.json=json;}
     @Override public Observation record(Binding binding,Status status,long revision,long cancel,Instant now,Instant until) {
