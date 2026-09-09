@@ -6,16 +6,17 @@
 
     <insert id="insertCampaign">
         INSERT INTO mk_campaign
-            (tenant_id, campaign_id, name, objective, status, organization_id, shop_id, created_at, updated_at)
+            (tenant_id, campaign_id, name, objective, status, organization_id, shop_id, created_at, updated_at, campaign_type)
         VALUES
             (#{tenantId}, #{campaignId}, #{name}, #{objective}, #{status}, #{organizationId}, #{shopId},
-             #{createdAt}, #{updatedAt})
+             #{createdAt}, #{updatedAt}, #{campaignType})
     </insert>
     <select id="selectCampaigns"
             resultType="com.acme.marketing.control.application.ControlRepository$CampaignRow">
-        SELECT campaign_id AS campaignId, name, objective, status, created_at AS createdAt, updated_at AS updatedAt
+        SELECT campaign_id AS campaignId, name, objective, status, created_at AS createdAt, updated_at AS updatedAt, campaign_type AS campaignType
         FROM mk_campaign
         WHERE tenant_id = #{tenantId}
+        <if test="campaignType != null">AND campaign_type=#{campaignType}</if>
         <if test="!organizations.contains('*')">
             AND organization_id IN
             <foreach collection="organizations" item="organization" open="(" separator="," close=")">

@@ -17,7 +17,7 @@ public class MybatisControlRepository implements ControlRepository {
 
     @Override public void saveCampaign(CampaignWrite write) { one(mapper.insertCampaign(write), "保存活动"); }
     @Override public List<CampaignRow> findCampaigns(String tenantId, Set<String> organizations,
-            Set<String> shops) { return mapper.selectCampaigns(tenantId, organizations, shops); }
+            Set<String> shops, String campaignType) { return mapper.selectCampaigns(tenantId, organizations, shops, campaignType); }
     @Override public Optional<CampaignOwnershipRow> findCampaignOwnership(String tenantId, String campaignId,
             boolean lock) { return Optional.ofNullable(mapper.selectCampaignOwnership(tenantId, campaignId, lock)); }
     @Override public List<String> findDefinitionOwners(String tenantId, String definitionId) {

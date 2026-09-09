@@ -71,6 +71,26 @@ class ControlFlowIntegrationTest extends MySqlIntegrationTest {
     private final AtomicInteger commandSequence = new AtomicInteger();
 
     @Test
+    void campaignTypePersistsFiltersAndKeepsLegacyIdempotency() throws Exception {
+        var body=new LinkedHashMap<String,Object>();body.put("name","legacy type");body.put("objective","compatibility");body.put("organizationId","org-a");body.put("shopId","shop-a");
+        var standard=post("/api/v1/campaigns","actor-author","type-legacy-standard",body);
+        assertEquals("STANDARD",standard.get("campaignType").asString());
+        // Compare with the exact historical four-field request serialization.
+        String original=mapper.writeValueAsString(body);
+        assertEquals(com.acme.marketing.platform.crypto.Digests.sha256Hex(original),jdbc.queryForObject("SELECT payload_hash FROM mk_control_command WHERE tenant_id='tenant-a' AND operation_name='campaign.create' AND idempotency_key='type-legacy-standard'",String.class));
+        var oldResponse=((tools.jackson.databind.node.ObjectNode)standard.deepCopy());oldResponse.remove("campaignType");
+        jdbc.update("UPDATE mk_control_command SET response_json=? WHERE tenant_id='tenant-a' AND operation_name='campaign.create' AND idempotency_key='type-legacy-standard'",mapper.writeValueAsString(oldResponse));
+        body.put("campaignType","STANDARD");var replay=post("/api/v1/campaigns","actor-author","type-legacy-standard",body);assertEquals(standard.get("id"),replay.get("id"));assertEquals("STANDARD",replay.get("campaignType").asString());
+        body.put("campaignType","REFERRAL");var referral=post("/api/v1/campaigns","actor-author","type-new-referral",body);assertEquals("REFERRAL",referral.get("campaignType").asString());
+        assertEquals("REFERRAL",jdbc.queryForObject("SELECT campaign_type FROM mk_campaign WHERE tenant_id='tenant-a' AND campaign_id=?",String.class,referral.get("id").asString()));
+        var filtered=get("/api/v1/campaigns?campaignType=REFERRAL","actor-reader");assertTrue(filtered.size()>0);for(var row:filtered)assertEquals("REFERRAL",row.get("campaignType").asString());
+        var standardOnly=get("/api/v1/campaigns?campaignType=STANDARD","actor-reader");for(var row:standardOnly)assertEquals("STANDARD",row.get("campaignType").asString());
+        var conflict=client.send(request("/api/v1/campaigns","actor-author").header("Idempotency-Key","type-legacy-standard").header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build(),HttpResponse.BodyHandlers.ofString());assertEquals(409,conflict.statusCode());
+        var invalid=client.send(request("/api/v1/campaigns?campaignType=UNKNOWN","actor-reader").GET().build(),HttpResponse.BodyHandlers.ofString());assertEquals(400,invalid.statusCode());
+        var foreign=client.send(request("/api/v1/campaigns?campaignType=REFERRAL","actor-reader").setHeader("X-Dev-Tenant-Id","tenant-other").GET().build(),HttpResponse.BodyHandlers.ofString());assertEquals(200,foreign.statusCode());assertEquals(0,mapper.readTree(foreign.body()).size());
+    }
+
+    @Test
     void authorValidateSimulateAndApproveWithFourEyes() throws Exception {
         JsonNode campaign = post("/api/v1/campaigns", "actor-author", "idem-campaign-001",
                 Map.of("name", "Double 11", "objective", "GMV", "organizationId", "org-a", "shopId", "shop-a"));

@@ -22,6 +22,19 @@ spring:
                 - "Path=/api/v1/campaigns/**,/api/v1/definitions/**,/api/v1/approvals/**,/api/v1/releases/**,/api/v1/registries/**"
               filters:
                 - "CircuitBreaker=controlCircuit"
+            - id: referral
+              uri: ${REFERRAL_SERVICE_URL:http://localhost:8090}
+              predicates:
+                - "Path=/api/v1/referral-campaigns/**"
+              filters:
+                - "CircuitBreaker=referralCircuit"
+            - id: referral-reevaluation
+              uri: ${REFERRAL_SERVICE_URL:http://localhost:8090}
+              predicates:
+                - "Path=/api/v1/referral-rewards/*:reevaluate"
+                - "Method=POST"
+              filters:
+                - "CircuitBreaker=referralCircuit"
             - id: compiler
               uri: ${COMPILER_SERVICE_URL:http://localhost:8082}
               predicates:
@@ -97,6 +110,7 @@ resilience4j.circuitbreaker:
     automaticTransitionFromOpenToHalfOpenEnabled: true
   instances:
     controlCircuit: {baseConfig: default}
+    referralCircuit: {baseConfig: default}
     compilerCircuit: {baseConfig: default}
     audienceCircuit: {baseConfig: default}
     decisionCircuit: {baseConfig: default, slowCallDurationThreshold: 500ms}

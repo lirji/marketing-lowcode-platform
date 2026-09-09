@@ -11,7 +11,7 @@ import java.util.Set;
  */
 public interface ControlRepository {
     void saveCampaign(CampaignWrite write);
-    List<CampaignRow> findCampaigns(String tenantId, Set<String> organizations, Set<String> shops);
+    List<CampaignRow> findCampaigns(String tenantId, Set<String> organizations, Set<String> shops, String campaignType);
     Optional<CampaignOwnershipRow> findCampaignOwnership(String tenantId, String campaignId, boolean lock);
 
     List<String> findDefinitionOwners(String tenantId, String definitionId);
@@ -71,9 +71,9 @@ public interface ControlRepository {
     void completeCommand(String tenantId, String operationName, String idempotencyKey, String responseJson);
 
     record CampaignWrite(String tenantId, String campaignId, String name, String objective, String status,
-            String organizationId, String shopId, String createdAt, String updatedAt) { }
+            String organizationId, String shopId, String createdAt, String updatedAt, String campaignType) { }
     record CampaignRow(String campaignId, String name, String objective, String status, String createdAt,
-            String updatedAt) { }
+            String updatedAt, String campaignType) { }
     record CampaignOwnershipRow(String organizationId, String shopId) { }
     record DefinitionWrite(String tenantId, String definitionId, String campaignId, long versionNo, String dialect,
             String graphJson, String semanticHash, String status, String createdBy, String createdAt,

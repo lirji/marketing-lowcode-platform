@@ -47,14 +47,15 @@ public class ControlController {
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody CreateCampaignRequest request) {
         return commands.execute(TenantContextHolder.requireCurrent().tenantId(), "campaign.create", idempotencyKey,
-                request, ControlApplicationService.CampaignView.class,
+                request.idempotencyPayload(), ControlApplicationService.CampaignView.class,
                 () -> service.createCampaign(request.name(), request.objective(), request.organizationId(),
-                        request.shopId()));
+                        request.shopId(), request.campaignType()));
     }
 
     @GetMapping("/campaigns")
-    public List<ControlApplicationService.CampaignView> campaigns() {
-        return service.campaigns();
+    public List<ControlApplicationService.CampaignView> campaigns(
+            @RequestParam(required=false) com.acme.marketing.control.domain.Campaign.Type campaignType) {
+        return service.campaigns(campaignType);
     }
 
     @PostMapping("/definitions")
@@ -134,7 +135,19 @@ public class ControlController {
     }
 
     public record CreateCampaignRequest(@NotBlank String name, @NotBlank String objective,
-            @NotBlank String organizationId, String shopId) { }
+            @NotBlank String organizationId, String shopId,
+            com.acme.marketing.control.domain.Campaign.Type campaignType) {
+        /** 缺省与显式STANDARD语义一致，继续使用旧四字段幂等载荷。 */
+        public CreateCampaignRequest {
+            if (campaignType == null) campaignType = com.acme.marketing.control.domain.Campaign.Type.STANDARD;
+        }
+        Object idempotencyPayload() {
+            return campaignType == com.acme.marketing.control.domain.Campaign.Type.STANDARD
+                    ? new LegacyCampaignPayload(name, objective, organizationId, shopId) : this;
+        }
+    }
+    /** 保持历史JSON字段顺序和null写法，避免升级使未过期幂等请求冲突。 */
+    private record LegacyCampaignPayload(String name, String objective, String organizationId, String shopId) { }
     /** 保留原始图值类型直到共享检查完成；不能在Map<String,String>绑定后检查。 */
     public record SaveDefinitionInput(@NotBlank String campaignId, @NotNull tools.jackson.databind.JsonNode graph) { }
     public record SaveDefinitionRequest(@NotBlank String campaignId, @NotNull GraphDefinition graph) { }

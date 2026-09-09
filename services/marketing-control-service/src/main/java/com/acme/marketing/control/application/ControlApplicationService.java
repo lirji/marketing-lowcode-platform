@@ -49,8 +49,16 @@ public class ControlApplicationService {
         this.governanceValidator = governanceValidator;
     }
 
+    /** 旧应用入口保持STANDARD缺省语义。 */
     @Transactional
     public CampaignView createCampaign(String name, String objective, String organizationId, String shopId) {
+        return createCampaign(name, objective, organizationId, shopId, Campaign.Type.STANDARD);
+    }
+
+    /** 类型随活动与审计同事务保存，不自动解除裂变发布门禁。 */
+    @Transactional
+    public CampaignView createCampaign(String name, String objective, String organizationId, String shopId,
+            Campaign.Type campaignType) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("campaign:write");
         if (organizationId == null || organizationId.isBlank()) {
@@ -60,22 +68,27 @@ public class ControlApplicationService {
         if (shopId != null && !shopId.isBlank()) scope.requireShop(shopId);
         Instant now = clock.instant();
         Campaign campaign = new Campaign(scope.tenantId().value(), UUID.randomUUID().toString(), name, objective,
-                Campaign.Status.DRAFT, now, now);
+                Campaign.Status.DRAFT, now, now, campaignType);
         repository.saveCampaign(new ControlRepository.CampaignWrite(campaign.tenantId(), campaign.id(),
                 campaign.name(), campaign.objective(), campaign.status().name(), organizationId, shopId,
-                format(now), format(now)));
+                format(now), format(now), campaign.campaignType().name()));
         audit(scope.tenantId().value(), scope.actorId(), "CAMPAIGN_CREATED", campaign.id(), now);
         return CampaignView.from(campaign);
     }
 
-    public List<CampaignView> campaigns() {
+    /** 不筛选时保持原列表行为。 */
+    public List<CampaignView> campaigns() { return campaigns(null); }
+
+    /** 类型筛选在SQL执行，并继续应用租户、组织和门店隔离。 */
+    public List<CampaignView> campaigns(Campaign.Type campaignType) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("campaign:read");
         if (scope.organizations().isEmpty()) return List.of();
-        return repository.findCampaigns(scope.tenantId().value(), scope.organizations(), scope.shops()).stream()
+        return repository.findCampaigns(scope.tenantId().value(), scope.organizations(), scope.shops(),
+                        campaignType == null ? null : campaignType.name()).stream()
                 .map(row -> new CampaignView(row.campaignId(), row.name(), row.objective(),
                         Campaign.Status.valueOf(row.status()), Instant.parse(row.createdAt()),
-                        Instant.parse(row.updatedAt())))
+                        Instant.parse(row.updatedAt()), Campaign.Type.valueOf(row.campaignType())))
                 .toList();
     }
 
@@ -392,10 +405,12 @@ public class ControlApplicationService {
     private record AuditHead(long chainIndex, String entryHash) { }
 
     public record CampaignView(String id, String name, String objective, Campaign.Status status,
-            Instant createdAt, Instant updatedAt) {
+            Instant createdAt, Instant updatedAt, Campaign.Type campaignType) {
+        /** 历史幂等回执缺少新字段时补STANDARD，保留原活动身份。 */
+        public CampaignView { if (campaignType == null) campaignType = Campaign.Type.STANDARD; }
         static CampaignView from(Campaign campaign) {
             return new CampaignView(campaign.id(), campaign.name(), campaign.objective(), campaign.status(),
-                    campaign.createdAt(), campaign.updatedAt());
+                    campaign.createdAt(), campaign.updatedAt(), campaign.campaignType());
         }
     }
     // 注册节点只用于发现与编译；控制面虽可同源校验/预览，尚未接入真实SKU闭包及冻结条款前不得产生批准资格。

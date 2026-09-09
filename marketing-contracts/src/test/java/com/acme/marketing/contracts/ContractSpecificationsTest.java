@@ -21,7 +21,12 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
 class ContractSpecificationsTest {
     private static final Path RESOURCES = Path.of("src/main/resources").toAbsolutePath().normalize();
     private static final Set<String> API_PATHS = Set.of(
-            "/api/v1/campaigns", "/api/v1/definitions",
+            "/api/v1/campaigns",
+            "/api/v1/referral-rewards/{rewardId}:reevaluate",
+            "/api/v1/referral-campaigns/{campaignId}/participants",
+            "/api/v1/referral-campaigns/{campaignId}/relations",
+            "/api/v1/referral-campaigns/{campaignId}/rewards",
+            "/api/v1/referral-campaigns/{campaignId}/summary", "/api/v1/definitions",
             "/api/v1/definitions/latest", "/api/v1/definitions/{definitionId}/versions/{version}",
             "/api/v1/definitions/{definitionId}/versions/{version}:validate",
             "/api/v1/definitions/{definitionId}/versions/{version}:simulate",
@@ -88,6 +93,20 @@ class ContractSpecificationsTest {
         }
         assertFalse(Files.readString(source).contains("X-Payload-SHA256"));
         verifyExternalReferences(document, source);
+    }
+
+    @Test
+    void referralReadContractsResolveAndNeverExposeSubjectProofs() throws IOException {
+        Path source=RESOURCES.resolve("openapi/referral-operations.yaml");Map<String,Object> api=yaml(source);
+        assertEquals("3.1.0",api.get("openapi"));var paths=map(api.get("paths"));assertEquals(5,paths.size());
+        for(var path:paths.values()){var item=map(path);String method=item.containsKey("get")?"get":"post";assertEquals(method.equals("get")?"referral:read":"referral:reevaluate",map(item.get(method)).get("x-required-permission"));}
+        var schemas=map(map(api.get("components")).get("schemas"));
+        for(String resource:List.of("Participant","Relation","Reward")){
+            var fields=map(map(schemas.get(resource)).get("properties"));
+            for(String forbidden:List.of("canonicalSubject","beneficiaryKey","subjectCipher","candidateToken","riskAssertion"))assertFalse(fields.containsKey(forbidden));
+        }
+        var summary=map(map(schemas.get("Summary")).get("properties"));assertEquals("DATABASE_PROJECTION",map(summary.get("consistency")).get("const"));assertTrue(((List<?>)map(summary.get("eventWatermark")).get("type")).contains("null"));
+        verifyExternalReferences(api,source);
     }
 
     @Test

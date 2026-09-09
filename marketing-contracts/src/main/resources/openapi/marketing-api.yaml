@@ -31,8 +31,23 @@ x-response-templates:
     '202': {$ref: '#/components/responses/JsonObject'}
     default: {$ref: '#/components/responses/Problem'}
 paths:
+  /api/v1/referral-rewards/{rewardId}:reevaluate:
+    $ref: './referral-operations.yaml#/paths/~1api~1v1~1referral-rewards~1{rewardId}:reevaluate'
+  /api/v1/referral-campaigns/{campaignId}/participants:
+    $ref: './referral-operations.yaml#/paths/~1api~1v1~1referral-campaigns~1{campaignId}~1participants'
+  /api/v1/referral-campaigns/{campaignId}/relations:
+    $ref: './referral-operations.yaml#/paths/~1api~1v1~1referral-campaigns~1{campaignId}~1relations'
+  /api/v1/referral-campaigns/{campaignId}/rewards:
+    $ref: './referral-operations.yaml#/paths/~1api~1v1~1referral-campaigns~1{campaignId}~1rewards'
+  /api/v1/referral-campaigns/{campaignId}/summary:
+    $ref: './referral-operations.yaml#/paths/~1api~1v1~1referral-campaigns~1{campaignId}~1summary'
   /api/v1/campaigns:
-    get: {tags: [Control], operationId: listCampaigns, responses: *list}
+    get:
+      tags: [Control]
+      operationId: listCampaigns
+      parameters:
+        - {name: campaignType, in: query, schema: {type: string, enum: [STANDARD, REFERRAL]}}
+      responses: *list
     post:
       tags: [Control]
       operationId: createCampaign
@@ -613,7 +628,7 @@ components:
       type: object
       additionalProperties: false
       required: [name, objective, organizationId]
-      properties: {name: {type: string, minLength: 1}, objective: {type: string, minLength: 1}, organizationId: {type: string, minLength: 1}, shopId: {type: [string, 'null']}}
+      properties: {name: {type: string, minLength: 1}, objective: {type: string, minLength: 1}, organizationId: {type: string, minLength: 1}, shopId: {type: [string, 'null']}, campaignType: {type: [string, 'null'], enum: [STANDARD, REFERRAL, null], default: STANDARD}}
     SaveDefinition:
       type: object
       additionalProperties: false

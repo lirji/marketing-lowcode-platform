@@ -12,7 +12,7 @@ import org.apache.ibatis.annotations.Param;
 public interface ControlMapper {
     int insertCampaign(ControlRepository.CampaignWrite write);
     List<ControlRepository.CampaignRow> selectCampaigns(@Param("tenantId") String tenantId,
-            @Param("organizations") Set<String> organizations, @Param("shops") Set<String> shops);
+            @Param("organizations") Set<String> organizations, @Param("shops") Set<String> shops, @Param("campaignType") String campaignType);
     ControlRepository.CampaignOwnershipRow selectCampaignOwnership(@Param("tenantId") String tenantId,
             @Param("campaignId") String campaignId, @Param("lock") boolean lock);
     List<String> selectDefinitionOwners(@Param("tenantId") String tenantId,
