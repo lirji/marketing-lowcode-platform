@@ -50,7 +50,7 @@ class ReferralQualificationApplicationTest {
         when(evidence.readOrder(orderKey)).thenAnswer(call->{assertFalse(TransactionSynchronizationManager.isActualTransactionActive());return stored;});
         when(protection.openState(any())).thenAnswer(call->{assertFalse(TransactionSynchronizationManager.isActualTransactionActive());return state;});
         when(repo.lockExistingOrder(orderKey)).thenAnswer(call->{assertTrue(TransactionSynchronizationManager.isActualTransactionActive());return stored;});
-        service=new ReferralQualificationService(repo,participants,anchors,evidence,protection,permits,clock,manager,1,30,5,20);
+        service=new ReferralQualificationService(repo,participants,anchors,evidence,protection,permits,clock,manager,mock(com.acme.marketing.referral.application.reward.ReferralRewardProjectionPort.class),1,30,5,20);
     }
     @AfterEach void reset(){TransactionSynchronizationManager.setActualTransactionActive(false);}
     Qualification run(){return service.process(scope(),"relation","worker","trace");}

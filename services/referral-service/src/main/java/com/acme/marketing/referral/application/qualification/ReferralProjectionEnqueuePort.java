@@ -13,8 +13,8 @@ public interface ReferralProjectionEnqueuePort {
     record Signal(String tenantId,String participantId,String relationId,String resourceId,long desiredVersion,String reason) {
         public Signal {
             text(tenantId);text(participantId);text(relationId);text(reason);
-            if(resourceId==null){if(desiredVersion!=0 || !reason.equals("BOUND"))throw invalid();}
-            else {text(resourceId);if(desiredVersion<=0 || reason.equals("BOUND"))throw invalid();}
+            if(resourceId==null){if(desiredVersion!=0 || !java.util.Set.of("BOUND","MANUAL_REEVALUATION").contains(reason))throw invalid();}
+            else {text(resourceId);if(desiredVersion<=0 || java.util.Set.of("BOUND","MANUAL_REEVALUATION").contains(reason))throw invalid();}
         }
         @Override public String toString(){return "ReferralProjectionSignal[redacted]";}
         private static void text(String value){if(value==null || value.isBlank() || value.length()>64)throw invalid();}

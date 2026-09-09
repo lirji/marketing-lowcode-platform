@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralOperationsMapper">
+ <sql id="scope">p.tenant_id=#{tenant} AND p.campaign_id=#{campaign}
+  <if test="!organizations.contains(&quot;*&quot;)">AND p.organization_id IN <foreach collection="organizations" item="org" open="(" separator="," close=")">#{org}</foreach></if>
+  <if test="!shops.contains(&quot;*&quot;)">AND p.shop_id IN <foreach collection="shops" item="shop" open="(" separator="," close=")">#{shop}</foreach></if></sql>
+ <select id="participants" resultType="com.acme.marketing.referral.application.query.ReferralOperationsService$Participant">
+  SELECT p.participant_id AS participantId,p.campaign_id AS campaignId,p.organization_id AS organizationId,p.shop_id AS shopId,p.definition_id AS definitionId,
+   p.definition_version AS definitionVersion,p.generation,p.state,p.created_at AS createdAt,g.valid_count AS validCount,g.ever_qualified_count AS everQualifiedCount,g.progress_revision AS progressRevision
+  FROM mk_referral_participant p LEFT JOIN mk_referral_progress g ON g.tenant_id=p.tenant_id AND g.participant_id=p.participant_id
+  WHERE <include refid="scope"/> <if test="after != null">AND p.participant_id&gt;#{after}</if> ORDER BY p.participant_id LIMIT #{limit}
+ </select>
+ <select id="relations" resultType="com.acme.marketing.referral.application.query.ReferralOperationsService$Relation">
+  SELECT r.relation_id AS relationId,r.participant_id AS participantId,r.bound_at AS boundAt,r.deadline_at AS deadlineAt,r.state,q.state AS qualificationState,q.reason,
+   q.counted,q.ever_qualified AS everQualified,q.qualification_revision AS qualificationRevision,q.evidence_state_version AS evidenceVersion
+  FROM mk_referral_relation r JOIN mk_referral_participant p ON p.tenant_id=r.tenant_id AND p.participant_id=r.participant_id
+  LEFT JOIN mk_referral_qualification q ON q.tenant_id=r.tenant_id AND q.relation_id=r.relation_id
+  WHERE <include refid="scope"/> AND r.tenant_id=#{tenant} AND r.campaign_id=#{campaign} <if test="after != null">AND r.relation_id&gt;#{after}</if> ORDER BY r.relation_id LIMIT #{limit}
+ </select>
+ <select id="rewards" resultType="com.acme.marketing.referral.application.query.ReferralOperationsService$Reward">
+  SELECT r.reward_id AS rewardId,r.participant_id AS participantId,r.relation_id AS relationId,r.role,r.mode,r.rule_id AS ruleId,r.threshold_count AS threshold,
+   r.entitlement_state AS entitlementState,r.authorization_state AS authorizationState,r.risk_state AS riskState,r.delivery_state AS deliveryState,r.compensation_state AS compensationState,
+   r.quota_state AS quotaState,r.row_version AS revision,r.created_at AS createdAt
+  FROM mk_referral_reward r JOIN mk_referral_participant p ON p.tenant_id=r.tenant_id AND p.participant_id=r.participant_id
+  WHERE <include refid="scope"/> AND r.tenant_id=#{tenant} AND r.campaign_id=#{campaign} <if test="after != null">AND r.reward_id&gt;#{after}</if> ORDER BY r.reward_id LIMIT #{limit}
+ </select>
+ <select id="summary" timeout="5" resultType="com.acme.marketing.referral.application.query.ReferralOperationsService$Counts">
+  SELECT a.participants,b.relations,b.projectedValidRelations,b.everQualifiedRelations,b.awaitingEvaluation,
+    c.rewards,c.succeededRewards,c.invalidatedRewards,c.pendingCompensation,c.reversedRewards,c.manualReviewRewards
+  FROM (SELECT COUNT(*) AS participants FROM mk_referral_participant p WHERE <include refid="scope"/>) a
+  CROSS JOIN (SELECT COUNT(*) AS relations,COALESCE(SUM(q.counted=TRUE),0) AS projectedValidRelations,COALESCE(SUM(q.ever_qualified=TRUE),0) AS everQualifiedRelations,
+    COALESCE(SUM(q.relation_id IS NULL OR t.relation_id IS NULL OR t.status&lt;&gt;'DONE' OR t.requested_revision&lt;&gt;t.processed_revision),0) AS awaitingEvaluation
+    FROM mk_referral_relation r JOIN mk_referral_participant p ON p.tenant_id=r.tenant_id AND p.participant_id=r.participant_id
+    LEFT JOIN mk_referral_qualification q ON q.tenant_id=r.tenant_id AND q.relation_id=r.relation_id
+    LEFT JOIN mk_referral_evaluation_task t ON t.tenant_id=r.tenant_id AND t.relation_id=r.relation_id
+    WHERE <include refid="scope"/> AND r.tenant_id=#{tenant} AND r.campaign_id=#{campaign}) b
+  CROSS JOIN (SELECT COUNT(*) AS rewards,COALESCE(SUM(r.delivery_state='SUCCEEDED'),0) AS succeededRewards,
+    COALESCE(SUM(r.entitlement_state='INVALIDATED'),0) AS invalidatedRewards,COALESCE(SUM(r.compensation_state='PENDING'),0) AS pendingCompensation,
+    COALESCE(SUM(r.compensation_state='REVERSED'),0) AS reversedRewards,COALESCE(SUM(r.compensation_state='MANUAL_REVIEW'),0) AS manualReviewRewards
+    FROM mk_referral_reward r JOIN mk_referral_participant p ON p.tenant_id=r.tenant_id AND p.participant_id=r.participant_id
+    WHERE <include refid="scope"/> AND r.tenant_id=#{tenant} AND r.campaign_id=#{campaign}) c
+ </select>
+</mapper>

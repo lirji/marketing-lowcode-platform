@@ -1,0 +1,718 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Referral operations API",
+    "version": "1.0.0"
+  },
+  "security": [
+    {
+      "oidc": []
+    }
+  ],
+  "paths": {
+    "/api/v1/referral-campaigns/{campaignId}/participants": {
+      "get": {
+        "tags": [
+          "Referral"
+        ],
+        "operationId": "referralParticipants",
+        "description": "Requires referral:read. Tenant, organization and shop scopes are derived from the verified identity. Database projections do not imply external event completeness.",
+        "parameters": [
+          {
+            "name": "campaignId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current database projection, with no subject plaintext or tokens.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParticipantPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization or validation problem."
+          }
+        },
+        "x-required-permission": "referral:read"
+      }
+    },
+    "/api/v1/referral-campaigns/{campaignId}/relations": {
+      "get": {
+        "tags": [
+          "Referral"
+        ],
+        "operationId": "referralRelations",
+        "description": "Requires referral:read. Tenant, organization and shop scopes are derived from the verified identity. Database projections do not imply external event completeness.",
+        "parameters": [
+          {
+            "name": "campaignId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current database projection, with no subject plaintext or tokens.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelationPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization or validation problem."
+          }
+        },
+        "x-required-permission": "referral:read"
+      }
+    },
+    "/api/v1/referral-campaigns/{campaignId}/rewards": {
+      "get": {
+        "tags": [
+          "Referral"
+        ],
+        "operationId": "referralRewards",
+        "description": "Requires referral:read. Tenant, organization and shop scopes are derived from the verified identity. Database projections do not imply external event completeness.",
+        "parameters": [
+          {
+            "name": "campaignId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current database projection, with no subject plaintext or tokens.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RewardPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization or validation problem."
+          }
+        },
+        "x-required-permission": "referral:read"
+      }
+    },
+    "/api/v1/referral-campaigns/{campaignId}/summary": {
+      "get": {
+        "tags": [
+          "Referral"
+        ],
+        "operationId": "referralSummary",
+        "description": "Requires referral:read. Tenant, organization and shop scopes are derived from the verified identity. Database projections do not imply external event completeness.",
+        "parameters": [
+          {
+            "name": "campaignId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current database projection, with no subject plaintext or tokens.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Summary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization or validation problem."
+          }
+        },
+        "x-required-permission": "referral:read"
+      }
+    },
+    "/api/v1/referral-rewards/{rewardId}:reevaluate": {
+      "post": {
+        "tags": [
+          "Referral"
+        ],
+        "operationId": "reevaluateReferralReward",
+        "x-required-permission": "referral:reevaluate",
+        "description": "Permanently queues qualification reevaluation. The original receipt is replayed; 202 does not mean issued, qualified or evaluated.",
+        "parameters": [
+          {
+            "name": "rewardId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Durable queue receipt; not completion or award delivery.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReevaluationReceipt"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Authentication, authorization, conflict or validation problem."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "oidc": {
+        "type": "openIdConnect",
+        "openIdConnectUrl": "https://identity.example.invalid/.well-known/openid-configuration"
+      }
+    },
+    "schemas": {
+      "Participant": {
+        "type": "object",
+        "required": [
+          "participantId",
+          "campaignId",
+          "organizationId",
+          "shopId",
+          "definitionId",
+          "state",
+          "definitionVersion",
+          "generation",
+          "createdAt",
+          "validCount",
+          "everQualifiedCount",
+          "progressRevision"
+        ],
+        "properties": {
+          "participantId": {
+            "type": "string"
+          },
+          "campaignId": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "shopId": {
+            "type": "string"
+          },
+          "definitionId": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "definitionVersion": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "everQualifiedCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "progressRevision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "Relation": {
+        "type": "object",
+        "required": [
+          "relationId",
+          "participantId",
+          "state",
+          "boundAt",
+          "deadlineAt",
+          "qualificationState",
+          "reason",
+          "counted",
+          "everQualified",
+          "qualificationRevision",
+          "evidenceVersion"
+        ],
+        "properties": {
+          "relationId": {
+            "type": "string"
+          },
+          "participantId": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "boundAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deadlineAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "qualificationState": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "counted": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "everQualified": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "qualificationRevision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "evidenceVersion": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "Reward": {
+        "type": "object",
+        "required": [
+          "rewardId",
+          "participantId",
+          "role",
+          "mode",
+          "ruleId",
+          "entitlementState",
+          "authorizationState",
+          "riskState",
+          "deliveryState",
+          "compensationState",
+          "quotaState",
+          "relationId",
+          "threshold",
+          "revision",
+          "createdAt"
+        ],
+        "properties": {
+          "rewardId": {
+            "type": "string"
+          },
+          "participantId": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "ruleId": {
+            "type": "string"
+          },
+          "entitlementState": {
+            "type": "string"
+          },
+          "authorizationState": {
+            "type": "string"
+          },
+          "riskState": {
+            "type": "string"
+          },
+          "deliveryState": {
+            "type": "string"
+          },
+          "compensationState": {
+            "type": "string"
+          },
+          "quotaState": {
+            "type": "string"
+          },
+          "relationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "threshold": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Counts": {
+        "type": "object",
+        "required": [
+          "participants",
+          "relations",
+          "projectedValidRelations",
+          "everQualifiedRelations",
+          "awaitingEvaluation",
+          "rewards",
+          "succeededRewards",
+          "invalidatedRewards",
+          "pendingCompensation",
+          "reversedRewards",
+          "manualReviewRewards"
+        ],
+        "properties": {
+          "participants": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "relations": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "projectedValidRelations": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "everQualifiedRelations": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "awaitingEvaluation": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rewards": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "succeededRewards": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "invalidatedRewards": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pendingCompensation": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reversedRewards": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "manualReviewRewards": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "Summary": {
+        "type": "object",
+        "required": [
+          "asOf",
+          "consistency",
+          "eventWatermark",
+          "counts"
+        ],
+        "properties": {
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "consistency": {
+            "type": "string",
+            "const": "DATABASE_PROJECTION"
+          },
+          "eventWatermark": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/Counts"
+          }
+        }
+      },
+      "ParticipantPage": {
+        "type": "object",
+        "required": [
+          "nextCursor",
+          "asOf",
+          "consistency",
+          "items"
+        ],
+        "properties": {
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "consistency": {
+            "type": "string",
+            "const": "LIVE_DATABASE"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Participant"
+            }
+          }
+        }
+      },
+      "RelationPage": {
+        "type": "object",
+        "required": [
+          "nextCursor",
+          "asOf",
+          "consistency",
+          "items"
+        ],
+        "properties": {
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "consistency": {
+            "type": "string",
+            "const": "LIVE_DATABASE"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Relation"
+            }
+          }
+        }
+      },
+      "RewardPage": {
+        "type": "object",
+        "required": [
+          "nextCursor",
+          "asOf",
+          "consistency",
+          "items"
+        ],
+        "properties": {
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "consistency": {
+            "type": "string",
+            "const": "LIVE_DATABASE"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Reward"
+            }
+          }
+        }
+      },
+      "ReevaluationReceipt": {
+        "type": "object",
+        "required": [
+          "operationId",
+          "rewardId",
+          "state",
+          "relationCount",
+          "createdAt"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "rewardId": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "const": "QUEUED"
+          },
+          "relationCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  }
+}

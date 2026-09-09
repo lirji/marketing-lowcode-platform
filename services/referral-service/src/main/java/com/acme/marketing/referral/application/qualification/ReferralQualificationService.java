@@ -24,15 +24,17 @@ import org.springframework.transaction.support.*;
  */
 @Service
 public class ReferralQualificationService {
+    private final com.acme.marketing.referral.application.reward.ReferralRewardProjectionPort rewards;
     private final ReferralQualificationRepository repository;private final ReferralInviteRepository participants;private final ReferralRepository anchors;
     private final ReferralEvidenceRepository evidence;private final ProtectedReferralEvidencePort protection;private final ReferralQualificationPermitPort permits;
     private final Clock clock;private final long keyVersion,leaseSeconds,retrySeconds,permitSeconds;private final TransactionTemplate tx;
     /** 所有生产时限必须显式配置且默认0拒绝，不内置真实来源或模拟资格。 */
     public ReferralQualificationService(ReferralQualificationRepository repository,ReferralInviteRepository participants,ReferralRepository anchors,
             ReferralEvidenceRepository evidence,ProtectedReferralEvidencePort protection,ReferralQualificationPermitPort permits,Clock clock,PlatformTransactionManager manager,
+            com.acme.marketing.referral.application.reward.ReferralRewardProjectionPort rewards,
             @Value("${marketing.referral.subject-key-version:0}") long keyVersion,@Value("${marketing.referral.qualification.lease-seconds:0}") long leaseSeconds,
             @Value("${marketing.referral.qualification.retry-seconds:0}") long retrySeconds,@Value("${marketing.referral.qualification.permit-max-seconds:0}") long permitSeconds){
-        this.repository=repository;this.participants=participants;this.anchors=anchors;this.evidence=evidence;this.protection=protection;this.permits=permits;this.clock=clock;
+        this.rewards=Objects.requireNonNull(rewards);this.repository=repository;this.participants=participants;this.anchors=anchors;this.evidence=evidence;this.protection=protection;this.permits=permits;this.clock=clock;
         this.keyVersion=keyVersion;this.leaseSeconds=leaseSeconds;this.retrySeconds=retrySeconds;this.permitSeconds=permitSeconds;
         tx=new TransactionTemplate(manager);tx.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);tx.setTimeout(5);
     }
@@ -47,7 +49,7 @@ public class ReferralQualificationService {
         if(task==null)return null;
         for(int attempt=0;attempt<3;attempt++){
             Prepared ready=prepare(scope,task);
-            try{return tx.execute(status->commit(scope,task,ready,trace));}catch(Retry changed){/* 回滚后重新事务外查询，不持锁调用来源。 */}
+            try{return tx.execute(status->commit(scope,task,ready,trace));}catch(RetryException changed){/* 回滚后重新事务外查询，不持锁调用来源。 */}
         }
         throw rejected("REFERRAL_QUALIFICATION_RETRY");
     }
@@ -71,10 +73,10 @@ public class ReferralQualificationService {
         var owner=participants.participant(task.tenantId(),task.participantId(),true);if(owner==null)throw rejected("REFERRAL_RELATION_REPAIR_REQUIRED");
         Relation actualRelation=repository.readRelation(task.tenantId(),task.relationId(),true);if(actualRelation==null)throw rejected("REFERRAL_RELATION_REPAIR_REQUIRED");
         Binding binding=new Binding(actualRelation.relation(),owner.participant(),actualRelation.subjectKey(),actualRelation.keyVersion());validate(scope,task,binding);
-        if(!binding.equals(ready.binding()) || !Arrays.equals(actualRelation.cipher(),ready.relation().cipher()) || !actualRelation.encryptionKeyId().equals(ready.relation().encryptionKeyId()))throw new Retry();
+        if(!binding.equals(ready.binding()) || !Arrays.equals(actualRelation.cipher(),ready.relation().cipher()) || !actualRelation.encryptionKeyId().equals(ready.relation().encryptionKeyId()))throw new RetryException();
         Qualification old=repository.qualification(task.tenantId(),task.relationId(),true);
         Progress progress=repository.progress(task.tenantId(),task.participantId(),clock.instant());
-        StoredOrder actual=null;if(ready.permit()!=null && ready.permit().order()!=null){actual=repository.lockExistingOrder(ready.permit().order());if(!sameOrder(ready.order(),actual))throw new Retry();}
+        StoredOrder actual=null;if(ready.permit()!=null && ready.permit().order()!=null){actual=repository.lockExistingOrder(ready.permit().order());if(!sameOrder(ready.order(),actual))throw new RetryException();}
         // 最后取task锁后才读原始时钟；任何等待均不能复活过期许可或旧worker。
         Task locked=repository.lockTask(task.tenantId(),task.relationId());Instant now=clock.instant();if(!owns(task,locked,now))throw rejected("REFERRAL_QUALIFICATION_LEASE_LOST");
         Permit permit=valid(ready.permit(),binding,now)?ready.permit():null;
@@ -100,6 +102,7 @@ public class ReferralQualificationService {
                 memberRevision,memberPolicy,permit==null?null:permit.firstOrderPolicy(),permit==null?null:permit.proofId(),verdict.dueAt(),task.requestedRevision(),memberDigest,memberQuarantined,old!=null && old.registrationAnchorDigest()!=null?old.registrationAnchorDigest():permit==null?null:permit.registrationAnchorDigest());
         Instant retry=verdict.state().equals("PENDING")?(verdict.dueAt()==null?now.plusSeconds(retrySeconds):verdict.dueAt()):null;
         repository.save(locked,old,next,progress,counts.progress(),scope.actorId(),trace,now,retry);
+        rewards.reconcile(binding,permit==null?null:permit.plan(),next,counts.progress(),scope.actorId(),trace,now);
         // INSERT/Outbox索引也可能等待；任何过期必须整体回滚，不能残留刚写的ELIGIBLE。
         Instant completedAt=clock.instant();if(!owns(task,locked,completedAt) || (permit!=null && !valid(permit,binding,completedAt)))throw rejected("REFERRAL_QUALIFICATION_EXPIRED_BEFORE_COMMIT");
         return next;
@@ -141,5 +144,5 @@ public class ReferralQualificationService {
     private static ConflictException rejected(String code){return new ConflictException(code,"referral qualification unavailable or requires controlled retry");}
     private record Prepared(Relation relation,Binding binding,Permit permit,StoredOrder order,ReferralOrderEvidence.State state){}
     private record Verdict(String state,String reason,Instant dueAt){}
-    private static final class Retry extends RuntimeException {@Serial private static final long serialVersionUID=1L;}
+    private static final class RetryException extends RuntimeException {@Serial private static final long serialVersionUID=1L;}
 }

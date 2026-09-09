@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralQuotaMapper">
+ <select id="reward" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralQuotaMapper$RewardRow">
+  SELECT tenant_id AS tenantId,reward_id AS rewardId,campaign_id AS campaignId,organization_id AS organizationId,shop_id AS shopId,participant_id AS participantId,relation_id AS relationId,
+   beneficiary_key AS beneficiaryKey,rule_id AS ruleId,CAST(rule_json AS CHAR) AS ruleJson,mode,threshold_count AS threshold,entitlement_state AS entitlementState,quota_state AS quotaState,row_version AS revision,authorization_state AS authorizationState,delivery_state AS deliveryState
+  FROM mk_referral_reward WHERE tenant_id=#{tenant} AND reward_id=#{reward} <if test="lock">FOR UPDATE</if>
+ </select>
+ <select id="lockParticipant" resultType="java.lang.String">SELECT state FROM mk_referral_participant WHERE tenant_id=#{tenant} AND participant_id=#{participant} FOR UPDATE</select>
+ <insert id="reserveAccount">INSERT INTO mk_referral_quota_account(tenant_id,campaign_id,rule_id,organization_id,shop_id,rule_json,quota_limit,bucket_count,created_at,updated_at)
+  VALUES(#{tenant},#{campaign},#{rule},#{r.organizationId},#{r.shopId},#{ruleJson},#{limit},#{buckets},#{now},#{now}) ON DUPLICATE KEY UPDATE quota_limit=quota_limit</insert>
+ <select id="account" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralQuotaMapper$AccountRow">
+  SELECT organization_id AS organizationId,shop_id AS shopId,CAST(rule_json AS CHAR) AS ruleJson,quota_limit AS quotaLimit,bucket_count AS bucketCount
+  FROM mk_referral_quota_account WHERE tenant_id=#{tenant} AND campaign_id=#{campaign} AND rule_id=#{rule} <if test="lock">FOR UPDATE</if>
+ </select>
+ <insert id="insertBucket">INSERT INTO mk_referral_quota_bucket(tenant_id,campaign_id,rule_id,bucket_id,allocated,available,created_at,updated_at)
+  VALUES(#{tenant},#{campaign},#{rule},#{bucket},#{allocated},#{allocated},#{now},#{now})</insert>
+ <select id="bucket" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralQuotaMapper$BucketRow">
+  SELECT allocated,available,reserved,consumed,fencing_epoch AS epoch,row_version AS version FROM mk_referral_quota_bucket
+  WHERE tenant_id=#{tenant} AND campaign_id=#{campaign} AND rule_id=#{rule} AND bucket_id=#{bucket} FOR UPDATE
+ </select>
+ <insert id="reserveSubject">INSERT INTO mk_referral_subject_quota(tenant_id,campaign_id,rule_id,beneficiary_key,quota_limit,created_at,updated_at)
+  VALUES(#{tenant},#{campaign},#{rule},#{subject},#{subjectLimit},#{now},#{now}) ON DUPLICATE KEY UPDATE row_version=row_version</insert>
+ <select id="subject" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralQuotaMapper$SubjectRow">
+  SELECT quota_limit AS quotaLimit,reserved_count AS reserved,consumed_count AS consumed,row_version AS version FROM mk_referral_subject_quota
+  WHERE tenant_id=#{tenant} AND campaign_id=#{campaign} AND rule_id=#{rule} AND beneficiary_key=#{subject} FOR UPDATE
+ </select>
+ <select id="reservation" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralQuotaMapper$ReservationRow">
+  SELECT participant_id AS participantId,beneficiary_key AS beneficiaryKey,bucket_id AS bucketId,created_epoch AS createdEpoch,state,terminal_fact AS terminalFact,terminal_digest AS terminalDigest,success_digest AS successDigest,row_version AS revision FROM mk_referral_quota_reservation
+  WHERE tenant_id=#{tenant} AND reward_id=#{reward} FOR UPDATE
+ </select>
+ <update id="updateBucket">UPDATE mk_referral_quota_bucket SET allocated=#{after.allocated},available=#{after.available},reserved=#{after.reserved},consumed=#{after.consumed},
+  fencing_epoch=#{after.epoch},row_version=#{after.version},updated_at=#{now}
+  WHERE tenant_id=#{tenant} AND campaign_id=#{campaign} AND rule_id=#{rule} AND bucket_id=#{bucket} AND fencing_epoch=#{before.epoch} AND row_version=#{before.version}</update>
+ <update id="updateSubject">UPDATE mk_referral_subject_quota SET reserved_count=#{reserved},consumed_count=#{consumed},row_version=row_version+1,updated_at=#{now}
+  WHERE tenant_id=#{tenant} AND campaign_id=#{campaign} AND rule_id=#{rule} AND beneficiary_key=#{subject} AND row_version=#{subjectVersion}
+   AND #{reserved}+#{consumed}&lt;=quota_limit</update>
+ <insert id="insertReservation">INSERT INTO mk_referral_quota_reservation(tenant_id,reward_id,campaign_id,rule_id,bucket_id,participant_id,beneficiary_key,created_epoch,created_at,updated_at)
+  VALUES(#{tenant},#{reward},#{campaign},#{rule},#{bucket},#{participant},#{subject},#{epoch},#{now},#{now})</insert>
+ <update id="reserveReward">UPDATE mk_referral_reward SET quota_state='RESERVED',row_version=row_version+1,updated_at=#{now}
+  WHERE tenant_id=#{tenant} AND reward_id=#{reward} AND row_version=#{r.revision} AND quota_state='WAIT_QUOTA' AND entitlement_state='ELIGIBLE'</update>
+ <update id="releaseReservation">UPDATE mk_referral_quota_reservation SET state='RELEASED',terminal_fact='CANCELLED_BEFORE_ISSUE',terminal_digest=#{terminalDigest},row_version=row_version+1,updated_at=#{now}
+  WHERE tenant_id=#{tenant} AND reward_id=#{reward} AND state='RESERVED' AND bucket_id=#{bucket} AND beneficiary_key=#{subject}</update>
+ <update id="releaseReward">UPDATE mk_referral_reward SET quota_state='RELEASED',row_version=row_version+1,updated_at=#{now}
+  WHERE tenant_id=#{tenant} AND reward_id=#{reward} AND row_version=#{r.revision} AND entitlement_state='INVALIDATED' AND authorization_state='NONE' AND delivery_state='NOT_SUBMITTED' AND quota_state='RESERVED'</update>
+ <update id="finalizeReservation">UPDATE mk_referral_quota_reservation SET state=#{final.state},terminal_fact=#{final.terminalFact},terminal_digest=#{final.terminalDigest},success_digest=#{final.successDigest},row_version=row_version+1,updated_at=#{now}
+  WHERE tenant_id=#{tenant} AND reward_id=#{reward} AND row_version=#{reservationRevision}</update>
+ <update id="finalizeReward">UPDATE mk_referral_reward SET quota_state=#{final.state},row_version=row_version+1,updated_at=#{now}
+  WHERE tenant_id=#{tenant} AND reward_id=#{reward} AND row_version=#{r.revision}</update>
+ <select id="validCount" resultType="java.lang.Long">SELECT valid_count FROM mk_referral_progress WHERE tenant_id=#{tenant} AND participant_id=#{participant}</select>
+ <select id="staleQualifications" resultType="long">
+  SELECT CASE WHEN COUNT(*)=0 THEN 1 ELSE SUM(CASE WHEN q.counted=FALSE OR q.state&lt;&gt;'ELIGIBLE' OR t.status&lt;&gt;'DONE' OR t.requested_revision&lt;&gt;t.processed_revision
+    OR t.relation_id IS NULL OR (q.evidence_resource_id IS NOT NULL AND (c.resource_id IS NULL OR c.row_version&lt;&gt;q.evidence_state_version OR c.quarantined=TRUE)) THEN 1 ELSE 0 END) END
+  FROM mk_referral_qualification q LEFT JOIN mk_referral_evaluation_task t ON t.tenant_id=q.tenant_id AND t.relation_id=q.relation_id
+  LEFT JOIN mk_referral_order_evidence_current c ON c.tenant_id=q.tenant_id AND c.resource_id=q.evidence_resource_id
+  WHERE q.tenant_id=#{tenant} AND q.participant_id=#{participant}
+  <choose><when test="relation != null">AND q.relation_id=#{relation}</when><otherwise>AND q.counted=TRUE</otherwise></choose>
+ </select>
+</mapper>

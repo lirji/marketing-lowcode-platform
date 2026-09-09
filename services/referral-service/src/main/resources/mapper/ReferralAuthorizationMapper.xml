@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralAuthorizationMapper">
+ <select id="reward" resultType="com.acme.marketing.referral.application.authorization.ReferralAuthorizationProofPort$Reward">
+  SELECT tenant_id AS tenantId,reward_id AS rewardId,source_request_id AS sourceRequestId,campaign_id AS campaignId,organization_id AS organizationId,shop_id AS shopId,
+   participant_id AS participantId,relation_id AS relationId,beneficiary_key AS beneficiaryKey,subject_key_version AS keyVersion,role,mode,threshold_count AS threshold,
+   rule_id AS ruleId,CAST(rule_json AS CHAR) AS ruleJson,definition_id AS definitionId,definition_version AS definitionVersion,generation,artifact_id AS artifactId,policy_hash AS policyHash,
+   entitlement_state AS entitlementState,authorization_state AS authorizationState,quota_state AS quotaState,qualification_revision AS qualificationRevision,
+   progress_revision AS progressRevision,row_version AS revision,cancel_revision AS cancelRevision
+  FROM mk_referral_reward WHERE tenant_id=#{tenant} AND reward_id=#{reward} <if test="lock">FOR UPDATE</if>
+ </select>
+ <select id="participant" resultType="java.lang.String">SELECT state FROM mk_referral_participant WHERE tenant_id=#{tenant} AND participant_id=#{participant} FOR UPDATE</select>
+ <select id="qualifications" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralAuthorizationMapper$Basis">
+  SELECT relation_id AS relationId,counted,state,qualification_revision AS revision,evidence_resource_id AS evidenceResourceId,evidence_state_version AS evidenceVersion,task_revision AS taskRevision
+  FROM mk_referral_qualification WHERE tenant_id=#{tenant} AND participant_id=#{participant}
+  <choose><when test="relation != null">AND relation_id=#{relation}</when><otherwise>AND counted=TRUE</otherwise></choose>
+  ORDER BY relation_id LIMIT #{limit} FOR UPDATE
+ </select>
+ <select id="evidence" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralAuthorizationMapper$Evidence">
+  SELECT row_version AS version,quarantined FROM mk_referral_order_evidence_current WHERE tenant_id=#{tenant} AND resource_id=#{resource} FOR UPDATE
+ </select>
+ <select id="task" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralAuthorizationMapper$Task">
+  SELECT requested_revision AS requested,processed_revision AS processed,status FROM mk_referral_evaluation_task WHERE tenant_id=#{tenant} AND relation_id=#{basisRelation} FOR UPDATE
+ </select>
+ <select id="progress" resultType="java.lang.Long">SELECT valid_count FROM mk_referral_progress WHERE tenant_id=#{tenant} AND participant_id=#{participant} FOR UPDATE</select>
+ <select id="receipt" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralAuthorizationMapper$ReceiptRow">
+  SELECT reward_id AS rewardId,source_request_id AS sourceRequestId,stable_claims_digest AS stableClaimsDigest,qualification_revision AS qualificationRevision,
+   confirmation_id AS confirmationId,authorization_sequence AS authorizationSequence,confirmed_seconds AS confirmedSeconds,confirmed_nanos AS confirmedNanos
+  FROM mk_referral_authorization_receipt WHERE tenant_id=#{tenant} AND reward_id=#{reward}
+ </select>
+ <insert id="insertReceipt">INSERT INTO mk_referral_authorization_receipt(tenant_id,reward_id,source_request_id,stable_claims_digest,qualification_revision,
+  confirmation_id,authorization_sequence,confirmed_seconds,confirmed_nanos,created_at,updated_at)
+  VALUES(#{tenant},#{reward},#{receipt.sourceRequestId},#{receipt.stableClaimsDigest},#{receipt.qualificationRevision},#{receipt.confirmationId},#{receipt.authorizationSequence},#{receipt.confirmedSeconds},#{receipt.confirmedNanos},#{now},#{now})</insert>
+ <update id="confirm">UPDATE mk_referral_reward SET authorization_state='CONFIRMED',risk_state='ALLOW',row_version=#{revision},updated_at=#{now}
+  WHERE tenant_id=#{tenant} AND reward_id=#{reward} AND row_version=#{previous} AND entitlement_state='ELIGIBLE' AND quota_state='RESERVED' AND authorization_state='NONE'</update>
+</mapper>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralFulfillmentMapper">
+ <select id="inbox" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralFulfillmentMapper$Receipt">
+  SELECT reward_id AS rewardId,business_digest AS digest,provider_revision AS revision,outcome FROM mk_referral_fulfillment_inbox WHERE tenant_id=#{tenant} AND provider_id=#{provider} AND event_id=#{event}
+ </select>
+ <select id="history" resultType="java.lang.String">SELECT business_digest FROM mk_referral_fulfillment_history WHERE tenant_id=#{tenant} AND reward_id=#{reward} AND provider_id=#{provider} AND provider_revision=#{providerRevision}</select>
+ <select id="current" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralFulfillmentMapper$Current">
+  SELECT provider_id AS providerId,provider_revision AS providerRevision,delivery_state AS deliveryState,compensation_state AS compensationState,business_digest AS businessDigest,success_digest AS successDigest,terminal_digest AS terminalDigest
+  FROM mk_referral_fulfillment_current WHERE tenant_id=#{tenant} AND reward_id=#{reward}
+ </select>
+ <insert id="insertHistory">INSERT INTO mk_referral_fulfillment_history(tenant_id,reward_id,provider_id,provider_revision,business_digest,created_at,updated_at)
+  VALUES(#{tenant},#{reward},#{provider},#{providerRevision},#{digest},#{now},#{now})</insert>
+ <insert id="saveCurrent">INSERT INTO mk_referral_fulfillment_current(tenant_id,reward_id,provider_id,provider_revision,delivery_state,compensation_state,business_digest,success_digest,terminal_digest,created_at,updated_at)
+  VALUES(#{tenant},#{reward},#{provider},#{providerRevision},#{delivery},#{compensation},#{digest},#{success},#{terminal},#{now},#{now})
+  ON DUPLICATE KEY UPDATE provider_revision=#{providerRevision},delivery_state=#{delivery},compensation_state=#{compensation},business_digest=#{digest},success_digest=#{success},terminal_digest=#{terminal},updated_at=#{now}</insert>
+ <insert id="insertInbox">INSERT INTO mk_referral_fulfillment_inbox(tenant_id,provider_id,event_id,reward_id,provider_revision,business_digest,outcome,created_at,updated_at)
+  VALUES(#{tenant},#{provider},#{event},#{reward},#{providerRevision},#{digest},#{outcome},#{now},#{now})</insert>
+ <update id="updateReward">UPDATE mk_referral_reward SET delivery_state=#{delivery},compensation_state=#{compensation},row_version=#{revision},updated_at=#{now}
+  WHERE tenant_id=#{tenant} AND reward_id=#{reward} AND row_version=#{previous}</update>
+</mapper>

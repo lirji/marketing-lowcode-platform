@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralReevaluationMapper">
+ <select id="receipt" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralReevaluationMapper$Stored">
+  SELECT operation_id AS operationId,reward_id AS rewardId,payload_digest AS digest,state,relation_count AS relationCount,created_at AS createdAt
+  FROM mk_referral_reevaluation_command WHERE tenant_id=#{tenant} AND actor_id=#{actor} AND idempotency_key=#{key}
+ </select>
+ <select id="relations" resultType="java.lang.String">
+  SELECT relation_id FROM mk_referral_relation WHERE tenant_id=#{tenant} AND participant_id=#{participant}
+  <if test="relation != null">AND relation_id=#{relation}</if> ORDER BY relation_id LIMIT #{limit}
+ </select>
+ <insert id="insert">INSERT INTO mk_referral_reevaluation_command(tenant_id,actor_id,idempotency_key,operation_id,reward_id,payload_digest,reason,state,relation_count,created_at,updated_at)
+  VALUES(#{tenant},#{actor},#{key},#{operation},#{reward},#{digest},#{reason},'QUEUED',#{count},#{now},#{now})</insert>
+</mapper>

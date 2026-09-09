@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralRewardMapper">
+  <sql id="columns">tenant_id AS tenantId,reward_id AS rewardId,participant_id AS participantId,relation_id AS relationId,mode,threshold_count AS threshold,
+    policy_hash AS policyHash,CAST(rule_json AS CHAR) AS ruleJson,entitlement_state AS entitlementState,authorization_state AS authorizationState,
+    delivery_state AS deliveryState,compensation_state AS compensationState,row_version AS revision,qualification_revision AS qualificationRevision,progress_revision AS progressRevision</sql>
+  <select id="subject" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralRewardMapper$SubjectRow">
+    <choose><when test="invitee == true">
+      SELECT invitee_key AS subjectKey,subject_key_version AS keyVersion,invitee_cipher AS cipher,encryption_key_id AS encryptionKeyId
+      FROM mk_referral_relation WHERE tenant_id=#{tenant} AND participant_id=#{participant} AND relation_id=#{relation}
+    </when><otherwise>
+      SELECT subject_key AS subjectKey,subject_key_version AS keyVersion,subject_cipher AS cipher,encryption_key_id AS encryptionKeyId
+      FROM mk_referral_participant WHERE tenant_id=#{tenant} AND participant_id=#{participant}
+    </otherwise></choose>
+  </select>
+  <select id="reward" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralRewardMapper$RewardRow">
+    SELECT <include refid="columns"/> FROM mk_referral_reward WHERE tenant_id=#{tenant} AND reward_id=#{reward} FOR UPDATE
+  </select>
+  <select id="invalidatable" resultType="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralRewardMapper$RewardRow">
+    SELECT <include refid="columns"/> FROM mk_referral_reward WHERE tenant_id=#{tenant} AND participant_id=#{participant} AND entitlement_state='ELIGIBLE'
+      AND (relation_id=#{relation} OR (mode='MILESTONE' AND threshold_count&gt;#{validCount})) ORDER BY rule_id,reward_id FOR UPDATE
+  </select>
+  <insert id="insert">INSERT INTO mk_referral_reward(tenant_id,reward_id,campaign_id,organization_id,shop_id,participant_id,relation_id,
+    beneficiary_key,subject_key_version,beneficiary_cipher,encryption_key_id,cipher_source,cipher_resource_id,role,mode,threshold_count,rule_id,milestone_key,
+    definition_id,definition_version,generation,artifact_id,policy_hash,rule_json,source_request_id,qualification_revision,progress_revision,created_at,updated_at)
+    VALUES(#{tenant},#{reward},#{p.campaignId},#{p.organizationId},#{p.shopId},#{participant},
+      <choose><when test="rule.mode.name() == 'PER_RELATION'">#{relation}</when><otherwise>NULL</otherwise></choose>,
+      #{beneficiary},#{keyVersion},#{cipher},#{encryptionKey},#{cipherSource},#{cipherResource},#{rule.role},#{rule.mode},#{rule.threshold},#{rule.ruleId},#{milestone},
+      #{p.definitionId},#{p.definitionVersion},#{p.generation},#{p.artifactId},#{p.policyHash},#{ruleJson},#{source},#{q.revision},#{progress.revision},#{now},#{now})
+  </insert>
+  <update id="refresh">UPDATE mk_referral_reward SET qualification_revision=#{q.revision},progress_revision=#{progress.revision},row_version=row_version+1,updated_at=#{now}
+    WHERE tenant_id=#{tenant} AND reward_id=#{reward} AND row_version=#{previous} AND entitlement_state='ELIGIBLE'</update>
+  <update id="invalidate">UPDATE mk_referral_reward SET entitlement_state='INVALIDATED',
+    compensation_state=CASE WHEN compensation_state IN ('CANCELLED','REVERSED','MANUAL_REVIEW') THEN compensation_state WHEN authorization_state='NONE' AND delivery_state='NOT_SUBMITTED' THEN 'CANCELLED' ELSE 'PENDING' END,
+    authorization_state=CASE WHEN authorization_state='NONE' THEN 'NONE' ELSE 'CANCEL_REQUESTED' END,
+    cancel_revision=#{revision},row_version=#{revision},qualification_revision=#{q.revision},progress_revision=#{progress.revision},updated_at=#{now}
+    WHERE tenant_id=#{tenant} AND reward_id=#{reward} AND row_version=#{previous} AND entitlement_state='ELIGIBLE'</update>
+  <insert id="outbox">INSERT INTO mk_referral_outbox(tenant_id,event_id,aggregate_id,aggregate_revision,event_type,topic,partition_key,payload,payload_hash,next_retry_at,created_at,updated_at)
+    VALUES(#{tenant},#{eventId},#{reward},#{revision},#{type},'mk.referral.reward.internal.v1',CONCAT(#{tenant},':',#{participant}),#{payload},#{hash},#{now},#{now},#{now})</insert>
+  <insert id="audit">INSERT INTO mk_referral_audit(tenant_id,audit_id,actor_id,action,resource_ref,reason,after_hash,trace_id,occurred_at,created_at,updated_at)
+    VALUES(#{tenant},#{auditId},#{actor},#{type},#{reward},#{reason},#{hash},#{trace},#{now},#{now},#{now})</insert>
+</mapper>
