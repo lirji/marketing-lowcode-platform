@@ -1,0 +1,54 @@
+{
+  "date": "2026-09-09",
+  "scope": "R3 local activation and kill state; no production READY or participation permit",
+  "commands": [
+    {
+      "command": "TESTCONTAINERS_RYUK_DISABLED=true ./mvnw -o -q -pl services/referral-service -am verify",
+      "exitCode": 0,
+      "log": "/tmp/referral-r3-verify.log"
+    },
+    {
+      "command": "./mvnw -o -q -pl architecture-tests -am -Dtest=ArchitectureRulesTest -Dsurefire.failIfNoSpecifiedTests=false test",
+      "exitCode": 0,
+      "log": "/tmp/referral-r3-architecture.log"
+    }
+  ],
+  "sourceSha256": {
+    "runtime-spi/referral-runtime-spi/src/main/java/com/acme/marketing/referral/ReferralRuntimeDirectiveVerifier.java": "da7e3bcea3a3fdb15ec11ca80dd449600b452f9f7ff575de4e6ba76dd92729f7",
+    "runtime-spi/referral-runtime-spi/src/test/java/com/acme/marketing/referral/ReferralRuntimeDirectiveVerifierTest.java": "931528521d6f5abb9d55239936126d9d94d7745ef5dd949e60ab56822ca4becc",
+    "services/referral-service/src/main/java/com/acme/marketing/referral/application/release/ReferralRuntimeRepository.java": "fd87f97188f8a12af6ba9c21da013a1c82af13946f991184d7b2b815ff37793d",
+    "services/referral-service/src/main/java/com/acme/marketing/referral/application/release/ReferralRuntimeReadinessPort.java": "3df7e7092b665bba50ec0cddb6787685adb1a1fbb64d320a566717cb3bb0f930",
+    "services/referral-service/src/main/java/com/acme/marketing/referral/application/release/ReferralRuntimeStateService.java": "a1fe478bccfb240cd36623cebe37aa3ab848bbefbde925cb23026b08de9f1fa0",
+    "services/referral-service/src/main/java/com/acme/marketing/referral/infrastructure/persistence/MybatisReferralRuntimeRepository.java": "be3fd528ee759bb643c8d730c31d2d3cc8d0e8bf5b694ca6c103cf2ca3115cbc",
+    "services/referral-service/src/main/java/com/acme/marketing/referral/infrastructure/persistence/mapper/ReferralRuntimeMapper.java": "ff4f10fad8e005883479603fdc7bcb04893c490296a8cca77a0a40dedf76dcfc",
+    "services/referral-service/src/main/resources/mapper/ReferralRuntimeMapper.xml": "a0ebcd93afceaea7f16c7df8043241ea6baf992407ad9cbd261fa18bd23cdb49",
+    "services/referral-service/src/main/resources/db/migration/V13__referral_runtime_directives.sql": "8ae45ba947e2ab9918d19eb475b4ac255e6cbec6bd4527b7d83168199fadaca8",
+    "services/referral-service/src/test/java/com/acme/marketing/referral/ReferralRuntimeStateMySqlTest.java": "e4d3616a07244cc32a7a4ee6b4e7e7af520e01f3e5acde3b5f92d3a34ac73cf3",
+    "services/referral-service/src/test/java/com/acme/marketing/referral/ReferralRuntimeRestartProbe.java": "c71d919948fedcbbe994665ef0e870440185ab2a9d4e83423e9f8c6a3bf0bf15"
+  },
+  "tests": {
+    "runtime-spi/referral-runtime-spi": {
+      "tests": 93,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "services/referral-service": {
+      "tests": 226,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "ArchitectureRulesTest": {
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "jarCheck": {
+    "runtimeServicePresent": true,
+    "testProbeAbsent": true
+  },
+  "restartProbe": "independent JVM verified database activation sequence 9 / generation 1; not a production service restart"
+}

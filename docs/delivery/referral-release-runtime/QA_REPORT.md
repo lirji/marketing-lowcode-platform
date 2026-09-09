@@ -1,3 +1,5 @@
+> 本文件记录 R1/R2 历史切片；最新 R3 本地机制见 [R3_DELIVERY_REPORT.md](R3_DELIVERY_REPORT.md)。
+
 # 裂变可信制品与耐久安装 QA
 
 2026-09-09；本地 Java 21、离线 Maven、专属 MySQL 8.4.11 Testcontainers。未访问共享演示库或真实签名服务。

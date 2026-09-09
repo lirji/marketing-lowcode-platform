@@ -1,3 +1,16 @@
+# 最新状态：R3 本地机制已交付
+
+2026-09-09。用户在明确 R3 本地范围后再次回复“继续”，批准本地实现。见 [R3 交付报告](R3_DELIVERY_REPORT.md)、[R3 方案](R3_PLAN.md)及 r3-evidence.json。
+
+- R1、R2 VERIFIED 和本轮 R3 本地激活/熔断状态机完成；本轮相关 verify：SPI 93、服务 226 全部通过。
+- 更高序号选择可信历史制品、cursor/audit 原子提交、clear 重放不续期、独立 JVM 恢复与坏签名拒绝已验证。
+- R3 本地切片 complete；完整发布计划仍受外部依赖阻塞。真实 READY/ACK、权威活动/身份映射、健康水位及参与 epoch 栅栏接线、control 开放尚未完成。
+- 既有 CI 覆盖新测试，未运行远程 Actions；无共享迁移/推送/部署。保留其他后端和 Cursor 改动。
+
+以下 R1/R2 记录为上一轮历史证据，后续状态以本节及 R3 报告为准。
+
+---
+
 # 裂变可信发布实施状态
 
 2026-09-09。用户已在审查[跨仓库实施方案](../../../../transaction-center/docs/delivery/referral-release-runtime/DELIVERY_PLAN.md)后回复“继续”，从 R1 连续实施；无需重新批准。

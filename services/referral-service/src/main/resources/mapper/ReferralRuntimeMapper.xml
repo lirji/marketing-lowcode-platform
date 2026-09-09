@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralRuntimeMapper">
+  <sql id="key">tenant_id=#{tenant} AND stream_kind=#{kind} AND environment=#{environment} AND cell=#{cell} AND namespace=#{namespace}</sql>
+  <select id="installed" resultType="com.acme.marketing.referral.application.release.ReferralReleaseRepository$Stored">
+    SELECT tenant_id, environment, cell, namespace, generation, manifest_id, release_key_id, manifest_json, artifact_payload AS payload, verified_at
+    FROM mk_referral_verified_release WHERE tenant_id=#{tenant} AND environment=#{environment} AND cell=#{cell} AND namespace=#{namespace} AND generation=#{generation}
+  </select>
+  <insert id="reserve">
+    INSERT INTO mk_referral_runtime_cursor (tenant_id,stream_kind,environment,cell,namespace,sequence_no,directive_json)
+    VALUES (#{tenant},#{kind},#{environment},#{cell},#{namespace},0,NULL)
+    ON DUPLICATE KEY UPDATE sequence_no=sequence_no
+  </insert>
+  <select id="lock" resultType="com.acme.marketing.referral.application.release.ReferralRuntimeRepository$Cursor">
+    SELECT sequence_no AS sequence,directive_json FROM mk_referral_runtime_cursor WHERE <include refid="key"/> FOR UPDATE
+  </select>
+  <select id="current" resultType="com.acme.marketing.referral.application.release.ReferralRuntimeRepository$Cursor">
+    SELECT sequence_no AS sequence,directive_json FROM mk_referral_runtime_cursor WHERE <include refid="key"/>
+  </select>
+  <insert id="append">
+    INSERT INTO mk_referral_runtime_directive (tenant_id,stream_kind,environment,cell,namespace,sequence_no,directive_json,applied_at)
+    VALUES (#{tenant},#{kind},#{environment},#{cell},#{namespace},#{sequence},#{json},#{now})
+  </insert>
+  <update id="advance">
+    UPDATE mk_referral_runtime_cursor SET sequence_no=#{sequence},directive_json=#{json}
+    WHERE <include refid="key"/> AND sequence_no=#{expected}
+  </update>
+</mapper>

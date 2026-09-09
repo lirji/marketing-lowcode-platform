@@ -1,3 +1,5 @@
+> 本文件记录 R1/R2 历史切片；最新 R3 本地机制见 [R3_DELIVERY_REPORT.md](R3_DELIVERY_REPORT.md)。
+
 # 裂变发布 R1 / R2 VERIFIED 代码审查
 
 2026-09-09。由同一 Agent 分阶段自审，不宣称独立审查。范围为本轮新增 verifier、安装服务、仓储、V12 和测试；未覆盖既有 Cursor/其他未提交工作。
