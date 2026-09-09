@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { Activity, BarChart3, Boxes, CircleGauge, GitPullRequestArrow, Megaphone, PenTool, Rocket, ShieldCheck } from 'lucide-react'
+import { Activity, BarChart3, Boxes, CircleGauge, Gift, GitPullRequestArrow, Megaphone, PenTool, Rocket, ShieldCheck } from 'lucide-react'
 
 export type NavigationItem = { label: string; path: string; icon: LucideIcon; permissions: string[] }
 export type NavigationGroup = { label: string; items: NavigationItem[] }
@@ -13,6 +13,7 @@ export const navigation: NavigationGroup[] = [
     { label: 'Offer 设计器', path: '/designers/offer', icon: PenTool, permissions: ['definition:read', 'definition:write'] },
     { label: 'Audience Builder', path: '/designers/audience', icon: GitPullRequestArrow, permissions: ['audience:read', 'audience:preview', 'audience:write'] },
     { label: 'Journey 设计器', path: '/designers/journey', icon: Activity, permissions: ['definition:read', 'journey:read'] },
+    { label: '邀请有礼设计器', path: '/designers/referral', icon: Gift, permissions: ['definition:read', 'definition:write'] },
   ] },
   { label: '资产与规则', items: [
     { label: 'DMN 决策表', path: '/designers/dmn', icon: GitPullRequestArrow, permissions: ['definition:read'] },
@@ -25,6 +26,7 @@ export const navigation: NavigationGroup[] = [
   ] },
   { label: '洞察', items: [
     { label: '运营与客服', path: '/operations', icon: Activity, permissions: ['trace:read', 'journey:read', 'contact:read', 'event:read', 'funding:reconcile'] },
+    { label: '裂变运营', path: '/referral-operations', icon: Gift, permissions: ['referral:read', 'campaign:read', 'trace:read'] },
     { label: '衡量分析', path: '/analytics', icon: BarChart3, permissions: ['measurement:read'] },
   ] },
 ]

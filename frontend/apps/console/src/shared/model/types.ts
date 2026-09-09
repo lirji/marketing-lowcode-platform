@@ -8,6 +8,7 @@ export type Campaign = {
   createdBy?: string
   createdAt: string
   updatedAt?: string
+  campaignType?: string
 }
 
 export type NodeDefinition = {

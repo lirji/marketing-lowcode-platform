@@ -30,7 +30,10 @@ import {
   recomputeSchema,
   releaseViewSchema,
   seriesSchema,
-  simulationSchema,
+  parseSimulationResult,
+  referralParticipantPageSchema,
+  referralRelationPageSchema,
+  referralRewardPageSchema,
   templateViewSchema,
   traceViewSchema,
   validationResultSchema,
@@ -168,7 +171,7 @@ export const api = {
   validate: (definitionId: string, version: number) =>
     request(`/api/v1/definitions/${encodeURIComponent(definitionId)}/versions/${version}:validate`, { method: 'POST', headers: commandHeaders() }, (value) => parseWith(validationResultSchema, value)),
   simulate: (definitionId: string, version: number, facts: Record<string, string>) =>
-    request(`/api/v1/definitions/${encodeURIComponent(definitionId)}/versions/${version}:simulate`, { method: 'POST', headers: commandHeaders(), body: JSON.stringify(facts) }, (value) => parseWith(simulationSchema, value)),
+    request(`/api/v1/definitions/${encodeURIComponent(definitionId)}/versions/${version}:simulate`, { method: 'POST', headers: commandHeaders(), body: JSON.stringify(facts) }, parseSimulationResult),
   submit: (definitionId: string, version: number) =>
     request(`/api/v1/definitions/${encodeURIComponent(definitionId)}/versions/${version}:submit`, { method: 'POST', headers: commandHeaders() }, (value) => parseWith(approvalViewSchema, value)),
   approvals: () => request('/api/v1/approvals', undefined, (value) => zArray(approvalViewSchema, value)),
@@ -238,10 +241,27 @@ export const api = {
     params.set('limit', String(query?.limit ?? 50))
     return request(`/api/v1/contacts?${params}`, undefined, (value) => zArray(contactViewSchema, value))
   },
+  referralParticipants: (campaignId: string, after?: string, limit = 20) =>
+    request(referralOpsPath(campaignId, 'participants', after, limit), undefined, (value) => parseWith(referralParticipantPageSchema, value)),
+  referralRelations: (campaignId: string, after?: string, limit = 20) =>
+    request(referralOpsPath(campaignId, 'relations', after, limit), undefined, (value) => parseWith(referralRelationPageSchema, value)),
+  referralRewards: (campaignId: string, after?: string, limit = 20) =>
+    request(referralOpsPath(campaignId, 'rewards', after, limit), undefined, (value) => parseWith(referralRewardPageSchema, value)),
   quarantine: () => request('/api/v1/quarantine', undefined, (value) => zArray(quarantineViewSchema, value)),
   replayQuarantine: (quarantineId: string) =>
     request(`/api/v1/quarantine/${encodeURIComponent(quarantineId)}:replay`, { method: 'POST', headers: commandHeaders() }, (value) => value),
   reconciliation: () => request('/api/v1/funding/reconciliation', undefined, (value) => parseWith(reconciliationSchema, value)),
+}
+
+const REFERRAL_ID = /^[A-Za-z0-9._:-]{1,64}$/
+
+function referralOpsPath(campaignId: string, resource: 'participants' | 'relations' | 'rewards', after?: string, limit = 20) {
+  if (!REFERRAL_ID.test(campaignId)) throw new ApiProblem({ type: 'about:blank', title: 'Bad Request', status: 400, detail: '活动编号格式无效' })
+  if (after && !REFERRAL_ID.test(after)) throw new ApiProblem({ type: 'about:blank', title: 'Bad Request', status: 400, detail: '分页游标格式无效' })
+  const bounded = Math.min(Math.max(limit, 1), 100)
+  const params = new URLSearchParams({ limit: String(bounded) })
+  if (after) params.set('after', after)
+  return `/api/v1/referral-campaigns/${encodeURIComponent(campaignId)}/${resource}?${params}`
 }
 
 function zArray<T>(schema: { parse: (value: unknown) => T }, value: unknown): T[] {

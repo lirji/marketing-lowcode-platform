@@ -195,6 +195,86 @@ test('live benefit editor SKU picker stays on-screen', async ({ page }) => {
   await expect(page.getByRole('button', { name: '保存' }).first()).toBeVisible()
 })
 
+test('referral designer stays a form and does not open publish', async ({ page }) => {
+  await page.goto('/designers/referral')
+  await expect(page.getByRole('heading', { name: '邀请有礼草稿' })).toBeVisible()
+  await expect(page.getByText('裂变发布链未接通')).toBeVisible()
+  await expect(page.getByRole('button', { name: '提交审核' })).toBeDisabled()
+  await expect(page.getByText(/不预填 3\/5 人档/)).toBeVisible()
+  const actions = page.locator('.heading-actions')
+  const box = await actions.boundingBox()
+  const viewport = page.viewportSize()
+  expect(box).toBeTruthy()
+  expect(viewport).toBeTruthy()
+  expect(box!.x + box!.width).toBeLessThanOrEqual((viewport?.width ?? 0) + 1)
+})
+
+test('referral operations page does not invent participants', async ({ page }) => {
+  await page.goto('/referral-operations')
+  await expect(page.getByRole('heading', { name: '邀请有礼运营台' })).toBeVisible()
+  await expect(page.getByText('演示模式', { exact: true })).toBeVisible()
+  await expect(page.getByText('数据水位：未知')).toBeVisible()
+  await expect(page.getByText('已到账')).toHaveCount(0)
+  await page.getByRole('tab', { name: '异常' }).click()
+  await expect(page.getByText('异常待接入')).toBeVisible()
+})
+
+test('referral operations reads live participants without marking payouts', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__MARKETING_CONFIG__ = {
+      API_BASE_URL: '',
+      DEMO_MODE: false,
+      AUTH_MODE: 'DEV',
+      ALLOW_DEV_AUTH: true,
+      OIDC_AUTHORITY: 'http://localhost:8180/realms/marketing',
+      OIDC_CLIENT_ID: 'marketing-console',
+      OIDC_SCOPE: 'openid profile email',
+    }
+  })
+  await page.route('**/api/v1/approvals', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+  })
+  await page.route('**/api/v1/releases', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+  })
+  await page.route('**/api/v1/campaigns', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([{ id: 'campaign', name: '邀请有礼', objective: '裂变', status: 'ACTIVE', createdAt: '2026-09-01T00:00:00Z', campaignType: 'REFERRAL' }]),
+    })
+  })
+  await page.route('**/api/v1/referral-campaigns/campaign/participants**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [{
+          participantId: 'p-1',
+          campaignId: 'campaign',
+          organizationId: 'org',
+          shopId: 'shop',
+          definitionId: 'def',
+          definitionVersion: 1,
+          generation: 1,
+          state: 'ACTIVE',
+          createdAt: '2026-09-01T00:00:00Z',
+          validCount: null,
+          everQualifiedCount: null,
+          progressRevision: null,
+        }],
+        nextCursor: null,
+        asOf: '2026-09-08T04:00:00Z',
+        consistency: 'LIVE_DATABASE',
+      }),
+    })
+  })
+  await page.goto('/referral-operations?campaignId=campaign')
+  await expect(page.getByText('p-1')).toBeVisible()
+  await expect(page.getByText('未计算').first()).toBeVisible()
+  await expect(page.getByText('已到账')).toHaveCount(0)
+})
+
 test('unauthorised identity cannot open release actions', async ({ page }) => {
   await page.addInitScript(() => {
     window.__MARKETING_CONFIG__ = {

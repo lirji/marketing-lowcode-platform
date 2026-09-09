@@ -30,6 +30,13 @@ describe('CampaignCreateReadiness', () => {
     expect(screen.getAllByText('未就绪').length).toBeGreaterThanOrEqual(5)
   })
 
+  it('does not require Offer or Journey for invitation campaigns', () => {
+    render(<CampaignCreateReadiness designIntent="REFERRAL" />)
+    expect(screen.getByText(/REFERRAL_RELEASE_NOT_AVAILABLE/)).toBeInTheDocument()
+    expect(screen.queryByText(/Offer：该活动已有决策定义/)).not.toBeInTheDocument()
+    expect(screen.getAllByText('未就绪').length).toBeGreaterThanOrEqual(5)
+  })
+
   it('does not treat another campaign release as ready', () => {
     const required = [definition('offer-campaign-42', 3), definition('journey-campaign-42', 2)]
     expect(definitionsHaveRelease(required, [release('offer-other-campaign', 3), release('journey-other-campaign', 2)])).toBe(false)

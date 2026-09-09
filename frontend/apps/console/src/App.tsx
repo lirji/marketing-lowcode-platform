@@ -15,6 +15,8 @@ const AudienceBuilderPage = lazy(() => import('./features/designers/AudienceBuil
 const JourneyDesignerPage = lazy(() => import('./features/designers/JourneyDesignerPage').then((module) => ({ default: module.JourneyDesignerPage })))
 const DmnDesignerPage = lazy(() => import('./features/designers/DmnDesignerPage').then((module) => ({ default: module.DmnDesignerPage })))
 const BenefitEditorPage = lazy(() => import('./features/designers/BenefitEditorPage').then((module) => ({ default: module.BenefitEditorPage })))
+const ReferralDesignerPage = lazy(() => import('./features/referral/ReferralDesignerPage').then((module) => ({ default: module.ReferralDesignerPage })))
+const ReferralOperationsPage = lazy(() => import('./features/referral/ReferralOperationsPage').then((module) => ({ default: module.ReferralOperationsPage })))
 const GovernancePage = lazy(() => import('./features/governance/GovernancePage').then((module) => ({ default: module.GovernancePage })))
 const ReleaseCenterPage = lazy(() => import('./features/release/ReleaseCenterPage').then((module) => ({ default: module.ReleaseCenterPage })))
 const OperationsPage = lazy(() => import('./features/operations/OperationsPage').then((module) => ({ default: module.OperationsPage })))
@@ -44,10 +46,12 @@ export default function App() {
           <Route path="designers/journey" element={<RequirePermission anyOf={['definition:read', 'journey:read']}><JourneyDesignerPage /></RequirePermission>} />
           <Route path="designers/dmn" element={<RequirePermission anyOf={['definition:read']}><DmnDesignerPage /></RequirePermission>} />
           <Route path="designers/benefit" element={<RequirePermission anyOf={['benefit:read', 'benefit:write']}><BenefitEditorPage /></RequirePermission>} />
+          <Route path="designers/referral" element={<RequirePermission anyOf={['definition:read', 'definition:write']}><ReferralDesignerPage /></RequirePermission>} />
           <Route path="assets" element={<RequirePermission anyOf={['audience:read', 'benefit:read', 'template:read', 'audience-field:read', 'definition:read']}><AssetsPage /></RequirePermission>} />
           <Route path="governance" element={<RequirePermission anyOf={['approval:business', 'approval:finance', 'approval:compliance', 'approval:merchant', 'definition:read']}><GovernancePage /></RequirePermission>} />
           <Route path="releases" element={<RequirePermission anyOf={['release:read']}><ReleaseCenterPage /></RequirePermission>} />
           <Route path="operations" element={<RequirePermission anyOf={['trace:read', 'journey:read', 'contact:read', 'event:read', 'funding:reconcile']}><OperationsPage /></RequirePermission>} />
+          <Route path="referral-operations" element={<RequirePermission anyOf={['referral:read', 'campaign:read', 'trace:read']}><ReferralOperationsPage /></RequirePermission>} />
           <Route path="analytics" element={<RequirePermission anyOf={['measurement:read']}><AnalyticsPage /></RequirePermission>} />
           <Route path="overview" element={<Navigate to="/" replace />} />
           <Route path="*" element={<NotFoundPage />} />

@@ -26,7 +26,7 @@ C 端商城/H5 的仓库位置、路由及 BFF 尚待提供。不要把管理台
 | 能力 | 当前事实 | Cursor 的处理 |
 |---|---|---|
 | `REFERRAL_POLICY` 定义保存、校验、仿真、节点目录 | 控制面已有生产代码与专项；不代表联调环境已启动 | 可先接现有入口并定向联调；仿真标识 SIMULATED_INPUT，结果是候选 |
-| campaignType | 设计要求 STANDARD/REFERRAL；当前 Campaign 领域对象尚无该字段 | 类型表单/路由可准备，保存和筛选依赖后端合同，不伪造服务端支持 |
+| campaignType | 已新增 STANDARD/REFERRAL 持久化及筛选，见referral-quota/CAMPAIGN_TYPE_API.md | 类型表单/路由可准备，保存和筛选依赖后端合同，不伪造服务端支持 |
 | 审批、暂存、ACK、激活、回滚 | 裂变发布链未接通；存在 `REFERRAL_RELEASE_NOT_AVAILABLE` 明确拒绝 | 保留不可用说明，不靠前端开放按钮绕过 |
 | 参与、邀请 token、绑定、证据 | 有内部持久化切片；不是浏览器可调用 HTTP | 等 BFF/运营查询合同，缺接口显示待接入 |
 | 资格、人数、奖励与配额 | 部分规则完成，完整落库/链路仍推进 | 不在前端推导真实资格或造进度 |
@@ -71,7 +71,7 @@ C 端商城/H5 的仓库位置、路由及 BFF 尚待提供。不要把管理台
   - 版本、活动、制品必须完全匹配；后端未明确支持的灰度不可开放；版本切换只影响新参与者，历史参与者固定旧版本。
   - 验收：当前发布拒绝有明确提示；将来 ACK/激活结果由后端返回，不能因编译成功自行显示 ACTIVE。
 
-- [ ] **FE-06｜P1｜部分可做：裂变运营台。**
+- [x] **FE-06｜P1｜部分完成：裂变运营台。** 三类只读查询已接；异常/summary 仍待接入。
   - 新增 `features/referral/ReferralOperationsPage.tsx`，参与人、关系/资格、奖励、异常四页签；支持活动和实际权限范围筛选、详情和游标翻页。
   - 显示脱敏身份、绑定时间、冻结版本、资格原因、观察截止、当前有效人数/历史里程碑、状态更新时间/数据水位；水位缺失显示未知，不能用页面刷新时间冒充。
   - 租户/组织/店铺/活动进入 queryKey；切换身份和作用域时清理相应缓存、取消旧请求，避免迟到响应串数据。敏感字段不得从另一接口“补齐”。
@@ -131,10 +131,10 @@ C 端商城/H5 的仓库位置、路由及 BFF 尚待提供。不要把管理台
 
 | 依赖ID | 接口/能力 | 当前状态与负责方 |
 |---|---|---|
-| BE-01 | `/api/v1/campaigns` 的 campaignType 与类型筛选 | 后端待扩展，Codex |
+| BE-01 | `/api/v1/campaigns` 的 campaignType 与类型筛选 | 已实现并完成HTTP/MySQL兼容测试；见[类型合同](../referral-quota/CAMPAIGN_TYPE_API.md)，未部署 |
 | BE-02 | definition submit/approvals、compile/release 的裂变完整治理与 runtime readiness | 校验/仿真已实现；发布闭环待完成，Codex |
-| BE-03 | 设计 GET `/api/v1/referral-campaigns/{campaignId}/{participants,relations,rewards,summary}`，四种资源分别请求 | 运营查询/DTO/Scope/游标待交付，Codex |
-| BE-04 | 设计 POST `/api/v1/referral-rewards/{rewardId}:reevaluate` | 权限、原因、幂等及复评结果合同待交付，Codex |
+| BE-03 | 设计 GET `/api/v1/referral-campaigns/{campaignId}/{participants,relations,rewards,summary}`，四种资源分别请求 | participants/relations/rewards列表已新增，合同见[OPERATIONS_API](../referral-qualification/OPERATIONS_API.md)；summary已新增DATABASE_PROJECTION统计且eventWatermark=null，尚未部署/联调 |
+| BE-04 | POST `/api/v1/referral-rewards/{rewardId}:reevaluate` | 已实现受控排队，202不是完成；见[复评合同](../referral-quota/REEVALUATION_API.md)，尚未部署 |
 | BE-05 | `/api/v1/award-intents` 新来源/终态/补偿扩展及对应查询 | 旧接口可复用，新字段完整接线待交付，Codex |
 | BE-06 | 浏览器→BFF 的活动/加入/token/resolve/bind/me | 浏览器路径、鉴权及 C 端仓库未确定；BFF 与身份负责人/Codex |
 | BE-07 | 真实 SKU/权益版本目录、风险/订单/主体映射 | 部分基础可复用；真实来源和接通状态须逐项确认，Codex/来源负责人 |

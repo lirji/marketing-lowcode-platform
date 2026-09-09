@@ -21,8 +21,11 @@ export const campaignSchema = z.object({
   createdBy: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string().optional(),
+  campaignType: z.string().optional(),
 })
 export type Campaign = z.infer<typeof campaignSchema>
+
+export const REFERRAL_POLICY_DIALECT = 'REFERRAL_POLICY'
 
 export const validationIssueSchema = z.object({
   severity: z.string(),
@@ -48,7 +51,40 @@ export const simulationSchema = z.object({
     outcome: z.string(),
   })).default([]),
 })
-export type SimulationResult = z.infer<typeof simulationSchema>
+export type OfferSimulationResult = z.infer<typeof simulationSchema>
+
+export const referralRewardCandidateSchema = z.object({
+  milestoneKey: z.string(),
+  rule: z.object({
+    ruleId: z.string(),
+    role: z.string(),
+    mode: z.string(),
+    threshold: z.number(),
+    benefitDefinitionVersion: z.string(),
+    skuVersion: z.string(),
+    quantity: z.number(),
+    perSubjectLimit: z.number(),
+    campaignLimit: z.number(),
+  }),
+})
+
+export const referralSimulationSchema = z.object({
+  simulationOnly: z.boolean(),
+  evidenceAuthority: z.string(),
+  qualification: z.object({
+    state: z.string(),
+    reason: z.string(),
+    dueAt: z.string().nullable().optional(),
+  }),
+  validCount: z.number(),
+  rewardCandidates: z.array(referralRewardCandidateSchema).default([]),
+})
+export type ReferralSimulationResult = z.infer<typeof referralSimulationSchema>
+export type SimulationResult = OfferSimulationResult | ReferralSimulationResult
+
+export function isReferralSimulation(value: SimulationResult): value is ReferralSimulationResult {
+  return 'simulationOnly' in value || 'evidenceAuthority' in value
+}
 
 export const definitionViewSchema = z.object({
   definitionId: z.string(),
@@ -412,6 +448,79 @@ export const recomputeSchema = z.object({
   completedAt: z.string().optional(),
 })
 
+export const referralParticipantSchema = z.object({
+  participantId: z.string(),
+  campaignId: z.string(),
+  organizationId: z.string(),
+  shopId: z.string(),
+  definitionId: z.string(),
+  definitionVersion: z.number().int(),
+  generation: z.number().int(),
+  state: z.string(),
+  createdAt: z.string(),
+  validCount: z.number().int().nullish(),
+  everQualifiedCount: z.number().int().nullish(),
+  progressRevision: z.number().int().nullish(),
+})
+export type ReferralParticipant = z.infer<typeof referralParticipantSchema>
+
+export const referralRelationSchema = z.object({
+  relationId: z.string(),
+  participantId: z.string(),
+  boundAt: z.string(),
+  deadlineAt: z.string().nullish(),
+  state: z.string(),
+  qualificationState: z.string().nullish(),
+  reason: z.string().nullish(),
+  counted: z.boolean().nullish(),
+  everQualified: z.boolean().nullish(),
+  qualificationRevision: z.number().int().nullish(),
+  evidenceVersion: z.number().int().nullish(),
+})
+export type ReferralRelation = z.infer<typeof referralRelationSchema>
+
+export const referralRewardSchema = z.object({
+  rewardId: z.string(),
+  participantId: z.string(),
+  relationId: z.string().nullish(),
+  role: z.string(),
+  mode: z.string(),
+  ruleId: z.string(),
+  threshold: z.number().int(),
+  entitlementState: z.string(),
+  authorizationState: z.string(),
+  riskState: z.string(),
+  deliveryState: z.string(),
+  compensationState: z.string(),
+  quotaState: z.string(),
+  revision: z.number().int(),
+  createdAt: z.string(),
+})
+export type ReferralReward = z.infer<typeof referralRewardSchema>
+
+export function referralOperationsPageSchema<T extends z.ZodType>(item: T) {
+  return z.object({
+    items: z.array(item),
+    nextCursor: z.string().nullish(),
+    asOf: z.string(),
+    consistency: z.string(),
+  })
+}
+
+export const referralParticipantPageSchema = referralOperationsPageSchema(referralParticipantSchema)
+export const referralRelationPageSchema = referralOperationsPageSchema(referralRelationSchema)
+export const referralRewardPageSchema = referralOperationsPageSchema(referralRewardSchema)
+export type ReferralParticipantPage = z.infer<typeof referralParticipantPageSchema>
+export type ReferralRelationPage = z.infer<typeof referralRelationPageSchema>
+export type ReferralRewardPage = z.infer<typeof referralRewardPageSchema>
+
 export function parseWith<T>(schema: z.ZodType<T>, value: unknown): T {
   return schema.parse(value)
+}
+
+export function parseSimulationResult(value: unknown): SimulationResult {
+  if (value && typeof value === 'object' && ('simulationOnly' in value || 'evidenceAuthority' in value)) {
+    return parseWith(referralSimulationSchema, value)
+  }
+  return parseWith(simulationSchema, value)
 }

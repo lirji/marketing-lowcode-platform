@@ -158,7 +158,14 @@ export function LowCodeDesigner({
       if (!live) throw new Error('演示模式不会调用仿真服务')
       return api.simulate(definitionId, savedVersion, { amountMinor: '68800', 'member.level': 'PLUS' })
     },
-    onSuccess: (value) => { setStatus('simulated'); setNotice(`仿真完成：优惠 ${value.discountMinor} 分，应付 ${value.payableMinor} 分`) },
+    onSuccess: (value) => {
+      setStatus('simulated')
+      if ('discountMinor' in value) {
+        setNotice(`仿真完成：优惠 ${value.discountMinor} 分，应付 ${value.payableMinor} 分`)
+        return
+      }
+      setNotice('仿真完成（裂变结果请在邀请有礼设计器查看）')
+    },
   })
   const submitMutation = useMutation({
     mutationFn: async () => {

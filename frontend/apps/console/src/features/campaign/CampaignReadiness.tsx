@@ -3,7 +3,8 @@ import { Badge, EmptyState } from '../../components/ui'
 import { api, optionalResource } from '../../shared/api/client'
 import { problemDetail } from '../../shared/api/problem'
 import { useAuth } from '../../shared/auth/useAuth'
-import type { DefinitionBundle, ReleaseView } from '../../shared/api/schemas'
+import { REFERRAL_POLICY_DIALECT, type DefinitionBundle, type ReleaseView } from '../../shared/api/schemas'
+import { fromReferralGraph, rewardsHaveCatalogPins } from '../referral/referralGraph'
 
 const CREATE_HINTS = [
   '权益：已绑定 ACTIVE SKU',
@@ -13,12 +14,21 @@ const CREATE_HINTS = [
   '发布：在发布中心编译并暂存本活动定义',
 ]
 
-export function CampaignCreateReadiness() {
+const REFERRAL_CREATE_HINTS = [
+  '裂变规则：保存 REFERRAL_POLICY 定义',
+  '奖励：引用真实权益定义与 SKU 版本',
+  '目录核验：控制面 WARNING，前端不代核',
+  '身份 / 事件源 / runtime：待后端就绪合同',
+  '发布：REFERRAL_RELEASE_NOT_AVAILABLE',
+]
+
+export function CampaignCreateReadiness({ designIntent = 'STANDARD' }: { designIntent?: 'STANDARD' | 'REFERRAL' }) {
+  const hints = designIntent === 'REFERRAL' ? REFERRAL_CREATE_HINTS : CREATE_HINTS
   return (
     <div className="campaign-readiness" aria-label="活动就绪清单">
-      <p>创建后还要齐这些项才能发布。缺项会标未就绪，不会用假数据顶上。</p>
+      <p>{designIntent === 'REFERRAL' ? '邀请有礼创建后先保存规则。发布链未接通，不会用假数据顶上。' : '创建后还要齐这些项才能发布。缺项会标未就绪，不会用假数据顶上。'}</p>
       <ul>
-        {CREATE_HINTS.map((item) => (
+        {hints.map((item) => (
           <li key={item}><Badge tone="warn">未就绪</Badge>{item}</li>
         ))}
       </ul>
@@ -65,6 +75,11 @@ export function CampaignReadiness({ campaignId }: { campaignId: string }) {
     queryFn: () => optionalResource(() => api.latestDefinition(campaignId, 'JOURNEY_STATE_MACHINE')),
     enabled: !api.demoMode && canRead && Boolean(campaignId),
   })
+  const referral = useQuery({
+    queryKey: ['definition-latest', campaignId, REFERRAL_POLICY_DIALECT],
+    queryFn: () => optionalResource(() => api.latestDefinition(campaignId, REFERRAL_POLICY_DIALECT)),
+    enabled: !api.demoMode && canRead && Boolean(campaignId),
+  })
   const releases = useQuery({
     queryKey: ['releases'],
     queryFn: api.releases,
@@ -81,14 +96,25 @@ export function CampaignReadiness({ campaignId }: { campaignId: string }) {
   const offerReady = Boolean(offer.data)
   const journeyReady = Boolean(journey.data)
   const releaseReady = definitionsHaveRelease([offer.data, journey.data], releases.data ?? [])
-  const items = [
-    { key: 'benefit', label: '权益（已绑 ACTIVE SKU）', ready: benefitReady },
-    { key: 'audience', label: '人群', ready: audienceReady },
-    { key: 'offer', label: 'Offer', ready: offerReady },
-    { key: 'journey', label: 'Journey', ready: journeyReady },
-    { key: 'release', label: releaseReady ? '发布' : '发布（未在发布中心编译）', ready: releaseReady },
-  ]
-  const loadError = [benefits, skus, audiences, offer, journey, releases].find((q) => q.isError)
+  const referralGraph = referral.data?.graph ? fromReferralGraph(referral.data.graph) : undefined
+  const referralReady = Boolean(referral.data)
+  const referralPinsReady = Boolean(referralGraph && referralGraph.errors.length === 0 && rewardsHaveCatalogPins(referralGraph.draft))
+  const items = referralReady
+    ? [
+        { key: 'referral-rule', label: '裂变规则（REFERRAL_POLICY 已保存）', ready: true },
+        { key: 'referral-pins', label: '奖励已引用权益 / SKU 版本', ready: referralPinsReady },
+        { key: 'referral-catalog', label: '真实目录核验（控制面 WARNING，非前端代核）', ready: false },
+        { key: 'referral-runtime', label: '身份 / 事件源 / runtime', ready: false },
+        { key: 'referral-release', label: '发布（REFERRAL_RELEASE_NOT_AVAILABLE）', ready: false },
+      ]
+    : [
+        { key: 'benefit', label: '权益（已绑 ACTIVE SKU）', ready: benefitReady },
+        { key: 'audience', label: '人群', ready: audienceReady },
+        { key: 'offer', label: 'Offer', ready: offerReady },
+        { key: 'journey', label: 'Journey', ready: journeyReady },
+        { key: 'release', label: releaseReady ? '发布' : '发布（未在发布中心编译）', ready: releaseReady },
+      ]
+  const loadError = [benefits, skus, audiences, offer, journey, referral, releases].find((q) => q.isError)
 
   return (
     <div className="campaign-readiness" aria-label={`${campaignId} 就绪清单`}>
