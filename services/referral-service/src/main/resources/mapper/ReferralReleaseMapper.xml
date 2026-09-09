@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralReleaseMapper">
+  <insert id="reserve">
+    INSERT INTO mk_referral_verified_release
+      (tenant_id, environment, cell, namespace, generation, manifest_id, release_key_id, manifest_json, artifact_payload, verified_at)
+    VALUES (#{tenant}, #{environment}, #{cell}, #{namespace}, #{generation}, #{manifestId}, #{releaseKeyId}, #{manifestJson}, #{payload}, #{verifiedAt})
+    ON DUPLICATE KEY UPDATE generation = generation
+  </insert>
+  <select id="lock" resultType="com.acme.marketing.referral.application.release.ReferralReleaseRepository$Stored">
+    SELECT tenant_id, environment, cell, namespace, generation, manifest_id, release_key_id,
+           manifest_json, artifact_payload AS payload, verified_at
+    FROM mk_referral_verified_release
+    WHERE tenant_id = #{tenant} AND environment = #{environment} AND cell = #{cell}
+      AND namespace = #{namespace} AND generation = #{generation}
+    FOR UPDATE
+  </select>
+</mapper>

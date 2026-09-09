@@ -1,0 +1,42 @@
+{
+  "date": "2026-09-09",
+  "scope": "R1 + R2 VERIFIED only",
+  "commands": [
+    {
+      "command": "TESTCONTAINERS_RYUK_DISABLED=true ./mvnw -o -q -pl services/referral-service -am test",
+      "exitCode": 0,
+      "log": "/tmp/referral-release-regression.log"
+    },
+    {
+      "command": "./mvnw -o -q -pl architecture-tests -am -Dtest=ArchitectureRulesTest -Dsurefire.failIfNoSpecifiedTests=false test",
+      "exitCode": 0,
+      "log": "/tmp/referral-release-architecture.log"
+    }
+  ],
+  "sourceSha256": {
+    "runtime-spi/referral-runtime-spi/pom.xml": "c00a0c19ca076dd00398c3a2bdccce68fcfd7f500b8625cb183619fc139662da",
+    "runtime-spi/referral-runtime-spi/src/main/java/com/acme/marketing/referral/ReferralReleaseVerifier.java": "7edcdafe9881c967fa1b3ec46b031542d91de9cadbb7ef00db56f19a2fa98b4c",
+    "runtime-spi/referral-runtime-spi/src/test/java/com/acme/marketing/referral/ReferralReleaseVerifierTest.java": "889c18462f128d4446c2674407cb3b38220a4c885442ca2b0b203b47a91e6d10",
+    "services/referral-service/src/main/java/com/acme/marketing/referral/application/release/ReferralReleaseRepository.java": "4c877539cd43bedeffcc7431e796072a66affecbdc06179e21de82a1b659028f",
+    "services/referral-service/src/main/java/com/acme/marketing/referral/application/release/ReferralReleaseInstallationService.java": "54fcbb4724b6b6660876d8e832cee3a8f76ce3117dc6d49938626c2305420251",
+    "services/referral-service/src/main/java/com/acme/marketing/referral/infrastructure/persistence/MybatisReferralReleaseRepository.java": "0c0c209a86766dc54500eb66194709daabca61dc732c99f9364f27fdaec7fe70",
+    "services/referral-service/src/main/java/com/acme/marketing/referral/infrastructure/persistence/mapper/ReferralReleaseMapper.java": "dd418021b8f9bfe993def93c5edf5153946f3b573bfd24607bf360fc10d4f14b",
+    "services/referral-service/src/main/resources/mapper/ReferralReleaseMapper.xml": "8461c256cc6857484fe991a79303116b05490781dcb80577d164122b6b9c523c",
+    "services/referral-service/src/main/resources/db/migration/V12__referral_verified_release.sql": "69bcf95d7877e86ea2678522fc9c4eeaf128286f990618bf2ae7fe5843288ea0",
+    "services/referral-service/src/test/java/com/acme/marketing/referral/ReferralReleaseInstallationMySqlTest.java": "34fc315dd76d5b00b5b50a08327e6adf512966c4f0393dbea2e817365a29566a"
+  },
+  "tests": {
+    "runtime-spi/referral-runtime-spi": {
+      "tests": 72,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "services/referral-service": {
+      "tests": 206,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  }
+}
