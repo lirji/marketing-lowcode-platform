@@ -2,6 +2,18 @@
 
 2026-09-08。完整目标及161项验收以交易中心`.codex/tasks/referral-end-to-end`冻结原文和最新检查点为准。本页说明当前可用内部切片，不能将R1原有production-candidate说明套用到新增裂变能力。
 
+## 2026-09-09可信发布接续
+
+R1 制品验签与 R2 的 VERIFIED 耐久安装已实现，见[发布实施状态](delivery/referral-release-runtime/DELIVERY_STATUS.md)。仅验证签名计划与存储一致性；尚未完成 READY/ACK、激活、参与许可或 control 发布开放。冻结 SKU 的权威映射继续待签收。
+
+## 2026-09-09接入合同核对
+
+身份、交易证据和发布的实际字段、路径、拒绝语义、实现顺序与验收矩阵已对照代码整理到[跨平台接入基线](../../transaction-center/docs/contracts/referral-integration/CONTRACT_BASELINE.md)。C02/C03旧目标与交易原生DTO存在差异，不能直接改名接线；权威主体/范围、绑定期限起点与签名配置等尚未签收。本次没有开放参与入口、移除发布拒绝或宣称真实适配已部署。
+
+## 2026-09-08本轮接续
+
+以下旧切片表保留其历史证据范围。最新V5–V11、活动类型和运营接口的实现/审查/QA/剩余工作统一见[接续交付](delivery/referral-completion/DELIVERY_REPORT.md)。已补永久奖励、配额、授权回执、可信终态账本、4个运营GET及复评POST；真实外部适配、发布和全链路仍未验收。代码未部署，前端由Cursor联调，不能把历史独立审查覆盖声明套到本轮改动。
+
 ## 已收口的内部切片
 
 | 切片 | 当前行为与证据 | 保留边界 |

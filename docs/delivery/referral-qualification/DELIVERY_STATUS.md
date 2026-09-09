@@ -33,3 +33,9 @@ root在同service/pom追加marketing-contracts依赖用于独立奖励纯边界�
 纯计数 8 项及纯应用 18 项通过（26 唯一；evidence/v4b-count-8、evidence/v5-application-18）。应用包含事务外来源/解密、完整冻结 Scope、锁后及保存后过期、旧 fence/CAS、会员修订回退/同版冲突、注册首次接收锚、观察期纳秒、退款 valid 撤回和 ever 保留。真实 V5 DDL/行锁/原子回滚及 root fanout 联合 DB 专项待验证；当前工作树并非全量通过。
 
 V5 生产结构独立复核已通过：保存后时限和会员/注册锚问题均关闭，无待先修阻断。已同步 member_revision 中文注释为“已知最高、仅首次无许可为零”，等待 root 联合隔离 MySQL；未运行共享迁移。
+
+## 2026-09-08 恢复实施
+
+用户明确“先把裂变做完”，沿用已批准资格/奖励设计继续。工作分支 `feat/referral-completion`；保留 Cursor 的未提交前端改动。已新增 `ReferralQualificationMySqlTest`，正在隔离 MySQL 验证 V5 与 fanout，不依赖已删除的 long-task 技能。当前不宣称专项或全量已通过。
+
+后续顺序：V5/fanout 数据库缺口及修复 → 奖励永久账本/配额/授权与追回 → 发布及查询接口 → 回归、CI和Cursor交接。真实权威来源、绑定期限起点、测试SKU/渠道仍待提供，内部可独立实现工作持续推进。
