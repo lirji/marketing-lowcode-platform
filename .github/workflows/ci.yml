@@ -77,7 +77,7 @@ jobs:
           repository: ${{ github.repository_owner }}/dev-infra
           path: dev-infra
           persist-credentials: false
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         with: {version: v4.1.0}
       - run: chmod +x scripts/*.sh scripts/capacity.py dev-infra/bin/marketing-infra dev-infra/marketing/mysql/01-databases.sh dev-infra/marketing/kafka/create-topics.sh
       - run: ./scripts/verify-deployment.sh
