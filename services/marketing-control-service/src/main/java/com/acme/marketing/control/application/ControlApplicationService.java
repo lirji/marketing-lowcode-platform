@@ -161,6 +161,9 @@ public class ControlApplicationService {
         }
         List<ValidationIssue> issues = new ArrayList<>(new GraphValidator(
                 registry.all(), GraphValidator.Limits.productionDefaults()).validate(stored.graph()));
+        if (stored.graph().dialect() == Dialect.OFFER_DECISION_DAG) {
+            issues.addAll(com.acme.marketing.lowcode.validation.OfferGraphInputGuard.validate(stored.graph()));
+        }
         issues.addAll(governanceValidator.validate(stored.graph()));
         boolean valid = issues.stream().noneMatch(issue -> issue.severity() == ValidationIssue.Severity.ERROR);
         if (valid && stored.view().status() == DefinitionVersion.Status.DRAFT) {
@@ -193,6 +196,9 @@ public class ControlApplicationService {
         scope.requirePermission("definition:submit");
         StoredDefinition stored = definition(scope, definitionId, version);
         requireControlDialectSupported(stored.graph());
+        if (stored.graph().dialect() == Dialect.OFFER_DECISION_DAG) {
+            com.acme.marketing.lowcode.validation.OfferGraphInputGuard.requireSupported(stored.graph());
+        }
         if (stored.view().status() != DefinitionVersion.Status.VALIDATED) {
             throw new ConflictException("DEFINITION_NOT_VALIDATED", "validate definition before submission");
         }

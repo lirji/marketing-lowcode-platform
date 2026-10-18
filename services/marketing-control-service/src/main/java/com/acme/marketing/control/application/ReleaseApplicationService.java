@@ -129,6 +129,7 @@ public class ReleaseApplicationService {
         StoredManifest stored = stored(scope.tenantId().value(), manifestId, true);
         requireManifestScope(scope, stored.manifest());
         requireReferralReleaseUnavailable(stored.manifest());
+        requireExecutableOfferSources(scope.tenantId().value(), stored.manifest());
         if (!manifestId.equals(ack.manifestId()) || stored.manifest().generation() != ack.generation()
                 || !stored.manifest().cell().equals(ack.cell())) {
             throw new ConflictException("ACK_MANIFEST_MISMATCH", "runtime ACK does not match staged manifest");
@@ -184,6 +185,7 @@ public class ReleaseApplicationService {
         StoredManifest stored = stored(scope.tenantId().value(), manifestId, true);
         requireManifestScope(scope, stored.manifest());
         requireReferralReleaseUnavailable(stored.manifest());
+        requireExecutableOfferSources(scope.tenantId().value(), stored.manifest());
         if (stored.state() != State.STAGED) {
             throw new ConflictException("MANIFEST_NOT_STAGED", "only staged manifest can be activated");
         }
@@ -237,6 +239,7 @@ public class ReleaseApplicationService {
         }
         StoredManifest target = byGeneration(scope.tenantId().value(), current.manifest(), targetGeneration);
         requireReferralReleaseUnavailable(target.manifest());
+        requireExecutableOfferSources(scope.tenantId().value(), target.manifest());
         Instant now = clock.instant();
         if (target.state() != State.ACTIVE || !target.manifest().expiresAt().isAfter(now)) {
             throw new ConflictException("ROLLBACK_TARGET_UNAVAILABLE",
@@ -394,6 +397,8 @@ public class ReleaseApplicationService {
         } catch (JacksonException invalid) {
             throw new IllegalStateException("approved release graph is invalid", invalid);
         }
+        com.acme.marketing.lowcode.validation.OfferGraphInputGuard.requireSupported(graph);
+        request.artifacts().forEach(artifact -> requireOfferCompilation(graph, artifact));
         Set<String> references = graph.nodes().stream()
                 .filter(node -> "offer.fixed".equals(node.stableTypeId())
                         || "offer.percentage".equals(node.stableTypeId()))
@@ -410,6 +415,25 @@ public class ReleaseApplicationService {
                     "every offer artifact must reference a BenefitDefinition version bound to an ACTIVE SKU");
         }
         benefitReleaseGate.assertReleasable(scope, Set.copyOf(references));
+    }
+
+    /** 旧版本已审批/暂存的图也需重新检查，避免绕过新增的编译输入护栏。 */
+    private void requireExecutableOfferSources(String tenantId, ReleaseManifest manifest) {
+        if (!"decision".equals(manifest.runtime())) return;
+        for (var artifact : manifest.artifacts()) {
+            String json = repository.findApprovedGraphJson(tenantId, artifact.definitionId(),
+                    artifact.definitionVersion()).orElseThrow(() -> new ConflictException(
+                            "RELEASE_NOT_APPROVED", "approved release graph is unavailable"));
+            GraphDefinition graph = mapper.readValue(json, GraphDefinition.class);
+            com.acme.marketing.lowcode.validation.OfferGraphInputGuard.requireSupported(graph);
+            requireOfferCompilation(graph, artifact);
+        }
+    }
+
+    private static void requireOfferCompilation(GraphDefinition graph, ArtifactReference artifact) {
+        if (com.acme.marketing.decision.runtime.OfferPolicyGraphCompiler.requiresRecompilation(graph, artifact.artifactId())) {
+            throw OfferPolicyError.RECOMPILE_REQUIRED.exception();
+        }
     }
 
     private Slot lockSlot(String tenantId, String environment, String cell, String runtime, String namespace) {

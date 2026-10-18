@@ -89,6 +89,8 @@ class RuleCompilerServiceTest {
         assertTrue(report.valid(), () -> format + ": " + String.join("\n", report.messages()));
         var artifact = service.artifact("tenant-a", report.artifactId());
         assertEquals(format.name(), artifact.type());
+        if (format == RuleCompilerService.Format.OFFER_POLICY)
+            assertTrue(artifact.artifactId().startsWith(com.acme.marketing.decision.runtime.OfferPolicyGraphCompiler.ARTIFACT_ID_PREFIX));
         assertTrue(ArtifactAttestation.verify(keys.publicKey(report.signatureKeyId()), "tenant-a",
                 artifact.reference("s3://artifacts/" + artifact.artifactId())));
     }

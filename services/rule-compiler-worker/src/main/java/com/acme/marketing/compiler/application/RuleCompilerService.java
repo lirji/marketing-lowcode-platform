@@ -137,7 +137,10 @@ public final class RuleCompilerService {
         String identityDigest = Digests.sha256Hex(String.join("|", tenantId, request.definitionId(),
                 Long.toString(request.definitionVersion()), request.format().name(), abi, checksum,
                 sourceDigest, keys.activeKeyId()));
-        String artifactId = request.format().name().toLowerCase(java.util.Locale.ROOT) + '-' + identityDigest;
+        String prefix = request.format() == Format.OFFER_POLICY
+                ? com.acme.marketing.decision.runtime.OfferPolicyGraphCompiler.ARTIFACT_ID_PREFIX
+                : request.format().name().toLowerCase(java.util.Locale.ROOT) + '-';
+        String artifactId = prefix + identityDigest;
         String signature = ArtifactAttestation.sign(keys.activePrivateKey(), tenantId, artifactId,
                 request.definitionId(), request.definitionVersion(), request.format().name(), abi, checksum,
                 sourceDigest);
