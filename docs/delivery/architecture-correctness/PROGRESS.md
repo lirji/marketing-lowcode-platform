@@ -19,7 +19,7 @@
 | S5 / R05 | Journey 事件/定时器基础设施故障抛给恢复机制，坏输入走死信；Mapper XML 与有界数据库等待 | DONE |
 | S6 / R06 | 主键回源、容量/TTL 上限、并发撤销与事务快照保护，取消全表轮询 | DONE |
 | R08 / 架构门禁 | jobs/网关纳入检查；裂变旧耦合冻结基线，禁止新增 | DONE（既有耦合未清理） |
-| 交付 | 11 个代码提交已合入/推送 main；本目录记录报告与证据 | 代码 DONE；远程 CI 另列 |
+| 交付 | 11 个代码提交与配套文档已合入/推送 main；最终 CI 回执只更新文档 | DONE；远程配置门禁 BLOCKED |
 
 ## 最新验证
 
@@ -29,7 +29,7 @@
 - 13 份 JSON 契约验证通过；合同模块 18 项测试已包含在后端总数中。
 - code-hygiene 无阻塞/建议项；仓库未配置统一 formatter，结果为 IMPLEMENTATION_COMPLETE_WITH_LIMITATIONS。未为过门禁引入格式工具或放宽 lint。
 - 三路只读对抗复审已通过；发现的 6 个问题均补修并有回归，详细证据见交付报告。
-- 远程 CI：代码推送已触发，文档提交将再次触发；本地 PASS 不代替远程结果。最终按 GitHub Actions 的当前 main SHA 核验。
+- 远程 CI：后端/合同/架构、前端及两项 CodeQL 通过（核验提交 4ee9217）；共享 dev-infra 仓库 404 和既有 Trivy Action 版本不可解析阻断环境/扫描门禁。详细状态见 [CI 核验](CI_RESULT.md)，整条流水线不标记 PASS。
 - 原始日志：`/var/folders/fh/4kj3hbdd6q1dbswkdz5l_fsr0000gn/T/marketing-architecture-fix-20261018-65r8nhuz`。无运行中验证进程。
 
 ## 已定取舍与未覆盖项
