@@ -37,6 +37,7 @@
 | stage | `BENEFIT_SKU_TYPE_MISMATCH` | `policy.type` 与 SKU `benefitType` 不一致 |
 | stage | `ARTIFACT_DEFINITION_MISMATCH` / `ARTIFACT_SOURCE_MISMATCH` | 制品不是当前审核冻结版本，重新编译 |
 | stage | `ARTIFACT_SIGNATURE_INVALID` | 编译器证明不可信，停止发布并检查密钥 |
+| stage / ACK / activate / rollback | `OFFER_RECOMPILE_REQUIRED` | 旧比例别名制品语义有误，保留冻结源，重新编译并走正常发布 |
 | ACK | `ACK_*` | runtime 回执不匹配或不可信；展示后端 detail，不允许直接激活 |
 | activate | `RUNTIME_NOT_READY` | 继续等待/刷新 ACK 状态 |
 | activate | `ACTIVATION_TOO_EARLY` | 等到 `activationAt` 再重试同一激活命令 |

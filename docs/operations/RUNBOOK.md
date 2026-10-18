@@ -65,6 +65,22 @@ Readiness 表示实例可接新流量，不等于所有异步投影实时。额�
 - 有有效 checkpoint 时从 checkpoint 自动恢复；升级/回滚用 savepoint。只有经批准且能接受状态丢失时才无状态重启。
 - 恢复后观察 lag、水位、重复副作用计数和对账，直到追平稳定窗口。
 
+Journey 的 `JOURNEY_RUNTIME_STORE_UNAVAILABLE` 表示数据库连接/查询或初始化配置故障。事件和定时器均将该错误抛给作业恢复机制，不能转成业务死信后推进 checkpoint，也不消耗业务定时器的重试次数。修复数据库/配置后从有效 checkpoint 恢复；非法输入继续走死信。数据库读取使用同一项目版本的 MyBatis 3.5.19 和 Mapper XML，保持历史激活记录验签及实例版本绑定。
+
+| Journey 作业参数 | 默认 | 允许范围 |
+| --- | --- | --- |
+| `JOURNEY_DB_CONNECT_TIMEOUT_MS` | 2000 ms | 1–30000 ms |
+| `JOURNEY_DB_SOCKET_TIMEOUT_MS` | 3000 ms | 1–30000 ms |
+| `JOURNEY_DB_QUERY_TIMEOUT_SECONDS` | 2 s | 1–30 s |
+
+连接串中的 connectTimeout/socketTimeout 会被上述有界设置覆盖，不能用 0 关闭保护。这里是单次等待上限，作业重启/退避策略仍由 Flink 部署配置管理；本轮没有验证真实集群 checkpoint 恢复时长。
+
+### 决策侧人群缓存
+
+数据库 `mk_audience_membership_projection` 仍为权威。启动不再全表扫描，查询使用 `(tenant_id,audience_id,subject_hash)` 主键；本地缓存默认最多 10000 个正/负结果，最长缓存一秒，跨副本撤销最多受该缓存窗口影响（另计事件投递和查询耗时）。`marketing.audience-projection.max-cache-entries` 控制容量，`marketing.audience-projection.cache-max-age-ms` 可在 1–1000 ms 内缩短缓存；原 reconcile-interval 轮询参数不再使用。
+
+过期缓存遇到数据库错误不会返回旧成员资格。当前 JDBC 决策幂等事务使用 READ_COMMITTED，成员 SELECT 清除 MyBatis 会话缓存，避免把旧事务快照当成新资格回填；幂等行仍由唯一键和 FOR UPDATE 保护。高基数流量会增加主键回源量，应按实际数据库容量检查连接池等待、决策延迟和错误率；不能只增大缓存期限掩盖撤销延迟。未对十倍流量给出性能承诺。
+
 ### OIDC/Key rotation
 
 - 新登录/refresh 失败但已签 token 仍可验证时，保持短期服务并监控 token expiry。

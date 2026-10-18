@@ -2,7 +2,7 @@
 
 ## 架构原则
 
-系统分为控制面、同步决策面、异步运行面和数据分析面。控制面追求可审计与正确发布；同步决策面追求低尾延迟、纯函数和无远程强依赖；异步运行面通过 Kafka/Flink 容忍重复与乱序；资金权益面以 MySQL 权威账本守恒。任何跨边界交互都经过版本契约，不共享领域实体或数据库表。
+系统分为控制面、同步决策面、异步运行面和数据分析面。控制面追求可审计与正确发布；同步决策面使用纯函数计价、已加载制品及本服务的持久化投影，不同步依赖控制面；异步运行面通过 Kafka/Flink 容忍重复与乱序；资金权益面以 MySQL 权威账本守恒。任何跨边界交互都经过版本契约，不共享领域实体或数据库表。
 
 ```mermaid
 flowchart TB
@@ -25,7 +25,7 @@ flowchart TB
   AF --> K
   JF --> K
   MF --> K
-  DEC --> RP[(Local/Redis projections)]
+  DEC --> RP[(Bounded cache / owned MySQL projection)]
   BEN --> DB[(Context-owned MySQL)]
   BEN --> RISK[Risk Platform]
   BEN --> BC[Enterprise Benefit Center]
