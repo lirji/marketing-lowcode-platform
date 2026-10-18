@@ -103,6 +103,31 @@ class AudienceIntegrationTest extends MySqlIntegrationTest {
                 .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build());
     }
 
+    @Test
+    void instantRuleSurvivesPersistenceAndInvalidOrderingIsRejectedAtSave() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        String instantField = "joined-" + suffix;
+        for (var field : Map.of(instantField, "INSTANT", "flag-" + suffix, "BOOLEAN").entrySet()) {
+            post("/api/v1/fields", Map.of("fieldId", field.getKey(), "valueType", field.getValue(),
+                    "owner", "identity", "provenance", "verified-profile", "classification", "PERSONAL",
+                    "allowedUses", Set.of("ELIGIBILITY"), "maxAgeSeconds", 3600,
+                    "nullPolicy", "NO_MATCH", "missingPolicy", "NO_MATCH", "retentionDays", 30));
+        }
+        String segmentId = "recent-" + suffix;
+        post("/api/v1/audiences", Map.of("segmentId", segmentId, "name", "Recent", "rule", Map.of(
+                "match", "ALL", "conditions", List.of(Map.of("fieldId", instantField, "operator", "GT",
+                        "value", "2026-01-01T00:00:00Z")))));
+        var preview = post("/api/v1/audiences/" + segmentId + "/versions/1:preview", List.of(
+                Map.of("subjectToken", "new", "attributes", Map.of(instantField, "2026-01-02T00:00:00Z")),
+                Map.of("subjectToken", "same", "attributes", Map.of(instantField, "2026-01-01T08:00:00+08:00")),
+                Map.of("subjectToken", "bad", "attributes", Map.of(instantField, "not-a-date"))));
+        assertEquals(1, preview.get("estimatedCount").asLong());
+        var invalid = postRaw("/api/v1/audiences", Map.of("segmentId", "bad-" + suffix, "name", "Bad",
+                "rule", Map.of("match", "ALL", "conditions", List.of(Map.of("fieldId", "flag-" + suffix,
+                        "operator", "GT", "value", "true")))), "invalid-" + suffix);
+        assertEquals(400, invalid.statusCode());
+    }
+
     private HttpResponse<String> postRaw(String path, Object body, String idempotencyKey) throws Exception {
         return client.send(base(path).header("Content-Type", "application/json")
                 .header("Idempotency-Key", idempotencyKey)

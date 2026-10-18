@@ -4,7 +4,6 @@ import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.error.ConflictException;
 import com.acme.marketing.platform.error.NotFoundException;
 import com.acme.marketing.platform.web.TenantContextHolder;
-import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
@@ -78,9 +77,10 @@ public class AudienceService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("audience:preview");
         SegmentView segment = segment(scope.tenantId().value(), segmentId, version);
-        List<String> sample = profiles.stream().filter(profile -> matches(segment.rule(), profile.attributes()))
+        Map<String, ValueType> types = validateRule(scope.tenantId().value(), segment.rule());
+        List<String> sample = profiles.stream().filter(profile -> matches(segment.rule(), profile.attributes(), types))
                 .map(SubjectProfile::subjectToken).sorted().limit(20).toList();
-        long count = profiles.stream().filter(profile -> matches(segment.rule(), profile.attributes())).count();
+        long count = profiles.stream().filter(profile -> matches(segment.rule(), profile.attributes(), types)).count();
         return new Preview(count, sample, clock.instant());
     }
 
@@ -156,7 +156,7 @@ public class AudienceService {
                 .orElseThrow(() -> new NotFoundException("SNAPSHOT_NOT_FOUND", "audience snapshot not found"));
     }
 
-    private void validateRule(String tenantId, SegmentRule rule) {
+    private Map<String, ValueType> validateRule(String tenantId, SegmentRule rule) {
         if (rule.conditions().isEmpty()) throw new IllegalArgumentException("segment rule is empty");
         Set<String> fieldIds = rule.conditions().stream().map(Condition::fieldId)
                 .collect(java.util.stream.Collectors.toSet());
@@ -164,42 +164,16 @@ public class AudienceService {
         for (Condition condition : rule.conditions()) {
             ValueType type = types.get(condition.fieldId());
             if (type == null) throw new ConflictException("FIELD_NOT_REGISTERED", condition.fieldId());
-            validateValue(type, condition.value());
+            AudienceRuleEvaluator.validate(type, condition);
         }
+        return types;
     }
 
-    private static void validateValue(ValueType type, String value) {
-        try {
-            switch (type) {
-                case DECIMAL -> new BigDecimal(value);
-                case BOOLEAN -> {
-                    if (!"true".equalsIgnoreCase(value) && !"false".equalsIgnoreCase(value)) throw new IllegalArgumentException();
-                }
-                case INSTANT -> Instant.parse(value);
-                case STRING -> { if (value == null) throw new IllegalArgumentException(); }
-            }
-        } catch (RuntimeException invalid) {
-            throw new IllegalArgumentException("condition value does not match field type " + type, invalid);
-        }
-    }
-
-    static boolean matches(SegmentRule rule, Map<String, String> attributes) {
-        java.util.function.Predicate<Condition> condition = item -> compare(attributes.get(item.fieldId()), item);
+    static boolean matches(SegmentRule rule, Map<String, String> attributes, Map<String, ValueType> types) {
+        java.util.function.Predicate<Condition> condition = item ->
+                AudienceRuleEvaluator.matches(types.get(item.fieldId()), item, attributes.get(item.fieldId()));
         return rule.match() == Match.ALL ? rule.conditions().stream().allMatch(condition)
                 : rule.conditions().stream().anyMatch(condition);
-    }
-
-    private static boolean compare(String actual, Condition condition) {
-        if (actual == null) return false;
-        return switch (condition.operator()) {
-            case EQ -> actual.equals(condition.value());
-            case NE -> !actual.equals(condition.value());
-            case GT -> new BigDecimal(actual).compareTo(new BigDecimal(condition.value())) > 0;
-            case GTE -> new BigDecimal(actual).compareTo(new BigDecimal(condition.value())) >= 0;
-            case LT -> new BigDecimal(actual).compareTo(new BigDecimal(condition.value())) < 0;
-            case LTE -> new BigDecimal(actual).compareTo(new BigDecimal(condition.value())) <= 0;
-            case IN -> Set.of(condition.value().split(",")).contains(actual);
-        };
     }
 
     private static String subjectHash(String subjectToken) {
