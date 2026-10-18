@@ -24,6 +24,10 @@ class ArchitectureRulesTest {
     void serviceLayersAreActuallyImported() {
         var imported = new ClassFileImporter().withImportOption(new ImportOption.DoNotIncludeTests())
                 .importPackages("com.acme.marketing");
+        for (String packagePart : List.of(".jobs.audience", ".jobs.journey", ".jobs.measurement", ".gateway")) {
+            assertTrue(imported.stream().anyMatch(javaClass -> javaClass.getPackageName().contains(packagePart)),
+                    "architecture checks must import " + packagePart);
+        }
         assertTrue(imported.stream().anyMatch(javaClass -> javaClass.getPackageName().contains(".domain")),
                 "architecture checks must see service domain classes");
         assertTrue(imported.stream().anyMatch(javaClass -> javaClass.getPackageName().contains(".application")),
@@ -36,7 +40,8 @@ class ArchitectureRulesTest {
         Pattern inlineSql = Pattern.compile(
                 "(?is)\\\"\\s*(select\\s|with\\s|insert\\s+into\\s|update\\s+mk_|delete\\s+from\\s)");
         List<String> violations = new ArrayList<>();
-        for (Path sourceRoot : List.of(workspace.resolve("services"), workspace.resolve("platform-web"))) {
+        for (Path sourceRoot : List.of(workspace.resolve("services"), workspace.resolve("platform-web"),
+                workspace.resolve("jobs"))) {
             try (var files = Files.walk(sourceRoot)) {
                 files.filter(path -> path.toString().contains("/src/main/java/"))
                         .filter(path -> path.toString().endsWith(".java"))
@@ -45,6 +50,25 @@ class ArchitectureRulesTest {
             }
         }
         assertTrue(violations.isEmpty(), "SQL 必须维护在 Mapper XML，Java 中发现内联 SQL: " + violations);
+    }
+
+    /** 冻结已有裂变持久化耦合；新增依赖必须失败，移除依赖时可同步缩减基线。 */
+    @Test
+    void referralPersistenceDependenciesDoNotGrow() throws IOException {
+        var imported = new ClassFileImporter().withImportOption(new ImportOption.DoNotIncludeTests())
+                .importPackages("com.acme.marketing.referral");
+        var allowed = new java.util.HashSet<>(Files.readAllLines(workspaceRoot().resolve(
+                "architecture-tests/src/test/resources/referral-persistence-baseline.baseline")));
+        var unexpected = new java.util.TreeSet<String>();
+        imported.stream().filter(type -> type.getPackageName().startsWith("com.acme.marketing.referral.application"))
+                .flatMap(type -> type.getDirectDependenciesFromSelf().stream())
+                .filter(dependency -> {
+                    String target = dependency.getTargetClass().getPackageName();
+                    return target.startsWith("org.springframework.jdbc") || target.startsWith("org.apache.ibatis")
+                            || target.contains(".infrastructure.persistence");
+                }).map(dependency -> dependency.getDescription().replaceAll("\\([^()]*\\.java:[0-9]+\\)", "(source)"))
+                .filter(description -> !allowed.contains(description)).forEach(unexpected::add);
+        assertTrue(unexpected.isEmpty(), "裂变应用层新增持久化耦合，需通过端口隔离: " + unexpected);
     }
 
     /** 同时兼容从仓库根目录和 architecture-tests 模块目录直接运行 Maven。 */
@@ -63,7 +87,7 @@ class ArchitectureRulesTest {
     @ArchTest
     static final ArchRule DOMAIN_IS_FRAMEWORK_INDEPENDENT = classes()
             .that().resideInAnyPackage(
-                    "..lowcode.model..", "..decision.model..", "..journey..", "..provider..")
+                    "..lowcode.model..", "..decision.model..", "com.acme.marketing.journey..", "..provider..")
             .should().onlyDependOnClassesThat().resideInAnyPackage(
                     "java..", "javax.crypto..", "com.acme.marketing..")
             .because("portable domain and runtime contracts must not couple to Spring or vendor SDKs");

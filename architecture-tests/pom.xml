@@ -5,6 +5,10 @@
   <parent><groupId>com.acme.marketing</groupId><artifactId>marketing-lowcode-platform</artifactId><version>1.0.0-SNAPSHOT</version><relativePath>../pom.xml</relativePath></parent>
   <artifactId>architecture-tests</artifactId>
   <dependencies>
+    <dependency><groupId>com.acme.marketing</groupId><artifactId>edge-gateway</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>com.acme.marketing</groupId><artifactId>audience-flink-job</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>com.acme.marketing</groupId><artifactId>journey-runtime-flink-job</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>com.acme.marketing</groupId><artifactId>measurement-flink-job</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>com.acme.marketing</groupId><artifactId>platform-common</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>com.acme.marketing</groupId><artifactId>lowcode-language-core</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>com.acme.marketing</groupId><artifactId>decision-runtime-spi</artifactId><version>${project.version}</version></dependency>
