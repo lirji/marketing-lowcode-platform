@@ -1,7 +1,7 @@
 package com.acme.marketing.decision.runtime;
 
 import java.time.Instant;
-import java.util.List;
+import java.util.Optional;
 
 /** 决策侧受众成员投影的持久化端口。 */
 public interface AudienceMembershipStore {
@@ -10,8 +10,8 @@ public interface AudienceMembershipStore {
     void saveIfNewer(String tenantId, String audienceId, String subjectHash, boolean member,
             long version, Instant expiresAt, Instant updatedAt);
 
-    /** 查询指定水位之后发生变化的投影记录。 */
-    List<StoredMembership> findChangedSince(Instant updatedSince);
+    /** 按主键查询一个成员，避免时间水位遗漏迟提交事务以及启动全量扫描。 */
+    Optional<StoredMembership> find(String tenantId, String audienceId, String subjectHash);
 
     /** 决策侧持久化的受众成员投影。 */
     record StoredMembership(String tenantId, String audienceId, String subjectHash,

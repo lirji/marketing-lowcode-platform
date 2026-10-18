@@ -79,8 +79,10 @@ public class DecisionConfiguration {
     }
 
     @Bean
-    public AudienceMembershipProjection audienceMembershipProjection(AudienceMembershipStore store, Clock clock) {
-        return new AudienceMembershipProjection(store, clock);
+    public AudienceMembershipProjection audienceMembershipProjection(AudienceMembershipStore store, Clock clock,
+            @Value("${marketing.audience-projection.max-cache-entries:10000}") int maxEntries,
+            @Value("${marketing.audience-projection.cache-max-age-ms:1000}") long cacheAgeMs) {
+        return new AudienceMembershipProjection(store, clock, maxEntries, java.time.Duration.ofMillis(cacheAgeMs));
     }
 
     @Bean

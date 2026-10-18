@@ -7,7 +7,7 @@ import com.acme.marketing.decision.infrastructure.persistence.mapper.DecisionMap
 import com.acme.marketing.decision.infrastructure.persistence.mapper.DecisionMapper.AudienceMembershipWrite;
 import com.acme.marketing.decision.runtime.AudienceMembershipStore;
 import java.time.Instant;
-import java.util.List;
+import java.util.Optional;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Repository;
 
@@ -39,9 +39,9 @@ public class MybatisAudienceMembershipStore implements AudienceMembershipStore {
     }
 
     @Override
-    public List<StoredMembership> findChangedSince(Instant updatedSince) {
-        return mapper.selectAudienceMembershipsChangedSince(format(updatedSince)).stream()
-                .map(MybatisAudienceMembershipStore::toStored).toList();
+    public Optional<StoredMembership> find(String tenantId, String audienceId, String subjectHash) {
+        return Optional.ofNullable(mapper.selectAudienceMembership(tenantId, audienceId, subjectHash))
+                .map(MybatisAudienceMembershipStore::toStored);
     }
 
     private static StoredMembership toStored(AudienceMembershipRow row) {

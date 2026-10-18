@@ -50,8 +50,9 @@ public interface DecisionMapper {
     /** 插入受众成员投影。 */
     int insertAudienceMembership(AudienceMembershipWrite membership);
 
-    /** 查询水位之后变化的受众成员投影。 */
-    List<AudienceMembershipRow> selectAudienceMembershipsChangedSince(@Param("updatedSince") String updatedSince);
+    /** 按完整主键读取单个成员，数据库保证最多一行。 */
+    AudienceMembershipRow selectAudienceMembership(@Param("tenantId") String tenantId,
+            @Param("audienceId") String audienceId, @Param("subjectHash") String subjectHash);
 
     /** 加锁读取紧急开关。 */
     KillSwitchStateRow selectKillSwitchForUpdate(@Param("tenantId") String tenantId,

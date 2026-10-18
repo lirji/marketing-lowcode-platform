@@ -211,7 +211,7 @@
         )
     </insert>
 
-    <select id="selectAudienceMembershipsChangedSince"
+    <select id="selectAudienceMembership" timeout="2" flushCache="true" useCache="false"
             resultType="com.acme.marketing.decision.infrastructure.persistence.mapper.DecisionMapper$AudienceMembershipRow">
         SELECT
             tenant_id AS tenantId,
@@ -222,8 +222,9 @@
             expires_at AS expiresAt,
             updated_at AS updatedAt
         FROM mk_audience_membership_projection
-        WHERE updated_at >= #{updatedSince}
-        ORDER BY updated_at
+        WHERE tenant_id = #{tenantId}
+          AND audience_id = #{audienceId}
+          AND subject_hash = #{subjectHash}
     </select>
 
     <select id="selectKillSwitchForUpdate"

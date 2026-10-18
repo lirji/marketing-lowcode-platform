@@ -62,6 +62,8 @@ public class DecisionRequestExecutor {
         this.clock = clock;
         this.decisions = decisions;
         this.transactions = new TransactionTemplate(transactionManager);
+        // 幂等行仍由唯一键与 FOR UPDATE 串行化；人群回源需看到最新提交的撤销，不能沿用旧快照。
+        this.transactions.setIsolationLevel(org.springframework.transaction.TransactionDefinition.ISOLATION_READ_COMMITTED);
         this.redis = redisProvider.getIfAvailable();
         this.store = Store.valueOf(store.toUpperCase(Locale.ROOT));
         if (this.store == Store.REDIS && this.redis == null) {
