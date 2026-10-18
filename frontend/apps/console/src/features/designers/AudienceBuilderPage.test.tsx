@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -42,6 +42,20 @@ function renderAudience() {
 }
 
 describe('AudienceBuilderPage', () => {
+  it('offers ordered comparisons only for number and instant fields', async () => {
+    mocks.audiences.mockResolvedValue([{ segmentId: 'recent', version: 1, name: 'Recent', status: 'ACTIVE',
+      rule: { match: 'ALL', conditions: [{ fieldId: 'joined', operator: 'GT', value: '2026-01-01T00:00:00Z' }] },
+    }])
+    mocks.fields.mockResolvedValue([{ fieldId: 'joined', valueType: 'INSTANT' }, { fieldId: 'flag', valueType: 'BOOLEAN' }])
+    renderAudience()
+    const operator = await screen.findByLabelText('条件 1 算子')
+    expect(within(operator).getByRole('option', { name: '>' })).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByLabelText('条件 1 字段'), 'flag')
+    expect(operator).toHaveValue('=')
+    expect(within(operator).queryByRole('option', { name: '>' })).not.toBeInTheDocument()
+    expect(within(operator).getByRole('option', { name: 'IN' })).toBeInTheDocument()
+  })
+
   beforeEach(() => {
     mocks.audiences.mockReset()
     mocks.fields.mockReset()

@@ -11,6 +11,10 @@ type Condition = { id: number; field: string; operator: string; value: string }
 type PreviewView = { estimatedCount: number; sampleSubjectTokens: string[] }
 
 const UI_OPERATORS = ['=', '!=', '>', '>=', '<', '<=', 'IN'] as const
+const ORDERED_VALUE_TYPES: ReadonlySet<string> = new Set(['DECIMAL', 'INSTANT'])
+function allowedOperators(valueType?: string): readonly string[] {
+  return valueType && ORDERED_VALUE_TYPES.has(valueType) ? UI_OPERATORS : ['=', '!=', 'IN']
+}
 const TO_API: Record<string, string> = { '=': 'EQ', '!=': 'NE', '>': 'GT', '>=': 'GTE', '<': 'LT', '<=': 'LTE', IN: 'IN' }
 const TO_UI: Record<string, string> = { EQ: '=', NE: '!=', GT: '>', GTE: '>=', LT: '<', LTE: '<=', IN: 'IN' }
 
@@ -138,7 +142,12 @@ export function AudienceBuilderPage() {
     setHydrated(true)
   }, [audiences.data, audiences.isPending, hydrated])
 
-  const update = (id: number, key: keyof Condition, value: string) => setConditions((items) => items.map((item) => item.id === id ? { ...item, [key]: value } : item))
+  const update = (id: number, key: keyof Condition, value: string) => setConditions((items) => items.map((item) => {
+    if (item.id !== id) return item
+    const updated = { ...item, [key]: value }
+    if (key === 'field' && !allowedOperators(fields.data?.find((field) => field.fieldId === value)?.valueType).includes(item.operator)) updated.operator = '='
+    return updated
+  }))
   const save = useMutation({
     mutationFn: async () => {
       const id = segmentId || `seg-${crypto.randomUUID().slice(0, 8)}`
@@ -204,7 +213,7 @@ export function AudienceBuilderPage() {
     </div>}
     <div className="builder-layout">
       <Panel className="condition-panel"><PanelHeader eyebrow="条件树" title="圈选规则" aside={<div className="segmented"><button className={match === 'ALL' ? 'active' : ''} onClick={() => setMatch('ALL')}>同时满足</button><button className={match === 'ANY' ? 'active' : ''} onClick={() => setMatch('ANY')}>任一满足</button></div>} />
-        <div className="condition-group"><div className="group-rail"><span>{match === 'ALL' ? 'AND' : 'OR'}</span></div><div className="condition-list">{conditions.length === 0 ? <EmptyState title="还没有圈选条件" detail={fieldOptions.length ? '从已注册字段添加条件，保存后才会写入控制面。' : '暂无已注册字段，字段目录加载完成前无法添加条件。'} /> : conditions.map((condition, index) => <div className="condition-row" key={condition.id}><span>{index + 1}</span><select aria-label={`条件 ${index + 1} 字段`} value={condition.field} onChange={(event) => update(condition.id, 'field', event.target.value)}>{fieldOptions.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}{fieldOptions.some((field) => field.id === condition.field) ? null : condition.field ? <option value={condition.field}>{condition.field}</option> : null}</select><select aria-label={`条件 ${index + 1} 算子`} value={condition.operator} onChange={(event) => update(condition.id, 'operator', event.target.value)}>{UI_OPERATORS.map((item) => <option key={item}>{item}</option>)}</select><input aria-label={`条件 ${index + 1} 值`} value={condition.value} onChange={(event) => update(condition.id, 'value', event.target.value)} /><Badge tone={fieldMeta(condition.field)?.classification === 'PERSONAL' || fieldMeta(condition.field)?.classification === 'SENSITIVE' ? 'warn' : 'neutral'}>{fieldAge(fieldMeta(condition.field)?.maxAgeSeconds)}</Badge><button aria-label={`删除条件 ${index + 1}`} onClick={() => setConditions((items) => items.filter((item) => item.id !== condition.id))}><Trash2 size={14} /></button></div>)}</div></div>
+        <div className="condition-group"><div className="group-rail"><span>{match === 'ALL' ? 'AND' : 'OR'}</span></div><div className="condition-list">{conditions.length === 0 ? <EmptyState title="还没有圈选条件" detail={fieldOptions.length ? '从已注册字段添加条件，保存后才会写入控制面。' : '暂无已注册字段，字段目录加载完成前无法添加条件。'} /> : conditions.map((condition, index) => <div className="condition-row" key={condition.id}><span>{index + 1}</span><select aria-label={`条件 ${index + 1} 字段`} value={condition.field} onChange={(event) => update(condition.id, 'field', event.target.value)}>{fieldOptions.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}{fieldOptions.some((field) => field.id === condition.field) ? null : condition.field ? <option value={condition.field}>{condition.field}</option> : null}</select><select aria-label={`条件 ${index + 1} 算子`} value={condition.operator} onChange={(event) => update(condition.id, 'operator', event.target.value)}>{allowedOperators(fieldMeta(condition.field)?.valueType).map((item) => <option key={item}>{item}</option>)}{!allowedOperators(fieldMeta(condition.field)?.valueType).includes(condition.operator) && <option value={condition.operator}>{condition.operator}（当前字段不支持）</option>}</select><input aria-label={`条件 ${index + 1} 值`} value={condition.value} onChange={(event) => update(condition.id, 'value', event.target.value)} /><Badge tone={fieldMeta(condition.field)?.classification === 'PERSONAL' || fieldMeta(condition.field)?.classification === 'SENSITIVE' ? 'warn' : 'neutral'}>{fieldAge(fieldMeta(condition.field)?.maxAgeSeconds)}</Badge><button aria-label={`删除条件 ${index + 1}`} onClick={() => setConditions((items) => items.filter((item) => item.id !== condition.id))}><Trash2 size={14} /></button></div>)}</div></div>
         <Button tone="ghost" disabled={!fieldOptions[0]?.id} title={fieldOptions[0]?.id ? '添加条件' : '暂无已注册字段'} onClick={() => {
           const fieldId = fieldOptions[0]?.id
           if (!fieldId) return
