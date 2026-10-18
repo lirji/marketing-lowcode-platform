@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { DefinitionBundle, ReleaseView } from '../../shared/api/schemas'
-import { CampaignCreateReadiness, definitionsHaveRelease } from './CampaignReadiness'
+import { CampaignCreateReadiness } from './CampaignReadiness'
+import { definitionsHaveRelease } from './campaignReleaseReadiness'
 
 function definition(definitionId: string, version: number): DefinitionBundle {
   return { definitionId, version } as DefinitionBundle

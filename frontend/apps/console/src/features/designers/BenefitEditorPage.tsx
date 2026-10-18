@@ -7,7 +7,8 @@ import { ApiProblem, api } from '../../shared/api/client'
 import { catalogProblemDetail, problemDetail } from '../../shared/api/problem'
 import { useAuth } from '../../shared/auth/useAuth'
 import type { BenefitView } from '../../shared/api/schemas'
-import { SkuPickerField, skuFaceValue, validityLabel } from './SkuPickerField'
+import { SkuPickerField } from './SkuPickerField'
+import { skuFaceValue, validityLabel } from './skuDisplay'
 
 type Form = {
   benefitId: string

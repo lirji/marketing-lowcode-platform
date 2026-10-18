@@ -5,7 +5,7 @@ import { Badge, Button, EmptyState, Panel, PanelHeader, StateBanner } from '../.
 import { api } from '../../shared/api/client'
 import { problemDetail } from '../../shared/api/problem'
 import { useAuth } from '../../shared/auth/useAuth'
-import { runtimeConfig } from '../../shared/config/runtime'
+import { benefitOrderHref, riskDecisionHref } from './awardIntentLinks'
 import type { AwardIntentView } from '../../shared/api/schemas'
 
 const PAGE_SIZE = 20
@@ -31,23 +31,6 @@ function riskBannerTitle(action?: AwardIntentView['riskAction']) {
 
 function shortHash(value: string) {
   return value.length <= 12 ? value : `${value.slice(0, 8)}…`
-}
-
-export function benefitOrderHref(item: AwardIntentView, origin = runtimeConfig.benefitConsoleOrigin) {
-  if (!origin) return ''
-  if (item.benefitOrderNo) {
-    return `${origin}/orders?orderNo=${encodeURIComponent(item.benefitOrderNo)}`
-  }
-  if (item.status === 'DEAD') {
-    const params = new URLSearchParams({ q: item.sourceRequestId, sourceSystem: item.sourceSystem })
-    return `${origin}/orders?${params}`
-  }
-  return ''
-}
-
-export function riskDecisionHref(item: AwardIntentView, origin = runtimeConfig.riskConsoleOrigin) {
-  if (!origin || item.status !== 'RISK_BLOCKED') return ''
-  return `${origin}/decisions?q=${encodeURIComponent(item.sourceRequestId)}`
 }
 
 export function AwardIntentsPanel() {

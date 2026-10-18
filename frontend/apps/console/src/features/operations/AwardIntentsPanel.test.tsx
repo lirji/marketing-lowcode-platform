@@ -27,7 +27,8 @@ vi.mock('../../shared/api/client', async (importOriginal) => {
   }
 })
 
-import { AwardIntentsPanel, benefitOrderHref, riskDecisionHref } from './AwardIntentsPanel'
+import { AwardIntentsPanel } from './AwardIntentsPanel'
+import { benefitOrderHref, riskDecisionHref } from './awardIntentLinks'
 
 const campaign: Campaign = {
   id: 'CMP-1',

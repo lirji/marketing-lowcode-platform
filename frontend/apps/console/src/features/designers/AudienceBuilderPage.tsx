@@ -22,7 +22,7 @@ function toUiOperator(value: string) {
   return TO_UI[value] ?? value
 }
 
-export function fromAudience(item: AudienceView): Condition[] {
+function fromAudience(item: AudienceView): Condition[] {
   return (item.rule?.conditions ?? []).map((condition, index) => ({
     id: index + 1,
     field: condition.fieldId,

@@ -1,26 +1,8 @@
+import { skuFaceValue, validityLabel } from './skuDisplay'
 import { Badge, EmptyState, StateBanner } from '../../components/ui'
 import type { BenefitSku } from '../../shared/api/schemas'
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
-
-function money(minor: number | null | undefined, currency: string | null | undefined) {
-  if (minor == null) return '—'
-  const amount = (minor / 100).toFixed(2)
-  return `${currency || 'CNY'} ${amount}`
-}
-
-function formatInstant(value: string | null | undefined) {
-  if (!value) return '—'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN')
-}
-
-function validityLabel(sku: BenefitSku) {
-  if (sku.validityType === 'RELATIVE') {
-    return `领取后 ${sku.relativeDays ?? '—'} 天`
-  }
-  return `${formatInstant(sku.validFrom)} ~ ${formatInstant(sku.validTo)}`
-}
 
 export function TemplateSummary({ sku }: { sku: BenefitSku }) {
   const weekdays = sku.usableWeekdays.length > 0
@@ -38,7 +20,7 @@ export function TemplateSummary({ sku }: { sku: BenefitSku }) {
       </div>
       <div>
         <span>面额</span>
-        <strong>{money(sku.faceValueMinor, sku.currency)}</strong>
+        <strong>{skuFaceValue(sku.faceValueMinor, sku.currency)}</strong>
       </div>
       <div>
         <span>限额</span>
@@ -91,7 +73,7 @@ export function SkuPickerField({
           {orphan && <option value={value}>{value}（当前绑定，已不在已投放列表）</option>}
           {skus.map((item) => (
             <option key={item.skuId} value={item.skuId}>
-              {item.skuId} · {item.benefitType} · {money(item.faceValueMinor, item.currency)}
+              {item.skuId} · {item.benefitType} · {skuFaceValue(item.faceValueMinor, item.currency)}
             </option>
           ))}
         </select>
@@ -101,5 +83,3 @@ export function SkuPickerField({
     </div>
   )
 }
-
-export { validityLabel, money as skuFaceValue }

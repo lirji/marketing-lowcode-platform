@@ -25,7 +25,7 @@ const STAGE_PROBLEM_HINTS: Record<string, string> = {
   ARTIFACT_SIGNATURE_INVALID: '编译器签名不可信，请停止发布并检查密钥。',
 }
 
-export function releaseChoice(dialect: string): RuntimeChoice | undefined {
+function releaseChoice(dialect: string): RuntimeChoice | undefined {
   if (dialect === 'OFFER_DECISION_DAG') return { runtime: 'decision', format: 'OFFER_POLICY' }
   if (dialect === 'JOURNEY_STATE_MACHINE') return { runtime: 'journey', format: 'JOURNEY_PLAN' }
   return undefined
