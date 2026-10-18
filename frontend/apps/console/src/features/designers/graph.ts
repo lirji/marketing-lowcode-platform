@@ -27,15 +27,16 @@ export function toGraphDefinition(input: {
   nodes: DesignerNode[]
   edges: Edge[]
   title: string
+  original?: GraphDefinition
 }): GraphDefinition {
   const types = DIALECT_TYPES[input.dialect] ?? TYPE_BY_TONE
   const nodes = input.nodes.map((node) => ({
     id: node.id,
     stableTypeId: node.data.stableTypeId ?? types[node.data.tone] ?? 'offer.condition',
-    semanticVersion: '1.0.0',
+    semanticVersion: node.data.semanticVersion ?? input.original?.nodes.find((saved) => saved.id === node.id)?.semanticVersion ?? '1.0.0',
     config: node.data.config,
   }))
-  if (input.dialect === 'OFFER_DECISION_DAG' && !nodes.some((node) => node.stableTypeId === 'offer.end')) {
+  if (!input.original && input.dialect === 'OFFER_DECISION_DAG' && !nodes.some((node) => node.stableTypeId === 'offer.end')) {
     nodes.push({ id: `${input.definitionId}-end`, stableTypeId: 'offer.end', semanticVersion: '1.0.0', config: {} })
   }
   const edges = input.edges.map((edge) => ({
@@ -46,13 +47,13 @@ export function toGraphDefinition(input: {
     targetPort: String(edge.targetHandle ?? 'in'),
   }))
   return {
-    definitionId: input.definitionId,
+    definitionId: input.original?.definitionId ?? input.definitionId,
     dialect: input.dialect,
-    dialectVersion: '1.0.0',
+    dialectVersion: input.original?.dialectVersion ?? '1.0.0',
     nodes,
     edges,
-    variables: {},
-    annotations: { title: input.title, terms: input.title },
+    variables: { ...input.original?.variables },
+    annotations: input.original ? { ...input.original.annotations } : { title: input.title, terms: input.title },
   }
 }
 
@@ -81,7 +82,7 @@ export function toneForType(stableTypeId: string): DesignerNode['data']['tone'] 
 }
 
 export function fromGraphDefinition(graph: GraphDefinition): SnapshotLike {
-  const nodes: DesignerNode[] = graph.nodes.filter((node) => node.stableTypeId !== 'offer.end').map((node, index) => ({
+  const nodes: DesignerNode[] = graph.nodes.map((node, index) => ({
     id: node.id,
     type: 'marketing',
     position: { x: 40 + (index % 4) * 210, y: 80 + Math.floor(index / 4) * 140 },
@@ -91,6 +92,7 @@ export function fromGraphDefinition(graph: GraphDefinition): SnapshotLike {
       tone: toneForType(node.stableTypeId),
       config: node.config,
       stableTypeId: node.stableTypeId,
+      semanticVersion: node.semanticVersion,
     },
   }))
   const edges: Edge[] = graph.edges.map((edge) => ({

@@ -6,4 +6,5 @@ export type DesignerNode = Node<{
   tone: 'teal' | 'blue' | 'amber' | 'violet' | 'slate'
   config: Record<string, string>
   stableTypeId?: string
+  semanticVersion?: string
 }, 'marketing'>

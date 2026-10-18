@@ -12,6 +12,7 @@ import { api, optionalResource } from '../../shared/api/client'
 import { fromGraphDefinition, toGraphDefinition, toneForType } from './graph'
 import type { DesignerNode } from './designerTypes'
 import type { Problem } from '../../shared/model/types'
+import { graphDefinitionSchema, type GraphDefinition } from '../../shared/api/schemas'
 import { useAuth } from '../../shared/auth/useAuth'
 
 export type { DesignerNode }
@@ -60,6 +61,7 @@ export function LowCodeDesigner({
   const [loadError, setLoadError] = useState<string>()
   const history = useRef<Snapshot[]>([])
   const future = useRef<Snapshot[]>([])
+  const originalGraph = useRef<GraphDefinition | undefined>(undefined)
   const selected = nodes.find((node) => node.id === selectedId)
   const canWrite = auth.hasPermission('definition:write')
   const live = !api.demoMode && Boolean(campaignId) && canWrite
@@ -69,22 +71,25 @@ export function LowCodeDesigner({
     enabled: !api.demoMode && auth.hasPermission('definition:read'),
   })
   const livePalette = (registry.data ?? [])
-    .filter((item) => item.dialects.includes(dialect) && item.stableTypeId !== 'offer.end')
+    .filter((item) => item.dialects.includes(dialect))
     .map((item) => ({
       label: item.stableTypeId.split('.').pop() ?? item.stableTypeId,
       subtitle: `${item.stableTypeId}@${item.semanticVersion}`,
       tone: toneForType(item.stableTypeId),
       stableTypeId: item.stableTypeId,
+      semanticVersion: item.semanticVersion,
     }))
-  const paletteItems = livePalette.length > 0 ? livePalette : palette.map((item) => ({ ...item, stableTypeId: undefined as string | undefined }))
+  const paletteItems = livePalette.length > 0 ? livePalette : palette.map((item) => ({ ...item, stableTypeId: undefined as string | undefined, semanticVersion: undefined as string | undefined }))
 
   useEffect(() => {
     let active = true
+    originalGraph.current = undefined
     const restore = async () => {
       if (!api.demoMode && campaignId) {
         try {
           const bundle = await optionalResource(() => api.latestDefinition(campaignId, dialect))
           if (active && bundle?.graph) {
+            originalGraph.current = bundle.graph
             const snapshot = fromGraphDefinition(bundle.graph)
             if (snapshot.nodes.length > 0) {
               setNodes(snapshot.nodes)
@@ -104,8 +109,10 @@ export function LowCodeDesigner({
       try {
         const raw = localStorage.getItem(draftKey)
         if (!raw) return
-        const parsed = JSON.parse(raw) as Snapshot
+        const parsed = JSON.parse(raw) as Snapshot & { graph?: unknown }
         if (Array.isArray(parsed.nodes) && Array.isArray(parsed.edges)) {
+          const storedGraph = graphDefinitionSchema.safeParse(parsed.graph)
+          if (storedGraph.success && storedGraph.data.dialect === dialect) originalGraph.current = storedGraph.data
           setNodes(parsed.nodes)
           setEdges(parsed.edges)
           setStatus('dirty')
@@ -126,8 +133,8 @@ export function LowCodeDesigner({
     return () => window.removeEventListener('beforeunload', onLeave)
   }, [status])
 
-  const graph = () => toGraphDefinition({ definitionId, dialect, nodes, edges, title })
-  const persistDraft = () => localStorage.setItem(draftKey, JSON.stringify({ nodes, edges }))
+  const graph = () => toGraphDefinition({ definitionId, dialect, nodes, edges, title, original: originalGraph.current })
+  const persistDraft = () => localStorage.setItem(draftKey, JSON.stringify({ nodes, edges, graph: graph() }))
   const persistDefinition = async () => {
     persistDraft()
     if (!live || !campaignId) return { version: savedVersion }
@@ -143,7 +150,7 @@ export function LowCodeDesigner({
       const saved = await persistDefinition()
       setSavedVersion(saved.version)
       if (!live || saved.version == null) throw new Error('演示模式不会调用校验服务')
-      return api.validate(definitionId, saved.version)
+      return api.validate(graph().definitionId, saved.version)
     },
     onSuccess: (value) => {
       setServerProblems(value.issues.map((issue) => ({ code: issue.code, message: issue.message, pointer: issue.pointer, severity: issue.severity === 'ERROR' ? 'ERROR' : 'WARNING' })))
@@ -156,7 +163,7 @@ export function LowCodeDesigner({
     mutationFn: async () => {
       if (savedVersion == null) throw new Error('请先保存并校验后再仿真')
       if (!live) throw new Error('演示模式不会调用仿真服务')
-      return api.simulate(definitionId, savedVersion, { amountMinor: '68800', 'member.level': 'PLUS' })
+      return api.simulate(graph().definitionId, savedVersion, { amountMinor: '68800', 'member.level': 'PLUS' })
     },
     onSuccess: (value) => {
       setStatus('simulated')
@@ -172,7 +179,7 @@ export function LowCodeDesigner({
       if (savedVersion == null) throw new Error('请先保存并校验')
       if (!live) throw new Error('演示模式不会提交审核')
       if (!auth.hasPermission('definition:submit')) throw new Error('缺少 definition:submit 权限')
-      return api.submit(definitionId, savedVersion)
+      return api.submit(graph().definitionId, savedVersion)
     },
     onSuccess: (value) => { setNotice(`已提交审核 ${value.caseId}`) },
   })
@@ -181,7 +188,7 @@ export function LowCodeDesigner({
   const undo = () => { const snapshot = history.current.pop(); if (!snapshot) return; future.current.push({ nodes, edges }); setNodes(snapshot.nodes); setEdges(snapshot.edges); setStatus('dirty') }
   const redo = () => { const snapshot = future.current.pop(); if (!snapshot) return; history.current.push({ nodes, edges }); setNodes(snapshot.nodes); setEdges(snapshot.edges); setStatus('dirty') }
   const connect = (connection: Connection) => { if (connection.source === connection.target) return; remember(); setEdges((current) => addEdge({ ...connection, animated: true, style: { stroke: '#63827e' } }, current)); setStatus('dirty') }
-  const addNode = (item: (typeof paletteItems)[number]) => { remember(); const id = `${dialect.toLowerCase()}-${Date.now()}`; setNodes((current) => [...current, { id, type: 'marketing', position: { x: 130 + current.length * 35, y: 90 + (current.length % 4) * 85 }, data: { label: item.label, subtitle: item.subtitle, tone: item.tone, config: {}, stableTypeId: item.stableTypeId } }]); setSelectedId(id); setStatus('dirty') }
+  const addNode = (item: (typeof paletteItems)[number]) => { remember(); const id = `${dialect.toLowerCase()}-${Date.now()}`; setNodes((current) => [...current, { id, type: 'marketing', position: { x: 130 + current.length * 35, y: 90 + (current.length % 4) * 85 }, data: { label: item.label, subtitle: item.subtitle, tone: item.tone, config: {}, stableTypeId: item.stableTypeId, semanticVersion: item.semanticVersion } }]); setSelectedId(id); setStatus('dirty') }
   const remove = () => { if (!selectedId) return; remember(); setNodes((current) => current.filter((node) => node.id !== selectedId)); setEdges((current) => current.filter((edge) => edge.source !== selectedId && edge.target !== selectedId)); setSelectedId(''); setStatus('dirty') }
   const updateConfig = (name: string, value: string) => { setNodes((current) => current.map((node) => node.id === selectedId ? { ...node, data: { ...node.data, config: { ...node.data.config, [name]: value } } } : node)); setStatus('dirty') }
   const displayedProblems = serverProblems.length > 0 ? serverProblems : problems
