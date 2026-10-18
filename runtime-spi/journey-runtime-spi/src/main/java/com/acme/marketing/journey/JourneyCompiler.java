@@ -4,15 +4,21 @@ import com.acme.marketing.lowcode.model.Dialect;
 import com.acme.marketing.lowcode.model.GraphDefinition;
 import com.acme.marketing.lowcode.model.GraphEdge;
 import com.acme.marketing.lowcode.model.GraphNode;
+import com.acme.marketing.lowcode.validation.JourneyGraphValidator;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 
 public final class JourneyCompiler {
+    /** 编译入口再次校验必需路由，避免绕过控制面直接生成不可执行制品。 */
     public JourneyPlan compile(GraphDefinition graph, long version) {
         if (graph.dialect() != Dialect.JOURNEY_STATE_MACHINE) {
             throw new IllegalArgumentException("JOURNEY dialect required");
+        }
+        var issues = JourneyGraphValidator.validate(graph);
+        if (!issues.isEmpty()) {
+            throw new IllegalArgumentException(issues.getFirst().code() + ": " + issues.getFirst().message());
         }
         Map<String, Map<String, String>> routes = new LinkedHashMap<>();
         for (GraphEdge edge : graph.edges()) {

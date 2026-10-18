@@ -48,6 +48,9 @@ public final class GraphValidator {
         validateEdges(graph, nodesById, issues);
         validateReachability(graph, nodesById, issues);
         validateCycles(graph, nodesById, issues);
+        if (graph.dialect() == Dialect.JOURNEY_STATE_MACHINE) {
+            issues.addAll(JourneyGraphValidator.validate(graph));
+        }
         return List.copyOf(issues);
     }
 
