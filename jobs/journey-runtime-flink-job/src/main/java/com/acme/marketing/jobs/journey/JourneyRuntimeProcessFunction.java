@@ -45,6 +45,9 @@ public final class JourneyRuntimeProcessFunction
             valueState.update(result.state());
             synchronizeTimers(before, result.state(), context);
             emit(key, message.signal().signalId(), result, output);
+        } catch (JourneyInfrastructureException unavailable) {
+            // 基础设施故障必须中断 checkpoint 推进，恢复后重放输入/定时器，不能作为坏消息跳过。
+            throw unavailable;
         } catch (JourneyExecutionPausedException paused) {
             throw paused;
         } catch (RuntimeException failure) {
@@ -67,6 +70,9 @@ public final class JourneyRuntimeProcessFunction
             valueState.update(result.state());
             synchronizeTimers(before, result.state(), context);
             emit(key, "timer:" + before.activeTimerKey() + ':' + timestamp, result, output);
+        } catch (JourneyInfrastructureException unavailable) {
+            // 基础设施故障必须中断 checkpoint 推进，恢复后重放输入/定时器，不能作为坏消息跳过。
+            throw unavailable;
         } catch (JourneyExecutionPausedException paused) {
             long now = context.timerService().currentProcessingTime();
             long resumeAt = Math.min(now + 5_000, before.expiresAtEpochMillis() - 1);

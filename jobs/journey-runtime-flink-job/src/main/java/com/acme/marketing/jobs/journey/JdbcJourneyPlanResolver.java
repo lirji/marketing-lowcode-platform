@@ -7,14 +7,14 @@ import com.acme.marketing.journey.JourneyPlan;
 import com.acme.marketing.journey.JourneyReleaseVerifier;
 import com.acme.marketing.platform.crypto.TrustedPublicKeys;
 import java.nio.charset.StandardCharsets;
-import java.sql.DriverManager;
-import java.sql.SQLException;
+import com.acme.marketing.jobs.journey.persistence.JourneyRuntimeReader;
+import com.acme.marketing.jobs.journey.persistence.JourneyRuntimeMapper.RuntimeRow;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** Resolves current starts and immutable, historically activated plans for pinned enrollments. */
+/** 核验当前激活指针，同时允许历史已激活计划继续驱动已绑定版本的旅程。 */
 final class JdbcJourneyPlanResolver implements JourneyPlanResolver {
     private static final long serialVersionUID = 1L;
     private static final int MAX_CACHE_ENTRIES = 128;
@@ -32,6 +32,7 @@ final class JdbcJourneyPlanResolver implements JourneyPlanResolver {
     private final String environment;
     private final String cell;
     private final String namespace;
+    private transient JourneyRuntimeReader reader;
     private transient Map<String, CachedPlan> cache;
     private transient Map<String, KillStatus> killSwitchCache;
 
@@ -109,67 +110,41 @@ final class JdbcJourneyPlanResolver implements JourneyPlanResolver {
             cached.assertEnabledIsFalse();
             return;
         }
-        String sql = "select enabled_value,reason_text from mk_journey_runtime_kill_switch where tenant_id=? and namespace_name=?";
-        try (var connection = DriverManager.getConnection(databaseUrl, databaseUser, databasePassword);
-                var statement = connection.prepareStatement(sql)) {
-            statement.setString(1, tenantId);
-            statement.setString(2, namespace);
-            try (var result = statement.executeQuery()) {
-                KillStatus status = result.next()
-                        ? new KillStatus(result.getBoolean(1), result.getString(2), now)
-                        : new KillStatus(false, "", now);
-                killSwitchCache().put(tenantId, status);
-                status.assertEnabledIsFalse();
-            }
-        } catch (SQLException failure) {
-            // Once the short freshness window closes, a control-plane lookup failure pauses execution.
-            // This keeps the hot path bounded without extending an unknown kill-switch state.
-            throw new IllegalStateException("journey kill switch lookup failed", failure);
-        }
+        var row = reader().killSwitch(tenantId, namespace);
+        KillStatus status = row == null ? new KillStatus(false, "", now)
+                : new KillStatus(row.enabled(), row.reason(), now);
+        killSwitchCache().put(tenantId, status);
+        status.assertEnabledIsFalse();
     }
 
     private void assertCurrent(String tenantId, JourneyJobInput.PlanReference reference) {
-        String sql = "select slot.desired_generation,slot.activation_sequence,generation.artifact_id from mk_journey_runtime_slot slot join mk_journey_runtime_generation generation on generation.tenant_id=slot.tenant_id and generation.environment_name=slot.environment_name and generation.cell_id=slot.cell_id and generation.namespace_name=slot.namespace_name and generation.generation_no=slot.desired_generation where slot.tenant_id=? and slot.environment_name=? and slot.cell_id=? and slot.namespace_name=? and slot.desired_generation>0";
-        try (var connection = DriverManager.getConnection(databaseUrl, databaseUser, databasePassword);
-                var statement = connection.prepareStatement(sql)) {
-            statement.setString(1, tenantId);
-            statement.setString(2, environment);
-            statement.setString(3, cell);
-            statement.setString(4, namespace);
-            try (var result = statement.executeQuery()) {
-                if (!result.next()) throw new IllegalArgumentException("active journey runtime pointer was not found");
-                if (result.getLong(1) != reference.generation()
-                        || result.getLong(2) != reference.activationSequence()
-                        || !result.getString(3).equals(reference.artifactId())) {
-                    throw new IllegalArgumentException("journey plan reference is not the current desired generation");
-                }
-            }
-        } catch (SQLException failure) {
-            throw new IllegalStateException("journey runtime pointer lookup failed", failure);
+        var row = reader().current(tenantId, environment, cell, namespace);
+        if (row == null) throw new IllegalArgumentException("active journey runtime pointer was not found");
+        if (row.generation() != reference.generation() || row.activationSequence() != reference.activationSequence()
+                || !row.artifactId().equals(reference.artifactId())) {
+            throw new IllegalArgumentException("journey plan reference is not the current desired generation");
         }
     }
 
     private RuntimeRow activated(String tenantId, JourneyJobInput.PlanReference reference) {
-        String sql = "select generation.generation_no,activation.activation_sequence,activation.directive_json,generation.release_key_id,generation.manifest_json,generation.artifact_payload,generation.artifact_id from mk_journey_runtime_generation generation join mk_journey_runtime_activation activation on activation.tenant_id=generation.tenant_id and activation.environment_name=generation.environment_name and activation.cell_id=generation.cell_id and activation.namespace_name=generation.namespace_name and activation.generation_no=generation.generation_no where generation.tenant_id=? and generation.environment_name=? and generation.cell_id=? and generation.namespace_name=? and generation.generation_no=? and activation.activation_sequence=? and generation.artifact_id=?";
-        try (var connection = DriverManager.getConnection(databaseUrl, databaseUser, databasePassword);
-                var statement = connection.prepareStatement(sql)) {
-            statement.setString(1, tenantId);
-            statement.setString(2, environment);
-            statement.setString(3, cell);
-            statement.setString(4, namespace);
-            statement.setLong(5, reference.generation());
-            statement.setLong(6, reference.activationSequence());
-            statement.setString(7, reference.artifactId());
-            try (var result = statement.executeQuery()) {
-                if (!result.next()) {
-                    throw new IllegalArgumentException("activated journey generation was not found");
-                }
-                return new RuntimeRow(result.getLong(1), result.getLong(2), result.getString(3),
-                        result.getString(4), result.getString(5), result.getBytes(6), result.getString(7));
+        RuntimeRow row = reader().activated(tenantId, environment, cell, namespace, reference.generation(),
+                reference.activationSequence(), reference.artifactId());
+        if (row == null) throw new IllegalArgumentException("activated journey generation was not found");
+        return row;
+    }
+
+    private JourneyRuntimeReader reader() {
+        if (reader == null) {
+            try {
+                reader = new JourneyRuntimeReader(databaseUrl, databaseUser, databasePassword);
+            } catch (JourneyInfrastructureException unavailable) {
+                throw unavailable;
+            } catch (RuntimeException invalidConfiguration) {
+                // 配置/XML 错误属于整个作业的故障，不能逐条转成坏消息并推进消费位点。
+                throw new JourneyInfrastructureException(invalidConfiguration);
             }
-        } catch (SQLException failure) {
-            throw new IllegalStateException("activated journey generation lookup failed", failure);
         }
+        return reader;
     }
 
     private Map<String, CachedPlan> cache() {
@@ -205,11 +180,6 @@ final class JdbcJourneyPlanResolver implements JourneyPlanResolver {
         return value == null ? "" : value.trim();
     }
 
-    private record RuntimeRow(long generation, long activationSequence, String directiveJson,
-            String releaseKeyId, String manifestJson, byte[] payload, String artifactId) {
-        private RuntimeRow { payload = payload.clone(); }
-        @Override public byte[] payload() { return payload.clone(); }
-    }
     private record CachedPlan(JourneyJobInput.PlanReference reference, JourneyPlan plan, Instant expiresAt) { }
     private record KillStatus(boolean enabled, String reason, Instant checkedAt) {
         private KillStatus {

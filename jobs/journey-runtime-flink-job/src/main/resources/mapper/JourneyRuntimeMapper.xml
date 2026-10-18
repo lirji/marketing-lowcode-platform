@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.jobs.journey.persistence.JourneyRuntimeMapper">
+    <select id="killSwitch" resultType="com.acme.marketing.jobs.journey.persistence.JourneyRuntimeMapper$KillRow">
+        SELECT enabled_value AS enabled, reason_text AS reason
+        FROM mk_journey_runtime_kill_switch
+        WHERE tenant_id = #{tenantId} AND namespace_name = #{namespace}
+    </select>
+    <select id="current" resultType="com.acme.marketing.jobs.journey.persistence.JourneyRuntimeMapper$CurrentRow">
+        SELECT slot.desired_generation AS generation, slot.activation_sequence AS activationSequence,
+               generation.artifact_id AS artifactId
+        FROM mk_journey_runtime_slot slot
+        JOIN mk_journey_runtime_generation generation ON generation.tenant_id = slot.tenant_id
+          AND generation.environment_name = slot.environment_name AND generation.cell_id = slot.cell_id
+          AND generation.namespace_name = slot.namespace_name AND generation.generation_no = slot.desired_generation
+        WHERE slot.tenant_id = #{tenantId} AND slot.environment_name = #{environment}
+          AND slot.cell_id = #{cell} AND slot.namespace_name = #{namespace} AND slot.desired_generation &gt; 0
+    </select>
+    <select id="activated" resultType="com.acme.marketing.jobs.journey.persistence.JourneyRuntimeMapper$RuntimeRow">
+        SELECT generation.generation_no AS generation, activation.activation_sequence AS activationSequence,
+               activation.directive_json AS directiveJson, generation.release_key_id AS releaseKeyId,
+               generation.manifest_json AS manifestJson, generation.artifact_payload AS payload,
+               generation.artifact_id AS artifactId
+        FROM mk_journey_runtime_generation generation
+        JOIN mk_journey_runtime_activation activation ON activation.tenant_id = generation.tenant_id
+          AND activation.environment_name = generation.environment_name AND activation.cell_id = generation.cell_id
+          AND activation.namespace_name = generation.namespace_name AND activation.generation_no = generation.generation_no
+        WHERE generation.tenant_id = #{tenantId} AND generation.environment_name = #{environment}
+          AND generation.cell_id = #{cell} AND generation.namespace_name = #{namespace}
+          AND generation.generation_no = #{generation} AND activation.activation_sequence = #{sequence}
+          AND generation.artifact_id = #{artifactId}
+    </select>
+</mapper>
