@@ -14,6 +14,7 @@ import type { DesignerNode } from './designerTypes'
 import type { Problem } from '../../shared/model/types'
 import { graphDefinitionSchema, type GraphDefinition } from '../../shared/api/schemas'
 import { useAuth } from '../../shared/auth/useAuth'
+import { nodePorts } from './nodePorts'
 
 export type { DesignerNode }
 type Snapshot = { nodes: DesignerNode[]; edges: Edge[] }
@@ -25,16 +26,20 @@ function isGrantNode(data: DesignerNode['data']) {
 }
 
 function MarketingNode({ data, selected }: NodeProps<DesignerNode>) {
+  const ports = nodePorts(data.stableTypeId ?? '')
   return (
     <div className={`flow-node ${data.tone} ${selected ? 'selected' : ''}`} tabIndex={0}>
-      <Handle type="target" position={Position.Left} />
+      {ports.inputs.map((port) => <Handle key={port} id={port} type="target" position={Position.Left} title={port} />)}
       <span>{data.label.slice(0, 1)}</span>
       <div>
         <strong>{data.label}</strong>
         <small>{data.subtitle}</small>
         {isGrantNode(data) && <em className="flow-node-badge">尚未接入 AwardIntent</em>}
       </div>
-      <Handle type="source" position={Position.Right} />
+      {ports.outputs.map((port, index) => <Handle key={port} id={port} type="source" position={Position.Right}
+        title={port} aria-label={`出口 ${port}`} style={{ top: `${(index + 1) * 100 / (ports.outputs.length + 1)}%` }}>
+        {ports.outputs.length > 1 && <span className="flow-port-label">{port}</span>}
+      </Handle>)}
     </div>
   )
 }

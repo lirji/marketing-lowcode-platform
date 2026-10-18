@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { fromGraphDefinition, toGraphDefinition, toneForType } from './graph'
 import type { DesignerNode } from './designerTypes'
 import type { GraphDefinition } from '../../shared/api/schemas'
+import { nodePorts } from './nodePorts'
 
 const nodes: DesignerNode[] = [
   { id: 'start', type: 'marketing', position: { x: 0, y: 0 }, data: { label: '开始', subtitle: 'start', tone: 'slate', config: {}, stableTypeId: 'offer.start' } },
@@ -55,5 +56,19 @@ describe('graph mapping', () => {
   it('maps known node types to tones', () => {
     expect(toneForType('journey.grant')).toBe('amber')
     expect(toneForType('offer.condition')).toBe('violet')
+  })
+
+  it('uses explicit runtime ports for newly connected journey nodes', () => {
+    const types = ['journey.condition', 'journey.wait-timer', 'journey.wait-event', 'journey.repeat']
+    const nodes: DesignerNode[] = types.map((type, index) => ({ id: `n${index}`, type: 'marketing', position: { x: 0, y: 0 },
+      data: { label: type, subtitle: '', tone: 'slate', config: {}, stableTypeId: type },
+    }))
+    const edges = nodes.flatMap((node) => nodePorts(node.data.stableTypeId!).outputs.map((port) => ({
+      id: `${node.id}-${port}`, source: node.id, sourceHandle: port, target: 'end', targetHandle: 'in',
+    })))
+    const graph = toGraphDefinition({ definitionId: 'journey', dialect: 'JOURNEY_STATE_MACHINE', nodes, edges, title: '' })
+    expect(graph.edges.map((edge) => edge.sourcePort)).toEqual(['true', 'false', 'elapsed', 'matched', 'repeat', 'exit'])
+    expect(nodePorts('journey.end').outputs).toEqual([])
+    expect(nodePorts('journey.trigger').inputs).toEqual([])
   })
 })

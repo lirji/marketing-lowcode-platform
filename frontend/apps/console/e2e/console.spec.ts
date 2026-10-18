@@ -25,7 +25,7 @@ test('live release confirm posts to the control API', async ({ page }) => {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify([{
-          manifest: { manifestId: 'man-1', cell: 'cn-east-a', generation: 12, namespace: 'main', environment: 'prod', runtime: 'decision', artifacts: [{}], canaryBasisPoints: 1500, signature: 'sig' },
+          manifest: { manifestId: 'man-1', cell: 'cn-east-a', generation: 12, namespace: 'main', environment: 'prod', runtime: 'decision', artifacts: [{ artifactId: 'offer_policy-v2-fixture', type: 'OFFER_POLICY', checksum: 'sha256:fixture', sourceDigest: 'sha256:source', signatureKeyId: 'compiler-key', signature: 'sig', abi: 'marketing-offer-policy/1', definitionId: 'offer', definitionVersion: 1 }], canaryBasisPoints: 1500, signature: 'sig' },
           state: 'STAGED',
           readyReplicas: 2,
           readyCapacity: 100,
@@ -134,7 +134,8 @@ test('live awards tab shows risk-blocked reason without a submit form', async ({
 test('benefit editor shows the SKU binding region', async ({ page }) => {
   await page.goto('/designers/benefit')
   await expect(page.getByRole('heading', { name: '绑定权益模板' })).toBeVisible()
-  await expect(page.getByText('演示模式不绑定真实 SKU')).toBeVisible()
+  await expect(page.getByText('演示数据')).toBeVisible()
+  await expect(page.getByRole('button', { name: '保存策略' })).toBeDisabled()
   const actions = page.locator('.heading-actions')
   await expect(actions.getByRole('button', { name: '保存策略' })).toBeVisible()
   const box = await actions.boundingBox()
@@ -290,4 +291,51 @@ test('unauthorised identity cannot open release actions', async ({ page }) => {
   await page.goto('/releases')
   await expect(page.getByRole('alert')).toContainText('发布列表加载失败')
   await expect(page.getByRole('alert')).toContainText('permission is required')
+})
+
+test('journey canvas connects named ports and saves original metadata', async ({ page }) => {
+  const graph = {
+    definitionId: 'saved-journey-id', dialect: 'JOURNEY_STATE_MACHINE', dialectVersion: '1.2.0',
+    nodes: [
+      { id: 'trigger', stableTypeId: 'journey.trigger', semanticVersion: '1.0.0', config: {} },
+      { id: 'condition', stableTypeId: 'journey.condition', semanticVersion: '1.1.0', config: { field: 'vip', equals: 'true' } },
+      { id: 'timer', stableTypeId: 'journey.wait-timer', semanticVersion: '1.0.0', config: { delaySeconds: '5' } },
+      { id: 'event', stableTypeId: 'journey.wait-event', semanticVersion: '1.0.0', config: { eventType: 'PAID' } },
+      { id: 'original-end', stableTypeId: 'journey.end', semanticVersion: '1.0.0', config: {} },
+    ],
+    edges: [
+      { id: 'entry', sourceNodeId: 'trigger', sourcePort: 'next', targetNodeId: 'condition', targetPort: 'in' },
+      { id: 'positive', sourceNodeId: 'condition', sourcePort: 'true', targetNodeId: 'timer', targetPort: 'in' },
+      { id: 'wait', sourceNodeId: 'timer', sourcePort: 'elapsed', targetNodeId: 'event', targetPort: 'in' },
+      { id: 'finish', sourceNodeId: 'event', sourcePort: 'matched', targetNodeId: 'original-end', targetPort: 'in' },
+    ],
+    variables: { stateTtlSeconds: '3600', maxStepsPerSignal: '20' }, annotations: { terms: 'approved terms', owner: 'team' },
+  }
+  const bundle = { definitionId: graph.definitionId, campaignId: 'canvas', version: 4, dialect: graph.dialect, status: 'DRAFT', graph }
+  await page.addInitScript(() => {
+    window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true,
+      OIDC_AUTHORITY: 'http://localhost:8180/realms/marketing', OIDC_CLIENT_ID: 'marketing-console', OIDC_SCOPE: 'openid profile email' }
+  })
+  await page.route('**/api/v1/campaigns', (route) => route.fulfill({ json: [{ id: 'canvas', name: 'Canvas', objective: 'test', status: 'DRAFT', createdAt: '2026-01-01T00:00:00Z' }] }))
+  await page.route('**/api/v1/registries/nodes', (route) => route.fulfill({ json: graph.nodes.map((node) => ({ ...node, dialects: [graph.dialect] })) }))
+  await page.route(/\/api\/v1\/definitions\/latest\?/, (route) => route.fulfill({ json: bundle }))
+  await page.route('**/api/v1/definitions', (route) => route.fulfill({ json: { ...bundle, version: 5, graph: route.request().postDataJSON().graph } }))
+  await page.goto('/designers/journey?campaignId=canvas')
+  const handle = (id: string, port: string) => page.locator(`.react-flow__node[data-id="${id}"] .react-flow__handle[data-handleid="${port}"]`)
+  await expect(handle('condition', 'false')).toBeVisible()
+  await expect(handle('timer', 'elapsed')).toBeVisible()
+  await expect(handle('event', 'matched')).toBeVisible()
+  await handle('condition', 'false').click()
+  await handle('original-end', 'in').click()
+  const saved = page.waitForRequest((request) => request.method() === 'POST' && request.url().endsWith('/api/v1/definitions'))
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  const body = (await saved).postDataJSON()
+  expect(body.graph.nodes).toEqual(graph.nodes)
+  expect(body.graph.variables).toEqual(graph.variables)
+  expect(body.graph.annotations).toEqual(graph.annotations)
+  expect(body.graph.dialectVersion).toEqual(graph.dialectVersion)
+  expect(body.graph.definitionId).toEqual(graph.definitionId)
+  expect(body.graph.edges).toEqual(expect.arrayContaining(graph.edges))
+  expect(body.graph.edges).toContainEqual(expect.objectContaining({ sourceNodeId: 'condition', sourcePort: 'false', targetNodeId: 'original-end', targetPort: 'in' }))
+  await expect(page.getByText('已写入版本 v5')).toBeVisible()
 })

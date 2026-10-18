@@ -1,6 +1,7 @@
 import type { Edge } from '@xyflow/react'
 import type { GraphDefinition } from '../../shared/api/schemas'
 import type { DesignerNode } from './designerTypes'
+import { nodePorts } from './nodePorts'
 
 const TYPE_BY_TONE: Record<DesignerNode['data']['tone'], string> = {
   slate: 'offer.start',
@@ -42,7 +43,7 @@ export function toGraphDefinition(input: {
   const edges = input.edges.map((edge) => ({
     id: edge.id,
     sourceNodeId: edge.source,
-    sourcePort: String(edge.sourceHandle ?? (types[toneOf(input.nodes, edge.source)] === 'offer.condition' || types[toneOf(input.nodes, edge.source)] === 'journey.condition' ? 'true' : 'next')),
+    sourcePort: String(edge.sourceHandle ?? nodePorts(nodes.find((node) => node.id === edge.source)?.stableTypeId ?? '').outputs[0] ?? 'next'),
     targetNodeId: edge.target,
     targetPort: String(edge.targetHandle ?? 'in'),
   }))
@@ -55,10 +56,6 @@ export function toGraphDefinition(input: {
     variables: { ...input.original?.variables },
     annotations: input.original ? { ...input.original.annotations } : { title: input.title, terms: input.title },
   }
-}
-
-function toneOf(nodes: DesignerNode[], id: string): DesignerNode['data']['tone'] {
-  return nodes.find((node) => node.id === id)?.data.tone ?? 'slate'
 }
 
 const TONE_BY_TYPE: Record<string, DesignerNode['data']['tone']> = {
