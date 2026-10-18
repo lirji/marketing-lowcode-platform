@@ -1,4 +1,4 @@
-import type { AwardIntentView } from '../../shared/api/schemas'
+import { awardIntentViewSchema, type AwardIntentView } from '../../shared/api/schemas'
 import { runtimeConfig } from '../../shared/config/runtime'
 
 export function benefitOrderHref(item: AwardIntentView, origin = runtimeConfig.benefitConsoleOrigin) {
@@ -6,7 +6,7 @@ export function benefitOrderHref(item: AwardIntentView, origin = runtimeConfig.b
   if (item.benefitOrderNo) {
     return `${origin}/orders?orderNo=${encodeURIComponent(item.benefitOrderNo)}`
   }
-  if (item.status === 'DEAD') {
+  if (item.status === awardIntentViewSchema.shape.status.enum.DEAD) {
     const params = new URLSearchParams({ q: item.sourceRequestId, sourceSystem: item.sourceSystem })
     return `${origin}/orders?${params}`
   }
@@ -14,6 +14,6 @@ export function benefitOrderHref(item: AwardIntentView, origin = runtimeConfig.b
 }
 
 export function riskDecisionHref(item: AwardIntentView, origin = runtimeConfig.riskConsoleOrigin) {
-  if (!origin || item.status !== 'RISK_BLOCKED') return ''
+  if (!origin || item.status !== awardIntentViewSchema.shape.status.enum.RISK_BLOCKED) return ''
   return `${origin}/decisions?q=${encodeURIComponent(item.sourceRequestId)}`
 }

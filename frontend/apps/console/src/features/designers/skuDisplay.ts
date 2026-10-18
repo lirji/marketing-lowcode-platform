@@ -1,4 +1,4 @@
-import type { BenefitSku } from '../../shared/api/schemas'
+import { benefitSkuSchema, type BenefitSku } from '../../shared/api/schemas'
 
 export function skuFaceValue(minor: number | null | undefined, currency: string | null | undefined) {
   if (minor == null) return '—'
@@ -13,7 +13,7 @@ function formatInstant(value: string | null | undefined) {
 }
 
 export function validityLabel(sku: BenefitSku) {
-  if (sku.validityType === 'RELATIVE') {
+  if (sku.validityType === benefitSkuSchema.shape.validityType.enum.RELATIVE) {
     return `领取后 ${sku.relativeDays ?? '—'} 天`
   }
   return `${formatInstant(sku.validFrom)} ~ ${formatInstant(sku.validTo)}`
