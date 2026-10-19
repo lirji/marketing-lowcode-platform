@@ -173,9 +173,10 @@
 .ops-search { margin-bottom:16px; }
 .lookup { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:16px; }
 .lookup label { flex:1 1 240px; max-width:520px; min-width:0; }
-.lookup label:has(select) { flex:0 1 150px; }
 .lookup .button { flex:0 0 auto; }
 .lookup label { display:flex; align-items:center; gap:8px; height:37px; padding:0 10px; border:1px solid #d6dfe0; border-radius:7px; color:var(--ink-400); }
+/* Select 已自带边框与焦点态，查询类型外层只负责布局，避免双层输入框。 */
+.lookup label:has(> .select-trigger) { flex:0 1 240px; height:auto; padding:0; border:0; border-radius:0; }
 .lookup select,.lookup input { width:100%; border:0; outline:0; background:transparent; color:var(--ink-800); font-size:var(--text-xs); }
 .ops-search > p { margin:9px 0 0; color:var(--ink-400); font-size:var(--text-xs); }
 .trace-layout { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(280px,.68fr); gap:16px; align-items:start; }

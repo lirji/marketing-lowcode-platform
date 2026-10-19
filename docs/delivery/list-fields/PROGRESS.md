@@ -15,3 +15,7 @@
 验证：构建/lint通过；97项原组件测试通过，最终受影响设计器7项复验通过；原有36项桌面/Pixel7浏览器回归通过；新增4项字段归属/隐私/空值/固定操作与审核、重放确认测试通过。新增fixture首轮遗漏分页查询参数和审核updatedAt，已修正，非产品缺陷。真实4175只读验证26个API响应，无页面异常/业务写入；既有SKU目录502保持显式错误。48原文件SHA256一致。截图与日志见证据目录。实现提交0d31453已从feat/all-list-fields快进合并并推送origin/main，随后同步本交付记录。
 
 交付：无新增worktree；原48文件及忽略的运行数据保持。只读预览4175/session77992继续运行；构建、测试任务均已结束。未删除任务分支或临时证据。证据目录与frontend/apps/console/test-results可在无需复查且预览停止后按需清理，目前保留。最终提交与远程一致性回执见证据目录GIT_DELIVERY.json。
+
+## 后续局部修正：查询类型双边框（2026-10-19）
+
+用户截图中的外层lookup标签与Radix Select同时绘制边框；原选择器仍匹配原生select，未适配组件。fix/lookup-select-border只修改feature-styles.css：组件包装层取消边框/内边距，保留Select自身边框及焦点态，宽度240px。构建/lint通过；1440/414px真实只读浏览器验证单层边框、订单类型切换、Escape焦点恢复、无页面溢出、旅程/触达查询输入框边框保留。证据/tmp/lookup-border-{build,lint,browser}.log与/tmp/lookup-border-{1440,414}.png。未更新Docker，预览4175已生效。
