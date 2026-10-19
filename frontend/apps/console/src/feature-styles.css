@@ -296,7 +296,6 @@
   .node-palette { padding:14px 8px; }
   .node-palette .designer-section-title span,.node-palette .palette-search,.node-palette > button > div,.node-palette > button > svg,.complexity-meter { display:none; }
   .node-palette > button { display:grid; grid-template-columns:1fr; place-items:center; padding:8px 4px; }
-  .designer-notice { right:245px; }
   .release-summary,.analytics-metrics { grid-template-columns:1fr 1fr; }
 }
 @media (max-width:720px) {
@@ -335,7 +334,7 @@
   .designer-header { align-items:flex-start; flex-direction:column; }
   .designer-actions { width:100%; overflow:auto; }
   .designer-actions .button { flex:0 0 auto; }
-  .designer-notice { position:static; width:auto; margin:8px 12px 0; }
+  .designer-notice { padding:12px; }
   .designer-grid { min-height:680px; grid-template-columns:58px minmax(260px,1fr); overflow:auto; }
   .inspector { grid-column:1 / -1; border-left:0; border-top:1px solid var(--line); }
   .canvas-stage { min-height:520px; }
