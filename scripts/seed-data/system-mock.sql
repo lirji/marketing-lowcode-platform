@@ -1,6 +1,7 @@
 -- Idempotent end-to-end system mock data for the local MySQL stack.
 -- All records use stable "mock-*" identifiers so rerunning this file refreshes,
 -- rather than duplicates, the demo scenario.
+-- 仅供本地页面/状态演示；签名与摘要是占位值，不代表已通过真实编译、发布或履约。
 
 SET NAMES utf8mb4;
 SET @tenant = 'marketing-platform';
@@ -53,23 +54,19 @@ SET @offer_graph = JSON_OBJECT(
   'dialectVersion', '1.0.0',
   'nodes', JSON_ARRAY(
     JSON_OBJECT('id','start','stableTypeId','offer.start','semanticVersion','1.0.0','config',JSON_OBJECT()),
-    JSON_OBJECT('id','scope','stableTypeId','offer.scope','semanticVersion','1.0.0','config',JSON_OBJECT('category','LARGE_APPLIANCE','shopIds','all-shops')),
-    JSON_OBJECT('id','member','stableTypeId','offer.condition','semanticVersion','1.0.0','config',JSON_OBJECT('field','member.level','equals','PLUS','requiredAudienceSnapshotId',@audience)),
     JSON_OBJECT('id','discount','stableTypeId','offer.fixed','semanticVersion','1.0.0','config',JSON_OBJECT(
       'offerId','mock-fixed-ha-80','benefitDefinitionVersion',@benefit,'amountMinor','8000','thresholdMinor','50000',
       'validFrom','2025-01-01T00:00:00Z','validTo','2035-01-01T00:00:00Z','channels','APP',
-      'shopIds','all-shops','fundingRules','PLATFORM|mock-platform|6000,MERCHANT|mock-ha|4000',
+      'shopIds','all-shops','fundingRules','PLATFORM|mock-platform|6000;MERCHANT|mock-ha|4000',
       'requiredAudienceSnapshotId',@audience,'reasonCode','MOCK_PLUS_HOME_APPLIANCE')),
     JSON_OBJECT('id','end','stableTypeId','offer.end','semanticVersion','1.0.0','config',JSON_OBJECT())
   ),
   'edges', JSON_ARRAY(
-    JSON_OBJECT('id','offer-e1','sourceNodeId','start','sourcePort','next','targetNodeId','scope','targetPort','in'),
-    JSON_OBJECT('id','offer-e2','sourceNodeId','scope','sourcePort','matched','targetNodeId','member','targetPort','in'),
-    JSON_OBJECT('id','offer-e3','sourceNodeId','member','sourcePort','true','targetNodeId','discount','targetPort','in'),
+    JSON_OBJECT('id','offer-e1','sourceNodeId','start','sourcePort','next','targetNodeId','discount','targetPort','in'),
     JSON_OBJECT('id','offer-e4','sourceNodeId','discount','sourcePort','next','targetNodeId','end','targetPort','in')
   ),
   'variables', JSON_OBJECT(),
-  'annotations', JSON_OBJECT('terms','家电满 500 元减 80 元；平台与商家按 60/40 出资')
+  'annotations', JSON_OBJECT('terms','演示人群满 500 元减 80 元；平台与商家按 60/40 出资；仅使用当前可编译的单链优惠节点')
 );
 
 SET @journey_graph = JSON_OBJECT(
@@ -78,7 +75,7 @@ SET @journey_graph = JSON_OBJECT(
   'dialectVersion', '1.0.0',
   'nodes', JSON_ARRAY(
     JSON_OBJECT('id','trigger','stableTypeId','journey.trigger','semanticVersion','1.0.0','config',JSON_OBJECT('eventType','CART_ADDED')),
-    JSON_OBJECT('id','wait','stableTypeId','journey.wait_timer','semanticVersion','1.0.0','config',JSON_OBJECT('delaySeconds','1800')),
+    JSON_OBJECT('id','wait','stableTypeId','journey.wait-timer','semanticVersion','1.0.0','config',JSON_OBJECT('delaySeconds','1800')),
     JSON_OBJECT('id','send','stableTypeId','journey.send','semanticVersion','1.0.0','config',JSON_OBJECT(
       'channel','PUSH','templateId','mock-tpl-cart-push','templateVersion','1','campaignId',@campaign,
       'recipientToken','mock-device-token-001','timezone','Asia/Shanghai','personalized','true','name','PLUS 会员')),

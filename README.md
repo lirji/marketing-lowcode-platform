@@ -43,14 +43,15 @@ cd ../marketing-lowcode-platform
 
 ```bash
 # 在 auth-platform 开通组织 / 角色 / 权限（密码由调用方注入，不会写入仓库）
-MARKETING_USER=marketing PASSWORD='本地强口令' \
+MARKETING_USER="${MARKETING_USER:-marketing-e2e-admin}" \
+PASSWORD="${MARKETING_PASSWORD:?请先通过受控方式设置本地开通密码}" \
   bash ../auth-platform/deploy/marketing-platform-provision.sh
 
 # 叠加 Casdoor OIDC 后重建控制台与网关
 bash deploy/compose.sh --secure up -d --build
 ```
 
-门户正式入口是 `http://localhost:8084/login?returnTo=%2F`。OIDC 只接受组织 `marketing-platform`，并校验派生 clientId；未知组织不会跳转 Casdoor。生产 catalog 在域名与 Casdoor 回调登记完成前保持 `coming-soon`。
+门户入口是 `http://localhost:8084/login?returnTo=%2F`。OIDC 只接受组织 `marketing-platform`，并校验派生 clientId；未知组织不会跳转 Casdoor。上例用户名默认 `marketing-e2e-admin`，业务货主使用 `properties.tenant_id=retail-cn`；密码由调用方注入，不在仓库保存。默认 Compose 使用 DEV 身份，Keycloak 为独立本地 OIDC 选项；门户 Casdoor 需要 `--secure`。IAM 重建后的恢复步骤见同级 `auth-platform/deploy/portal-casdoor-restore.sh`；生产 catalog 的开放仍以域名、回调登记和实际验收为准。
 
 Keycloak realm 预置操作员 `operator` / `local-operator-change-me` 仅用于未接 Casdoor 的本地演示，绝不可用于共享或生产环境。
 
@@ -66,6 +67,17 @@ CONFIRM_PURGE=marketing-r1 ./scripts/dev-down.sh --purge  # 仅删除业务侧 F
 pnpm install --frozen-lockfile
 pnpm frontend:dev
 ```
+
+### 本地演示数据
+
+`bootstrap.sh` 会调用 `scripts/seed.sh`；已有本地环境也可单独执行 `./scripts/seed.sh`。脚本连接 `dev-infra` 的 `mysql84`，先写入 `marketing-platform` 场景，再写入控制台默认的 `retail-cn / retail-business` 场景，最后补充审核、发布、人群、资金、旅程、触达及看板状态。
+
+- 重跑会刷新约定的 `mock-*`、`rcn-*` 演示记录、相对时间和演示账户余额；仅用于本地演示环境。
+- 补充 SQL 会清理 `retail-cn` 下四个历史残缺的 `rcn-app-*` 演示申请；资金分桶只处理明确列出的演示租户、资源和申请。
+- 三份 SQL 分别提交事务，失败时先查看报错；修复后可重跑。重复执行不新增同一主键记录，但不是保留演示操作历史的增量导入。
+- 种子中的发布状态、签名、摘要及渠道回执用于页面展示，不能作为真实编译、发布、发奖或跨系统链路通过的证据。
+
+执行 `python3 scripts/verify-seed-data.py` 可使用本机已有 `mysql:8.4.11` 镜像在隔离临时容器内验证迁移、重复导入、资金守恒和租户隔离；不连接现有开发库。
 
 ## 一期能力
 
