@@ -50,7 +50,7 @@ export function ReleaseCenterPage() {
   const canOpenWizard = wizardMissingPermissions.length === 0
 
   return <div className="workspace release-page">
-    <PageHeader eyebrow={latest ? `RELEASE · ${latest.manifest.manifestId}` : 'RELEASE CENTER'} title={latest ? `${latest.manifest.cell} / ${latest.manifest.namespace ?? 'ns'}` : '发布中心'} description="签名 Manifest 是 desired state；所有 Cell 验签、预热并 ACK 后，流量才会进入新代际。" actions={<>
+    <PageHeader eyebrow={latest ? `RELEASE · ${latest.manifest.manifestId}` : 'RELEASE CENTER'} title="发布中心" description={latest ? `当前目标：${latest.manifest.cell} / ${latest.manifest.namespace ?? '未设置'}。核对运行时就绪情况，再执行灰度、回滚或熔断。` : '查看发布代际与运行时就绪情况，在确认作用范围后执行发布操作。'} actions={<>
       <Button onClick={() => setWizardOpen(true)} disabled={api.demoMode || !canOpenWizard} title={api.demoMode ? '演示模式不编译' : canOpenWizard ? '选择批准版本并编译暂存' : `缺少 ${wizardMissingPermissions.join('、')}`}><PackageCheck size={15} />编译并暂存</Button>
       <Button onClick={() => latest && openConfirm('rollback', latest)} disabled={!latest || !auth.hasPermission('release:rollback')} title={auth.hasPermission('release:rollback') ? '回滚' : '缺少 release:rollback'}><RotateCcw size={15} />回滚</Button>
       <Button tone="danger" onClick={() => latest && openConfirm('kill', latest)} disabled={!latest || !auth.hasPermission('release:kill-switch')} title={auth.hasPermission('release:kill-switch') ? 'Kill switch' : '缺少 release:kill-switch'}><Ban size={15} />Kill switch</Button>

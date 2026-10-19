@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bell, ChevronDown, Command, Menu, Search, X } from 'lucide-react'
+import { Bell, Building2, ChevronDown, Command, Menu, Search, X } from 'lucide-react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { navigation } from './navigation'
 import { useAuth } from '../shared/auth/useAuth'
@@ -98,7 +98,7 @@ export function AppShell() {
             <div className="nav-group" key={group.label}>
               <p className="nav-label">{group.label}</p>
               {group.items.map(({ label, path, icon: Icon }) => (
-                <NavLink end={path === '/'} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} to={path} key={path}>
+                <NavLink end={path === '/'} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} to={path} key={path} aria-label={label} title={label}>
                   <Icon size={17} aria-hidden="true" /><span>{label}</span>
                   {path === '/governance' && openApprovals > 0 && <b className="nav-badge">{openApprovals}</b>}
                 </NavLink>
@@ -119,7 +119,7 @@ export function AppShell() {
         <header className="topbar">
           <button className="mobile-menu" type="button" aria-label="打开菜单" onClick={() => setNavOpen(true)}><Menu size={19} /></button>
           <div className="tenant-switch" title="业务租户是货主。创建活动只能看见同一货主已投放的商品。切换需重新登录。">
-            业务租户 {auth.tenantId || '未声明'} · {orgLabel} · {auth.shops.includes('*') || auth.shops.length === 0 ? '全部店铺' : auth.shops.join(' / ')}
+            <span className="scope-icon"><Building2 size={17} aria-hidden="true" /></span><div className="scope-info"><strong>业务租户 · {auth.tenantId || '未声明'}</strong><small title={`${orgLabel} · ${auth.shops.includes('*') || auth.shops.length === 0 ? '全部店铺' : auth.shops.join(' / ')}`}>{orgLabel} · {auth.shops.includes('*') || auth.shops.length === 0 ? '全部店铺' : auth.shops.join(' / ')}</small></div>
           </div>
           <button className="global-search" type="button" onClick={() => setSearchOpen(true)}><Search size={16} /><span>搜索模块…</span><kbd><Command size={11} /> K</kbd></button>
           <button className="icon-button" type="button" aria-label={openApprovals > 0 ? `${openApprovals} 条待审核` : '通知'} onClick={() => navigate('/governance')}>

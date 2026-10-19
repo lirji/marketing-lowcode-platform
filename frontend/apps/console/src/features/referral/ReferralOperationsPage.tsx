@@ -1,3 +1,4 @@
+import { PageTabs } from '../../components/PageTabs'
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
@@ -95,20 +96,7 @@ export function ReferralOperationsPage() {
       {live && campaigns.data && campaigns.data.length > 0 && !campaigns.data.some((item) => item.campaignType === 'REFERRAL') && (
         <StateBanner tone="info" title="未返回 campaignType" detail="后端尚未持久化活动类型时列出全部活动，不会把名称当成裂变类型。" />
       )}
-      <div className="page-tabs" role="tablist" aria-label="裂变运营页签">
-        {TABS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === item.id}
-            className={tab === item.id ? 'active' : ''}
-            onClick={() => setTab(item.id)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+      <PageTabs label="裂变运营页签" items={TABS.map((item) => ({ value: item.id, label: item.label }))} value={tab} onChange={setTab}>
       <Panel className="table-panel">
         {tab === 'exceptions' ? (
           <EmptyState title="异常待接入" detail="BE-03 的 summary / 异常合同尚未开放。缺接口保持待接入，不显示假成功。" />
@@ -173,6 +161,7 @@ export function ReferralOperationsPage() {
         ) : null}
       </Panel>
       <p className="muted">{watermark}</p>
+      </PageTabs>
     </div>
   )
 }

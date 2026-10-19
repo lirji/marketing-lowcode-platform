@@ -80,4 +80,23 @@ describe('AssetsPage', () => {
     expect(screen.queryByText('家电满500减80券')).not.toBeInTheDocument()
     expect(screen.queryByText('预算 ¥20M')).not.toBeInTheDocument()
   })
+
+  it('filters real assets and opens complete read-only details without losing the query', async () => {
+    mocks.benefits.mockResolvedValue([
+      { benefitId: 'coupon-live', version: 2, name: '真实满减券', status: 'DRAFT', resourceKey: '', benefitSkuId: 'sku-with-a-long-stable-reference', policy: {} },
+      { benefitId: 'coupon-other', version: 1, name: '其他权益', status: 'DRAFT', resourceKey: '', benefitSkuId: null, policy: {} },
+    ])
+    const user = userEvent.setup()
+    renderAssets()
+    await user.click(screen.getByRole('tab', { name: '权益与券' }))
+    const search = await screen.findByRole('searchbox', { name: '搜索权益' })
+    await user.type(search, 'coupon-live')
+    expect(screen.queryByText('其他权益')).not.toBeInTheDocument()
+    const view = screen.getByRole('button', { name: '查看真实满减券' })
+    await user.click(view)
+    expect(screen.getByRole('dialog', { name: '真实满减券' })).toHaveTextContent('sku-with-a-long-stable-reference')
+    await user.keyboard('{Escape}')
+    expect(view).toHaveFocus()
+    expect(search).toHaveValue('coupon-live')
+  })
 })

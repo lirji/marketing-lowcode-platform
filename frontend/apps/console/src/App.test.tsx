@@ -46,6 +46,19 @@ describe('marketing console routing and core interactions', () => {
     expect(await screen.findByRole('heading', { name: '发布中心' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /推进灰度/ })).toBeDisabled()
   })
+
+  it('retains list filters when closing the campaign creation modal', async () => {
+    const user = userEvent.setup()
+    renderApp('/campaigns?q=unmatched-search&status=DRAFT&create=true')
+    expect(await screen.findByRole('dialog', { name: '创建营销活动' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^取消$/ }))
+    expect(screen.getByRole('searchbox', { name: '搜索活动' })).toHaveValue('unmatched-search')
+    expect(screen.getByRole('combobox', { name: '状态筛选' })).toHaveValue('DRAFT')
+    expect(await screen.findByText('没有匹配的活动')).toBeInTheDocument()
+    await user.click(screen.getAllByRole('button', { name: '清除筛选' })[0])
+    expect(screen.getByRole('searchbox', { name: '搜索活动' })).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: '状态筛选' })).toHaveValue('ALL')
+  })
 })
 
 describe('identity helpers', () => {

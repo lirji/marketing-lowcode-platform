@@ -7,6 +7,7 @@ import { Badge, Button, DemoBanner, EmptyState, Modal, PageHeader, Panel, PanelH
 import { problemDetail } from '../../shared/api/problem'
 import { useAuth } from '../../shared/auth/useAuth'
 import type { ContactView, EnrollmentView, QuarantineView, TraceView } from '../../shared/api/schemas'
+import { PageTabs } from '../../components/PageTabs'
 import { AwardIntentsPanel } from './AwardIntentsPanel'
 
 const tabs = ['全链路查询', 'Journey 实例', '触达记录', '发放', 'DLQ / 隔离区', '资金对账'] as const
@@ -35,14 +36,14 @@ export function OperationsPage() {
     else next.delete('tab')
     setParams(next, { replace: true })
   }
-  return <div className="workspace operations-page"><PageHeader eyebrow="运营与客服" title="沿同一业务键还原营销决策。" description="决策、报价、权益预占、旅程、触达与转化轨迹默认脱敏，并保留稳定原因码。" actions={<Button disabled title="敏感字段访问需独立工单接口"><ShieldCheck size={15} />敏感字段访问</Button>} /><DemoBanner /><div className="page-tabs" role="tablist">{visibleTabs.map((tab) => <button role="tab" aria-selected={current === tab} aria-controls={`tab-${tab}`} className={current === tab ? 'active' : ''} onClick={() => selectTab(tab)} key={tab}>{tab}</button>)}</div>
+  return <div className="workspace operations-page"><PageHeader eyebrow="运营与客服" title="运营与客服" description="决策、报价、权益预占、旅程、触达与转化轨迹默认脱敏，并保留稳定原因码。" actions={<Button disabled title="敏感字段访问需独立工单接口"><ShieldCheck size={15} />敏感字段访问</Button>} /><DemoBanner /><PageTabs label="运营查询分类" items={visibleTabs.map((tab) => ({ value: tab, label: tab }))} value={current} onChange={selectTab}>
     {current === '全链路查询' && <TraceSearch />}
     {current === 'Journey 实例' && <JourneyInstances />}
     {current === '触达记录' && <ContactAttempts />}
     {current === '发放' && <AwardIntentsPanel />}
     {current === 'DLQ / 隔离区' && <DeadLetters />}
     {current === '资金对账' && <ReconciliationPanel />}
-  </div>
+  </PageTabs></div>
 }
 
 function TraceSearch() {
@@ -75,36 +76,36 @@ function JourneyInstances() {
   const [enrollmentId, setEnrollmentId] = useState('')
   const list = useQuery({ queryKey: ['enrollments'], queryFn: () => api.enrollments(), enabled: !api.demoMode })
   const lookup = useMutation({ mutationFn: api.enrollment })
-  if (api.demoMode) return <Panel><PanelHeader eyebrow="ENROLLMENTS" title="运行中 Journey 实例" aside={<Badge tone="info">82,491 waiting</Badge>} /><div className="ops-list">{[['enr-81FA', '加购未支付召回', 'WAIT_TIMER · 18m12s', 'v3', '正常'], ['enr-922C', '新客七日培育', 'WAIT_EVENT · OrderPaid', 'v7', '正常']].map(([id, name, state, version, health]) => <button key={id} type="button"><CircleDot /><div><strong>{name}</strong><small>{id}</small></div><code>{state}</code><Badge tone={health === '正常' ? 'good' : 'warn'}>{health}</Badge><span>{version}</span></button>)}</div></Panel>
+  if (api.demoMode) return <Panel><PanelHeader eyebrow="ENROLLMENTS" title="运行中 Journey 实例" aside={<Badge tone="info">82,491 waiting</Badge>} /><div className="ops-list">{[['enr-81FA', '加购未支付召回', 'WAIT_TIMER · 18m12s', 'v3', '正常'], ['enr-922C', '新客七日培育', 'WAIT_EVENT · OrderPaid', 'v7', '正常']].map(([id, name, state, version, health]) => <div key={id} className="ops-record"><CircleDot /><div><strong>{name}</strong><small>{id}</small></div><code>{state}</code><Badge tone={health === '正常' ? 'good' : 'warn'}>{health}</Badge><span>{version}</span></div>)}</div></Panel>
   const items = lookup.data ? [lookup.data] : (list.data ?? [])
   return <Panel><PanelHeader eyebrow="ENROLLMENTS" title="Journey 实例" aside={<Button onClick={() => void list.refetch()} disabled={list.isFetching}><RefreshCw size={14} />刷新</Button>} />
     <div className="lookup"><label><Search size={16} /><span className="sr-only">Enrollment ID</span><input value={enrollmentId} onChange={(event) => setEnrollmentId(event.target.value)} placeholder="enrollmentId，可点查单条" /></label><Button tone="primary" onClick={() => lookup.mutate(enrollmentId.trim())} disabled={!enrollmentId.trim() || lookup.isPending}>查询</Button></div>
     {list.isError && <StateBanner tone="error" title="实例列表加载失败" detail={problemDetail(list.error)} />}
     {lookup.isError && <StateBanner tone="error" title="实例查询失败" detail={problemDetail(lookup.error)} />}
-    {items.length === 0 ? <EmptyState title="没有 Journey 实例" detail="列表来自 GET /api/v1/enrollments；也可按 enrollmentId 点查。" /> : <div className="ops-list">{items.map((item) => <EnrollmentCard key={item.enrollmentId} item={item} />)}</div>}
+    {items.length === 0 ? <EmptyState title="没有 Journey 实例" detail="列表来自 GET /api/v1/enrollments；也可按 enrollmentId 点查。" /> : <div className="ops-list"><div className="ops-list-head" aria-hidden="true"><span /><span>旅程 / 实例</span><span>当前节点</span><span>状态</span><span>版本</span></div>{items.map((item) => <EnrollmentCard key={item.enrollmentId} item={item} />)}</div>}
   </Panel>
 }
 
 function EnrollmentCard({ item }: { item: EnrollmentView }) {
-  return <button type="button"><CircleDot /><div><strong>{item.journeyId}</strong><small>{item.enrollmentId} · {mask(item.subjectToken)}</small></div><code>{item.currentNodeId ?? '—'}</code><Badge tone={item.status === 'FAILED' ? 'danger' : item.status === 'COMPLETED' ? 'good' : 'info'}>{item.status}</Badge><span>v{item.journeyVersion}</span></button>
+  return <div className="ops-record"><CircleDot /><div><strong>{item.journeyId}</strong><small title={item.enrollmentId}>{item.enrollmentId} · {mask(item.subjectToken)}</small></div><code title="当前节点">{item.currentNodeId ?? '—'}</code><Badge tone={item.status === 'FAILED' ? 'danger' : item.status === 'COMPLETED' ? 'good' : 'info'}>{item.status}</Badge><span>v{item.journeyVersion}</span></div>
 }
 
 function ContactAttempts() {
   const [contactKey, setContactKey] = useState('')
   const list = useQuery({ queryKey: ['contacts'], queryFn: () => api.contacts(), enabled: !api.demoMode })
   const lookup = useMutation({ mutationFn: api.contact })
-  if (api.demoMode) return <Panel><PanelHeader eyebrow="CONTACT ATTEMPTS" title="触达投递记录" /><div className="ops-list">{[['ct-8101', 'PUSH · 加购召回', 'DELIVERED', 'provider-1192', '34ms']].map(([id, name, state, detail, time]) => <button key={id} type="button"><CheckCircle2 /><div><strong>{name}</strong><small>{id}</small></div><code>{detail}</code><Badge tone="good">{state}</Badge><span>{time}</span></button>)}</div></Panel>
+  if (api.demoMode) return <Panel><PanelHeader eyebrow="CONTACT ATTEMPTS" title="触达投递记录" /><div className="ops-list">{[['ct-8101', 'PUSH · 加购召回', 'DELIVERED', 'provider-1192', '34ms']].map(([id, name, state, detail, time]) => <div key={id} className="ops-record"><CheckCircle2 /><div><strong>{name}</strong><small>{id}</small></div><code>{detail}</code><Badge tone="good">{state}</Badge><span>{time}</span></div>)}</div></Panel>
   const items = lookup.data ? [lookup.data] : (list.data ?? [])
   return <Panel><PanelHeader eyebrow="CONTACT ATTEMPTS" title="触达投递记录" aside={<Button onClick={() => void list.refetch()} disabled={list.isFetching}><RefreshCw size={14} />刷新</Button>} />
     <div className="lookup"><label><Search size={16} /><span className="sr-only">Contact key</span><input value={contactKey} onChange={(event) => setContactKey(event.target.value)} placeholder="contactKey，可点查单条" /></label><Button tone="primary" onClick={() => lookup.mutate(contactKey.trim())} disabled={!contactKey.trim() || lookup.isPending}>查询</Button></div>
     {list.isError && <StateBanner tone="error" title="触达列表加载失败" detail={problemDetail(list.error)} />}
     {lookup.isError && <StateBanner tone="error" title="触达查询失败" detail={problemDetail(lookup.error)} />}
-    {items.length === 0 ? <EmptyState title="没有触达记录" detail="列表来自 GET /api/v1/contacts；也可按 contactKey 点查。" /> : <div className="ops-list">{items.map((item) => <ContactCard key={item.contactId} item={item} />)}</div>}
+    {items.length === 0 ? <EmptyState title="没有触达记录" detail="列表来自 GET /api/v1/contacts；也可按 contactKey 点查。" /> : <div className="ops-list"><div className="ops-list-head" aria-hidden="true"><span /><span>触达标识</span><span>渠道回执</span><span>状态</span><span>更新时间</span></div>{items.map((item) => <ContactCard key={item.contactId} item={item} />)}</div>}
   </Panel>
 }
 
 function ContactCard({ item }: { item: ContactView }) {
-  return <button type="button"><CheckCircle2 /><div><strong>{item.contactKey}</strong><small>{item.contactId}</small></div><code>{item.providerCode ?? item.providerRequestId ?? '—'}</code><Badge tone={item.state === 'DELIVERED' ? 'good' : item.state === 'FAILED' ? 'danger' : 'warn'}>{item.state}</Badge><span>{item.updatedAt ?? ''}</span></button>
+  return <div className="ops-record"><CheckCircle2 /><div><strong>{item.contactKey}</strong><small title={item.contactId}>{item.contactId}</small></div><code>{item.providerCode ?? item.providerRequestId ?? '—'}</code><Badge tone={item.state === 'DELIVERED' ? 'good' : item.state === 'FAILED' ? 'danger' : 'warn'}>{item.state}</Badge><span title={item.updatedAt ?? ''}>{item.updatedAt ?? '—'}</span></div>
 }
 
 function DeadLetters() {

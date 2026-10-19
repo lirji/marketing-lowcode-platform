@@ -53,7 +53,7 @@ export function AnalyticsPage() {
   const counts = Object.entries(dashboard.data?.counts ?? {})
   const maxCount = Math.max(1, ...counts.map(([, value]) => value))
 
-  return <div className="workspace analytics-page"><PageHeader eyebrow="衡量分析" title="从真实曝光到可对账 ROI。" description="事实可重放、更正可反转；分组不等于曝光，迟到数据通过水位与重算显式呈现。" actions={<><Button disabled={!canRecompute || recompute.isPending} title={api.demoMode ? '演示模式不可执行' : canRecompute ? '重算当前窗口归因' : '需要 measurement:ingest'} onClick={() => recompute.mutate()}><RefreshCw size={15} />重算归因</Button><Button disabled title="导出尚未接入"><Download size={15} />导出报告</Button></>} />
+  return <div className="workspace analytics-page"><PageHeader eyebrow="衡量分析" title="衡量分析" description="事实可重放、更正可反转；分组不等于曝光，迟到数据通过水位与重算显式呈现。" actions={<><Button disabled={!canRecompute || recompute.isPending} title={api.demoMode ? '演示模式不可执行' : canRecompute ? '重算当前窗口归因' : '需要 measurement:ingest'} onClick={() => recompute.mutate()}><RefreshCw size={15} />重算归因</Button><Button disabled title="导出尚未接入"><Download size={15} />导出报告</Button></>} />
     <DemoBanner />
     {dashboard.isError && <StateBanner tone="error" title="KPI 加载失败" detail={problemDetail(dashboard.error)} />}
     {series.isError && <StateBanner tone="error" title="序列加载失败" detail={problemDetail(series.error)} />}

@@ -39,7 +39,7 @@ export function GovernancePage() {
   const availableRole = roleFor(selected)
 
   return <div className="workspace governance-page">
-    <PageHeader eyebrow="治理与审核" title="让高风险变更经得起追问。" description="提交者不能审批自己的变更；业务、资金、风控和合规按风险等级形成法定人数。" actions={<Button disabled title="风险策略尚未接入控制面"><ShieldAlert size={15} />风险策略</Button>} />
+    <PageHeader eyebrow="治理与审核" title="审核与风险" description="提交者不能审批自己的变更；业务、资金、风控和合规按风险等级形成法定人数。" actions={<Button disabled title="风险策略尚未接入控制面"><ShieldAlert size={15} />风险策略</Button>} />
     <DemoBanner />
     {notice && <StateBanner tone="success" title="审核决定已记录" detail={notice} />}
     {approvals.isError && <StateBanner tone="error" title="审核队列加载失败" detail={problemDetail(approvals.error)} />}
