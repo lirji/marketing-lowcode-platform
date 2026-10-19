@@ -402,12 +402,14 @@ button:focus-visible, a:focus-visible, [tabindex="0"]:focus-visible { outline:2p
 .refresh-button { width:34px; min-height:34px; padding:7px; }
 .table-scroll { width:100%; overflow-x:auto; overscroll-behavior-x:contain; }
 .campaign-list, .asset-list { width:100%; border-collapse:collapse; table-layout:fixed; text-align:left; font-size:14px; }
-.campaign-list { min-width:960px; }
-.campaign-name-column { width:34%; }
-.campaign-status-column { width:11%; }
-.campaign-owner-column { width:22%; }
-.campaign-date-column { width:15%; }
-.campaign-action-column { width:18%; }
+.campaign-list { min-width:1280px; }
+.campaign-name-column { width:16%; }
+.campaign-id-column { width:16%; }
+.campaign-objective-column { width:20%; }
+.campaign-status-column { width:8%; }
+.campaign-owner-column { width:15%; }
+.campaign-date-column { width:13%; }
+.campaign-action-column { width:12%; }
 .campaign-list th, .asset-list th { padding:13px 20px; color:var(--ink-600); font-size:12px; font-weight:550; background:#f8fafb; border-bottom:1px solid var(--line); white-space:nowrap; }
 .campaign-list td, .asset-list td { padding:14px 20px; border-bottom:1px solid #edf0f2; color:var(--ink-800); vertical-align:middle; line-height:1.55; }
 .campaign-list tbody tr:last-child td, .asset-list tbody tr:last-child td { border-bottom:0; }
@@ -504,3 +506,6 @@ button:focus-visible, a:focus-visible, [tabindex="0"]:focus-visible { outline:2p
 .condition-value { min-width:0; }.condition-value > input { width:100%; }.condition-value .field-hint { margin-top:5px; }.condition-instants { display:grid; gap:6px; }.instant-entry { display:flex; align-items:center; gap:5px; }.instant-entry .date-time-trigger { flex:1; }
 .analytics-filter > .select-trigger { width:auto; max-width:240px; }.lookup > label:first-child { min-width:140px; }.campaign-list .record-meta { overflow-wrap:anywhere; }
 .collection-search-help { padding:0 20px 12px; }.collection-search-help .field-hint { max-width:100%; }
+
+.campaign-id-cell { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; overflow-wrap:anywhere; }
+.campaign-objective-cell { overflow-wrap:anywhere; }
