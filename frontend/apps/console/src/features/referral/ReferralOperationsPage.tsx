@@ -1,3 +1,4 @@
+import { RecordTable, RecordTime } from '../../components/RecordTable'
 import { Select } from '../../components/Select'
 import { PageTabs } from '../../components/PageTabs'
 import { useEffect, useMemo, useState } from 'react'
@@ -112,47 +113,23 @@ export function ReferralOperationsPage() {
         ) : (active.data?.items.length ?? 0) === 0 ? (
           <EmptyState title="没有记录" detail="当前租户、组织和门店范围内没有返回行。" />
         ) : tab === 'participants' ? (
-          <table className="data-table">
-            <thead><tr><th>参与人</th><th>状态 / 版本</th><th>当前有效人数</th><th>历史曾合格</th></tr></thead>
-            <tbody>
-              {participants.data?.items.map((row) => (
-                <tr key={row.participantId}>
-                  <td><strong className="mono">{row.participantId}</strong><small>{row.organizationId} / {row.shopId}</small></td>
-                  <td><Badge>{row.state}</Badge><small>定义 {row.definitionId}@{row.definitionVersion} · gen {row.generation}</small></td>
-                  <td>{formatNullableCount(row.validCount)}<small>进度修订 {formatNullableCount(row.progressRevision)}</small></td>
-                  <td>{formatNullableCount(row.everQualifiedCount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <RecordTable label="参与人" columns={['参与人 ID', '活动 ID', '状态', '组织 ID', '店铺 ID', '定义 ID', '定义版本', '发布代际', '当前有效人数', '历史曾合格人数', '进度修订', '创建时间（北京时间）']}>
+            {participants.data?.items.map((row) => <tr key={row.participantId}>
+              <td>{row.participantId}</td><td>{row.campaignId}</td><td><Badge>{row.state}</Badge></td><td>{row.organizationId}</td><td>{row.shopId || '全部店铺'}</td><td>{row.definitionId}</td><td>{row.definitionVersion}</td><td>{row.generation}</td><td>{formatNullableCount(row.validCount)}</td><td>{formatNullableCount(row.everQualifiedCount)}</td><td>{formatNullableCount(row.progressRevision)}</td><td><RecordTime value={row.createdAt} /></td>
+            </tr>)}
+          </RecordTable>
         ) : tab === 'relations' ? (
-          <table className="data-table">
-            <thead><tr><th>关系</th><th>绑定</th><th>资格</th><th>证据</th></tr></thead>
-            <tbody>
-              {relations.data?.items.map((row) => (
-                <tr key={row.relationId}>
-                  <td><strong className="mono">{row.relationId}</strong><small>参与 {row.participantId}</small></td>
-                  <td>{row.state}<small>绑定 {row.boundAt}{row.deadlineAt ? ` · 观察截止 ${row.deadlineAt}` : ''}</small></td>
-                  <td>{qualificationLabel(row.qualificationState, row.counted)}<small>{row.reason ?? '无原因'} · 修订 {formatNullableCount(row.qualificationRevision)}</small></td>
-                  <td>{row.everQualified === true ? '曾合格' : row.everQualified === false ? '未曾合格' : '未知'}<small>证据版本 {formatNullableCount(row.evidenceVersion)}</small></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <RecordTable label="邀请关系" columns={['关系 ID', '参与人 ID', '绑定状态', '资格状态', '是否计入人数', '资格原因', '曾经合格', '资格修订', '证据版本', '绑定时间（北京时间）', '观察截止（北京时间）']}>
+            {relations.data?.items.map((row) => <tr key={row.relationId}>
+              <td>{row.relationId}</td><td>{row.participantId}</td><td><Badge>{row.state}</Badge></td><td>{qualificationLabel(row.qualificationState, undefined)}</td><td>{row.counted === true ? '是' : row.counted === false ? '否' : '未知'}</td><td>{row.reason ?? '无原因'}</td><td>{row.everQualified === true ? '曾合格' : row.everQualified === false ? '未曾合格' : '未知'}</td><td>{formatNullableCount(row.qualificationRevision)}</td><td>{formatNullableCount(row.evidenceVersion)}</td><td><RecordTime value={row.boundAt} /></td><td><RecordTime value={row.deadlineAt} /></td>
+            </tr>)}
+          </RecordTable>
         ) : (
-          <table className="data-table">
-            <thead><tr><th>奖励</th><th>规则</th><th>资格 / 授权 / 风控</th><th>履约 / 配额 / 追回</th></tr></thead>
-            <tbody>
-              {rewards.data?.items.map((row) => (
-                <tr key={row.rewardId}>
-                  <td><strong className="mono">{row.rewardId.slice(0, 12)}…</strong><small>{row.role} · {row.mode}{row.relationId ? ` · 关系 ${row.relationId}` : ' · 阶梯'}</small></td>
-                  <td>{row.ruleId}<small>门槛 {row.threshold} · 修订 {row.revision}</small></td>
-                  <td>{row.entitlementState} / {row.authorizationState} / {row.riskState}</td>
-                  <td>{deliveryLabel(row.deliveryState)}<small>配额 {row.quotaState} · 补偿 {row.compensationState}</small></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <RecordTable label="裂变奖励" columns={['奖励 ID', '参与人 ID', '关系 ID', '奖励角色', '奖励模式', '规则 ID', '门槛', '资格状态', '授权状态', '风控状态', '履约状态', '配额状态', '补偿状态', '修订版本', '创建时间（北京时间）']}>
+            {rewards.data?.items.map((row) => <tr key={row.rewardId}>
+              <td>{row.rewardId}</td><td>{row.participantId}</td><td>{row.relationId ?? '—'}</td><td>{row.role}</td><td>{row.mode}</td><td>{row.ruleId}</td><td>{row.threshold}</td><td><Badge>{row.entitlementState}</Badge></td><td><Badge>{row.authorizationState}</Badge></td><td><Badge>{row.riskState}</Badge></td><td>{deliveryLabel(row.deliveryState)}</td><td>{row.quotaState}</td><td>{row.compensationState}</td><td>{row.revision}</td><td><RecordTime value={row.createdAt} /></td>
+            </tr>)}
+          </RecordTable>
         )}
         {enabled && active.data ? (
           <div className="pager">

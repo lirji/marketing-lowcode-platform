@@ -1,9 +1,10 @@
+import { RecordTable } from '../../components/RecordTable'
 import { DateTimePicker } from '../../components/DateTimePicker'
 import { FieldHint } from '../../components/FieldHint'
 import { Select } from '../../components/Select'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Clock3, Database, Eye, Plus, ShieldCheck, Trash2 } from 'lucide-react'
+import { Eye, Plus, ShieldCheck, Trash2 } from 'lucide-react'
 import { Badge, Button, DemoBanner, EmptyState, PageHeader, Panel, PanelHeader, StateBanner } from '../../components/ui'
 import { api } from '../../shared/api/client'
 import { problemDetail } from '../../shared/api/problem'
@@ -235,5 +236,5 @@ export function AudienceBuilderPage() {
 function LiveProvenance({ fields, used }: { fields: FieldDefinition[]; used: string[] }) {
   const rows = used.map((fieldId) => fields.find((item) => item.fieldId === fieldId) ?? { fieldId, classification: 'UNKNOWN' })
   if (rows.length === 0) return <EmptyState title="没有引用字段" detail="添加条件后显示字段治理信息。" />
-  return <ul className="provenance-list">{rows.map((item) => <li key={item.fieldId}>{item.classification === 'PERSONAL' || item.classification === 'SENSITIVE' ? <Clock3 size={14} /> : <Database size={14} />}<div><strong>{item.fieldId}</strong><small>{item.owner ?? '—'} · {item.classification ?? '—'} · maxAge {fieldAge(item.maxAgeSeconds)}</small></div><Badge tone={item.classification === 'PERSONAL' || item.classification === 'SENSITIVE' ? 'warn' : 'good'}>{item.provenance ?? '已注册'}</Badge></li>)}</ul>
+  return <RecordTable label="字段来源" columns={['字段 ID', '所属方', '分类', '最大有效期', '数据来源']}>{rows.map((item) => <tr key={item.fieldId}><td>{item.fieldId}</td><td>{item.owner ?? '—'}</td><td><Badge tone={item.classification === 'PERSONAL' || item.classification === 'SENSITIVE' ? 'warn' : 'good'}>{item.classification ?? '—'}</Badge></td><td>{fieldAge(item.maxAgeSeconds)}</td><td>{item.provenance ?? '已注册'}</td></tr>)}</RecordTable>
 }

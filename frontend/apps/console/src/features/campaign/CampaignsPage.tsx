@@ -1,3 +1,4 @@
+import { RecordTable, RecordTime } from '../../components/RecordTable'
 import { FieldHint } from '../../components/FieldHint'
 import { Select } from '../../components/Select'
 import { Fragment, useEffect, useMemo, useState } from 'react'
@@ -97,28 +98,28 @@ export function CampaignsPage() {
       </ListToolbar>
       <div className="collection-search-help"><FieldHint id="campaign-search-hint">按活动名称、活动 ID 或目标关键词搜索；状态通过右侧下拉框筛选。</FieldHint></div>
       {campaigns.isError && <div className="collection-message"><StateBanner tone="error" title="活动列表加载失败" detail={problemDetail(campaigns.error)} /></div>}
-      {campaigns.isLoading ? <div className="skeleton-list" aria-label="正在加载活动"><i /><i /><i /></div> : !campaigns.data && campaigns.isError ? null : filtered.length === 0 ? <EmptyState title={query || status !== 'ALL' ? '没有匹配的活动' : '还没有营销活动'} detail={query || status !== 'ALL' ? '试试其他关键词，或清除筛选查看全部活动。' : '创建一个活动，开始配置营销规则与旅程。'} action={query || status !== 'ALL' ? <Button onClick={() => updateParams({ q: null, status: null })}>清除筛选</Button> : undefined} /> : <div className="table-scroll" role="region" aria-label="营销活动表格" tabIndex={0}>
-        <table className="campaign-list" aria-label="营销活动">
-          <colgroup><col className="campaign-name-column" /><col className="campaign-id-column" /><col className="campaign-objective-column" /><col className="campaign-status-column" /><col className="campaign-owner-column" /><col className="campaign-date-column" /><col className="campaign-action-column" /></colgroup>
-          <thead><tr><th scope="col">活动名称</th><th scope="col">活动 ID</th><th scope="col">目标</th><th scope="col">状态</th><th scope="col">创建人 / 适用范围</th><th scope="col">时间（北京时间）</th><th scope="col">操作</th></tr></thead>
-          <tbody>{filtered.map((item) => <Fragment key={item.id}>
+      {campaigns.isLoading ? <div className="skeleton-list" aria-label="正在加载活动"><i /><i /><i /></div> : !campaigns.data && campaigns.isError ? null : filtered.length === 0 ? <EmptyState title={query || status !== 'ALL' ? '没有匹配的活动' : '还没有营销活动'} detail={query || status !== 'ALL' ? '试试其他关键词，或清除筛选查看全部活动。' : '创建一个活动，开始配置营销规则与旅程。'} action={query || status !== 'ALL' ? <Button onClick={() => updateParams({ q: null, status: null })}>清除筛选</Button> : undefined} /> : <RecordTable label="营销活动" columns={['活动名称', '活动 ID', '目标', '活动类型', '状态', '创建人', '组织 ID', '店铺 ID', '创建时间（北京时间）', '更新时间（北京时间）', '操作']} actions>
+          {filtered.map((item) => <Fragment key={item.id}>
             <tr className={readyId === item.id ? 'is-expanded' : ''}>
-              <td><strong className="record-name">{item.name}</strong><small className="record-meta">{item.campaignType ? campaignTypeLabel(item.campaignType) : '类型未设置'}</small></td>
+              <td><strong className="record-name">{item.name}</strong></td>
               <td className="campaign-id-cell">{item.id}</td>
               <td className="campaign-objective-cell">{item.objective || '未填写目标'}</td>
+              <td>{item.campaignType ? campaignTypeLabel(item.campaignType) : '类型未设置'}</td>
               <td><Badge tone={statusMeta[item.status].tone}>{statusMeta[item.status].label}</Badge></td>
-              <td><span>{item.createdBy ?? '未提供创建人'}</span><small className="record-description" title={`组织：${item.organizationId ?? '未提供'} · 店铺：${item.shopId === undefined ? '未提供' : item.shopId || '全部店铺'}`}>组织：{item.organizationId ?? '未提供'} · 店铺：{item.shopId === undefined ? '未提供' : item.shopId || '全部店铺'}</small></td>
-              <td><time className="record-date" dateTime={item.updatedAt ?? item.createdAt}>{new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Shanghai' }).format(new Date(item.updatedAt ?? item.createdAt))}</time><small className="record-description">{item.updatedAt ? '最近更新' : '创建时间'}</small></td>
+              <td>{item.createdBy ?? '未提供'}</td>
+              <td>{item.organizationId ?? '未提供'}</td>
+              <td>{item.shopId === undefined ? '未提供' : item.shopId || '全部店铺'}</td>
+              <td><RecordTime value={item.createdAt} /></td>
+              <td><RecordTime value={item.updatedAt} /></td>
               <td><div className="row-actions"><button type="button" className="row-action" aria-expanded={readyId === item.id} aria-controls={readyId === item.id ? `readiness-${item.id}` : undefined} onClick={() => setReadyId((current) => current === item.id ? null : item.id)}>{readyId === item.id ? '收起就绪' : '查看就绪'}</button><ActionMenu label="设计" subject={item.name} items={[
                 { label: 'Offer 规则', to: `/designers/offer?campaignId=${encodeURIComponent(item.id)}`, state: { campaignName: item.name } },
                 { label: 'Journey 旅程', to: `/designers/journey?campaignId=${encodeURIComponent(item.id)}`, state: { campaignName: item.name } },
                 { label: '邀请有礼', to: `/designers/referral?campaignId=${encodeURIComponent(item.id)}`, state: { campaignName: item.name } },
               ]} /></div></td>
             </tr>
-            {readyId === item.id && <tr className="readiness-row"><td colSpan={7}><div id={`readiness-${item.id}`}><CampaignReadiness campaignId={item.id} /></div></td></tr>}
-          </Fragment>)}</tbody>
-        </table>
-      </div>}
+            {readyId === item.id && <tr className="readiness-row"><td colSpan={11}><div id={`readiness-${item.id}`}><CampaignReadiness campaignId={item.id} /></div></td></tr>}
+          </Fragment>)}
+      </RecordTable>}
     </Panel>
     {creationOpen && <CampaignModal organizations={orgOptions} shops={shopOptions} submitting={create.isPending} error={create.error ? problemDetail(create.error) : undefined} onClose={() => updateParams({ create: null })} onSubmit={(value, designIntent) => create.mutate({ ...value, designIntent })} />}
   </div>

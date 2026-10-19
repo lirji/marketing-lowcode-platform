@@ -1,14 +1,15 @@
+import { RecordTable, RecordTime } from '../../components/RecordTable'
 import { FieldHint } from '../../components/FieldHint'
 import { Select } from '../../components/Select'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, CircleDot, Copy, DatabaseZap, RefreshCw, Search, ShieldCheck, TriangleAlert } from 'lucide-react'
+import { Copy, DatabaseZap, RefreshCw, Search, ShieldCheck, TriangleAlert } from 'lucide-react'
 import { api } from '../../shared/api/client'
 import { Badge, Button, DemoBanner, EmptyState, Modal, PageHeader, Panel, PanelHeader, StateBanner } from '../../components/ui'
 import { problemDetail } from '../../shared/api/problem'
 import { useAuth } from '../../shared/auth/useAuth'
-import type { ContactView, EnrollmentView, QuarantineView, TraceView } from '../../shared/api/schemas'
+import type { TraceView } from '../../shared/api/schemas'
 import { PageTabs } from '../../components/PageTabs'
 import { AwardIntentsPanel } from './AwardIntentsPanel'
 
@@ -70,7 +71,7 @@ function TraceResult({ requestId, live }: { requestId: string; live?: TraceView 
     : api.demoMode ? demoEvents : []
   return <div className="trace-layout"><Panel><PanelHeader eyebrow="TRACE" title="营销全链路" aside={<Badge tone={live ? 'good' : 'warn'}>{live ? 'API' : '演示'}</Badge>} /><div className="trace-id"><span>Request</span><code>{live?.requestId ?? requestId}</code><button type="button" aria-label="复制 Request ID" onClick={() => void navigator.clipboard.writeText(live?.requestId ?? requestId)}><Copy size={13} /></button><span>Subject</span><code>{live?.maskedSubject ?? (api.demoMode ? 'f84a6d11c29e…' : '—')}</code></div>
     {live && <dl className="trace-summary"><div><dt>Trace</dt><dd>{live.traceId ?? '—'}</dd></div><div><dt>Generation</dt><dd>{live.generation ?? '—'}</dd></div><div><dt>耗时</dt><dd>{live.durationMicros != null ? `${(live.durationMicros / 1000).toFixed(1)}ms` : '—'}</dd></div><div><dt>Terms</dt><dd>{live.termsVersion ?? '—'}</dd></div></dl>}
-    {events.length === 0 ? <EmptyState title="没有逐步事件" detail="当前轨迹只有摘要字段，events 为空。" /> : <ol className="trace-timeline">{events.map(([time, type, title, detail, tone]) => <li key={`${type}-${title}`}><time>{time}</time><span className={tone}><CircleDot size={17} /></span><div><strong>{type} · {title}</strong><small>{detail}</small></div></li>)}</ol>}
+    {events.length === 0 ? <EmptyState title="没有逐步事件" detail="当前轨迹只有摘要字段，events 为空。" /> : <RecordTable label="轨迹事件" columns={['事件时间', '事件类型', '事件标题', '事件详情']}>{events.map(([time, type, title, detail], index) => <tr key={`${index}-${type}`}><td>{time}</td><td>{type}</td><td>{title}</td><td>{detail || '—'}</td></tr>)}</RecordTable>}
   </Panel><aside><Panel><PanelHeader eyebrow="DECISION EXPLAIN" title="候选与裁决" />{live ? <pre className="trace-json">{JSON.stringify(live.candidates ?? live.pricing ?? {}, null, 2)}</pre> : <><dl className="trace-summary"><div><dt>候选</dt><dd>7</dd></div><div><dt>资格通过</dt><dd>3</dd></div><div><dt>互斥后</dt><dd>2</dd></div><div><dt>最终采用</dt><dd>1</dd></div></dl><div className="reason-codes"><Badge tone="good">CATEGORY_MATCH</Badge><Badge tone="good">PLUS_ELIGIBLE</Badge></div></>}</Panel></aside></div>
 }
 
@@ -78,36 +79,32 @@ function JourneyInstances() {
   const [enrollmentId, setEnrollmentId] = useState('')
   const list = useQuery({ queryKey: ['enrollments'], queryFn: () => api.enrollments(), enabled: !api.demoMode })
   const lookup = useMutation({ mutationFn: api.enrollment })
-  if (api.demoMode) return <Panel><PanelHeader eyebrow="ENROLLMENTS" title="运行中 Journey 实例" aside={<Badge tone="info">82,491 waiting</Badge>} /><div className="ops-list">{[['enr-81FA', '加购未支付召回', 'WAIT_TIMER · 18m12s', 'v3', '正常'], ['enr-922C', '新客七日培育', 'WAIT_EVENT · OrderPaid', 'v7', '正常']].map(([id, name, state, version, health]) => <div key={id} className="ops-record"><CircleDot /><div><strong>{name}</strong><small>{id}</small></div><code>{state}</code><Badge tone={health === '正常' ? 'good' : 'warn'}>{health}</Badge><span>{version}</span></div>)}</div></Panel>
+  if (api.demoMode) return <Panel><PanelHeader eyebrow="ENROLLMENTS" title="运行中 Journey 实例" aside={<Badge tone="info">82,491 waiting</Badge>} /><RecordTable label="Journey 实例" columns={['旅程名称', '旅程实例 ID', '状态', '等待条件', '版本', '健康状态']}>{[['enr-81FA', '加购未支付召回', 'WAIT_TIMER', '18m12s', 'v3', '正常'], ['enr-922C', '新客七日培育', 'WAIT_EVENT', 'OrderPaid', 'v7', '正常']].map(([id, name, state, condition, version, health]) => <tr key={id}><td>{name}</td><td>{id}</td><td>{state}</td><td>{condition}</td><td>{version}</td><td><Badge tone="good">{health}</Badge></td></tr>)}</RecordTable></Panel>
   const items = lookup.data ? [lookup.data] : (list.data ?? [])
   return <Panel><PanelHeader eyebrow="ENROLLMENTS" title="Journey 实例" aside={<Button onClick={() => void list.refetch()} disabled={list.isFetching}><RefreshCw size={14} />刷新</Button>} />
     <div className="lookup"><label><Search size={16} /><span className="sr-only">旅程实例 ID（Enrollment ID）</span><input value={enrollmentId} onChange={(event) => setEnrollmentId(event.target.value)} aria-describedby="enrollment-search-hint" placeholder="填写完整旅程实例 ID" /></label><Button tone="primary" onClick={() => lookup.mutate(enrollmentId.trim())} disabled={!enrollmentId.trim() || lookup.isPending}>查询</Button></div><FieldHint id="enrollment-search-hint">对应下方列表的旅程实例 ID，填写完整值可精确查询该条记录。</FieldHint>
     {list.isError && <StateBanner tone="error" title="实例列表加载失败" detail={problemDetail(list.error)} />}
     {lookup.isError && <StateBanner tone="error" title="实例查询失败" detail={problemDetail(lookup.error)} />}
-    {items.length === 0 ? <EmptyState title="没有 Journey 实例" detail="列表来自 GET /api/v1/enrollments；也可按 enrollmentId 点查。" /> : <div className="ops-list"><div className="ops-list-head" aria-hidden="true"><span /><span>旅程 / 实例 ID</span><span>当前节点</span><span>状态</span><span>版本</span></div>{items.map((item) => <EnrollmentCard key={item.enrollmentId} item={item} />)}</div>}
+    {items.length === 0 ? <EmptyState title="没有 Journey 实例" detail="列表来自 GET /api/v1/enrollments；也可按 enrollmentId 点查。" /> : <RecordTable label="Journey 实例" columns={['旅程 ID', '旅程实例 ID', '当前节点 ID', '状态', '旅程版本', '主体标识（脱敏）', '是否重复', '投影时间（北京时间）']}>
+      {items.map((item) => <tr key={item.enrollmentId}><td>{item.journeyId}</td><td>{item.enrollmentId}</td><td>{item.currentNodeId ?? '—'}</td><td><Badge tone={item.status === 'FAILED' ? 'danger' : item.status === 'COMPLETED' ? 'good' : 'info'}>{item.status}</Badge></td><td>{item.journeyVersion}</td><td>{mask(item.subjectToken)}</td><td>{item.duplicate === undefined ? '未知' : item.duplicate ? '是' : '否'}</td><td><RecordTime value={item.projectedAt} /></td></tr>)}
+    </RecordTable>}
   </Panel>
-}
-
-function EnrollmentCard({ item }: { item: EnrollmentView }) {
-  return <div className="ops-record"><CircleDot /><div><strong>{item.journeyId}</strong><small title={item.enrollmentId}>实例 ID：{item.enrollmentId} · {mask(item.subjectToken)}</small></div><code title="当前节点">{item.currentNodeId ?? '—'}</code><Badge tone={item.status === 'FAILED' ? 'danger' : item.status === 'COMPLETED' ? 'good' : 'info'}>{item.status}</Badge><span>v{item.journeyVersion}</span></div>
 }
 
 function ContactAttempts() {
   const [contactKey, setContactKey] = useState('')
   const list = useQuery({ queryKey: ['contacts'], queryFn: () => api.contacts(), enabled: !api.demoMode })
   const lookup = useMutation({ mutationFn: api.contact })
-  if (api.demoMode) return <Panel><PanelHeader eyebrow="CONTACT ATTEMPTS" title="触达投递记录" /><div className="ops-list">{[['ct-8101', 'PUSH · 加购召回', 'DELIVERED', 'provider-1192', '34ms']].map(([id, name, state, detail, time]) => <div key={id} className="ops-record"><CheckCircle2 /><div><strong>{name}</strong><small>{id}</small></div><code>{detail}</code><Badge tone="good">{state}</Badge><span>{time}</span></div>)}</div></Panel>
+  if (api.demoMode) return <Panel><PanelHeader eyebrow="CONTACT ATTEMPTS" title="触达投递记录" /><RecordTable label="触达记录" columns={['触达 ID', '渠道', '用途', '状态', '服务商请求 ID', '耗时']}>{[['ct-8101', 'PUSH', '加购召回', 'DELIVERED', 'provider-1192', '34ms']].map(([id, channel, purpose, state, detail, time]) => <tr key={id}><td>{id}</td><td>{channel}</td><td>{purpose}</td><td><Badge tone="good">{state}</Badge></td><td>{detail}</td><td>{time}</td></tr>)}</RecordTable></Panel>
   const items = lookup.data ? [lookup.data] : (list.data ?? [])
   return <Panel><PanelHeader eyebrow="CONTACT ATTEMPTS" title="触达投递记录" aside={<Button onClick={() => void list.refetch()} disabled={list.isFetching}><RefreshCw size={14} />刷新</Button>} />
     <div className="lookup"><label><Search size={16} /><span className="sr-only">触达标识（Contact key）</span><input value={contactKey} onChange={(event) => setContactKey(event.target.value)} aria-describedby="contact-search-hint" placeholder="填写完整触达标识" /></label><Button tone="primary" onClick={() => lookup.mutate(contactKey.trim())} disabled={!contactKey.trim() || lookup.isPending}>查询</Button></div><FieldHint id="contact-search-hint">对应下方列表的触达标识，填写完整值可精确查询该条记录。</FieldHint>
     {list.isError && <StateBanner tone="error" title="触达列表加载失败" detail={problemDetail(list.error)} />}
     {lookup.isError && <StateBanner tone="error" title="触达查询失败" detail={problemDetail(lookup.error)} />}
-    {items.length === 0 ? <EmptyState title="没有触达记录" detail="列表来自 GET /api/v1/contacts；也可按 contactKey 点查。" /> : <div className="ops-list"><div className="ops-list-head" aria-hidden="true"><span /><span>触达标识</span><span>渠道回执</span><span>状态</span><span>更新时间</span></div>{items.map((item) => <ContactCard key={item.contactId} item={item} />)}</div>}
+    {items.length === 0 ? <EmptyState title="没有触达记录" detail="列表来自 GET /api/v1/contacts；也可按 contactKey 点查。" /> : <RecordTable label="触达记录" columns={['触达标识', '触达 ID', '状态', '服务商响应码', '服务商请求 ID', '更新时间（北京时间）']}>
+      {items.map((item) => <tr key={item.contactId}><td>{item.contactKey}</td><td>{item.contactId}</td><td><Badge tone={item.state === 'DELIVERED' ? 'good' : item.state === 'FAILED' ? 'danger' : 'warn'}>{item.state}</Badge></td><td>{item.providerCode ?? '—'}</td><td>{item.providerRequestId ?? '—'}</td><td><RecordTime value={item.updatedAt} /></td></tr>)}
+    </RecordTable>}
   </Panel>
-}
-
-function ContactCard({ item }: { item: ContactView }) {
-  return <div className="ops-record"><CheckCircle2 /><div><strong>{item.contactKey}</strong><small title={item.contactId}>{item.contactId}</small></div><code>{item.providerCode ?? item.providerRequestId ?? '—'}</code><Badge tone={item.state === 'DELIVERED' ? 'good' : item.state === 'FAILED' ? 'danger' : 'warn'}>{item.state}</Badge><span title={item.updatedAt ?? ''}>{item.updatedAt ?? '—'}</span></div>
 }
 
 function DeadLetters() {
@@ -119,11 +116,13 @@ function DeadLetters() {
     mutationFn: api.replayQuarantine,
     onSuccess: () => { setConfirmId(undefined); void queryClient.invalidateQueries({ queryKey: ['quarantine'] }) },
   })
-  if (api.demoMode) return <><StateBanner tone="warn" title="3 个分区存在待处理消息" detail="演示数据不会重放。" /><Panel><PanelHeader eyebrow="DLQ & QUARANTINE" title="隔离消息" /><div className="ops-list">{[['q-192', 'commerce.event.v1', 'AGGREGATE_VERSION_GAP', '可重放']].map(([id, topic, reason, state]) => <button key={id} type="button"><TriangleAlert /><div><strong>{topic}</strong><small>{id}</small></div><code>{reason}</code><Badge tone="good">{state}</Badge></button>)}</div></Panel></>
+  if (api.demoMode) return <><StateBanner tone="warn" title="3 个分区存在待处理消息" detail="演示数据不会重放。" /><Panel><PanelHeader eyebrow="DLQ & QUARANTINE" title="隔离消息" /><RecordTable label="隔离消息" columns={['隔离消息 ID', '主题', '原因码', '状态', '操作']} actions>{[['q-192', 'commerce.event.v1', 'AGGREGATE_VERSION_GAP', '可重放']].map(([id, topic, reason, state]) => <tr key={id}><td>{id}</td><td>{topic}</td><td>{reason}</td><td><Badge tone="good">{state}</Badge></td><td><Button disabled title="演示模式不可重放">重放</Button></td></tr>)}</RecordTable></Panel></>
   return <>
     {items.isError && <StateBanner tone="error" title="隔离区加载失败" detail={problemDetail(items.error)} />}
     <Panel><PanelHeader eyebrow="DLQ & QUARANTINE" title="隔离消息" aside={<Button onClick={() => void items.refetch()} disabled={items.isFetching}><RefreshCw size={14} />刷新</Button>} />
-      {(items.data ?? []).length === 0 ? <EmptyState title="没有隔离消息" detail="隔离区为空，或当前身份缺少 event:read。" /> : <div className="ops-list">{(items.data ?? []).map((item) => <QuarantineRow key={item.quarantineId} item={item} canReplay={auth.hasPermission('event:replay')} onReplay={() => setConfirmId(item.quarantineId)} />)}</div>}
+      {(items.data ?? []).length === 0 ? <EmptyState title="没有隔离消息" detail="隔离区为空，或当前身份缺少 event:read。" /> : <RecordTable label="隔离消息" columns={['隔离消息 ID', '回执 ID', '原因码', '状态', '创建时间（北京时间）', '重放时间（北京时间）', '操作']} actions>
+        {(items.data ?? []).map((item) => <tr key={item.quarantineId}><td>{item.quarantineId}</td><td>{item.receiptId ?? '—'}</td><td>{item.reasonCode}</td><td><Badge tone={item.state === 'REPLAYED' ? 'good' : 'warn'}>{item.state}</Badge></td><td><RecordTime value={item.createdAt} /></td><td><RecordTime value={item.replayedAt} /></td><td><Button disabled={!auth.hasPermission('event:replay')} title={auth.hasPermission('event:replay') ? '重放此消息' : '缺少 event:replay 权限'} onClick={() => setConfirmId(item.quarantineId)}>重放</Button></td></tr>)}
+      </RecordTable>}
     </Panel>
     {confirmId && <Modal title="重放隔离消息" description={confirmId} onClose={() => setConfirmId(undefined)}>
       <div className="danger-confirm">
@@ -136,10 +135,6 @@ function DeadLetters() {
       </div>
     </Modal>}
   </>
-}
-
-function QuarantineRow({ item, canReplay, onReplay }: { item: QuarantineView; canReplay: boolean; onReplay: () => void }) {
-  return <button type="button" onClick={canReplay ? onReplay : undefined}><TriangleAlert /><div><strong>{item.reasonCode}</strong><small>{item.quarantineId} · {item.receiptId ?? ''}</small></div><code>{item.createdAt ?? ''}</code><Badge tone={item.state === 'REPLAYED' ? 'good' : 'warn'}>{item.state}</Badge><span>{canReplay ? '重放' : ''}</span></button>
 }
 
 export function ReconciliationPanel() {

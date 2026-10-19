@@ -509,3 +509,23 @@ button:focus-visible, a:focus-visible, [tabindex="0"]:focus-visible { outline:2p
 
 .campaign-id-cell { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; overflow-wrap:anywhere; }
 .campaign-objective-cell { overflow-wrap:anywhere; }
+
+/* 所有业务记录按字段分列，长值完整换行，窄屏滚动限制在列表内。 */
+.record-table-scroll { width: 100%; min-width: 0; }
+.record-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 13px; text-align: left; }
+.record-table th { padding: 13px 16px; color: var(--ink-600); background: #f8fafb; font-weight: 600; font-size: 12px; border-bottom: 1px solid var(--line); text-align: left; }
+.record-table td { padding: 16px; vertical-align: top; line-height: 1.65; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; white-space: normal; }
+.record-table tbody tr:last-child td { border-bottom: 0; }
+.record-table tbody tr:hover td { background: #f8fafb; }
+.record-table.has-actions th:last-child, .record-table.has-actions td:last-child:not([colspan]) { position: sticky; right: 0; background: var(--paper); box-shadow: -1px 0 0 var(--line); z-index: 1; }
+.record-table.has-actions th:last-child { background: #f8fafb; }
+.record-table td .badge { white-space: normal; }
+.record-table .row-actions { flex-wrap: wrap; }
+.record-table .record-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.record-table .record-actions a, .record-table .record-actions button { display: inline-flex; align-items: center; gap: 5px; }
+.record-table .record-actions p { margin: 0; font-size: 12px; color: var(--ink-600); }
+
+.record-table .record-actions .row-action { white-space: normal; text-align: left; line-height: 1.5; }
+.record-table .record-actions a { color: var(--teal); text-decoration: none; }
+.record-table .record-actions a:hover { text-decoration: underline; }
+.record-table tr.is-expanded td, .record-table .readiness-row td { background: #f3faf8; }

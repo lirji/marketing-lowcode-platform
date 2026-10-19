@@ -1,6 +1,7 @@
+import { RecordTable } from '../../components/RecordTable'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Ban, CheckCircle2, PackageCheck, RotateCcw, Rocket, ShieldAlert } from 'lucide-react'
+import { Ban, PackageCheck, RotateCcw, Rocket, ShieldAlert } from 'lucide-react'
 import { Badge, Button, DemoBanner, EmptyState, Modal, PageHeader, Panel, PanelHeader, StateBanner } from '../../components/ui'
 import { problemDetail } from '../../shared/api/problem'
 import { api } from '../../shared/api/client'
@@ -64,7 +65,7 @@ export function ReleaseCenterPage() {
     {latest && <div className="release-summary"><Panel><p>Manifest</p><strong>{latest.manifest.manifestId.slice(0, 12)}</strong><small>{latest.state}</small></Panel><Panel><p>规则制品</p><strong>{latest.manifest.artifacts.length}</strong><small>checksum verified</small></Panel><Panel><p>就绪副本</p><strong>{latest.readyReplicas}</strong><small>容量 {latest.readyCapacity}</small></Panel><Panel><p>当前灰度</p><strong>{((latest.manifest.canaryBasisPoints ?? 0) / 100).toFixed(0)}%</strong><small>canary basis points</small></Panel></div>}
     <Panel>
       <PanelHeader eyebrow="CELL READINESS" title="运行时就绪矩阵" />
-      {api.demoMode ? <EmptyState title="演示模式不展示真实发布槽" detail="关闭 DEMO_MODE 后读取 /api/v1/releases。" /> : <div className="release-matrix"><div className="matrix-head"><span>Cell</span><span>状态</span><span>Generation</span><span>副本 ACK</span><span>声明容量</span><span>验签</span><span>流量</span></div>{(releases.data ?? []).map((item) => <div className="matrix-row" key={item.manifest.manifestId}><strong>{item.manifest.cell}</strong><Badge tone={item.state === 'ACTIVE' ? 'good' : 'warn'}>{item.state}</Badge><code>#{item.manifest.generation}</code><span>{item.readyReplicas}</span><span>{item.readyCapacity}</span><span className="verified"><CheckCircle2 size={14} />{item.manifest.signature ? 'signed' : 'unsigned'}</span><div className="traffic"><i><b style={{ width: `${(item.manifest.canaryBasisPoints ?? 0) / 100}%` }} /></i><strong>{((item.manifest.canaryBasisPoints ?? 0) / 100).toFixed(0)}%</strong></div></div>)}</div>}
+      {api.demoMode ? <EmptyState title="演示模式不展示真实发布槽" detail="关闭 DEMO_MODE 后读取 /api/v1/releases。" /> : <RecordTable label="运行时就绪矩阵" columns={['发布清单 ID', '环境', '部署单元', '运行类型', '命名空间', '状态', '发布代际', '就绪副本', '声明容量', '签名', '流量比例']}>{(releases.data ?? []).map((item) => <tr key={item.manifest.manifestId}><td>{item.manifest.manifestId}</td><td>{item.manifest.environment ?? '—'}</td><td>{item.manifest.cell}</td><td>{item.manifest.runtime}</td><td>{item.manifest.namespace ?? '—'}</td><td><Badge tone={item.state === 'ACTIVE' ? 'good' : 'warn'}>{item.state}</Badge></td><td>{item.manifest.generation}</td><td>{item.readyReplicas}</td><td>{item.readyCapacity}</td><td>{item.manifest.signature ? '已签名' : '未签名'}</td><td>{((item.manifest.canaryBasisPoints ?? 0) / 100).toFixed(2)}%</td></tr>)}</RecordTable>}
     </Panel>
     <div className="release-bottom">
       <Panel><PanelHeader eyebrow="GUARDRAILS" title="发布门禁" /><ul className="guardrail-list"><li className="warning"><ShieldAlert />推进、回滚和 Kill switch 必须填写审批依据，并在确认框勾选范围。</li></ul></Panel>

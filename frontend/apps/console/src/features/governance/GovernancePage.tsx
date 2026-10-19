@@ -1,6 +1,7 @@
+import { RecordTable, RecordTime } from '../../components/RecordTable'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Eye, ShieldAlert, UserRoundCheck } from 'lucide-react'
+import { Check, Eye, ShieldAlert } from 'lucide-react'
 import { Badge, Button, DemoBanner, EmptyState, Modal, PageHeader, Panel, PanelHeader, StateBanner } from '../../components/ui'
 import { problemDetail } from '../../shared/api/problem'
 import { api } from '../../shared/api/client'
@@ -46,17 +47,17 @@ export function GovernancePage() {
     <div className="governance-layout">
       <Panel>
         <PanelHeader eyebrow="MY QUEUE" title="待我审核" aside={<Badge tone="warn">{openItems.length} 项</Badge>} />
-        {api.demoMode ? <EmptyState title="演示模式不展示真实审核单" detail="关闭 DEMO_MODE 后将读取 /api/v1/approvals。" /> : openItems.length === 0 ? <EmptyState title="没有待审核变更" detail="新的提交会按职责分离进入此队列。" /> : <div className="approval-list">{openItems.map((item) => <button key={item.caseId} type="button" onClick={() => { setSelected(item); setComment('') }}><span className="risk-level medium">{item.status}</span><div><strong>{item.definitionId} v{item.definitionVersion}</strong><small>{item.caseId} · 提交人 {item.submittedBy}</small></div><div><strong>{item.requiredRoles.map((role) => ROLE_LABEL[role]).join(' · ')}</strong><small>已批准 {Object.keys(item.approvals).length}/{item.requiredRoles.length}</small></div><Eye size={15} /></button>)}</div>}
+        {api.demoMode ? <EmptyState title="演示模式不展示真实审核单" detail="关闭 DEMO_MODE 后将读取 /api/v1/approvals。" /> : openItems.length === 0 ? <EmptyState title="没有待审核变更" detail="新的提交会按职责分离进入此队列。" /> : <RecordTable label="待审核变更" columns={['审核单 ID', '定义 ID', '定义版本', '状态', '提交人', '所需角色', '已批准人数', '所需人数', '更新时间（北京时间）', '操作']} actions>{openItems.map((item) => <tr key={item.caseId}><td>{item.caseId}</td><td>{item.definitionId}</td><td>{item.definitionVersion}</td><td><Badge tone="warn">{item.status}</Badge></td><td>{item.submittedBy}</td><td>{item.requiredRoles.map((role) => ROLE_LABEL[role]).join('、')}</td><td>{Object.keys(item.approvals).length}</td><td>{item.requiredRoles.length}</td><td><RecordTime value={item.updatedAt} /></td><td><Button aria-label={`查看审核：${item.caseId}`} onClick={() => { setSelected(item); setComment('') }}><Eye size={15} />查看审核</Button></td></tr>)}</RecordTable>}
       </Panel>
       <aside>
         <Panel>
           <PanelHeader eyebrow="SEPARATION OF DUTIES" title="职责分离" />
-          <div className="role-matrix">
+          <RecordTable label="职责分离" columns={['角色', '当前用户', '审核权限']}>
             {(['BUSINESS', 'FINANCE', 'COMPLIANCE', 'MERCHANT'] as ApprovalRole[]).map((role) => {
               const allowed = auth.hasPermission(`approval:${role.toLowerCase()}`)
-              return <div key={role}><UserRoundCheck size={14} /><span><strong>{ROLE_LABEL[role]}负责人</strong><small>{allowed ? auth.displayName : '无此权限'}</small></span><Badge tone={allowed ? 'good' : 'danger'}>{allowed ? '可审核' : '不可审批'}</Badge></div>
+              return <tr key={role}><td>{ROLE_LABEL[role]}负责人</td><td>{auth.displayName}</td><td><Badge tone={allowed ? 'good' : 'danger'}>{allowed ? '可审核' : '不可审批'}</Badge></td></tr>
             })}
-          </div>
+          </RecordTable>
         </Panel>
         <Panel>
           <PanelHeader eyebrow="QUEUE" title="今日治理态势" />
@@ -69,15 +70,18 @@ export function GovernancePage() {
       </aside>
     </div>
     {selected && (
-      <Modal title="审核高风险变更" description={`${selected.caseId} · ${selected.definitionId}`} onClose={() => setSelected(null)}>
+      <Modal title="审核高风险变更" description="核对变更与审核依据" onClose={() => setSelected(null)}>
         <div className="approval-detail">
           {decide.isError && <StateBanner tone="error" title="审核失败" detail={problemDetail(decide.error)} />}
           <StateBanner tone="warn" title="批准后不会立即生效" detail="仍需编译、签名、运行时 ACK 和发布法定人数。" />
           <dl>
+            <div><dt>审核单 ID</dt><dd>{selected.caseId}</dd></div>
+            <div><dt>定义 ID</dt><dd>{selected.definitionId}</dd></div>
+            <div><dt>定义版本</dt><dd>{selected.definitionVersion}</dd></div>
             <div><dt>提交人</dt><dd>{selected.submittedBy}</dd></div>
             <div><dt>所需角色</dt><dd>{selected.requiredRoles.map((role) => ROLE_LABEL[role]).join('、')}</dd></div>
-            <div><dt>已记录</dt><dd>{Object.entries(selected.approvals).map(([role, actor]) => `${ROLE_LABEL[role as ApprovalRole] ?? role}:${actor}`).join('；') || '尚无'}</dd></div>
           </dl>
+          {Object.keys(selected.approvals).length > 0 ? <RecordTable label="已记录的审核" columns={['角色', '审核人']}>{Object.entries(selected.approvals).map(([role, actor]) => <tr key={role}><td>{ROLE_LABEL[role as ApprovalRole] ?? role}</td><td>{actor}</td></tr>)}</RecordTable> : <p>尚无审核记录</p>}
           <label className="field"><span>审核意见（必填，写入审计，最多 128 字）</span><textarea maxLength={128} value={comment} onChange={(event) => setComment(event.target.value)} placeholder="说明依据与风险判断" /></label>
           <footer className="modal-actions">
             <Button onClick={() => setSelected(null)}>取消</Button>

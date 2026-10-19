@@ -1,3 +1,4 @@
+import { RecordTable } from '../../components/RecordTable'
 import { FieldHint } from '../../components/FieldHint'
 import { Select } from '../../components/Select'
 import { useEffect, useMemo, useState } from 'react'
@@ -263,20 +264,9 @@ export function BenefitEditorPage() {
             </label>
           </div>
           {visibleBenefits.length > 0 && (
-            <ul className="benefit-choice-list">
-              {visibleBenefits.map((item) => (
-                <li key={item.benefitId}>
-                  <button
-                    type="button"
-                    aria-pressed={item.benefitId === form.benefitId}
-                    onClick={() => setForm(fromBenefit(item))}
-                  >
-                    <strong>{item.benefitId}</strong>
-                    <span>{item.name} · {item.status} v{item.version}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <RecordTable label="可选权益" columns={['权益名称', '权益 ID', '版本', '状态', '操作']} actions>
+              {visibleBenefits.map((item) => <tr key={item.benefitId}><td>{item.name}</td><td>{item.benefitId}</td><td>{item.version}</td><td><Badge tone={item.status === 'ACTIVE' ? 'good' : 'neutral'}>{item.status}</Badge></td><td><Button aria-label={`选择权益：${item.benefitId}`} aria-pressed={item.benefitId === form.benefitId} onClick={() => setForm(fromBenefit(item))}>{item.benefitId === form.benefitId ? '已选择' : '选择权益'}</Button></td></tr>)}
+            </RecordTable>
           )}
           {benefitQuery.trim() && visibleBenefits.length === 0 && (
             <p className="benefit-picker-empty">没有匹配「{benefitQuery.trim()}」的权益。权益按当前业务租户隔离。</p>

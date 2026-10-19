@@ -1,3 +1,4 @@
+import { RecordTable, RecordTime } from '../../components/RecordTable'
 import { Select } from '../../components/Select'
 import { useSearchParams } from 'react-router-dom'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
@@ -89,9 +90,9 @@ export function AwardIntentsPanel() {
           />
         )}
         {rows.length > 0 && (
-          <div className="award-intent-list">
-            {rows.map((item) => <AwardIntentCard key={item.intentId} item={item} />)}
-          </div>
+          <RecordTable label="发放指令" columns={['来源请求 ID', '指令 ID', '活动 ID', '来源系统', '定义版本', '发放模式', '状态', '主体摘要（脱敏）', '投递结果', '尝试次数', '权益订单号', '风控处置', '风控原因', '风控决策 ID', '最近错误', '创建时间（北京时间）', '更新时间（北京时间）', '发送时间（北京时间）', '操作']} actions>
+            {rows.map((item) => <AwardIntentRow key={item.intentId} item={item} />)}
+          </RecordTable>
         )}
         {intents.hasNextPage && (
           <div className="award-intent-more">
@@ -103,31 +104,19 @@ export function AwardIntentsPanel() {
   )
 }
 
-function AwardIntentCard({ item }: { item: AwardIntentView }) {
+function AwardIntentRow({ item }: { item: AwardIntentView }) {
   const orderHref = benefitOrderHref(item)
   const riskHref = riskDecisionHref(item)
   const blocked = item.status === 'RISK_BLOCKED'
   return (
-    <article className="award-intent-card">
-      <header>
-        <div>
-          <strong>{item.sourceRequestId}</strong>
-          <small>{item.intentId} · {item.deliveryMode} · v{item.definitionVersion}</small>
-        </div>
-        <Badge tone={statusTone(item.status)}>{statusLabel(item.status)}</Badge>
-      </header>
-      <dl className="award-intent-meta">
-        <div><dt>主体摘要</dt><dd className="mono">{shortHash(item.subjectHash)}</dd></div>
-        <div><dt>投递结果</dt><dd>{item.deliveryResult ?? '—'}</dd></div>
-        <div><dt>尝试</dt><dd>{item.attempts}</dd></div>
-        <div><dt>更新</dt><dd>{item.updatedAt}</dd></div>
-      </dl>
-      {item.status === 'DEAD' && item.lastError && <StateBanner tone="error" title="投递失败" detail={item.lastError} />}
-      {blocked && (
-        <StateBanner tone="warn" title={riskBannerTitle(item.riskAction)} detail={item.riskReason || '发放指令未进入出站队列。'} />
-      )}
-      <footer>
-        <button type="button" onClick={() => void navigator.clipboard.writeText(item.sourceRequestId)}>
+    <tr>
+      <td>{item.sourceRequestId}</td><td>{item.intentId}</td><td>{item.campaignId}</td><td>{item.sourceSystem}</td><td>{item.definitionVersion}</td><td>{item.deliveryMode}</td>
+      <td><Badge tone={statusTone(item.status)}>{statusLabel(item.status)}</Badge></td>
+      <td>{shortHash(item.subjectHash)}</td><td>{item.deliveryResult ?? '—'}</td><td>{item.attempts}</td><td>{item.benefitOrderNo ?? '—'}</td>
+      <td>{blocked ? riskBannerTitle(item.riskAction) : item.riskAction ?? '—'}</td><td>{item.riskReason || (blocked ? '发放指令未进入出站队列。' : '—')}</td><td>{item.riskDecisionId ?? '—'}</td><td>{item.lastError || '—'}</td>
+      <td><RecordTime value={item.createdAt} /></td><td><RecordTime value={item.updatedAt} /></td><td><RecordTime value={item.sentAt} /></td>
+      <td><div className="record-actions">
+        <button className="row-action" type="button" onClick={() => void navigator.clipboard.writeText(item.sourceRequestId)}>
           <Copy size={13} />复制 sourceRequestId
         </button>
         {orderHref ? (
@@ -143,7 +132,7 @@ function AwardIntentCard({ item }: { item: AwardIntentView }) {
         ) : blocked ? (
           <span>未配置 RISK_CONSOLE_ORIGIN，仅可复制 sourceRequestId</span>
         ) : null}
-      </footer>
-    </article>
+      </div></td>
+    </tr>
   )
 }

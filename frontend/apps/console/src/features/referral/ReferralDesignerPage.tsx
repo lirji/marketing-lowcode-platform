@@ -1,3 +1,4 @@
+import { RecordTable, RecordTime } from '../../components/RecordTable'
 import { DateTimePicker } from '../../components/DateTimePicker'
 import { FieldHint } from '../../components/FieldHint'
 import { Select } from '../../components/Select'
@@ -379,17 +380,9 @@ export function ReferralDesignerPage() {
           <Panel>
             <PanelHeader title="校验问题" eyebrow={live ? '控制面' : '本地'} />
             {serverIssues.length === 0 ? <p className="muted">还没有控制面校验结果。</p> : (
-              <ul className="referral-issues">
-                {serverIssues.map((issue) => (
-                  <li key={`${issue.code}-${issue.pointer}`}>
-                    <Badge tone={issue.severity === 'ERROR' ? 'danger' : 'warn'}>{issue.severity}</Badge>
-                    <div>
-                      <strong>{issue.message}</strong>
-                      <small>{issue.code} · {issue.pointer || '未定位'}</small>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <RecordTable label="裂变校验问题" columns={['严重程度', '问题码', '问题说明', '字段路径']}>
+                {serverIssues.map((issue, index) => <tr key={`${issue.code}-${issue.pointer}-${index}`}><td><Badge tone={issue.severity === 'ERROR' ? 'danger' : 'warn'}>{issue.severity}</Badge></td><td>{issue.code}</td><td>{issue.message}</td><td>{issue.pointer || '未定位'}</td></tr>)}
+              </RecordTable>
             )}
           </Panel>
         </aside>
@@ -552,17 +545,13 @@ function SimulationResultCard({ result }: { result: ReferralSimulationResult }) 
     <div className="referral-sim-result" role="status">
       <Badge tone={authorityOk ? 'info' : 'warn'}>{result.evidenceAuthority || '权威待确认'}</Badge>
       <p><strong>{qualificationStateLabel(result.qualification.state)}</strong></p>
-      <p>{qualificationReasonLabel(result.qualification.reason)} · 假设人数 {result.validCount}</p>
-      {result.qualification.dueAt && <p>观察截止 {result.qualification.dueAt}</p>}
+      <dl className="detail-facts"><div><dt>资格原因</dt><dd>{qualificationReasonLabel(result.qualification.reason)}</dd></div><div><dt>假设人数</dt><dd>{result.validCount}</dd></div></dl>
+      {result.qualification.dueAt && <p>观察截止（北京时间）：<RecordTime value={result.qualification.dueAt} /></p>}
       <p className="referral-copy">仿真结果，不会实际发奖。候选不是到账，也不是 HELD 受理。</p>
       {result.rewardCandidates.length === 0 ? <p className="muted">没有奖励候选。</p> : (
-        <ul>
-          {result.rewardCandidates.map((item) => (
-            <li key={`${item.rule.ruleId}-${item.milestoneKey}`}>
-              {item.rule.ruleId} · {item.rule.role} · {item.rule.mode} · milestone {item.milestoneKey}
-            </li>
-          ))}
-        </ul>
+        <RecordTable label="仿真奖励候选" columns={['规则 ID', '奖励角色', '奖励模式', '里程碑标识']}>
+          {result.rewardCandidates.map((item) => <tr key={`${item.rule.ruleId}-${item.milestoneKey}`}><td>{item.rule.ruleId}</td><td>{item.rule.role}</td><td>{item.rule.mode}</td><td>{item.milestoneKey}</td></tr>)}
+        </RecordTable>
       )}
     </div>
   )

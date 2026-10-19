@@ -1,3 +1,4 @@
+import { RecordTable } from '../../components/RecordTable'
 import { CircleDollarSign, Megaphone, Sparkles, UsersRound } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -73,7 +74,7 @@ export function DashboardPage() {
             ? <EmptyState title="暂无小时序列" detail="GET /api/v1/measurements/series 尚未返回数据点。" />
             : <div className="pulse-chart" aria-label="今日小时归因收入">{points.slice(-12).map((point) => <span key={point.at} style={{ '--height': `${Math.max(8, Math.round((point.revenueMinor / peak) * 100))}%` } as React.CSSProperties} title={`${point.at} · ${formatMinor(point.revenueMinor)}`} />)}</div>}
       </Panel>
-      <Panel className="readiness-panel"><PanelHeader eyebrow={api.demoMode ? '发布代际 #1842' : '发布就绪'} title="Cell 就绪度" aside={<Link className="text-button" to="/releases">打开控制台 →</Link>} />{(api.demoMode ? [['华东 · A','100%','已激活','good'],['华北 · B','100%','已激活','good'],['华南 · C','67%','预热中 · 2/3','warn']] : (releases.data ?? []).slice(0, 3).map((item) => [item.manifest.cell, `${Math.min(100, item.readyReplicas * 34)}%`, item.state, item.state === 'ACTIVE' ? 'good' : 'warn'])).map(([name,width,state,tone]) => <div className="readiness" key={String(name)}><div><strong>{name}</strong><Badge tone={tone as 'good'|'warn'}>{state}</Badge></div><div className="progress"><i style={{ width: String(width) }} /></div></div>)}</Panel>
+      <Panel className="readiness-panel"><PanelHeader eyebrow={api.demoMode ? '发布代际 #1842' : '发布就绪'} title="Cell 就绪度" aside={<Link className="text-button" to="/releases">打开控制台 →</Link>} />{api.demoMode ? <RecordTable label="Cell 就绪度" columns={['区域', '部署单元', '就绪比例', '状态', '就绪副本']}>{[['华东', 'A', '100%', '已激活', '—'], ['华北', 'B', '100%', '已激活', '—'], ['华南', 'C', '67%', '预热中', '2/3']].map(([region, cell, ratio, state, replicas]) => <tr key={cell}><td>{region}</td><td>{cell}</td><td>{ratio}</td><td><Badge tone={state === '已激活' ? 'good' : 'warn'}>{state}</Badge></td><td>{replicas}</td></tr>)}</RecordTable> : <RecordTable label="Cell 就绪度" columns={['发布清单 ID', '部署单元', '状态', '就绪副本', '声明容量']}>{(releases.data ?? []).slice(0, 3).map((item) => <tr key={item.manifest.manifestId}><td>{item.manifest.manifestId}</td><td>{item.manifest.cell}</td><td><Badge tone={item.state === 'ACTIVE' ? 'good' : 'warn'}>{item.state}</Badge></td><td>{item.readyReplicas}</td><td>{item.readyCapacity}</td></tr>)}</RecordTable>}</Panel>
     </section>
   </div>
 }
