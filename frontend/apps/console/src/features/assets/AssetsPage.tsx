@@ -1,3 +1,4 @@
+import { displayInstant } from '../../components/dateTime'
 import { RecordTable } from '../../components/RecordTable'
 import { FieldHint } from '../../components/FieldHint'
 import { useState } from 'react'
@@ -16,9 +17,7 @@ const assetStateLabels: Record<string, string> = { ACTIVE: '已生效', READY: '
 function assetValue(value: string, column: string): string {
   if (!value) return '—'
   if (column === '状态') return assetStateLabels[value] ?? value
-  if (column === '创建时间' && !Number.isNaN(Date.parse(value))) {
-    return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Shanghai' }).format(new Date(value))
-  }
+  if (column === '创建时间') return Number.isFinite(Date.parse(value)) ? displayInstant(value) : '时间无效'
   return value
 }
 

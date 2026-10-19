@@ -1,3 +1,4 @@
+import { displayTimestamp } from '../../components/dateTime'
 import { RecordTable, RecordTime } from '../../components/RecordTable'
 import { DateTimePicker } from '../../components/DateTimePicker'
 import { FieldHint } from '../../components/FieldHint'
@@ -36,7 +37,7 @@ function termsPreview(draft: ReferralDraft, campaignName: string): string {
     : draft.rewards.map((item) => `${item.role === 'INVITEE' ? '被邀请人' : '邀请人'} ${item.mode === 'MILESTONE' ? `达到 ${item.threshold || '—'} 人` : '逐人'}：权益 ${item.benefitDefinitionVersion || '未引用'} / SKU ${item.skuVersion || '未引用'}`).join('；')
   return [
     `${campaignName || '未命名活动'}（邀请有礼）`,
-    `活动时间 ${draft.startsAt || '未填'} 至 ${draft.endsAt || '未填'}，结算截止 ${draft.settlementEndsAt || '未填'}。`,
+    `活动时间 ${draft.startsAt ? displayTimestamp(draft.startsAt) : '未填'} 至 ${draft.endsAt ? displayTimestamp(draft.endsAt) : '未填'}，结算截止 ${draft.settlementEndsAt ? displayTimestamp(draft.settlementEndsAt) : '未填'}。`,
     `归因仅支持首次有效绑定；被邀请人范围仅支持权威新客。绑定期限 ${draft.maxBindAgeSeconds || '未填'} 秒，起算点以后端合同为准，前端不推断。`,
     `资格：${goal}。达标窗口 ${draft.qualificationWindowSeconds || '未填'} 秒，观察期 ${draft.observationSeconds || '未填'} 秒，晚到宽限 ${draft.lateArrivalGraceSeconds || '未填'} 秒。`,
     `金额最小单位 ${draft.minNetAmountMinor || '未填'} ${draft.currency || ''}。退款后净额不足则资格失效，同档位再次达标不重发。`,

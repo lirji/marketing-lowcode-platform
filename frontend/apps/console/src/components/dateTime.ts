@@ -22,3 +22,29 @@ export function preserveInstantPrecision(next: string, original: string) {
   const fraction = original.match(/\.(\d{1,9})Z$/)?.[1]
   return fraction ? next.replace(/\.\d{3}Z$/, `.${fraction}Z`) : next
 }
+
+/** 普通展示区明确标出业务时区，缺失或无效时间不回显接口原串。 */
+export function displayTimestamp(value?: string | null) {
+  if (!value) return '—'
+  if (!Number.isFinite(Date.parse(value))) return '时间无效'
+  return `${displayInstant(value)}（北京时间）`
+}
+
+/** 统计“今天”从北京零点起算，避免海外电脑把查询窗口错移一天。 */
+export function businessDayStart(now = new Date()) {
+  const shifted = new Date(now.getTime() + BUSINESS_OFFSET_MS)
+  return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()) - BUSINESS_OFFSET_MS)
+}
+
+export function displayTimeTick(value: string, granularity: 'hour' | 'day') {
+  if (!Number.isFinite(Date.parse(value))) return '时间无效'
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: BUSINESS_TIME_ZONE, hourCycle: 'h23',
+    ...(granularity === 'hour' ? { hour: '2-digit', minute: '2-digit' } : { month: '2-digit', day: '2-digit' }),
+  }).format(new Date(value))
+}
+
+/** 只用于诊断内容展示；不修改原对象、草稿、请求或下载数据。 */
+export function displayDiagnosticJson(value: unknown) {
+  return JSON.stringify(value, (_key, item: unknown) => typeof item === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(item) ? displayTimestamp(item) : item, 2)
+}

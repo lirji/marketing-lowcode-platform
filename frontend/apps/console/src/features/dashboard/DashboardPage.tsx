@@ -1,3 +1,4 @@
+import { businessDayStart, displayTimestamp } from '../../components/dateTime'
 import { RecordTable } from '../../components/RecordTable'
 import { CircleDollarSign, Megaphone, Sparkles, UsersRound } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -24,14 +25,8 @@ function formatMinor(value: number) {
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY', maximumFractionDigits: 0 }).format(value / 100)
 }
 
-function startOfToday() {
-  const from = new Date()
-  from.setHours(0, 0, 0, 0)
-  return from
-}
-
 export function DashboardPage() {
-  const from = startOfToday()
+  const from = businessDayStart()
   const to = new Date()
   const dashboard = useQuery({
     queryKey: ['dashboard'],
@@ -49,7 +44,7 @@ export function DashboardPage() {
     ? demoMetrics
     : dashboard.data
       ? [
-          { label: '今日归因成交', value: formatMinor(dashboard.data.attributedRevenueMinor), delta: dashboard.data.completeThrough ?? '', icon: CircleDollarSign },
+          { label: '今日归因成交', value: formatMinor(dashboard.data.attributedRevenueMinor), delta: `数据截至：${displayTimestamp(dashboard.data.completeThrough)}`, icon: CircleDollarSign },
           { label: '在线活动', value: String(campaigns.data?.length ?? 0), delta: '', icon: Megaphone },
           { label: '营销成本', value: formatMinor(dashboard.data.fundingCostMinor), delta: '', icon: Sparkles },
           { label: '水位延迟', value: `${dashboard.data.lag?.seconds ?? 0}s`, delta: dashboard.data.roi != null ? `ROI ${dashboard.data.roi}` : '', icon: UsersRound },
@@ -72,7 +67,7 @@ export function DashboardPage() {
           ? <div className="pulse-chart" aria-label="最近十二小时转化趋势图">{[32,39,36,48,52,49,67,61,75,70,84,91].map((height,index) => <span key={index} style={{ '--height': `${height}%` } as React.CSSProperties} />)}</div>
           : points.length === 0
             ? <EmptyState title="暂无小时序列" detail="GET /api/v1/measurements/series 尚未返回数据点。" />
-            : <div className="pulse-chart" aria-label="今日小时归因收入">{points.slice(-12).map((point) => <span key={point.at} style={{ '--height': `${Math.max(8, Math.round((point.revenueMinor / peak) * 100))}%` } as React.CSSProperties} title={`${point.at} · ${formatMinor(point.revenueMinor)}`} />)}</div>}
+            : <div className="pulse-chart" aria-label="今日小时归因收入">{points.slice(-12).map((point) => <span key={point.at} style={{ '--height': `${Math.max(8, Math.round((point.revenueMinor / peak) * 100))}%` } as React.CSSProperties} title={`${displayTimestamp(point.at)} · ${formatMinor(point.revenueMinor)}`} />)}</div>}
       </Panel>
       <Panel className="readiness-panel"><PanelHeader eyebrow={api.demoMode ? '发布代际 #1842' : '发布就绪'} title="Cell 就绪度" aside={<Link className="text-button" to="/releases">打开控制台 →</Link>} />{api.demoMode ? <RecordTable label="Cell 就绪度" columns={['区域', '部署单元', '就绪比例', '状态', '就绪副本']}>{[['华东', 'A', '100%', '已激活', '—'], ['华北', 'B', '100%', '已激活', '—'], ['华南', 'C', '67%', '预热中', '2/3']].map(([region, cell, ratio, state, replicas]) => <tr key={cell}><td>{region}</td><td>{cell}</td><td>{ratio}</td><td><Badge tone={state === '已激活' ? 'good' : 'warn'}>{state}</Badge></td><td>{replicas}</td></tr>)}</RecordTable> : <RecordTable label="Cell 就绪度" columns={['发布清单 ID', '部署单元', '状态', '就绪副本', '声明容量']}>{(releases.data ?? []).slice(0, 3).map((item) => <tr key={item.manifest.manifestId}><td>{item.manifest.manifestId}</td><td>{item.manifest.cell}</td><td><Badge tone={item.state === 'ACTIVE' ? 'good' : 'warn'}>{item.state}</Badge></td><td>{item.readyReplicas}</td><td>{item.readyCapacity}</td></tr>)}</RecordTable>}</Panel>
     </section>

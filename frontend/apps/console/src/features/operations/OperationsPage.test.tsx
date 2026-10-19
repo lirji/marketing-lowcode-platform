@@ -31,7 +31,9 @@ describe('ReconciliationPanel', () => {
     expect(list).toHaveTextContent('RESERVED_TOTAL_MISMATCH:resource-a')
     expect(list).toHaveTextContent('CONSUMED_TOTAL_MISMATCH:resource-b')
     expect(screen.getByText('42')).toBeInTheDocument()
-    expect(screen.getByText('2026-09-06T08:00:00Z')).toBeInTheDocument()
+    expect(screen.getByText('2026/09/06 16:00:00')).toHaveAttribute('datetime', '2026-09-06T08:00:00Z')
+    expect(screen.getByText('核对时间（北京时间）')).toBeInTheDocument()
+    expect(screen.queryByText('2026-09-06T08:00:00Z')).not.toBeInTheDocument()
     expect(screen.getByText(/对账只报告差异，不执行补发/)).toBeInTheDocument()
   })
 

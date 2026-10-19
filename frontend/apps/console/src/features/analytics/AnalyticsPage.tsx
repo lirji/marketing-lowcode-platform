@@ -1,3 +1,4 @@
+import { businessDayStart, displayTimestamp, displayTimeTick } from '../../components/dateTime'
 import { Select } from '../../components/Select'
 import { useState } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -17,18 +18,8 @@ const trend = [
 const variants = [{ name: 'Control', conversion: 7.42, revenue: 128 }, { name: 'Variant A', conversion: 8.06, revenue: 143 }, { name: 'Variant B', conversion: 8.31, revenue: 151 }]
 
 function windowStart(label: string) {
-  const from = new Date()
-  if (label === '7 天') from.setDate(from.getDate() - 7)
-  else if (label === '30 天') from.setDate(from.getDate() - 30)
-  else from.setHours(0, 0, 0, 0)
-  return from
-}
-
-function formatTick(iso: string, label: string) {
-  const date = new Date(iso)
-  return label === '今天'
-    ? date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-    : date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+  if (label === '今天') return businessDayStart()
+  return new Date(Date.now() - (label === '7 天' ? 7 : 30) * 24 * 60 * 60 * 1000)
 }
 
 export function AnalyticsPage() {
@@ -47,7 +38,7 @@ export function AnalyticsPage() {
   const revenue = dashboard.data ? (dashboard.data.attributedRevenueMinor / 100).toFixed(0) : '—'
   const cost = dashboard.data ? (dashboard.data.fundingCostMinor / 100).toFixed(0) : '—'
   const chart = (series.data?.points ?? []).map((point) => ({
-    time: formatTick(point.at, window),
+    time: displayTimeTick(point.at, granularity),
     revenue: point.revenueMinor / 100,
     cost: point.costMinor / 100,
   }))
@@ -59,14 +50,14 @@ export function AnalyticsPage() {
     {dashboard.isError && <StateBanner tone="error" title="KPI 加载失败" detail={problemDetail(dashboard.error)} />}
     {series.isError && <StateBanner tone="error" title="序列加载失败" detail={problemDetail(series.error)} />}
     {recompute.isError && <StateBanner tone="error" title="归因重算失败" detail={problemDetail(recompute.error)} />}
-    {recompute.data && <StateBanner tone="success" title="归因已重算" detail={`conversions ${recompute.data.conversions} · credits ${recompute.data.credits}${recompute.data.completedAt ? ` · ${recompute.data.completedAt}` : ''}`} />}
+    {recompute.data && <StateBanner tone="success" title="归因已重算" detail={`conversions ${recompute.data.conversions} · credits ${recompute.data.credits}${recompute.data.completedAt ? ` · 完成时间：${displayTimestamp(recompute.data.completedAt)}` : ''}`} />}
     <div className="analytics-filter"><div className="segmented">{['今天','7 天','30 天'].map((item) => <button className={window === item ? 'active' : ''} onClick={() => setWindow(item)} key={item}>{item}</button>)}</div><Select disabled={!api.demoMode} title={api.demoMode ? undefined : '活动过滤尚未接入'}><option>全部活动</option><option>双11家电主会场</option></Select><Select disabled={!api.demoMode} title={api.demoMode ? undefined : '归因策略过滤尚未接入'}><option>Last touch · 7d</option><option>First touch · 7d</option><option>Linear · 7d</option></Select><Badge tone="good">水位延迟 {dashboard.data?.lag?.seconds ?? (api.demoMode ? 12 : '—')}s</Badge></div>
-    <section className="analytics-metrics">{[['归因成交', api.demoMode ? '¥ 18.43M' : `¥ ${revenue}`, dashboard.data?.completeThrough ?? ''],['营销成本', api.demoMode ? '¥ 3.11M' : `¥ ${cost}`, ''],['ROI', api.demoMode ? '4.93' : String(dashboard.data?.roi ?? '—'), ''],['水位', `${dashboard.data?.lag?.seconds ?? (api.demoMode ? 12 : '—')}s`, '']].map(([label,value,delta]) => <Panel key={label}><p>{label}</p><strong>{value}</strong><span>{delta}</span></Panel>)}</section>
-    <div className="analytics-grid">{api.demoMode ? <><Panel className="trend-chart"><PanelHeader eyebrow="REVENUE / COST" title="归因收入与补贴成本" aside={<Badge tone="info">CNY · 千元</Badge>} /><div className="chart-container"><ResponsiveContainer width="100%" height="100%"><AreaChart data={trend}><defs><linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#168b80" stopOpacity={0.35}/><stop offset="100%" stopColor="#168b80" stopOpacity={0.02}/></linearGradient></defs><CartesianGrid stroke="#e9eeee" vertical={false}/><XAxis dataKey="time" tick={{ fontSize: 'var(--text-xs)' }} axisLine={false}/><YAxis tick={{ fontSize: 'var(--text-xs)' }} axisLine={false}/><Tooltip/><Legend/><Area type="monotone" dataKey="revenue" name="归因收入" stroke="#168b80" fill="url(#revenueFill)" strokeWidth={2}/><Area type="monotone" dataKey="cost" name="补贴成本" stroke="#d18a27" fill="transparent" strokeWidth={2}/></AreaChart></ResponsiveContainer></div></Panel>
+    <section className="analytics-metrics">{[['归因成交', api.demoMode ? '¥ 18.43M' : `¥ ${revenue}`, `数据截至：${displayTimestamp(dashboard.data?.completeThrough)}`],['营销成本', api.demoMode ? '¥ 3.11M' : `¥ ${cost}`, ''],['ROI', api.demoMode ? '4.93' : String(dashboard.data?.roi ?? '—'), ''],['水位', `${dashboard.data?.lag?.seconds ?? (api.demoMode ? 12 : '—')}s`, '']].map(([label,value,delta]) => <Panel key={label}><p>{label}</p><strong>{value}</strong><span>{delta}</span></Panel>)}</section>
+    <div className="analytics-grid">{api.demoMode ? <><Panel className="trend-chart"><PanelHeader eyebrow="REVENUE / COST" title="归因收入与补贴成本（北京时间）" aside={<Badge tone="info">CNY · 千元</Badge>} /><div className="chart-container"><ResponsiveContainer width="100%" height="100%"><AreaChart data={trend}><defs><linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#168b80" stopOpacity={0.35}/><stop offset="100%" stopColor="#168b80" stopOpacity={0.02}/></linearGradient></defs><CartesianGrid stroke="#e9eeee" vertical={false}/><XAxis dataKey="time" tick={{ fontSize: 'var(--text-xs)' }} axisLine={false}/><YAxis tick={{ fontSize: 'var(--text-xs)' }} axisLine={false}/><Tooltip labelFormatter={(label) => `${label}（北京时间）`} /><Legend/><Area type="monotone" dataKey="revenue" name="归因收入" stroke="#168b80" fill="url(#revenueFill)" strokeWidth={2}/><Area type="monotone" dataKey="cost" name="补贴成本" stroke="#d18a27" fill="transparent" strokeWidth={2}/></AreaChart></ResponsiveContainer></div></Panel>
       <Panel><PanelHeader eyebrow="FUNNEL" title="营销转化漏斗" /><div className="analytics-funnel">{[['资格决策','8.42M','100%'],['Offer 展示','4.18M','49.6%'],['权益应用','2.13M','25.3%'],['确认转化','684K','8.12%']].map(([label,value,width]) => <div key={label}><span>{label}</span><i><b style={{ width }} /></i><strong>{value}</strong></div>)}</div></Panel>
       <Panel className="experiment-chart"><PanelHeader eyebrow="EXPERIMENT · exp-ha-7" title="变体增量" aside={<Badge tone="good">SRM PASS</Badge>} /><div className="chart-container short"><ResponsiveContainer width="100%" height="100%"><BarChart data={variants}><CartesianGrid stroke="#e9eeee" vertical={false}/><XAxis dataKey="name" tick={{ fontSize: 'var(--text-xs)' }} axisLine={false}/><YAxis tick={{ fontSize: 'var(--text-xs)' }} axisLine={false}/><Tooltip/><Bar dataKey="conversion" name="转化率 %" fill="#3179ba" radius={[4,4,0,0]}/></BarChart></ResponsiveContainer></div></Panel>
       <Panel><PanelHeader eyebrow="ATTRIBUTION" title="触点贡献" /><div className="touch-list">{[['Offer 展示','38%','#168b80'],['Push 送达','27%','#3179ba'],['站内信点击','21%','#7659b1'],['权益到账','14%','#d18a27']].map(([label,value,color]) => <div key={label}><span>{label}</span><i><b style={{ width: value, background: color }} /></i><strong>{value}</strong></div>)}</div><StateBanner tone="info" title="退款更正已收敛" detail="最近 7 条 correction 已反转旧贡献并重算。" /></Panel></> : <>
-      <Panel className="trend-chart"><PanelHeader eyebrow="REVENUE / COST" title="归因收入与补贴成本" aside={<Badge tone="info">CNY · 元</Badge>} />{chart.length === 0 ? <EmptyState title="暂无时间序列" detail="GET /api/v1/measurements/series 尚未返回数据点。" /> : <div className="chart-container"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chart}><defs><linearGradient id="revenueFillLive" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#168b80" stopOpacity={0.35}/><stop offset="100%" stopColor="#168b80" stopOpacity={0.02}/></linearGradient></defs><CartesianGrid stroke="#e9eeee" vertical={false}/><XAxis dataKey="time" tick={{ fontSize: 'var(--text-xs)' }} axisLine={false}/><YAxis tick={{ fontSize: 'var(--text-xs)' }} axisLine={false}/><Tooltip/><Legend/><Area type="monotone" dataKey="revenue" name="归因收入" stroke="#168b80" fill="url(#revenueFillLive)" strokeWidth={2}/><Area type="monotone" dataKey="cost" name="补贴成本" stroke="#d18a27" fill="transparent" strokeWidth={2}/></AreaChart></ResponsiveContainer></div>}</Panel>
+      <Panel className="trend-chart"><PanelHeader eyebrow="REVENUE / COST" title="归因收入与补贴成本（北京时间）" aside={<Badge tone="info">CNY · 元</Badge>} />{chart.length === 0 ? <EmptyState title="暂无时间序列" detail="GET /api/v1/measurements/series 尚未返回数据点。" /> : <div className="chart-container"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chart}><defs><linearGradient id="revenueFillLive" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#168b80" stopOpacity={0.35}/><stop offset="100%" stopColor="#168b80" stopOpacity={0.02}/></linearGradient></defs><CartesianGrid stroke="#e9eeee" vertical={false}/><XAxis dataKey="time" tick={{ fontSize: 'var(--text-xs)' }} axisLine={false}/><YAxis tick={{ fontSize: 'var(--text-xs)' }} axisLine={false}/><Tooltip labelFormatter={(label) => `${label}（北京时间）`} /><Legend/><Area type="monotone" dataKey="revenue" name="归因收入" stroke="#168b80" fill="url(#revenueFillLive)" strokeWidth={2}/><Area type="monotone" dataKey="cost" name="补贴成本" stroke="#d18a27" fill="transparent" strokeWidth={2}/></AreaChart></ResponsiveContainer></div>}</Panel>
       <Panel><PanelHeader eyebrow="COUNTS" title="事实类型拆分" />{counts.length === 0 ? <EmptyState title="暂无拆分" detail="dashboard.counts 为空。" /> : <div className="analytics-funnel">{counts.map(([label, value]) => <div key={label}><span>{label}</span><i><b style={{ width: `${Math.max(8, Math.round((value / maxCount) * 100))}%` }} /></i><strong>{value}</strong></div>)}</div>}</Panel>
     </>}</div>
   </div>

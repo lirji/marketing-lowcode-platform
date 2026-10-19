@@ -1,3 +1,4 @@
+import { displayDiagnosticJson } from '../../components/dateTime'
 import { RecordTable, RecordTime } from '../../components/RecordTable'
 import { FieldHint } from '../../components/FieldHint'
 import { Select } from '../../components/Select'
@@ -71,8 +72,8 @@ function TraceResult({ requestId, live }: { requestId: string; live?: TraceView 
     : api.demoMode ? demoEvents : []
   return <div className="trace-layout"><Panel><PanelHeader eyebrow="TRACE" title="营销全链路" aside={<Badge tone={live ? 'good' : 'warn'}>{live ? 'API' : '演示'}</Badge>} /><div className="trace-id"><span>Request</span><code>{live?.requestId ?? requestId}</code><button type="button" aria-label="复制 Request ID" onClick={() => void navigator.clipboard.writeText(live?.requestId ?? requestId)}><Copy size={13} /></button><span>Subject</span><code>{live?.maskedSubject ?? (api.demoMode ? 'f84a6d11c29e…' : '—')}</code></div>
     {live && <dl className="trace-summary"><div><dt>Trace</dt><dd>{live.traceId ?? '—'}</dd></div><div><dt>Generation</dt><dd>{live.generation ?? '—'}</dd></div><div><dt>耗时</dt><dd>{live.durationMicros != null ? `${(live.durationMicros / 1000).toFixed(1)}ms` : '—'}</dd></div><div><dt>Terms</dt><dd>{live.termsVersion ?? '—'}</dd></div></dl>}
-    {events.length === 0 ? <EmptyState title="没有逐步事件" detail="当前轨迹只有摘要字段，events 为空。" /> : <RecordTable label="轨迹事件" columns={['事件时间', '事件类型', '事件标题', '事件详情']}>{events.map(([time, type, title, detail], index) => <tr key={`${index}-${type}`}><td>{time}</td><td>{type}</td><td>{title}</td><td>{detail || '—'}</td></tr>)}</RecordTable>}
-  </Panel><aside><Panel><PanelHeader eyebrow="DECISION EXPLAIN" title="候选与裁决" />{live ? <pre className="trace-json">{JSON.stringify(live.candidates ?? live.pricing ?? {}, null, 2)}</pre> : <><dl className="trace-summary"><div><dt>候选</dt><dd>7</dd></div><div><dt>资格通过</dt><dd>3</dd></div><div><dt>互斥后</dt><dd>2</dd></div><div><dt>最终采用</dt><dd>1</dd></div></dl><div className="reason-codes"><Badge tone="good">CATEGORY_MATCH</Badge><Badge tone="good">PLUS_ELIGIBLE</Badge></div></>}</Panel></aside></div>
+    {events.length === 0 ? <EmptyState title="没有逐步事件" detail="当前轨迹只有摘要字段，events 为空。" /> : <RecordTable label="轨迹事件" columns={['事件时间（北京时间）', '事件类型', '事件标题', '事件详情']}>{events.map(([time, type, title, detail], index) => <tr key={`${index}-${type}`}><td>{live ? <RecordTime value={time} /> : time}</td><td>{type}</td><td>{title}</td><td>{detail || '—'}</td></tr>)}</RecordTable>}
+  </Panel><aside><Panel><PanelHeader eyebrow="DECISION EXPLAIN" title="候选与裁决" />{live ? <pre className="trace-json">{displayDiagnosticJson(live.candidates ?? live.pricing ?? {})}</pre> : <><dl className="trace-summary"><div><dt>候选</dt><dd>7</dd></div><div><dt>资格通过</dt><dd>3</dd></div><div><dt>互斥后</dt><dd>2</dd></div><div><dt>最终采用</dt><dd>1</dd></div></dl><div className="reason-codes"><Badge tone="good">CATEGORY_MATCH</Badge><Badge tone="good">PLUS_ELIGIBLE</Badge></div></>}</Panel></aside></div>
 }
 
 function JourneyInstances() {
@@ -146,7 +147,7 @@ export function ReconciliationPanel() {
     <PanelHeader eyebrow="LEDGER RECONCILIATION" title={reconcile.data.balanced ? '本货主资金守恒成立' : '存在不变量差异'} aside={<Badge tone={reconcile.data.balanced ? 'good' : 'danger'}>{reconcile.data.balanced ? 'PASS' : `${reconcile.data.violations.length} VIOLATIONS`}</Badge>} />
     <dl className="reconciliation-summary">
       <div><dt>Ledger movement</dt><dd>{reconcile.data.ledgerMovement ?? '—'}</dd></div>
-      <div><dt>Checked at</dt><dd>{reconcile.data.checkedAt ?? '—'}</dd></div>
+      <div><dt>核对时间（北京时间）</dt><dd><RecordTime value={reconcile.data.checkedAt} /></dd></div>
     </dl>
     {reconcile.data.violations.length > 0
       ? <ol className="reconciliation-violations" aria-label="全部对账差异">{reconcile.data.violations.map((violation, index) => <li key={`${index}-${violation}`}><TriangleAlert size={15} /><span>{violation}</span></li>)}</ol>
