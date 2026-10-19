@@ -1,3 +1,4 @@
+import { Select } from '../../components/Select'
 import { skuFaceValue, validityLabel } from './skuDisplay'
 import { Badge, EmptyState, StateBanner } from '../../components/ui'
 import type { BenefitSku } from '../../shared/api/schemas'
@@ -68,7 +69,7 @@ export function SkuPickerField({
     <div className="sku-bind">
       <label className="field">
         <span>已投放 SKU</span>
-        <select aria-label="已投放 SKU" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+        <Select aria-label="已投放 SKU" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
           <option value="">不绑定（草稿可空）</option>
           {orphan && <option value={value}>{value}（当前绑定，已不在已投放列表）</option>}
           {skus.map((item) => (
@@ -76,7 +77,7 @@ export function SkuPickerField({
               {item.skuId} · {item.benefitType} · {skuFaceValue(item.faceValueMinor, item.currency)}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
       {orphan && <StateBanner tone="warn" title="已绑定模板不在已投放列表" detail={`${value} 可能已暂停或下线。发布 ACTIVE 会被服务端拒绝。`} />}
       {selected && <TemplateSummary sku={selected} />}

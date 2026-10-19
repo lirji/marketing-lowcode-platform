@@ -36,9 +36,10 @@ export function Modal({ title, description, children, onClose }: { title: string
   useEffect(() => {
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const root = card.current
-    const focusable = () => Array.from(root?.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])') ?? []).filter((node) => !node.hasAttribute('disabled'))
+    const focusable = () => Array.from(root?.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])') ?? []).filter((node) => !node.hasAttribute('disabled') && node.getAttribute('tabindex') !== '-1' && node.getAttribute('type') !== 'hidden' && !node.closest('[aria-hidden="true"]'))
     focusable()[0]?.focus()
     const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return
       if (event.key === 'Escape') {
         event.preventDefault()
         onClose()

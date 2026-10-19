@@ -5,7 +5,7 @@ test('campaign filters survive modal close and design menu remains keyboard acce
   await expect(page.getByRole('dialog')).toBeVisible()
   await page.getByRole('button', { name: '取消', exact: true }).click()
   await expect(page.getByRole('searchbox', { name: '搜索活动' })).toHaveValue('unmatched-search')
-  await expect(page.getByRole('combobox', { name: '状态筛选' })).toHaveValue('DRAFT')
+  await expect(page.getByRole('combobox', { name: '状态筛选' })).toHaveText('草稿')
   await expect(page).toHaveURL(/q=unmatched-search&status=DRAFT/)
   await page.getByRole('button', { name: '清除筛选', exact: true }).first().click()
   const trigger = page.getByRole('button', { name: /^设计：/ }).first()

@@ -1,3 +1,4 @@
+import { Select } from '../../components/Select'
 import { PageTabs } from '../../components/PageTabs'
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -85,12 +86,12 @@ export function ReferralOperationsPage() {
       <div className="toolbar">
         <label className="compact-select">
           <span className="sr-only">活动</span>
-          <select aria-label="活动" value={campaignId} disabled={!live} onChange={(event) => setCampaign(event.target.value)}>
+          <Select aria-label="活动" value={campaignId} disabled={!live} onChange={(event) => setCampaign(event.target.value)}>
             <option value="">选择活动</option>
             {options.map((item) => (
               <option key={item.id} value={item.id}>{item.name} · {item.id}</option>
             ))}
-          </select>
+          </Select>
         </label>
       </div>
       {live && campaigns.data && campaigns.data.length > 0 && !campaigns.data.some((item) => item.campaignType === 'REFERRAL') && (

@@ -1,3 +1,4 @@
+import { Select } from '../../components/Select'
 import { useState } from 'react'
 import { FlaskConical, Plus, ShieldCheck } from 'lucide-react'
 import { Badge, Button, DemoBanner, EmptyState, PageHeader, Panel, PanelHeader, StateBanner } from '../../components/ui'
@@ -30,12 +31,12 @@ export function DmnDesignerPage() {
       <Panel>
         <div className="dmn-toolbar">
           <label>Hit policy
-            <select value={hitPolicy} onChange={(event) => setHitPolicy(event.target.value)}>
+            <Select value={hitPolicy} onChange={(event) => setHitPolicy(event.target.value)}>
               <option>PRIORITY</option>
               <option>FIRST</option>
               <option>COLLECT</option>
               <option>UNIQUE</option>
-            </select>
+            </Select>
           </label>
           <span>Input 2</span>
           <span>Output 3</span>
@@ -83,7 +84,7 @@ export function DmnDesignerPage() {
           <PanelHeader eyebrow="TEST CASE" title="即时求值" />
           <div className="test-row">
             <label>金额<input aria-label="测试金额" /></label>
-            <label>会员<select aria-label="测试会员"><option value="">未选择</option><option>PLUS</option><option>NORMAL</option></select></label>
+            <label>会员<Select aria-label="测试会员"><option value="">未选择</option><option>PLUS</option><option>NORMAL</option></Select></label>
             <div><span>结果</span><strong>求值服务尚未接入</strong></div>
           </div>
         </Panel>

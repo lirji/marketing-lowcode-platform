@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { DateTimePicker } from '../../components/DateTimePicker'
+import { FieldHint } from '../../components/FieldHint'
+import { Select } from '../../components/Select'
+import { useEffect, useMemo, useState, useId, type ReactNode } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { CheckCircle2, FlaskConical, Plus, Save, Trash2 } from 'lucide-react'
@@ -236,35 +239,29 @@ export function ReferralDesignerPage() {
       <div className="referral-layout">
         <div className="referral-main">
           <Section title="基本信息 / 作用域" errors={sectionErrors(errors, '基本信息')}>
-            <label className="field">
-              <span>开始时间（UTC Instant）</span>
-              <input value={draft.startsAt} onChange={(event) => patch({ startsAt: event.target.value })} aria-invalid={Boolean(errorMap(errors).startsAt)} placeholder="2026-09-01T00:00:00Z" />
-              <small id="startsAt-hint">{errorMap(errors).startsAt ?? '必须带 Z，不预填活动天数。'}</small>
-            </label>
-            <label className="field">
-              <span>结束时间</span>
-              <input value={draft.endsAt} onChange={(event) => patch({ endsAt: event.target.value })} aria-invalid={Boolean(errorMap(errors).endsAt)} placeholder="2026-09-10T00:00:00Z" />
-              {errorMap(errors).endsAt && <small>{errorMap(errors).endsAt}</small>}
-            </label>
-            <label className="field">
-              <span>结算截止</span>
-              <input value={draft.settlementEndsAt} onChange={(event) => patch({ settlementEndsAt: event.target.value })} aria-invalid={Boolean(errorMap(errors).settlementEndsAt)} placeholder="2026-09-20T00:00:00Z" />
-              {errorMap(errors).settlementEndsAt && <small>{errorMap(errors).settlementEndsAt}</small>}
-            </label>
+            {([
+              ['startsAt', '开始时间', '用户可以开始参与活动的时间。'],
+              ['endsAt', '结束时间', '停止接受新参与的时间，必须晚于开始时间。'],
+              ['settlementEndsAt', '结算截止', '处理活动奖励结算的截止时间，不能早于活动结束。'],
+            ] as const).map(([key, label, hint]) => <div className="field" key={key}>
+              <span>{label}</span>
+              <DateTimePicker label={label} value={draft[key]} onChange={(value) => patch({ [key]: value })} invalid={Boolean(errorMap(errors)[key])} describedBy={`${key}-hint`} />
+              <FieldHint id={`${key}-hint`}>{errorMap(errors)[key] ?? `${hint} 按北京时间选择。`}</FieldHint>
+            </div>)}
             <label className="field">
               <span>组织</span>
-              <select value={draft.organizationId} onChange={(event) => patch({ organizationId: event.target.value })}>
+              <Select value={draft.organizationId} onChange={(event) => patch({ organizationId: event.target.value })}>
                 {orgOptions.length === 0 && <option value="">当前身份没有组织</option>}
                 {orgOptions.map((item) => <option key={item} value={item}>{item}</option>)}
                 {draft.organizationId && !orgOptions.includes(draft.organizationId) && <option value={draft.organizationId}>{draft.organizationId}</option>}
-              </select>
+              </Select>
             </label>
             <label className="field span-2">
               <span>店铺</span>
-              <select value={draft.shopId} onChange={(event) => patch({ shopId: event.target.value })} aria-invalid={Boolean(errorMap(errors).shopId)}>
+              <Select value={draft.shopId} onChange={(event) => patch({ shopId: event.target.value })} aria-invalid={Boolean(errorMap(errors).shopId)}>
                 {shopOptions.map((item) => <option key={item.value || 'all-scope'} value={item.value}>{item.label}</option>)}
                 {draft.shopId && !shopOptions.some((item) => item.value === draft.shopId) && <option value={draft.shopId}>{draft.shopId}</option>}
-              </select>
+              </Select>
               <small>{errorMap(errors).shopId ?? '编译器要求 shopId 非空。身份只有「全部店铺」时需改填具体店铺，不能提交空串。'}</small>
             </label>
           </Section>
@@ -290,11 +287,11 @@ export function ReferralDesignerPage() {
           <Section title="新客或首单" errors={sectionErrors(errors, '新客或首单')}>
             <label className="field span-2">
               <span>资格模式</span>
-              <select value={draft.goalType} onChange={(event) => patch({ goalType: event.target.value as ReferralDraft['goalType'] })} aria-invalid={Boolean(errorMap(errors).goalType)}>
+              <Select value={draft.goalType} onChange={(event) => patch({ goalType: event.target.value as ReferralDraft['goalType'] })} aria-invalid={Boolean(errorMap(errors).goalType)}>
                 <option value="">请选择</option>
                 <option value="REGISTERED_NEW_CUSTOMER">注册新客</option>
                 <option value="FIRST_ORDER_SETTLED">权威首单结算</option>
-              </select>
+              </Select>
               {errorMap(errors).goalType && <small>{errorMap(errors).goalType}</small>}
             </label>
           </Section>
@@ -337,41 +334,41 @@ export function ReferralDesignerPage() {
             <PanelHeader title="无副作用仿真" eyebrow="SIMULATED_INPUT" />
             <p className="referral-copy">以下输入全部按字符串提交。仿真不会写参与人、不会发奖。validCount 必须是本次假设后的人数，前端不会累加。</p>
             <div className="form-grid">
-              <FactField label="boundAt" value={facts.boundAt} error={errorOf(factErrors, 'boundAt')} onChange={(value) => setFacts((current) => ({ ...current, boundAt: value }))} />
-              <FactField label="now" value={facts.now} error={errorOf(factErrors, 'now')} onChange={(value) => setFacts((current) => ({ ...current, now: value }))} />
-              <FactField label="relationId" value={facts.relationId} error={errorOf(factErrors, 'relationId')} onChange={(value) => setFacts((current) => ({ ...current, relationId: value }))} />
-              <FactField label="validCount" value={facts.validCount} error={errorOf(factErrors, 'validCount')} onChange={(value) => setFacts((current) => ({ ...current, validCount: value }))} />
+              <FactField label="绑定时间" hint="邀请关系建立的时间，用于计算绑定期限。" kind="time" value={facts.boundAt} error={errorOf(factErrors, 'boundAt')} onChange={(value) => setFacts((current) => ({ ...current, boundAt: value }))} />
+              <FactField label="仿真当前时间" hint="模拟在这一时刻判断活动资格，不会修改系统时间。" kind="time" value={facts.now} error={errorOf(factErrors, 'now')} onChange={(value) => setFacts((current) => ({ ...current, now: value }))} />
+              <FactField label="邀请关系 ID" hint="填写此次仿真对应的关系标识，例如 relation-test。" value={facts.relationId} error={errorOf(factErrors, 'relationId')} onChange={(value) => setFacts((current) => ({ ...current, relationId: value }))} />
+              <FactField label="有效邀请人数" hint="填写本次假设完成后的有效人数，系统不会自动加一。" value={facts.validCount} error={errorOf(factErrors, 'validCount')} onChange={(value) => setFacts((current) => ({ ...current, validCount: value }))} />
               <label className="field">
-                <span>verified</span>
-                <select value={facts.verified} onChange={(event) => setFacts((current) => ({ ...current, verified: event.target.value }))}>
+                <span>身份已验证</span>
+                <Select value={facts.verified} onChange={(event) => setFacts((current) => ({ ...current, verified: event.target.value }))}>
                   <option value="">请选择</option>
-                  <option value="true">true</option>
-                  <option value="false">false</option>
-                </select>
+                  <option value="true">是</option>
+                  <option value="false">否</option>
+                </Select>
               </label>
               <label className="field">
-                <span>newCustomerAtBind</span>
-                <select value={facts.newCustomerAtBind} onChange={(event) => setFacts((current) => ({ ...current, newCustomerAtBind: event.target.value }))}>
+                <span>绑定时是否新客</span>
+                <Select value={facts.newCustomerAtBind} onChange={(event) => setFacts((current) => ({ ...current, newCustomerAtBind: event.target.value }))}>
                   <option value="">请选择</option>
-                  <option value="YES">YES</option>
-                  <option value="NO">NO</option>
-                  <option value="UNKNOWN">UNKNOWN</option>
-                </select>
+                  <option value="YES">是</option>
+                  <option value="NO">否</option>
+                  <option value="UNKNOWN">未知</option>
+                </Select>
               </label>
               <label className="field">
-                <span>firstValidOrder</span>
-                <select value={facts.firstValidOrder} onChange={(event) => setFacts((current) => ({ ...current, firstValidOrder: event.target.value }))}>
+                <span>是否首笔有效订单</span>
+                <Select value={facts.firstValidOrder} onChange={(event) => setFacts((current) => ({ ...current, firstValidOrder: event.target.value }))}>
                   <option value="">请选择</option>
-                  <option value="YES">YES</option>
-                  <option value="NO">NO</option>
-                  <option value="UNKNOWN">UNKNOWN</option>
-                </select>
+                  <option value="YES">是</option>
+                  <option value="NO">否</option>
+                  <option value="UNKNOWN">未知</option>
+                </Select>
               </label>
-              <FactField label="qualifyingFactAt（可空）" value={facts.qualifyingFactAt} error={errorOf(factErrors, 'qualifyingFactAt')} onChange={(value) => setFacts((current) => ({ ...current, qualifyingFactAt: value }))} />
-              <FactField label="qualifyingFactReceivedAt（可空）" value={facts.qualifyingFactReceivedAt} error={errorOf(factErrors, 'qualifyingFactReceivedAt')} onChange={(value) => setFacts((current) => ({ ...current, qualifyingFactReceivedAt: value }))} />
-              <FactField label="settledAmountMinor" value={facts.settledAmountMinor} error={errorOf(factErrors, 'settledAmountMinor')} onChange={(value) => setFacts((current) => ({ ...current, settledAmountMinor: value }))} />
-              <FactField label="cumulativeRefundMinor" value={facts.cumulativeRefundMinor} error={errorOf(factErrors, 'cumulativeRefundMinor')} onChange={(value) => setFacts((current) => ({ ...current, cumulativeRefundMinor: value }))} />
-              <FactField label="currency" value={facts.currency} error={errorOf(factErrors, 'currency')} onChange={(value) => setFacts((current) => ({ ...current, currency: value }))} />
+              <FactField label="达标发生时间（可选）" hint="新客注册或首单达标实际发生的时间。" kind="time" value={facts.qualifyingFactAt} error={errorOf(factErrors, 'qualifyingFactAt')} onChange={(value) => setFacts((current) => ({ ...current, qualifyingFactAt: value }))} />
+              <FactField label="达标接收时间（可选）" hint="系统接收到达标事件的时间，用于判断晚到宽限。" kind="time" value={facts.qualifyingFactReceivedAt} error={errorOf(factErrors, 'qualifyingFactReceivedAt')} onChange={(value) => setFacts((current) => ({ ...current, qualifyingFactReceivedAt: value }))} />
+              <FactField label="已结算金额（最小货币单位）" hint="已结算的订单金额；CNY 以分填写，100 分 = 1 元。" value={facts.settledAmountMinor} error={errorOf(factErrors, 'settledAmountMinor')} onChange={(value) => setFacts((current) => ({ ...current, settledAmountMinor: value }))} />
+              <FactField label="累计退款（最小货币单位）" hint="填写已发生的累计退款金额，与结算金额使用相同单位。" value={facts.cumulativeRefundMinor} error={errorOf(factErrors, 'cumulativeRefundMinor')} onChange={(value) => setFacts((current) => ({ ...current, cumulativeRefundMinor: value }))} />
+              <FactField label="币种" hint="填写三位大写币种，例如 CNY。" value={facts.currency} error={errorOf(factErrors, 'currency')} onChange={(value) => setFacts((current) => ({ ...current, currency: value }))} />
             </div>
             <div className="referral-aside-actions">
               <Button onClick={() => setFacts(documentedSimulationExample())}>填入控制面测试示例</Button>
@@ -424,14 +421,13 @@ function IntegerField({ label, value, error, onChange }: { label: string; value:
   )
 }
 
-function FactField({ label, value, error, onChange }: { label: string; value: string; error?: string; onChange: (value: string) => void }) {
-  return (
-    <label className="field">
-      <span>{label}</span>
-      <input value={value} onChange={(event) => onChange(event.target.value)} aria-invalid={Boolean(error)} />
-      {error && <small>{error}</small>}
-    </label>
-  )
+function FactField({ label, hint, kind = 'text', value, error, onChange }: { label: string; hint: string; kind?: 'text' | 'time'; value: string; error?: string; onChange: (value: string) => void }) {
+  const id = useId()
+  return <div className="field">
+    {kind === 'time' ? <span>{label}</span> : <label htmlFor={id}>{label}</label>}
+    {kind === 'time' ? <DateTimePicker label={label} value={value} onChange={onChange} invalid={Boolean(error)} describedBy={`${id}-hint`} /> : <input id={id} aria-describedby={`${id}-hint`} value={value} onChange={(event) => onChange(event.target.value)} aria-invalid={Boolean(error)} />}
+    <FieldHint id={`${id}-hint`}>{error ?? hint}</FieldHint>
+  </div>
 }
 
 function RewardSection({
@@ -513,7 +509,7 @@ function RewardCard({
         <IntegerField label="活动封顶" value={reward.campaignLimit} error={errorOf(errors, `${prefix}.campaignLimit`)} onChange={(value) => onPatch(index, { campaignLimit: value })} />
         <label className="field span-2">
           <span>权益定义版本</span>
-          <select
+          <Select
             value={selectedBenefit ? pinCatalogVersion(selectedBenefit.benefitId, selectedBenefit.version) : reward.benefitDefinitionVersion}
             onChange={(event) => onPatch(index, { benefitDefinitionVersion: event.target.value })}
             disabled={loading || Boolean(catalogError)}
@@ -526,7 +522,7 @@ function RewardCard({
                 {item.benefitId} · {item.name} · v{item.version} · {item.status}
               </option>
             ))}
-          </select>
+          </Select>
           <small>{errorOf(errors, `${prefix}.benefitDefinitionVersion`) ?? (catalogError ? catalogError : '引用实际权益版本，目录失败时不顶替。')}</small>
         </label>
         <div className="span-2">

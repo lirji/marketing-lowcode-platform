@@ -1,3 +1,4 @@
+import { Select } from '../../components/Select'
 import { useSearchParams } from 'react-router-dom'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { Copy, ExternalLink } from 'lucide-react'
@@ -69,13 +70,13 @@ export function AwardIntentsPanel() {
         {!api.demoMode && (
           <label className="field award-campaign-field">
             <span>活动</span>
-            <select aria-label="活动" value={campaignId} onChange={(event) => selectCampaign(event.target.value)} disabled={campaigns.isPending}>
+            <Select aria-label="活动" value={campaignId} onChange={(event) => selectCampaign(event.target.value)} disabled={campaigns.isPending}>
               <option value="">请选择活动</option>
               {campaignId && !selectedInList && <option value={campaignId}>{campaignId}</option>}
               {(campaigns.data ?? []).map((item) => (
                 <option key={item.id} value={item.id}>{item.name} · {item.id}</option>
               ))}
-            </select>
+            </Select>
           </label>
         )}
         {campaigns.isError && <StateBanner tone="error" title="活动列表加载失败" detail={problemDetail(campaigns.error)} />}

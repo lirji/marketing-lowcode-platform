@@ -1,3 +1,4 @@
+import { FieldHint } from '../../components/FieldHint'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -63,20 +64,24 @@ export function AssetsPage() {
 function AssetTable({ rows, columns, label }: { rows: string[][]; columns: [string, string, string]; label: string }) {
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<string[] | null>(null)
-  const filtered = rows.filter((row) => [...row, assetValue(row[4], columns[2])].join(' ').toLowerCase().includes(query.trim().toLowerCase()))
+  const identity = label === '数据字段' ? ['字段 ID', '值类型'] : label === '低代码节点' ? ['节点类型 ID', '节点 ID / 版本'] : label === '消息模板' ? ['模板 ID', '版本'] : [`${label}名称`, `${label} ID / 版本`]
+  const displayRow = (row: string[]) => row.map((value, index) => index < 2 ? value : assetValue(value, columns[index - 2]))
+  const searchFields = [...identity, ...columns].join('、')
+  const filtered = rows.filter((row) => displayRow(row).some((value) => value.toLowerCase().includes(query.trim().toLowerCase())))
   return <>
-    <ListToolbar query={query} onQueryChange={setQuery} searchLabel={`搜索${label}`} placeholder={`搜索${label}名称、标识或属性`} count={filtered.length} unit="项" onReset={query ? () => setQuery('') : undefined} />
+    <ListToolbar query={query} onQueryChange={setQuery} searchLabel={`搜索${label}`} describedBy={`asset-search-${label}`} placeholder={`搜索${identity.join('、')}`} count={filtered.length} unit="项" onReset={query ? () => setQuery('') : undefined} />
+    <div className="collection-search-help"><FieldHint id={`asset-search-${label}`}>支持搜索当前列表的{searchFields}，按关键词包含匹配。</FieldHint></div>
     {filtered.length === 0 ? <EmptyState title="没有匹配的资产" detail="调整关键词，或清除搜索查看当前分类下的资产。" action={<Button onClick={() => setQuery('')}>清除搜索</Button>} /> : <div className="table-scroll" role="region" aria-label={`${label}列表`} tabIndex={0}>
       <table className="asset-list" aria-label={label}>
-        <thead><tr><th scope="col">名称 / 版本</th>{columns.map((column) => <th key={column} scope="col">{column}</th>)}<th scope="col">操作</th></tr></thead>
+        <thead><tr><th scope="col">{identity.join(' / ')}</th>{columns.map((column) => <th key={column} scope="col">{column}</th>)}<th scope="col">操作</th></tr></thead>
         <tbody>{filtered.map((row) => {
           const [name, id, metric, watermark, state] = row
-          return <tr key={`${name}:${id}`}><td><div className="asset-identity"><span className="asset-avatar"><Boxes size={17} /></span><div><strong className="record-name">{name}</strong><small className="record-description" title={id}>{id}</small></div></div></td><td><span className="cell-preview" title={metric}>{metric || '—'}</span></td><td><span className="cell-preview" title={watermark}>{assetValue(watermark, columns[1])}</span></td><td><Badge tone={state === 'ACTIVE' || state === 'READY' || state === 'NONE' ? 'good' : state === 'STALE' ? 'danger' : 'neutral'}>{assetValue(state, columns[2])}</Badge></td><td><button className="row-action" type="button" aria-label={`查看${name}`} onClick={() => setSelected(row)}>查看详情</button></td></tr>
+          return <tr key={`${name}:${id}`}><td><div className="asset-identity"><span className="asset-avatar"><Boxes size={17} /></span><div><strong className="record-name">{name}</strong><small className="record-description" title={id}>{identity[1]}：{id}</small></div></div></td><td><span className="cell-preview" title={metric}>{metric || '—'}</span></td><td><span className="cell-preview" title={watermark}>{assetValue(watermark, columns[1])}</span></td><td><Badge tone={state === 'ACTIVE' || state === 'READY' || state === 'NONE' ? 'good' : state === 'STALE' ? 'danger' : 'neutral'}>{assetValue(state, columns[2])}</Badge></td><td><button className="row-action" type="button" aria-label={`查看${name}`} onClick={() => setSelected(row)}>查看详情</button></td></tr>
         })}</tbody>
       </table>
     </div>}
     {selected && <Modal title={selected[0]} description={`${label} · 当前版本信息`} onClose={() => setSelected(null)}>
-      <dl className="detail-facts"><div><dt>名称</dt><dd>{selected[0]}</dd></div><div><dt>标识 / 版本</dt><dd>{selected[1]}</dd></div>{columns.map((column, index) => <div key={column}><dt>{column === '创建时间' ? '创建时间（北京时间）' : column}</dt><dd title={selected[index + 2]}>{assetValue(selected[index + 2], column)}</dd></div>)}</dl>
+      <dl className="detail-facts"><div><dt>{identity[0]}</dt><dd>{selected[0]}</dd></div><div><dt>{identity[1]}</dt><dd>{selected[1]}</dd></div>{columns.map((column, index) => <div key={column}><dt>{column === '创建时间' ? '创建时间（北京时间）' : column}</dt><dd title={selected[index + 2]}>{assetValue(selected[index + 2], column)}</dd></div>)}</dl>
       <footer className="modal-actions"><Button onClick={() => setSelected(null)}>关闭详情</Button></footer>
     </Modal>}
   </>

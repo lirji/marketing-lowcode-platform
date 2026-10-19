@@ -23,3 +23,10 @@ class ResizeObserverStub {
 }
 
 Object.defineProperty(globalThis, 'ResizeObserver', { value: ResizeObserverStub, writable: true })
+
+// JSDOM没有布局/指针捕获；补齐可访问弹层依赖的浏览器API，行为由真实浏览器测试覆盖。
+if (!window.PointerEvent) window.PointerEvent = MouseEvent as typeof PointerEvent
+HTMLElement.prototype.hasPointerCapture = () => false
+HTMLElement.prototype.setPointerCapture = () => {}
+HTMLElement.prototype.releasePointerCapture = () => {}
+HTMLElement.prototype.scrollIntoView = () => {}

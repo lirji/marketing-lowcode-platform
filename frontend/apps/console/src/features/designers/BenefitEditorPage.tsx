@@ -1,3 +1,5 @@
+import { FieldHint } from '../../components/FieldHint'
+import { Select } from '../../components/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -233,7 +235,7 @@ export function BenefitEditorPage() {
       {!api.demoMode && (
         <div className="benefit-picker">
           <div className="form-grid">
-            <label className="field"><span>权益 ID</span><input aria-label="权益 ID" value={form.benefitId} onChange={(event) => patch({ benefitId: event.target.value })} /></label>
+            <label className="field"><span>权益 ID</span><input aria-label="权益 ID" aria-describedby="benefit-id-hint" value={form.benefitId} onChange={(event) => patch({ benefitId: event.target.value })} /><FieldHint id="benefit-id-hint">用于引用和查找权益的唯一标识，例如 coupon-new-user。</FieldHint></label>
             <label className="field">
               <span>筛选已有权益</span>
               <input
@@ -245,7 +247,7 @@ export function BenefitEditorPage() {
             </label>
             <label className="field span-2">
               <span>已有权益{(benefits.data?.length ?? 0) > 0 ? ` · ${visibleBenefits.length}/${benefits.data?.length}` : ''}</span>
-              <select
+              <Select
                 aria-label="已有权益"
                 value={(benefits.data ?? []).some((item) => item.benefitId === form.benefitId) ? form.benefitId : ''}
                 onChange={(event) => {
@@ -257,7 +259,7 @@ export function BenefitEditorPage() {
                 {visibleBenefits.map((item) => (
                   <option key={item.benefitId} value={item.benefitId}>{benefitLabel(item)}</option>
                 ))}
-              </select>
+              </Select>
             </label>
           </div>
           {visibleBenefits.length > 0 && (
@@ -311,33 +313,33 @@ export function BenefitEditorPage() {
               <label className="field"><span>名称</span><input value={form.name} onChange={(event) => patch({ name: event.target.value })} /></label>
               <label className="field">
                 <span>状态</span>
-                <select value={form.status} onChange={(event) => patch({ status: event.target.value })}>
+                <Select value={form.status} onChange={(event) => patch({ status: event.target.value })}>
                   <option>DRAFT</option>
                   <option>ACTIVE</option>
                   <option>RETIRED</option>
-                </select>
+                </Select>
               </label>
               <label className="field">
                 <span>权益类型</span>
-                <select value={form.type} onChange={(event) => patch({ type: event.target.value })}>
+                <Select value={form.type} onChange={(event) => patch({ type: event.target.value })}>
                   <option>COUPON</option>
                   <option>POINT</option>
                   <option>GIFT</option>
                   <option>PRIZE_CHANCE</option>
-                </select>
+                </Select>
               </label>
               <label className="field">
                 <span>有效期</span>
                 {templateLocked && selectedSku ? (
                   <input readOnly value={validityLabel(selectedSku)} title="以权益模板为准" />
                 ) : (
-                  <select value={form.validity} onChange={(event) => patch({ validity: event.target.value })}>
+                  <Select value={form.validity} onChange={(event) => patch({ validity: event.target.value })}>
                     <option value="relative">领取后 7 天</option>
                     <option value="window">固定时间窗</option>
-                  </select>
+                  </Select>
                 )}
               </label>
-              <label className="field"><span>门槛（分）</span><input type="number" value={form.thresholdMinor} onChange={(event) => patch({ thresholdMinor: Number(event.target.value) })} /></label>
+              <label className="field"><span>门槛（分）</span><input type="number" aria-label="门槛（分）" aria-describedby="threshold-hint" value={form.thresholdMinor} onChange={(event) => patch({ thresholdMinor: Number(event.target.value) })} /><FieldHint id="threshold-hint">使用权益所需的最低订单金额，单位为分；100 分 = 1 元。</FieldHint></label>
               <label className="field">
                 <span>优惠（分）</span>
                 {templateLocked && selectedSku ? (
@@ -365,12 +367,12 @@ export function BenefitEditorPage() {
             </div>
             <label className="field">
               <span>绑定资金账户</span>
-              <select value={form.resourceKey} onChange={(event) => patch({ resourceKey: event.target.value })}>
+              <Select value={form.resourceKey} onChange={(event) => patch({ resourceKey: event.target.value })}>
                 <option value="">不绑定</option>
                 {(accounts.data ?? []).map((item) => (
                   <option key={item.resourceKey} value={item.resourceKey}>{item.resourceKey} · {item.currency ?? ''} · 可用 {item.available}</option>
                 ))}
-              </select>
+              </Select>
             </label>
           </Panel>
           <Panel>

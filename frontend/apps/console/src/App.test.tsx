@@ -53,11 +53,11 @@ describe('marketing console routing and core interactions', () => {
     expect(await screen.findByRole('dialog', { name: '创建营销活动' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /^取消$/ }))
     expect(screen.getByRole('searchbox', { name: '搜索活动' })).toHaveValue('unmatched-search')
-    expect(screen.getByRole('combobox', { name: '状态筛选' })).toHaveValue('DRAFT')
+    expect(screen.getByRole('combobox', { name: '状态筛选' })).toHaveTextContent('草稿')
     expect(await screen.findByText('没有匹配的活动')).toBeInTheDocument()
     await user.click(screen.getAllByRole('button', { name: '清除筛选' })[0])
     expect(screen.getByRole('searchbox', { name: '搜索活动' })).toHaveValue('')
-    expect(screen.getByRole('combobox', { name: '状态筛选' })).toHaveValue('ALL')
+    expect(screen.getByRole('combobox', { name: '状态筛选' })).toHaveTextContent('全部状态')
   })
 })
 

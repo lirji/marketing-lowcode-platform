@@ -1,3 +1,4 @@
+import { selectOption } from '../../test/selectOption'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -123,10 +124,10 @@ describe('BenefitEditorPage SKU binding', () => {
     renderEditor()
     expect(await screen.findByRole('heading', { level: 1, name: '权益定义' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '追踪联调家电满500减80券' })).not.toBeInTheDocument()
-    expect(screen.getByLabelText('已有权益')).toHaveValue('')
-    expect(await screen.findByRole('option', { name: /coupon-trace-ha-80/ })).toBeInTheDocument()
+    expect(screen.getByLabelText('已有权益')).toHaveTextContent('新建 / 手动输入 ID')
     await user.type(screen.getByLabelText('筛选已有权益'), 'coupon-trace')
-    expect(screen.getByRole('option', { name: /coupon-trace-ha-80/ })).toBeInTheDocument()
+    await user.click(screen.getByLabelText('已有权益'))
+    expect(await screen.findByRole('option', { name: /coupon-trace-ha-80/ })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /mock-coupon-ha-80/ })).not.toBeInTheDocument()
   })
 
@@ -139,7 +140,7 @@ describe('BenefitEditorPage SKU binding', () => {
     mocks.benefitSkus.mockResolvedValue([sku])
     renderEditor('/designers/benefit?benefitId=coupon-trace-ha-80')
     expect(await screen.findByRole('heading', { name: '追踪联调家电满500减80券' })).toBeInTheDocument()
-    expect(screen.getByLabelText('已有权益')).toHaveValue('coupon-trace-ha-80')
+    expect(screen.getByLabelText('已有权益')).toHaveTextContent('追踪联调家电满500减80券')
   })
 
   it('shows an inline save next to the SKU bind panel', async () => {
@@ -156,11 +157,10 @@ describe('BenefitEditorPage SKU binding', () => {
     demoMode = false
     mocks.benefits.mockResolvedValue([liveBenefit])
     mocks.benefitSkus.mockResolvedValue([sku])
-    const user = userEvent.setup()
     renderEditor('/designers/benefit?benefitId=coupon-live')
     expect(await screen.findByRole('heading', { name: '真实权益' })).toBeInTheDocument()
     const picker = await screen.findByLabelText('已投放 SKU')
-    await user.selectOptions(picker, 'sku-active')
+    await selectOption(picker, 'sku-active')
     expect(await screen.findByTestId('template-summary')).toHaveTextContent('领取后 7 天')
     expect(screen.getByTitle('以权益模板为准')).toHaveValue('领取后 7 天')
     expect(screen.getByTitle('以权益模板面额为准')).toHaveValue('CNY 80.00')
@@ -174,10 +174,9 @@ describe('BenefitEditorPage SKU binding', () => {
       sku,
       { ...sku, skuId: 'sku-cash', benefitType: 'CASH', faceValueMinor: 1 },
     ])
-    const user = userEvent.setup()
     renderEditor('/designers/benefit?benefitId=coupon-live')
     const picker = await screen.findByLabelText('已投放 SKU')
-    await user.selectOptions(picker, 'sku-cash')
+    await selectOption(picker, 'sku-cash')
     expect(screen.getByText('有未保存更改')).toBeInTheDocument()
     expect(screen.getByText('权益类型与模板类型不一致')).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: '保存' })[0]).toBeDisabled()

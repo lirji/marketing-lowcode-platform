@@ -1,6 +1,6 @@
+import { selectOption } from '../../test/selectOption'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthProvider } from '../../shared/auth/AuthContext'
@@ -153,10 +153,9 @@ describe('AwardIntentsPanel', () => {
 
   it('requests after the operator picks a campaign', async () => {
     demoMode = false
-    const user = userEvent.setup()
     renderPanel()
-    expect(await screen.findByRole('option', { name: /家电活动/ })).toBeInTheDocument()
-    await user.selectOptions(screen.getByLabelText('活动'), 'CMP-1')
+    await waitFor(() => expect(screen.getByLabelText('活动')).toBeEnabled())
+    await selectOption(screen.getByLabelText('活动'), 'CMP-1')
     await waitFor(() => expect(mocks.awardIntents).toHaveBeenCalledWith('CMP-1', expect.objectContaining({ limit: 20 })))
   })
 })

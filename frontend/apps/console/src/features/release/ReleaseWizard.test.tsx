@@ -1,3 +1,4 @@
+import { selectOption } from '../../test/selectOption'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -65,8 +66,7 @@ function renderWizard(onRequestActivate = vi.fn()) {
 
 async function selectApprovedDefinition() {
   const user = userEvent.setup()
-  await screen.findByRole('option', { name: /approval-1/ })
-  await user.selectOptions(screen.getByLabelText('批准单 / 冻结版本'), approval.caseId)
+  await selectOption(screen.getByLabelText('批准单 / 冻结版本'), approval.caseId)
   await screen.findByText(/OFFER_DECISION_DAG/)
   return user
 }

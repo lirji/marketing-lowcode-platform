@@ -1,5 +1,6 @@
+import { selectOption } from '../../test/selectOption'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -49,11 +50,15 @@ describe('AudienceBuilderPage', () => {
     mocks.fields.mockResolvedValue([{ fieldId: 'joined', valueType: 'INSTANT' }, { fieldId: 'flag', valueType: 'BOOLEAN' }])
     renderAudience()
     const operator = await screen.findByLabelText('条件 1 算子')
-    expect(within(operator).getByRole('option', { name: '>' })).toBeInTheDocument()
-    await userEvent.selectOptions(screen.getByLabelText('条件 1 字段'), 'flag')
-    expect(operator).toHaveValue('=')
-    expect(within(operator).queryByRole('option', { name: '>' })).not.toBeInTheDocument()
-    expect(within(operator).getByRole('option', { name: 'IN' })).toBeInTheDocument()
+    await userEvent.click(operator)
+    expect(screen.getByRole('option', { name: /^>$/ })).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    await selectOption(screen.getByLabelText('条件 1 字段'), 'flag')
+    expect(operator).toHaveTextContent('=')
+    await userEvent.click(operator)
+    expect(screen.queryByRole('option', { name: /^>$/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /^IN$/ })).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
   })
 
   beforeEach(() => {
@@ -102,7 +107,7 @@ describe('AudienceBuilderPage', () => {
     mocks.fields.mockResolvedValue([{ fieldId: 'member.level' }])
     renderAudience()
     expect(await screen.findByDisplayValue('GOLD')).toBeInTheDocument()
-    await userEvent.selectOptions(screen.getByLabelText('已保存版本'), '')
+    await selectOption(screen.getByLabelText('已保存版本'), '')
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: '新人群' })).toBeInTheDocument()
     })

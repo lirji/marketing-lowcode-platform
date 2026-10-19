@@ -1,3 +1,5 @@
+import { FieldHint } from '../../components/FieldHint'
+import { Select } from '../../components/Select'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, LoaderCircle, PackageCheck, RefreshCw } from 'lucide-react'
@@ -201,10 +203,10 @@ export function ReleaseWizard({ open, onClose, onRequestActivate }: {
         <header><Badge tone={selected ? 'good' : 'warn'}>1</Badge><strong>选择已批准定义</strong></header>
         {approvals.isError && <StateBanner tone="error" title="审核单加载失败" detail={problemDetail(approvals.error)} />}
         {definition.isError && <StateBanner tone="error" title="冻结定义加载失败" detail={problemDetail(definition.error)} />}
-        <label className="field"><span>批准单 / 冻结版本</span><select aria-label="批准单 / 冻结版本" value={caseId} onChange={(event) => selectApproval(event.target.value)} disabled={api.demoMode || !auth.hasPermission('definition:read')}>
+        <label className="field"><span>批准单 / 冻结版本</span><Select aria-label="批准单 / 冻结版本" value={caseId} onChange={(event) => selectApproval(event.target.value)} disabled={api.demoMode || !auth.hasPermission('definition:read')}>
           <option value="">请选择</option>
           {approved.map((item: ApprovalView) => <option value={item.caseId} key={item.caseId}>{item.definitionId} · v{item.definitionVersion} · {item.caseId}</option>)}
-        </select></label>
+        </Select></label>
         {definition.data && <small>{definition.data.dialect} · {choice?.runtime ?? '不支持'} runtime</small>}
       </section>
 
@@ -221,10 +223,10 @@ export function ReleaseWizard({ open, onClose, onRequestActivate }: {
       <section>
         <header><Badge tone={stage.data ? 'good' : 'warn'}>3</Badge><strong>暂存</strong></header>
         <div className="release-wizard-fields">
-          <label className="field"><span>Environment</span><input value={environment} onChange={(event) => changeStageScope('environment', event.target.value)} /></label>
-          <label className="field"><span>Cell</span><input value={cell} onChange={(event) => changeStageScope('cell', event.target.value)} /></label>
+          <label className="field"><span>Environment</span><input aria-label="Environment" aria-describedby="release-environment-hint" value={environment} onChange={(event) => changeStageScope('environment', event.target.value)} /><FieldHint id="release-environment-hint">填写要发布的环境标识，与现有部署环境一致。</FieldHint></label>
+          <label className="field"><span>Cell</span><input aria-label="Cell" aria-describedby="release-cell-hint" value={cell} onChange={(event) => changeStageScope('cell', event.target.value)} /><FieldHint id="release-cell-hint">填写该环境内的部署单元标识，决定流量所在单元。</FieldHint></label>
           <label className="field"><span>Runtime</span><input value={choice?.runtime ?? ''} readOnly /></label>
-          <label className="field"><span>Namespace</span><input value={namespace} onChange={(event) => changeNamespace(event.target.value)} /></label>
+          <label className="field"><span>Namespace</span><input aria-label="Namespace" aria-describedby="release-namespace-hint" value={namespace} onChange={(event) => changeNamespace(event.target.value)} /><FieldHint id="release-namespace-hint">填写目标命名空间，必须与发布配置中的作用范围一致。</FieldHint></label>
         </div>
         {stageBlocker && <small className="release-blocker">{stageBlocker}</small>}
         <Button tone="primary" onClick={() => stage.mutate()} disabled={Boolean(stageBlocker) || !environment.trim() || !cell.trim() || !namespace.trim() || stage.isPending} title={stageBlocker || '暂存已批准制品'}>暂存</Button>
