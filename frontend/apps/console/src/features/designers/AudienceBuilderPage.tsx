@@ -4,7 +4,7 @@ import { FieldHint } from '../../components/FieldHint'
 import { Select } from '../../components/Select'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Eye, Plus, ShieldCheck, Trash2 } from 'lucide-react'
+import { Eye, Plus, Save, ShieldCheck, Trash2 } from 'lucide-react'
 import { Badge, Button, DemoBanner, EmptyState, PageHeader, Panel, PanelHeader, StateBanner } from '../../components/ui'
 import { api } from '../../shared/api/client'
 import { problemDetail } from '../../shared/api/problem'
@@ -192,7 +192,7 @@ export function AudienceBuilderPage() {
   const fieldMeta = (fieldId: string) => fields.data?.find((item) => item.fieldId === fieldId)
 
   return <div className="workspace audience-page">
-    <PageHeader eyebrow={version ? `AUDIENCE_EXPRESSION · v${version}` : 'AUDIENCE_EXPRESSION'} title={name.trim() || '新人群'} description="规则、来源、新鲜度和隐私策略共同决定可用人群，不接受请求端伪造标签。" actions={<><Button onClick={() => previewMutation.mutate()} disabled={api.demoMode || !canPreview || !segmentId || version == null || previewMutation.isPending} title={api.demoMode ? '演示模式不预估' : !segmentId ? '请先保存人群' : '按当前条件生成样本，命中以已保存版本为准'}><Eye size={15} />预估人数</Button><Button tone="primary" disabled={api.demoMode || !canSnapshot || !preview?.sampleSubjectTokens.length || snapshot.isPending} title={api.demoMode ? '演示模式不可执行' : '用预览样本写入快照'} onClick={() => snapshot.mutate()}><ShieldCheck size={15} />保存快照</Button></>} />
+    <PageHeader eyebrow={version ? `AUDIENCE_EXPRESSION · v${version}` : 'AUDIENCE_EXPRESSION'} title={name.trim() || '新人群'} description="规则、来源、新鲜度和隐私策略共同决定可用人群，不接受请求端伪造标签。" actions={<><Button onClick={() => previewMutation.mutate()} disabled={api.demoMode || !canPreview || !segmentId || version == null || previewMutation.isPending} title={api.demoMode ? '演示模式不预估' : !segmentId ? '请先保存人群' : '按当前条件生成样本，命中以已保存版本为准'}><Eye size={15} />预估人数</Button><Button disabled={api.demoMode || !canSnapshot || !preview?.sampleSubjectTokens.length || snapshot.isPending} title={api.demoMode ? '演示模式不可执行' : '用预览样本写入快照'} onClick={() => snapshot.mutate()}><ShieldCheck size={15} />保存快照</Button>{!api.demoMode && canWrite && <Button tone="primary" disabled={save.isPending || !name.trim()} onClick={() => save.mutate()}><Save size={15} />保存规则</Button>}</>} />
     <DemoBanner />
     {!api.demoMode && <StateBanner tone="info" title="控制面预览按提交样本评估" detail="不是全量人口普查。预估与快照使用已保存版本；修改条件后请先保存。" />}
     {notice && <StateBanner tone="success" title="已写入控制面" detail={notice} />}
@@ -201,7 +201,7 @@ export function AudienceBuilderPage() {
     {save.isError && <StateBanner tone="error" title="保存失败" detail={problemDetail(save.error)} />}
     {previewMutation.isError && <StateBanner tone="error" title="预估失败" detail={problemDetail(previewMutation.error)} />}
     {snapshot.isError && <StateBanner tone="error" title="快照失败" detail={problemDetail(snapshot.error)} />}
-    {!api.demoMode && <div className="form-grid">
+    {!api.demoMode && <div className="form-grid audience-basics">
       <label className="field"><span>人群名称</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="未命名人群" /></label>
       <label className="field"><span>已保存版本</span>
         <Select aria-label="已保存版本" value={segmentId} onChange={(event) => {
@@ -213,7 +213,6 @@ export function AudienceBuilderPage() {
           {(audiences.data ?? []).map((item) => <option key={item.segmentId} value={item.segmentId}>{item.name} · {item.segmentId} v{item.version}</option>)}
         </Select>
       </label>
-      {canWrite && <div className="field"><span>&nbsp;</span><Button tone="primary" disabled={save.isPending || !name.trim()} onClick={() => save.mutate()}>保存规则</Button></div>}
     </div>}
     <div className="builder-layout">
       <Panel className="condition-panel"><PanelHeader eyebrow="条件树" title="圈选规则" aside={<div className="segmented"><button className={match === 'ALL' ? 'active' : ''} onClick={() => setMatch('ALL')}>同时满足</button><button className={match === 'ANY' ? 'active' : ''} onClick={() => setMatch('ANY')}>任一满足</button></div>} />

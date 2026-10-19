@@ -25,3 +25,7 @@
 fix/audience-condition-alignment：将FieldHint从值控件容器移到独立说明行，控件统一38px并顶端对齐；固定有效期列宽，避免24h/1h造成跨行错列。按条件列表容器宽度重排，窄屏的多时间值独占一行；日期组件关联aria-describedby，保留原字段/算子/规则与保存逻辑。项目及共享前端规范补充“控件与tips分层”约定。
 
 验证通过：build/lint，AudienceBuilder及表单控件8项测试；1728/1440/1280/1024/414/320px真实只读页面核对列位置、控件高度、提示与边界；测试fixture覆盖多个日期值添加/取消/删除及提示关联。末次日期窄屏优化复验1280/414/320px通过。无业务写入，原48文件指纹未变。证据/tmp/condition-alignment-{build,lint,unit,browser,narrow-final}.log与/tmp/condition-alignment-*.png；4175预览生效，Docker未更新。
+
+## 后续局部优化：人群保存按钮与分区间距（2026-10-19）
+
+fix/audience-save-spacing：移除基础信息表格中的占位标签和撑满列宽的保存按钮，将保存规则归入页头操作区作为主按钮，保存快照保留为次级操作；权限、禁用条件、保存回调不变。基础信息与规则卡片固定24px分区间距。build/lint、4项AudienceBuilder测试通过；1728/1024/414px真实只读浏览器确认按钮位置/宽度、分区间距、无溢出、空名称禁用与恢复。证据/tmp/audience-spacing-{build,lint,unit,browser}.log与/tmp/audience-spacing-*.png；预览4175已更新，Docker未变。
