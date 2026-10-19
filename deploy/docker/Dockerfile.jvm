@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/root/.m2 test -n "${SERVICE}" \
     && test -f "services/${SERVICE}/target/${SERVICE}-1.0.0-SNAPSHOT-exec.jar" \
     && cp "services/${SERVICE}/target/${SERVICE}-1.0.0-SNAPSHOT-exec.jar" /workspace/app.jar
 
-FROM eclipse-temurin:21.0.12_8-jre-ubi9-minimal AS service
+FROM eclipse-temurin:24.0.2_12-jre-ubi9-minimal AS service
 ARG SERVICE
 ARG SERVICE_PORT=8080
 LABEL org.opencontainers.image.title="marketing-${SERVICE}" \
