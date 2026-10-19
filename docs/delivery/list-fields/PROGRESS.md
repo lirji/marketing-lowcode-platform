@@ -19,3 +19,9 @@
 ## 后续局部修正：查询类型双边框（2026-10-19）
 
 用户截图中的外层lookup标签与Radix Select同时绘制边框；原选择器仍匹配原生select，未适配组件。fix/lookup-select-border只修改feature-styles.css：组件包装层取消边框/内边距，保留Select自身边框及焦点态，宽度240px。构建/lint通过；1440/414px真实只读浏览器验证单层边框、订单类型切换、Escape焦点恢复、无页面溢出、旅程/触达查询输入框边框保留。证据/tmp/lookup-border-{build,lint,browser}.log与/tmp/lookup-border-{1440,414}.png。未更新Docker，预览4175已生效。
+
+## 后续局部优化：圈选规则tips对齐（2026-10-19）
+
+fix/audience-condition-alignment：将FieldHint从值控件容器移到独立说明行，控件统一38px并顶端对齐；固定有效期列宽，避免24h/1h造成跨行错列。按条件列表容器宽度重排，窄屏的多时间值独占一行；日期组件关联aria-describedby，保留原字段/算子/规则与保存逻辑。项目及共享前端规范补充“控件与tips分层”约定。
+
+验证通过：build/lint，AudienceBuilder及表单控件8项测试；1728/1440/1280/1024/414/320px真实只读页面核对列位置、控件高度、提示与边界；测试fixture覆盖多个日期值添加/取消/删除及提示关联。末次日期窄屏优化复验1280/414/320px通过。无业务写入，原48文件指纹未变。证据/tmp/condition-alignment-{build,lint,unit,browser,narrow-final}.log与/tmp/condition-alignment-*.png；4175预览生效，Docker未更新。
