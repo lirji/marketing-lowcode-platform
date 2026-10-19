@@ -66,7 +66,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 18px;
+  font-size:var(--text-section);
   font-weight: 720;
   letter-spacing: 0.01em;
 }
@@ -76,14 +76,14 @@
 .login-aside-kicker {
   margin: 0 0 16px;
   color: rgba(255, 255, 255, 0.5);
-  font-size: 12px;
+  font-size:var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.2em;
 }
 
 .login-aside-title {
   margin: 0 0 16px;
-  font-size: clamp(23px, 2.1vw, 29px);
+  font-size:var(--text-title);
   font-weight: 760;
   line-height: 1.32;
   letter-spacing: -0.01em;
@@ -93,7 +93,7 @@
   max-width: 30ch;
   margin: 0 0 32px;
   color: rgba(255, 255, 255, 0.64);
-  font-size: 13.5px;
+  font-size:var(--text-base);
   line-height: 1.7;
 }
 
@@ -127,7 +127,7 @@
 .login-feature-text b {
   display: block;
   color: #fff;
-  font-size: 14px;
+  font-size:var(--text-base);
   font-weight: 640;
 }
 
@@ -135,13 +135,13 @@
   display: block;
   margin-top: 3px;
   color: rgba(255, 255, 255, 0.56);
-  font-size: 12.5px;
+  font-size:var(--text-xs);
   line-height: 1.5;
 }
 
 .login-aside-foot {
   color: rgba(255, 255, 255, 0.4);
-  font-size: 12px;
+  font-size:var(--text-xs);
   letter-spacing: 0.06em;
 }
 
@@ -159,14 +159,14 @@
   gap: 11px;
   margin-bottom: 26px;
   color: var(--ink-950);
-  font-size: 17px;
+  font-size:var(--text-section);
   font-weight: 720;
 }
 
 .login-kicker {
   margin: 0 0 12px;
   color: var(--teal);
-  font-size: 12px;
+  font-size:var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -175,7 +175,7 @@
 .login-form-title {
   margin: 0 0 10px;
   color: var(--ink-950);
-  font-size: 26px;
+  font-size:var(--text-title);
   font-weight: 720;
   letter-spacing: -0.02em;
 }
@@ -183,7 +183,7 @@
 .login-form-sub {
   margin: 0 0 26px;
   color: var(--ink-600);
-  font-size: 14px;
+  font-size:var(--text-base);
   line-height: 1.6;
 }
 
@@ -192,7 +192,7 @@
   gap: 8px;
   margin-bottom: 8px;
   color: var(--ink-800);
-  font-size: 13px;
+  font-size:var(--text-base);
   font-weight: 600;
 }
 
@@ -225,12 +225,12 @@
   outline: 0;
   background: transparent;
   color: var(--ink-950);
-  font-size: 15px;
+  font-size:var(--text-base);
 }
 
 .login-field-error {
   color: var(--red);
-  font-size: 12px;
+  font-size:var(--text-xs);
   font-weight: 600;
 }
 
@@ -244,13 +244,13 @@
 
 .login-tenants-label {
   color: var(--ink-400);
-  font-size: 12.5px;
+  font-size:var(--text-xs);
 }
 
 .login-tenant-chip {
   padding: 4px 13px;
   color: var(--teal);
-  font-size: 13px;
+  font-size:var(--text-base);
   font-weight: 600;
   line-height: 1.5;
   background: var(--teal-soft);
@@ -271,7 +271,7 @@
   color: #9b5d0b;
   background: #fff1d8;
   border-radius: 10px;
-  font-size: 13px;
+  font-size:var(--text-base);
 }
 
 .login-submit {
@@ -281,7 +281,7 @@
   border: 0;
   border-radius: 12px;
   color: #fff;
-  font-size: 15px;
+  font-size:var(--text-base);
   font-weight: 650;
   background: linear-gradient(135deg, #35bbaa, #087f75 55%, #0b5854);
   box-shadow: 0 12px 24px -6px rgba(8, 127, 117, 0.42);
@@ -313,7 +313,7 @@
   gap: 9px;
   margin-top: 22px;
   color: var(--ink-400);
-  font-size: 12.5px;
+  font-size:var(--text-xs);
   line-height: 1.6;
 }
 
@@ -327,7 +327,7 @@
   width: 40px;
   height: 40px;
   color: #09221f;
-  font: 800 19px/1 Georgia, serif;
+  font: 800 var(--text-brand)/1 Georgia, serif;
   background: linear-gradient(145deg, #29b8a9, #087f75);
   border-radius: 11px;
   box-shadow: 0 8px 18px rgba(8, 127, 117, 0.22);
@@ -336,7 +336,7 @@
 .login-foot {
   margin: 0;
   color: #8a93ad;
-  font-size: 12.5px;
+  font-size:var(--text-xs);
   letter-spacing: 0.04em;
 }
 
