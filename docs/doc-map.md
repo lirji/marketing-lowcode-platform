@@ -1,6 +1,17 @@
 # 文档同步地图
 
-本次增量同步基线：`1392ca97bfe9cc6cfcd67888d318e0b2b66efe9c`；日期：2026-10-18；任务：architecture-correctness。仅列本次受影响区域，不代表全仓文档已核实。
+本次增量同步基线：`6b9092feed4d49696aa4498d118a14f241268568`；日期：2026-10-19；任务：pending-files-update。范围为登录说明、演示种子及原有 45 份历史分析/评审；不代表重新核验全部业务或环境。
+
+| 本次区域 | 权威入口 | 同步内容 |
+| --- | --- | --- |
+| 全景分析、架构评审与复审 | [当前状态](marketing-platform-analysis/CURRENT_STATUS.md) | 按问题映射已修复、部分完成、仍待合同；各报告保留历史基线并固定历史源码链接 |
+| Casdoor/DEV 登录 | [README](../README.md) | 区分认证模式，凭据由环境变量注入 |
+| seed 脚本、SQL、隔离验证 | [演示数据说明](../README.md#本地演示数据) | 默认控制台租户、当前 DSL 样例、演示账户范围与可重复验证 |
+| 本次改动与交付 | [进度](delivery/pending-files-update/PROGRESS.md) | 验证范围、结果及 Git 交付证据 |
+
+## 已有架构正确性同步
+
+以下记录对应 2026-10-18 的 architecture-correctness 任务，起始源码基线 `1392ca97bfe9cc6cfcd67888d318e0b2b66efe9c`。
 
 | 代码区域 | 权威说明 | 本次同步 |
 | --- | --- | --- |

@@ -100,6 +100,7 @@ Events -> Event Gateway -> Kafka -> Audience / Journey / Measurement Flink jobs
 
 - [完整 R1 方案与 44 条验收标准](docs/delivery/marketing-platform-complete/DELIVERY_PLAN.md)
 - [系统架构与上下文映射](docs/architecture/README.md)
+- [分析与评审的最新状态、整改证据](docs/marketing-platform-analysis/CURRENT_STATUS.md)
 - [领域模型与不变量](docs/domain/MODEL.md)
 - [低代码语言、制品和迁移](docs/lowcode/RUNTIME.md)
 - [API、事件和兼容策略](docs/contracts/API_AND_EVENTS.md)
