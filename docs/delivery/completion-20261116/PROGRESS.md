@@ -111,4 +111,13 @@ S01–S05已交付，S05提交61b471b已正常快进推送main，精确候选CI4
 - 后端10项PASS（7个真实MySQL集成，s06a-backend-second.log）。首次并发测试复现MySQL RR no-op upsert后旧读视图返回500，已用写后专用FOR UPDATE当前读修复；独立复核business_gaps PASS。
 - 前端lint/build PASS；其他32文件118组件PASS，人群文件测试mock提升错误已修，最终该文件5项PASS，共123不同用例；桌面/Pixel7两项浏览器PASS，截图已实际查看，按钮状态与字段布局无覆盖/溢出。日志s06a-unit*.log、s06a-e2e.log及s06a-browser/。
 - 最终后端10项PASS（s06a-backend-final.log），补充缺member字段不能隐式撤销的回归；合同Maven/13份JSON及Hygiene PASS（无formatter限制），diff PASS。S06a准备逻辑提交；未部署人群服务，未修改共享数据，无新worktree。画像来源问题仍待用户回答。
-- S05控制台镜像正在从61b471b的git archive构建，exec49754，s05-console-build.log；只计划更新本机console，部署尚未执行。
+- S05控制台已从61b471b不可变归档构建并单独更新本机marketing-r1/console（8084），image=sha256:a8bd3840b2e5505b2cae0231366a70222978d81d46a7e115cdb8aeb06f9f4ec1；health与真实API桌面/手机页面检查PASS，0业务写入/0页面异常/无溢出，截图已实际查看。s05-console-result.json记录结果与旧镜像回退；S06a人群补强尚未部署。其他服务/共享infra/Flink不变。
+
+## S07a SKU 投递版本前提（验证通过）
+- S06a提交b5967d7已推任务分支，精确CI43805628341运行中。真实会员来源仍待回答，S06b不冒充完成；先推进不依赖身份选型的S07边界。
+- 当前fix/award-sku-version-fence，基于b5967d7。已读本机benefit-center正式OpenAPI：AwardItemIntent支持expectedSkuVersion（>=0），创建时主库校验，旧请求缺失保持旧摘要；普通营销组装却未传该字段。
+- 范围：新组装的普通营销意图固定当前目录返回的SKU版本，持久outbox重试不重新取版本；保留旧DTO无字段序列化与历史载荷，裂变专用DTO不变。绑定发生在意图组装时，不能宣称活动发布时已固定SKU版本。
+- 验收：真实MySQL持久化版本、目录变化后原命令/出站字节不变、版本冲突不冒充受理；原普通/裂变兼容回归。仅调用本机测试HTTP替身，不发送真实权益。
+- 已核对终态GET及item级补偿接口；按source取消墓碑仍无真实上游接口。S07终态/取消/Journey/自动轨迹/对账尚待继续，不发明取消成功。
+
+- S07a最终25项PASS（16真实MySQL +9普通/裂变DTO兼容，s07a-first.log）；独立复核business_gaps PASS，Hygiene/diff PASS（无formatter限制）。未向真实权益中心发放或修改外部仓库。下一子片继续普通发奖履约状态查询及恢复，不将202视为到账。

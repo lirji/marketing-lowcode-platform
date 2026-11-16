@@ -57,6 +57,8 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
     private static final AtomicInteger BENEFIT_SKU_REQUESTS = new AtomicInteger();
     private static final AtomicInteger BENEFIT_CATALOG_STATUS = new AtomicInteger(200);
     private static final AtomicBoolean SKU_ACTIVE = new AtomicBoolean(true);
+    private static final AtomicInteger SKU_VERSION = new AtomicInteger(3);
+    private static final AtomicBoolean ENFORCE_SKU_VERSION = new AtomicBoolean(false);
     private static final AtomicReference<String> FORWARDED_TENANT = new AtomicReference<>();
     private static final AtomicReference<String> BENEFIT_AUTHORIZATION = new AtomicReference<>();
     private static final AtomicInteger AWARD_REQUESTS = new AtomicInteger();
@@ -324,6 +326,7 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         JsonNode outbound = mapper.readTree(storedPayload);
         assertEquals(1_234L, outbound.get("items").get(0).get("amountMinor").asLong());
         assertEquals("sku-active", outbound.get("items").get(0).get("benefitSkuId").asString());
+        assertEquals(3, outbound.get("items").get(0).get("expectedSkuVersion").asLong());
         JsonNode expected = mapper.readTree(jdbc.queryForObject("select payload_json from mk_benefit_outbox where tenant_id=? and destination_topic=? and aggregate_id=(select intent_id from mk_award_intent_outbox where tenant_id=? and source_request_id=?)",
                 String.class, "tenant-a", "marketing.award-expected.v1", "tenant-a", sourceRequestId));
         assertEquals("campaign-center", expected.get("campaignId").asString());
@@ -368,6 +371,34 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         assertFalse(listed.get(0).has("riskAction"));
         assertFalse(listed.get(0).has("riskReason"));
         assertFalse(listed.get(0).has("riskDecisionId"));
+    }
+
+    @Test
+    void catalogVersionChangeCannotSilentlyRewriteQueuedAwardOnRetry() throws Exception {
+        SKU_ACTIVE.set(true); SKU_BENEFIT_TYPE.set("CASH"); SKU_VERSION.set(3);
+        AWARD_RESPONSE_STATUS.set(202); ENFORCE_SKU_VERSION.set(true);
+        String source = "sku-fence-" + java.util.UUID.randomUUID();
+        String benefit = "versioned-" + java.util.UUID.randomUUID();
+        try {
+            put("/api/v1/benefits/" + benefit, Map.of("name", "Versioned cash", "status", "ACTIVE",
+                    "resourceKey", "", "benefitSkuId", "sku-active", "policy", Map.of("type", "CASH")),
+                    "definition-" + source);
+            var command = awardCommand(source, "campaign-version-fence", 1, "tenant-a", benefit + "@1", 500);
+            post("/internal/v1/award-intents", command, source);
+            String original = jdbc.queryForObject("select payload_json from mk_award_intent_outbox where tenant_id=? and source_request_id=?",
+                    String.class, "tenant-a", source);
+            assertEquals(3, mapper.readTree(original).path("items").get(0).path("expectedSkuVersion").asLong());
+            SKU_VERSION.set(4);
+            post("/internal/v1/award-intents", command, source);
+            assertEquals(original, jdbc.queryForObject("select payload_json from mk_award_intent_outbox where tenant_id=? and source_request_id=?",
+                    String.class, "tenant-a", source), "replay must preserve the original outbound bytes");
+            awardIntentRelay.relayOnce();
+            assertEquals("DEAD", jdbc.queryForObject("select status_name from mk_award_intent_outbox where tenant_id=? and source_request_id=?",
+                    String.class, "tenant-a", source));
+            assertEquals(3, mapper.readTree(AWARD_PAYLOAD.get()).path("items").get(0).path("expectedSkuVersion").asLong());
+        } finally {
+            SKU_VERSION.set(3); ENFORCE_SKU_VERSION.set(false); AWARD_RESPONSE_STATUS.set(202);
+        }
     }
 
     @Test
@@ -897,8 +928,8 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
                 String active = SKU_ACTIVE.get() ? """
                           {"skuId":"sku-active","benefitType":"%s","faceValueMinor":8000,
                            "currency":"CNY","status":"ACTIVE","enabled":true,"validityType":"RELATIVE",
-                           "relativeDays":7,"usableWeekdays":[],"userLimitPerDay":1,"version":3},
-                        """.formatted(SKU_BENEFIT_TYPE.get()) : "";
+                           "relativeDays":7,"usableWeekdays":[],"userLimitPerDay":1,"version":%d},
+                        """.formatted(SKU_BENEFIT_TYPE.get(), SKU_VERSION.get()) : "";
                 byte[] body = ("""
                         [
                         """ + active + """
@@ -921,6 +952,11 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
                 AWARD_PAYLOAD.set(new String(exchange.getRequestBody().readAllBytes(),
                         java.nio.charset.StandardCharsets.UTF_8));
                 int status = AWARD_RESPONSE_STATUS.get();
+                if (ENFORCE_SKU_VERSION.get()) {
+                    var expected = new ObjectMapper().readTree(AWARD_PAYLOAD.get()).path("items").get(0)
+                            .path("expectedSkuVersion").asLong(-1);
+                    if (expected != SKU_VERSION.get()) status = 409;
+                }
                 byte[] body = (status == 202
                         ? "{\"awardOrderNo\":\"BO-CENTER-001\",\"status\":\"ACCEPTED\",\"replay\":false}"
                         : "{\"code\":\"INVALID_AWARD\"}")

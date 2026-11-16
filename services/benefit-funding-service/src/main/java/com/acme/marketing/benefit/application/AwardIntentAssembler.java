@@ -7,6 +7,7 @@ import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.error.ConflictException;
 import com.acme.marketing.platform.identity.TenantId;
 import com.acme.marketing.platform.identity.TenantScope;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -24,6 +25,8 @@ import tools.jackson.databind.ObjectMapper;
 public final class AwardIntentAssembler {
     static final String SOURCE_SYSTEM = "drools-activity";
     private static final int MAX_ITEMS = 20;
+    private static final String SKU_VERSION_INVALID = "AWARD_SKU_VERSION_INVALID";
+    private static final String SKU_VERSION_INVALID_MESSAGE = "权益目录未提供有效的 SKU 版本";
 
     private final AwardIntentRepository repository;
     private final ObjectMapper mapper;
@@ -65,6 +68,7 @@ public final class AwardIntentAssembler {
             BoundBenefit benefit = activeBenefit(scope.tenantId().value(), reference);
             BenefitSkuCatalog.BenefitSkuView sku = skuCatalog.requireActiveSku(
                     scope.tenantId().value(), benefit.benefitSkuId());
+            if (sku.version() < 0) throw new ConflictException(SKU_VERSION_INVALID, SKU_VERSION_INVALID_MESSAGE);
             if (!benefit.policyType().equals(sku.benefitType())) {
                 throw new ConflictException("AWARD_BENEFIT_TYPE_MISMATCH",
                         "stored benefit policy type does not match the active SKU type");
@@ -78,7 +82,7 @@ public final class AwardIntentAssembler {
                 Long amountMinor = type == BenefitType.CASH ? positiveCashAmount(line) : null;
                 String currency = type == BenefitType.CASH ? line.currency() : null;
                 items.add(new AwardItemIntent("line-" + (lineIndex + 1) + "-unit-" + (unit + 1),
-                        benefit.benefitSkuId(), type, amountMinor, currency, 1, Map.of()));
+                        benefit.benefitSkuId(), type, amountMinor, currency, 1, Map.of(), sku.version()));
             }
         }
         if (items.isEmpty()) {
@@ -210,10 +214,20 @@ public final class AwardIntentAssembler {
     public enum PartialPolicy { BEST_EFFORT }
     public record DecisionReference(String decisionId, String activityId, Integer activityVersion) { }
     public record AwardItemIntent(String clientItemId, String benefitSkuId, BenefitType benefitType,
-            Long amountMinor, String currency, long quantity, Map<String, String> metadata) {
+            Long amountMinor, String currency, long quantity, Map<String, String> metadata,
+            @JsonInclude(JsonInclude.Include.NON_NULL) Long expectedSkuVersion) {
+        /** 兼容旧 DTO 与历史载荷；不为旧请求补版本，否则会改变外部幂等摘要。 */
+        public AwardItemIntent(String clientItemId, String benefitSkuId, BenefitType benefitType,
+                Long amountMinor, String currency, long quantity, Map<String, String> metadata) {
+            this(clientItemId, benefitSkuId, benefitType, amountMinor, currency, quantity, metadata, null);
+        }
+
         /** 防止调用方在组装后继续修改 metadata。 */
         public AwardItemIntent {
             metadata = Map.copyOf(metadata == null ? Map.of() : metadata);
+            if (expectedSkuVersion != null && expectedSkuVersion < 0) {
+                throw new IllegalArgumentException(SKU_VERSION_INVALID_MESSAGE);
+            }
         }
     }
     public record AwardIntent(String schemaVersion, String sourceSystem, String sourceRequestId,

@@ -187,3 +187,7 @@ CI 显式使用本仓库的 [基础设施固定样例](tests/fixtures/dev-infra/
 - 发放路由默认 `LEGACY`（也可设 `SHADOW`）；只有 `MARKETING_AWARD_TENANT_MODES=tenant-a=CENTER` 显式命中的租户才进入中台 outbox，且还需开启 `MARKETING_AWARD_RELAY_ENABLED`。模式在首次入队时固化，切换配置不会让旧请求改道。
 - 迁移期营销与 drools 都使用稳定的 `sourceSystem=drools-activity` 配合相同 `sourceRequestId`，即便交接误重叠，权益中台仍会按同一幂等身份拒绝第二份不同 payload；正常切流仍必须先关旧租户 authority，再开 CENTER。
 - CENTER 入队与 `marketing.award-expected.v1` 应发事实同事务提交；Relay 用租约版本 fencing、单租户批量上限、熔断和原幂等键重试，成功后回填 `benefitOrderNo`。回滚时先清空对应租户的 CENTER 映射，再关闭 Relay，保留 PENDING/DEAD 行供审计和恢复。
+
+### 普通营销发奖的 SKU 版本
+
+新组装的 `drools-activity` 发奖项携带权益目录当前返回的 `expectedSkuVersion`，并随原始 outbox 载荷持久化。重试不会重新选取新版 SKU；若首次受理前目录切版，由权益中心返回版本冲突，营销侧保留失败结果。历史已持久化载荷保持原字节，旧 DTO 未指定版本时仍不输出该字段。该约束固定的是意图组装时的目录版本，活动发布时的 SKU 冻结和最终到账确认仍需后续链路验收。
