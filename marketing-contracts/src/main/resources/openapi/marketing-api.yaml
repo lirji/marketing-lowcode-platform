@@ -334,6 +334,26 @@ paths:
           description: Tenant-scoped award intent delivery states
           content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/AwardIntentView'}}}}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/award-intents/{intentId}/fulfillment:
+    get:
+      tags: [Benefit]
+      operationId: getAwardFulfillment
+      description: Requires trace:read. Tenant-scoped latest verified upstream observation, separate from delivery status. A null checkedAt means no trusted observation; this is not a permanent terminal fence.
+      parameters:
+        - {in: path, name: intentId, required: true, schema: {type: string, minLength: 1, maxLength: 64}}
+      responses:
+        '200': {description: Last observation and synchronization state, content: {application/json: {schema: {$ref: '#/components/schemas/AwardFulfillmentView'}}}}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/award-intents/{intentId}/fulfillment:refresh:
+    post:
+      tags: [Benefit]
+      operationId: refreshAwardFulfillment
+      description: Requires trace:read. Coalesces a read-only lookup in one durable row per tenant/intent. Does not issue or cancel an award. Repeated requests do not steal a live lease; no Idempotency-Key required. Disabled worker returns 503 AWARD_FULFILLMENT_SYNC_DISABLED.
+      parameters:
+        - {in: path, name: intentId, required: true, schema: {type: string, minLength: 1, maxLength: 64}}
+      responses:
+        '202': {description: "Refresh queued or already running, not a new fulfillment result", content: {application/json: {schema: {$ref: '#/components/schemas/AwardFulfillmentView'}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /internal/v1/award-intents:
     post:
       tags: [Benefit]
@@ -638,6 +658,32 @@ components:
         subjectRef: {type: string, minLength: 1, maxLength: 256}
         offerToken: {type: string, minLength: 1, maxLength: 32768}
         cartDigest: {type: string, pattern: '^sha256:[a-f0-9]{64}$'}
+    AwardFulfillmentView:
+      type: object
+      additionalProperties: false
+      required: [intentId, synchronizationState, benefitOrderNo, centerStatus, checkedAt, errorCode, consecutiveFailures, refreshEnabled, items]
+      properties:
+        intentId: {type: string}
+        synchronizationState: {type: string, enum: [UNOBSERVED, PENDING, RUNNING, PAUSED]}
+        benefitOrderNo: {type: [string, 'null']}
+        centerStatus: {type: [string, 'null'], enum: [ACCEPTED, PROCESSING, SUCCEEDED, PARTIAL_SUCCEEDED, FAILED, REMEDIATING, REVERSING, REVERSED, PARTIALLY_REVERSED, null]}
+        checkedAt: {type: [string, 'null'], format: date-time, description: "Successful lookup completion time, not the time of award delivery"}
+        errorCode: {type: string, description: Sanitized lookup failure; never interpreted as award failure or cancellation}
+        consecutiveFailures: {type: integer, minimum: 0}
+        refreshEnabled: {type: boolean}
+        items:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [clientItemId, skuId, status, quantity, skuVersion]
+            properties:
+              clientItemId: {type: string}
+              skuId: {type: string}
+              status: {type: string, enum: [PENDING, RESERVED, DISPATCHING, SUCCEEDED, FAILED_FINAL, UNKNOWN, QUERYING, REISSUING, REVERSING, REVERSED, REVERSAL_FAILED, REVERSAL_UNKNOWN]}
+              quantity: {type: integer, format: int64, minimum: 1}
+              skuVersion: {type: [integer, 'null'], format: int64, minimum: 0}
     AwardIntentView:
       type: object
       additionalProperties: false

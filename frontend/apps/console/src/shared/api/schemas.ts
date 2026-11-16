@@ -397,6 +397,22 @@ export const benefitSkuSchema = z.object({
 })
 export type BenefitSku = z.infer<typeof benefitSkuSchema>
 
+export const awardFulfillmentSchema = z.object({
+  intentId: z.string(),
+  synchronizationState: z.enum(['UNOBSERVED', 'PENDING', 'RUNNING', 'PAUSED']),
+  benefitOrderNo: z.string().nullable(),
+  centerStatus: z.enum(['ACCEPTED', 'PROCESSING', 'SUCCEEDED', 'PARTIAL_SUCCEEDED', 'FAILED', 'REMEDIATING', 'REVERSING', 'REVERSED', 'PARTIALLY_REVERSED']).nullable(),
+  checkedAt: z.string().nullable(),
+  errorCode: z.string(),
+  consecutiveFailures: z.number().int().nonnegative(),
+  refreshEnabled: z.boolean(),
+  items: z.array(z.object({ clientItemId: z.string(), skuId: z.string(),
+    status: z.enum(['PENDING', 'RESERVED', 'DISPATCHING', 'SUCCEEDED', 'FAILED_FINAL', 'UNKNOWN', 'QUERYING', 'REISSUING', 'REVERSING', 'REVERSED', 'REVERSAL_FAILED', 'REVERSAL_UNKNOWN']),
+    quantity: z.number().int().positive(), skuVersion: z.number().int().nonnegative().nullable(),
+  })),
+})
+export type AwardFulfillment = z.infer<typeof awardFulfillmentSchema>
+
 export const awardIntentViewSchema = z.object({
   intentId: z.string(),
   sourceSystem: z.string(),

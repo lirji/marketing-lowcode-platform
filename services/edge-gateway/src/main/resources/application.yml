@@ -63,7 +63,7 @@ spring:
             - id: benefit
               uri: ${BENEFIT_SERVICE_URL:http://localhost:8085}
               predicates:
-                - "Path=/api/v1/benefits/**,/api/v1/benefit-skus,/api/v1/award-intents,/api/v1/promotion-applications/**,/api/v1/promotion-applications:expire,/api/v1/funding/**"
+                - "Path=/api/v1/benefits/**,/api/v1/benefit-skus,/api/v1/award-intents,/api/v1/award-intents/**,/api/v1/promotion-applications/**,/api/v1/promotion-applications:expire,/api/v1/funding/**"
               filters:
                 - "CircuitBreaker=benefitCircuit"
             - id: events

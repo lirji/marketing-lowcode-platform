@@ -182,7 +182,7 @@ CI 显式使用本仓库的 [基础设施固定样例](tests/fixtures/dev-infra/
 - 营销版本键为 `campaignId + definitionVersion`，权益资产键为 `benefitSkuId + skuVersion`。
 - `sourceRequestId` 是营销到权益中台的跨系统幂等键。
 - Benefit/Funding 通过 `BENEFIT_CENTER_BASE_URL` 查询 tenant 隔离的 SKU 目录；发布 ACTIVE 权益时实时校验模板仍为 ACTIVE。
-- AwardIntent 使用服务端签名 OfferToken 重建资格、SKU 与金额；内部触发接口不接受金额字段，运营侧仅通过 `GET /api/v1/award-intents?campaignId=` 查看状态。
+- AwardIntent 使用服务端签名 OfferToken 重建资格、SKU 与金额；内部触发接口不接受金额字段，运营侧通过 `GET /api/v1/award-intents?campaignId=` 查看投递状态，并可单独查看履约观察。
 - AwardIntent 在落 outbox 前以 `sourceId=MARKETING_AWARD` 调用 risk-platform；CASH 使用服务端组装后的最小单位金额，非 CASH/LEGACY 使用 `amount=1,currency=XXX`。业务拦截写 `mk_award_intent_block` 并返回 202，超时、5xx 或降级挑战写 `UNAVAILABLE` 后返回可重试的 `RISK_UNAVAILABLE` 503，均不会写 outbox 或应发事实。
 - 发放路由默认 `LEGACY`（也可设 `SHADOW`）；只有 `MARKETING_AWARD_TENANT_MODES=tenant-a=CENTER` 显式命中的租户才进入中台 outbox，且还需开启 `MARKETING_AWARD_RELAY_ENABLED`。模式在首次入队时固化，切换配置不会让旧请求改道。
 - 迁移期营销与 drools 都使用稳定的 `sourceSystem=drools-activity` 配合相同 `sourceRequestId`，即便交接误重叠，权益中台仍会按同一幂等身份拒绝第二份不同 payload；正常切流仍必须先关旧租户 authority，再开 CENTER。
@@ -191,3 +191,14 @@ CI 显式使用本仓库的 [基础设施固定样例](tests/fixtures/dev-infra/
 ### 普通营销发奖的 SKU 版本
 
 新组装的 `drools-activity` 发奖项携带权益目录当前返回的 `expectedSkuVersion`，并随原始 outbox 载荷持久化。重试不会重新选取新版 SKU；若首次受理前目录切版，由权益中心返回版本冲突，营销侧保留失败结果。历史已持久化载荷保持原字节，旧 DTO 未指定版本时仍不输出该字段。该约束固定的是意图组装时的目录版本，活动发布时的 SKU 冻结和最终到账确认仍需后续链路验收。
+
+### 普通营销发奖的履约观察
+
+运营发放列表的“已送达”只代表权益中心受理。选择“查看发放结果”后读取 `GET /api/v1/award-intents/{intentId}/fulfillment`，展示最近成功查询的订单/项状态及北京时间；`POST /api/v1/award-intents/{intentId}/fulfillment:refresh` 仅排队查询，202不表示发放成功。两个接口都要求 `trace:read`，租户来自当前认证；LEGACY/SHADOW不支持，风控拦截无履约订单。
+
+- `MARKETING_AWARD_FULFILLMENT_ENABLED=false` 默认关闭，关闭刷新返回503；独立 `BENEFIT_CENTER_FULFILLMENT_BEARER_TOKEN` 需包含 `benefit.award.read`，且签名租户必须匹配目标租户。上游GET没有POST/目录使用的机器委派白名单，不能把一枚租户令牌当作所有租户的读取凭据；当前本机未验证真实GET权限，保持关闭。
+- V13每条CENTER意图同事务建立一条任务。历史意图不会自动扫描补建，首次明确刷新时按原来源补建；不会改写原始出站载荷、投递状态或发起新发奖。查询前核对来源、请求、主体和项身份/数量/金额/SKU版本；不匹配和未知状态均拒绝入库。
+- 复用现有耐久任务轮询模式，独立单线程、默认每批5条/每租户2条；30秒租约、查询总时限默认3秒、正文上限128KiB。查询在事务外执行，代次和有效租约共同隔离迟到结果；人工刷新推进代次，不能抢占有效租约。成功默认300秒后再查；失败指数退避与抖动，连续10次后PAUSED，人工刷新可恢复。
+- 上游未提供单调业务版本，因此本表保存“最新查询观察”而非永久终态栅栏。404、403、超时不会变成业务失败或取消，也不会覆盖上次成功观察；补偿/撤销后下一次成功查询可更新结果。按来源取消墓碑仍缺上游合同，本功能不执行取消、补发、对账记账或Journey新发奖接线。
+- `marketing.award.fulfillment.check` 的 `result` 区分observed/unavailable/lease_lost。监控PAUSED和查询错误后先检查读权限、上游和身份合同，再刷新；不要删原意图或通过改状态绕过校验。观察表不保留主体/完整上游响应，每条意图仅一行；保留期限随父意图治理，在未确认期限前不自动删除。清理须先归档/处理观察子行再处理父意图；容量、长期保留和真实凭据验收仍属于S13。
+- 回退时先关闭履约观察开关，旧版本忽略新增表；保留V13和原始记录，不回滚数据库或清空任务。当前实现已用隔离MySQL和本机HTTP合同替身验证，未以真实权益发放代替测试。

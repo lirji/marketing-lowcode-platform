@@ -175,3 +175,8 @@ main { min-width: 0; }.topbar { height: 64px; padding: 0 28px; display: flex; al
 .designer-simulation-inputs .field { flex:0 1 190px; margin:0; }
 .designer-simulation-inputs p { flex:1 1 280px; margin:0; font-size:var(--text-xs); color:var(--ink-400); line-height:1.6; }
 @media(max-width:640px) { .designer-simulation-inputs { padding:12px; } .designer-simulation-inputs .field { flex:1 1 120px; } }
+
+.award-intents-panels { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.award-fulfillment-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+
+.award-fulfillment-region { scroll-margin-top: 88px; min-width: 0; }

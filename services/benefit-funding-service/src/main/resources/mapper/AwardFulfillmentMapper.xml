@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.benefit.infrastructure.persistence.mapper.AwardFulfillmentMapper">
+  <select id="selectIntent" resultType="com.acme.marketing.benefit.application.AwardFulfillmentRepository$Intent">
+    SELECT tenant_id AS tenantId,intent_id AS intentId,source_system AS sourceSystem,
+      source_request_id AS sourceRequestId,delivery_mode AS deliveryMode,benefit_order_no AS benefitOrderNo,payload_json AS payload
+    FROM mk_award_intent_outbox WHERE tenant_id=#{tenantId} AND intent_id=#{intentId}
+  </select>
+  <insert id="initialize">
+    INSERT INTO mk_award_fulfillment(tenant_id,intent_id,next_attempt_at,created_at,updated_at)
+    VALUES(#{tenantId},#{intentId},#{now},#{now},#{now})
+    ON DUPLICATE KEY UPDATE intent_id=mk_award_fulfillment.intent_id
+  </insert>
+  <update id="refresh">
+    UPDATE mk_award_fulfillment SET sync_state='PENDING',failure_count=0,lease_version=lease_version+1,next_attempt_at=#{now},updated_at=#{now}
+    WHERE tenant_id=#{tenantId} AND intent_id=#{intentId}
+      AND (sync_state != 'RUNNING' OR lease_until &lt;= #{now})
+  </update>
+  <select id="due" resultType="com.acme.marketing.benefit.application.AwardFulfillmentRepository$Candidate">
+    SELECT tenantId,intentId,leaseVersion,failures FROM (
+      SELECT tenant_id AS tenantId,intent_id AS intentId,lease_version AS leaseVersion,failure_count AS failures,
+        next_attempt_at,ROW_NUMBER() OVER(PARTITION BY tenant_id ORDER BY next_attempt_at,intent_id) tenant_rank
+      FROM mk_award_fulfillment
+      WHERE (sync_state='PENDING' AND next_attempt_at &lt;= #{now})
+        OR (sync_state='RUNNING' AND lease_until &lt;= #{now})
+    ) due WHERE tenant_rank &lt;= #{tenantLimit} ORDER BY next_attempt_at,tenantId,intentId LIMIT #{limit}
+  </select>
+  <update id="claim">
+    UPDATE mk_award_fulfillment SET sync_state='RUNNING',lease_owner=#{owner},lease_until=#{until},
+      lease_version=lease_version+1,updated_at=#{now}
+    WHERE tenant_id=#{tenantId} AND intent_id=#{intentId} AND lease_version=#{expectedVersion}
+      AND ((sync_state='PENDING' AND next_attempt_at &lt;= #{now})
+        OR (sync_state='RUNNING' AND lease_until &lt;= #{now}))
+  </update>
+  <update id="complete">
+    UPDATE mk_award_fulfillment SET sync_state=#{state},failure_count=#{failures},error_code=#{errorCode},
+      next_attempt_at=#{nextAttemptAt},updated_at=#{now},lease_owner=NULL,lease_until=NULL
+    <if test="checkedAt != null">
+      ,benefit_order_no=#{orderNo},center_status=#{centerStatus},items_json=#{itemsJson},checked_at=#{checkedAt}
+    </if>
+    WHERE tenant_id=#{tenantId} AND intent_id=#{intentId} AND sync_state='RUNNING'
+      AND lease_owner=#{owner} AND lease_version=#{leaseVersion} AND lease_until &gt; #{now}
+  </update>
+  <select id="select" useCache="false" flushCache="true" resultType="com.acme.marketing.benefit.application.AwardFulfillmentRepository$Stored">
+    SELECT intent_id AS intentId,sync_state AS state,benefit_order_no AS orderNo,center_status AS centerStatus,
+      items_json AS itemsJson,checked_at AS checkedAt,failure_count AS failures,error_code AS errorCode,
+      lease_version AS leaseVersion,next_attempt_at AS nextAttemptAt
+    FROM mk_award_fulfillment WHERE tenant_id=#{tenantId} AND intent_id=#{intentId}
+  </select>
+</mapper>

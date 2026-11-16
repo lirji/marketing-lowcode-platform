@@ -12,6 +12,7 @@ import {
   audienceSnapshotSchema,
   audienceViewSchema,
   awardIntentViewSchema,
+  awardFulfillmentSchema,
   benefitSkuSchema,
   benefitViewSchema,
   campaignSchema,
@@ -240,6 +241,10 @@ export const api = {
     if (query?.cursor) params.set('cursor', query.cursor)
     return request(`/api/v1/award-intents?${params}`, undefined, (value) => zArray(awardIntentViewSchema, value))
   },
+  awardFulfillment: (intentId: string) =>
+    request(`/api/v1/award-intents/${encodeURIComponent(intentId)}/fulfillment`, undefined, (value) => parseWith(awardFulfillmentSchema, value)),
+  refreshAwardFulfillment: (intentId: string) =>
+    request(`/api/v1/award-intents/${encodeURIComponent(intentId)}/fulfillment:refresh`, { method: 'POST' }, (value) => parseWith(awardFulfillmentSchema, value)),
   traceByRequest: (requestId: string) =>
     request(`/api/v1/traces/requests/${encodeURIComponent(requestId)}`, undefined, (value) => parseWith(traceViewSchema, value)),
   traceByOrder: (orderId: string) =>

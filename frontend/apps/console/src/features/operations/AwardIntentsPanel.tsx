@@ -1,3 +1,5 @@
+import { useRef, useState } from 'react'
+import { AwardFulfillmentPanel } from './AwardFulfillmentPanel'
 import { RecordTable, RecordTime } from '../../components/RecordTable'
 import { Select } from '../../components/Select'
 import { useSearchParams } from 'react-router-dom'
@@ -8,18 +10,21 @@ import { api } from '../../shared/api/client'
 import { problemDetail } from '../../shared/api/problem'
 import { useAuth } from '../../shared/auth/useAuth'
 import { benefitOrderHref, riskDecisionHref } from './awardIntentLinks'
-import type { AwardIntentView } from '../../shared/api/schemas'
+import { awardIntentViewSchema, type AwardIntentView } from '../../shared/api/schemas'
 
 const PAGE_SIZE = 20
+const DELIVERY_STATUS = awardIntentViewSchema.shape.status.enum
+const DELIVERY_MODE = awardIntentViewSchema.shape.deliveryMode.enum
 
 function statusTone(status: AwardIntentView['status']) {
-  if (status === 'SENT') return 'good' as const
-  if (status === 'DEAD' || status === 'RISK_BLOCKED') return 'danger' as const
+  if (status === DELIVERY_STATUS.SENT) return 'info' as const
+  if (status === DELIVERY_STATUS.DEAD || status === DELIVERY_STATUS.RISK_BLOCKED) return 'danger' as const
   return 'warn' as const
 }
 
 function statusLabel(status: AwardIntentView['status']) {
-  if (status === 'RISK_BLOCKED') return '风控拦截'
+  if (status === DELIVERY_STATUS.RISK_BLOCKED) return '风控拦截'
+  if (status === DELIVERY_STATUS.SENT) return '已送达'
   return status
 }
 
@@ -37,6 +42,8 @@ function shortHash(value: string) {
 
 export function AwardIntentsPanel() {
   const auth = useAuth()
+  const [selectedIntent, setSelectedIntent] = useState<string>()
+  const resultTrigger = useRef<HTMLButtonElement>(null)
   const [params, setParams] = useSearchParams()
   const campaignId = params.get('campaignId')?.trim() ?? ''
   const canRead = auth.hasPermission('trace:read')
@@ -56,6 +63,7 @@ export function AwardIntentsPanel() {
   const selectedInList = (campaigns.data ?? []).some((item) => item.id === campaignId)
 
   const selectCampaign = (next: string) => {
+    setSelectedIntent(undefined)
     const copy = new URLSearchParams(params)
     copy.set('tab', 'awards')
     if (next) copy.set('campaignId', next)
@@ -64,7 +72,7 @@ export function AwardIntentsPanel() {
   }
 
   return (
-    <div id="tab-发放" role="tabpanel">
+    <div id="tab-发放" role="tabpanel" className="award-intents-panels">
       <Panel>
         <PanelHeader eyebrow="AWARD INTENTS" title="发放指令" aside={<Badge tone="info">只读</Badge>} />
         {api.demoMode && <StateBanner tone="info" title="演示模式不查询真实发放指令" detail="关闭 DEMO_MODE 后按活动读取 GET /api/v1/award-intents。" />}
@@ -90,8 +98,8 @@ export function AwardIntentsPanel() {
           />
         )}
         {rows.length > 0 && (
-          <RecordTable label="发放指令" columns={['来源请求 ID', '指令 ID', '活动 ID', '来源系统', '定义版本', '发放模式', '状态', '主体摘要（脱敏）', '投递结果', '尝试次数', '权益订单号', '风控处置', '风控原因', '风控决策 ID', '最近错误', '创建时间（北京时间）', '更新时间（北京时间）', '发送时间（北京时间）', '操作']} actions>
-            {rows.map((item) => <AwardIntentRow key={item.intentId} item={item} />)}
+          <RecordTable label="发放指令" columns={['来源请求 ID', '指令 ID', '活动 ID', '来源系统', '定义版本', '发放模式', '投递状态', '主体摘要（脱敏）', '投递结果', '尝试次数', '权益订单号', '风控处置', '风控原因', '风控决策 ID', '最近错误', '创建时间（北京时间）', '更新时间（北京时间）', '发送时间（北京时间）', '操作']} actions>
+            {rows.map((item) => <AwardIntentRow key={item.intentId} item={item} expanded={selectedIntent === item.intentId} onObserve={(trigger) => { resultTrigger.current = trigger; setSelectedIntent(item.intentId) }} />)}
           </RecordTable>
         )}
         {intents.hasNextPage && (
@@ -100,14 +108,15 @@ export function AwardIntentsPanel() {
           </div>
         )}
       </Panel>
+      {selectedIntent && rows.some((item) => item.intentId === selectedIntent) && <AwardFulfillmentPanel key={selectedIntent} intentId={selectedIntent} onClose={() => { setSelectedIntent(undefined); resultTrigger.current?.focus() }} />}
     </div>
   )
 }
 
-function AwardIntentRow({ item }: { item: AwardIntentView }) {
+function AwardIntentRow({ item, expanded, onObserve }: { item: AwardIntentView; expanded: boolean; onObserve: (trigger: HTMLButtonElement) => void }) {
   const orderHref = benefitOrderHref(item)
   const riskHref = riskDecisionHref(item)
-  const blocked = item.status === 'RISK_BLOCKED'
+  const blocked = item.status === DELIVERY_STATUS.RISK_BLOCKED
   return (
     <tr>
       <td>{item.sourceRequestId}</td><td>{item.intentId}</td><td>{item.campaignId}</td><td>{item.sourceSystem}</td><td>{item.definitionVersion}</td><td>{item.deliveryMode}</td>
@@ -116,6 +125,7 @@ function AwardIntentRow({ item }: { item: AwardIntentView }) {
       <td>{blocked ? riskBannerTitle(item.riskAction) : item.riskAction ?? '—'}</td><td>{item.riskReason || (blocked ? '发放指令未进入出站队列。' : '—')}</td><td>{item.riskDecisionId ?? '—'}</td><td>{item.lastError || '—'}</td>
       <td><RecordTime value={item.createdAt} /></td><td><RecordTime value={item.updatedAt} /></td><td><RecordTime value={item.sentAt} /></td>
       <td><div className="record-actions">
+        {item.deliveryMode === DELIVERY_MODE.CENTER && !blocked && <button className="row-action" type="button" aria-expanded={expanded} aria-controls={`award-fulfillment-${item.intentId}`} onClick={(event) => onObserve(event.currentTarget)}>查看发放结果</button>}
         <button className="row-action" type="button" onClick={() => void navigator.clipboard.writeText(item.sourceRequestId)}>
           <Copy size={13} />复制 sourceRequestId
         </button>
@@ -127,7 +137,7 @@ function AwardIntentRow({ item }: { item: AwardIntentView }) {
           <a href={riskHref} target="_blank" rel="noreferrer">
             <ExternalLink size={13} />打开风控决策
           </a>
-        ) : item.status === 'DEAD' ? (
+        ) : item.status === DELIVERY_STATUS.DEAD ? (
           <span>未配置 BENEFIT_CONSOLE_ORIGIN，仅可复制 sourceRequestId</span>
         ) : blocked ? (
           <span>未配置 RISK_CONSOLE_ORIGIN，仅可复制 sourceRequestId</span>

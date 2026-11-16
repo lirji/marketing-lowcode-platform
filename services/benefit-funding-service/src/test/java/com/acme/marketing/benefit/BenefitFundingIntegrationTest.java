@@ -303,6 +303,13 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
                 Integer.class, "tenant-a", sourceRequestId));
         assertEquals(1, jdbc.queryForObject("select count(*) from mk_benefit_outbox where tenant_id=? and aggregate_id=(select intent_id from mk_award_intent_outbox where tenant_id=? and source_request_id=?) and destination_topic=?",
                 Integer.class, "tenant-a", "tenant-a", sourceRequestId, "marketing.award-expected.v1"));
+        assertEquals(1, jdbc.queryForObject("select count(*) from mk_award_fulfillment where tenant_id=? and intent_id=?",
+                Integer.class, "tenant-a", responses.get(0).get("intentId").asString()));
+        JsonNode unobserved = get("/api/v1/award-intents/" + responses.get(0).get("intentId").asString() + "/fulfillment");
+        assertTrue(unobserved.get("checkedAt").isNull());
+        assertFalse(unobserved.get("refreshEnabled").asBoolean());
+        assertEquals(503, postRaw("/api/v1/award-intents/" + responses.get(0).get("intentId").asString()
+                + "/fulfillment:refresh", Map.of(), null, "tenant-a").statusCode());
         int riskChecksAfterFirstResult = riskRequestCount(sourceRequestId);
         assertEquals(1, riskChecksAfterFirstResult,
                 "the durable pre-risk claim must allow only one concurrent risk evaluation");

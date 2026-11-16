@@ -44,6 +44,7 @@ public class AwardIntentService {
     private static final String RISK_UNAVAILABLE = "RISK_UNAVAILABLE";
 
     private final AwardIntentRepository repository;
+    private final AwardFulfillmentRepository fulfillment;
     private final ObjectMapper mapper;
     private final Clock clock;
     private final AwardIntentAssembler assembler;
@@ -55,7 +56,7 @@ public class AwardIntentService {
     private final String evaluationOwner;
 
     /** 构造使用外部风控端口和本地短事务保存首次结果的应用服务。 */
-    public AwardIntentService(AwardIntentRepository repository, ObjectMapper mapper, Clock clock,
+    public AwardIntentService(AwardIntentRepository repository, AwardFulfillmentRepository fulfillment, ObjectMapper mapper, Clock clock,
             AwardIntentAssembler assembler, AwardDispatchModeRouter modeRouter,
             RiskEvaluationGateway riskGateway, PlatformTransactionManager transactionManager,
             @Value("${marketing.award.evaluation-lease-ms:30000}") long evaluationLeaseMillis,
@@ -65,6 +66,7 @@ public class AwardIntentService {
             throw new IllegalArgumentException("award evaluation lease policy is invalid");
         }
         this.repository = repository;
+        this.fulfillment = fulfillment;
         this.mapper = mapper;
         this.clock = clock;
         this.assembler = assembler;
@@ -187,6 +189,8 @@ public class AwardIntentService {
                 status, deliveryResult, format(now), format(now), format(now)));
         if (mode == DeliveryMode.CENTER) {
             writeExpectedFacts(tenantId, intentId, command, assembled, now);
+            // 同一事务保存查询任务，重启或受理回包丢失后仍能按原来源恢复。
+            fulfillment.initialize(tenantId, intentId, format(now));
         }
         completeEvaluation(tenantId, command.sourceRequestId(), claim, resultType, now);
         return requireBySource(tenantId, command.sourceRequestId()).view();

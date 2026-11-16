@@ -29,6 +29,7 @@ marketing.funding.budget-bucket-count: ${MARKETING_FUNDING_BUDGET_BUCKET_COUNT:1
 marketing.benefit-center:
   base-url: ${BENEFIT_CENTER_BASE_URL:http://127.0.0.1:8183}
   bearer-token: ${BENEFIT_CENTER_BEARER_TOKEN:}
+  fulfillment-bearer-token: ${BENEFIT_CENTER_FULFILLMENT_BEARER_TOKEN:}
   connect-timeout-ms: ${BENEFIT_CENTER_CONNECT_TIMEOUT_MS:2000}
   request-timeout-ms: ${BENEFIT_CENTER_REQUEST_TIMEOUT_MS:3000}
   cache-ttl-seconds: ${BENEFIT_CENTER_CACHE_TTL_SECONDS:20}
@@ -37,6 +38,14 @@ marketing.award:
   default-mode: ${MARKETING_AWARD_DEFAULT_MODE:LEGACY}
   tenant-modes: ${MARKETING_AWARD_TENANT_MODES:}
   relay-enabled: ${MARKETING_AWARD_RELAY_ENABLED:false}
+  # 独立读取权限，GET 必须使用与目标租户一致且含 benefit.award.read 的凭据。
+  fulfillment-enabled: ${MARKETING_AWARD_FULFILLMENT_ENABLED:false}
+  fulfillment-max-failures: ${MARKETING_AWARD_FULFILLMENT_MAX_FAILURES:10}
+  fulfillment-batch-size: ${MARKETING_AWARD_FULFILLMENT_BATCH_SIZE:5}
+  fulfillment-lease-ms: ${MARKETING_AWARD_FULFILLMENT_LEASE_MS:30000}
+  fulfillment-refresh-seconds: ${MARKETING_AWARD_FULFILLMENT_REFRESH_SECONDS:300}
+  fulfillment-delay-ms: ${MARKETING_AWARD_FULFILLMENT_DELAY_MS:5000}
+  fulfillment-initial-delay-ms: ${MARKETING_AWARD_FULFILLMENT_INITIAL_DELAY_MS:5000}
   bulkhead-permits: ${MARKETING_AWARD_BULKHEAD_PERMITS:64}
   bulkhead-wait-ms: ${MARKETING_AWARD_BULKHEAD_WAIT_MS:5}
   evaluation-lease-ms: ${MARKETING_AWARD_EVALUATION_LEASE_MS:30000}
