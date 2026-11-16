@@ -32,6 +32,7 @@ import {
   reconciliationSchema,
   recomputeSchema,
   releaseViewSchema,
+  rollbackCandidateSchema,
   seriesSchema,
   parseSimulationResult,
   referralParticipantPageSchema,
@@ -217,10 +218,12 @@ export const api = {
     request('/api/v1/releases', { method: 'POST', headers: commandHeaders(idempotencyKey), body: JSON.stringify(payload) }, (value) => parseWith(releaseViewSchema, value)),
   activateRelease: (manifestId: string, idempotencyKey?: string) =>
     request(`/api/v1/releases/${encodeURIComponent(manifestId)}:activate`, { method: 'POST', headers: commandHeaders(idempotencyKey) }, (value) => parseWith(releaseViewSchema, value)),
-  rollbackRelease: (manifestId: string, targetGeneration: number) =>
-    request(`/api/v1/releases/${encodeURIComponent(manifestId)}:rollback`, { method: 'POST', headers: commandHeaders(), body: JSON.stringify({ targetGeneration }) }, (value) => parseWith(releaseViewSchema, value)),
-  setKillSwitch: (namespace: string, enabled: boolean, reason: string) =>
-    request(`/api/v1/releases/kill-switches/${encodeURIComponent(namespace)}`, { method: 'PUT', headers: commandHeaders(), body: JSON.stringify({ enabled, reason }) }, (value) => parseWith(killSwitchViewSchema, value)),
+  rollbackCandidates: (manifestId: string) =>
+    request(`/api/v1/releases/${encodeURIComponent(manifestId)}/rollback-candidates`, undefined, (value) => zArray(rollbackCandidateSchema, value)),
+  rollbackRelease: (manifestId: string, targetGeneration: number, idempotencyKey?: string) =>
+    request(`/api/v1/releases/${encodeURIComponent(manifestId)}:rollback`, { method: 'POST', headers: commandHeaders(idempotencyKey), body: JSON.stringify({ targetGeneration }) }, (value) => parseWith(releaseViewSchema, value)),
+  setKillSwitch: (namespace: string, enabled: boolean, reason: string, idempotencyKey?: string) =>
+    request(`/api/v1/releases/kill-switches/${encodeURIComponent(namespace)}`, { method: 'PUT', headers: commandHeaders(idempotencyKey), body: JSON.stringify({ enabled, reason }) }, (value) => parseWith(killSwitchViewSchema, value)),
   dashboard: (from: string, to: string) =>
     request(`/api/v1/measurements/dashboard?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, undefined, (value) => parseWith(dashboardSchema, value)),
   series: (from: string, to: string, granularity: 'hour' | 'day') =>

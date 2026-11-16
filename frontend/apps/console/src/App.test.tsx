@@ -44,7 +44,8 @@ describe('marketing console routing and core interactions', () => {
     renderApp()
     await user.click(await screen.findByRole('link', { name: '查看发布态势' }))
     expect(await screen.findByRole('heading', { name: '发布中心' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /推进灰度/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '编译并暂存' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /^激活 / })).not.toBeInTheDocument()
   })
 
   it('retains list filters when closing the campaign creation modal', async () => {

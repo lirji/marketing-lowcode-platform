@@ -22,6 +22,7 @@ class ContractSpecificationsTest {
     private static final Path RESOURCES = Path.of("src/main/resources").toAbsolutePath().normalize();
     private static final Set<String> API_PATHS = Set.of(
             "/api/v1/campaigns",
+            "/api/v1/releases/{manifestId}/rollback-candidates",
             "/api/v1/referral-rewards/{rewardId}:reevaluate",
             "/api/v1/referral-campaigns/{campaignId}/participants",
             "/api/v1/referral-campaigns/{campaignId}/relations",

@@ -56,6 +56,7 @@ public class ReleaseController {
     @PostMapping("/{manifestId}:activate")
     public ReleaseApplicationService.ReleaseView activate(
             @RequestHeader("Idempotency-Key") String idempotencyKey, @PathVariable String manifestId) {
+        service.authorizeActivation(manifestId);
         return commands.execute(TenantContextHolder.requireCurrent().tenantId(), "release.activate",
                 idempotencyKey, manifestId, ReleaseApplicationService.ReleaseView.class,
                 () -> service.activate(manifestId));
@@ -65,10 +66,17 @@ public class ReleaseController {
     public ReleaseApplicationService.ReleaseView rollback(@PathVariable String manifestId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody RollbackRequest request) {
+        service.authorizeRollback(manifestId, request.targetGeneration());
         return commands.execute(TenantContextHolder.requireCurrent().tenantId(), "release.rollback",
                 idempotencyKey, new CommandPayload(manifestId, request),
                 ReleaseApplicationService.ReleaseView.class,
                 () -> service.rollback(manifestId, request.targetGeneration()));
+    }
+
+    /** 候选由控制面真实保留记录和当前访问范围决定，不让页面推算前一代。 */
+    @GetMapping("/{manifestId}/rollback-candidates")
+    public java.util.List<ReleaseApplicationService.RollbackCandidate> rollbackCandidates(@PathVariable String manifestId) {
+        return service.rollbackCandidates(manifestId);
     }
 
     @GetMapping("/desired")
@@ -81,6 +89,7 @@ public class ReleaseController {
     public ReleaseApplicationService.KillSwitchView killSwitch(@PathVariable String namespace,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @RequestBody KillSwitchRequest request) {
+        TenantContextHolder.requireCurrent().requirePermission("release:kill-switch");
         return commands.execute(TenantContextHolder.requireCurrent().tenantId(), "release.kill-switch",
                 idempotencyKey, new CommandPayload(namespace, request),
                 ReleaseApplicationService.KillSwitchView.class,

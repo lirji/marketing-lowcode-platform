@@ -36,6 +36,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class ReleaseApplicationService {
+    private static final int MAX_ROLLBACK_CANDIDATES = 10;
     private final ControlRepository repository;
     private final ObjectMapper mapper;
     private final Clock clock;
@@ -224,6 +225,76 @@ public class ReleaseApplicationService {
         return new ReleaseView(stored.manifest(), State.ACTIVE, readiness.readyReplicas(), readiness.capacity(), directive);
     }
 
+    /** 幂等重放之前复核当前权限，已完成命令不能继续授予已撤销的访问权。 */
+    public void authorizeActivation(String manifestId) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("release:activate");
+        requireManifestScope(scope, stored(scope.tenantId().value(), manifestId, false).manifest());
+    }
+
+    /** 回滚回执可能包含目标制品，源与目标都必须仍处于当前身份范围内。 */
+    public void authorizeRollback(String manifestId, long targetGeneration) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("release:rollback");
+        StoredManifest source = stored(scope.tenantId().value(), manifestId, false);
+        requireManifestScope(scope, source.manifest());
+        requireManifestScope(scope, byGeneration(scope.tenantId().value(), source.manifest(), targetGeneration).manifest());
+    }
+
+    /** 候选只是读取时的快照，真正提交仍检查源指针、目标状态与有效期。 */
+    public List<RollbackCandidate> rollbackCandidates(String manifestId) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("release:read");
+        StoredManifest source = stored(scope.tenantId().value(), manifestId, false);
+        requireManifestScope(scope, source.manifest());
+        requireActiveRollbackSource(source);
+        requireReferralReleaseUnavailable(source.manifest());
+        List<Slot> slots = slotQuery(scope.tenantId().value(), source.manifest().environment(), source.manifest().cell(),
+                source.manifest().runtime(), source.manifest().namespace(), false);
+        if (slots.isEmpty()) throw staleRollbackSource();
+        requireDesiredRollbackSource(slots.getFirst(), source.manifest());
+        List<RollbackCandidate> result = new ArrayList<>();
+        Instant now = clock.instant();
+        for (long generation : source.manifest().retainedGenerations().stream().distinct().limit(MAX_ROLLBACK_CANDIDATES).toList()) {
+            var row = repository.findManifestByGeneration(scope.tenantId().value(), source.manifest().environment(),
+                    source.manifest().cell(), source.manifest().runtime(), source.manifest().namespace(), generation);
+            if (row.isEmpty()) continue;
+            StoredManifest target = storedManifest(row.orElseThrow());
+            if (target.state() != State.ACTIVE || !target.manifest().expiresAt().isAfter(now)) continue;
+            // 数据范围不匹配时省略该候选；数据库或反序列化故障不能伪装成空列表。
+            var artifact = target.manifest().artifacts().getFirst();
+            var resources = repository.findDefinitionScopes(scope.tenantId().value(), artifact.definitionId(), artifact.definitionVersion(), false);
+            if (resources.size() != 1 || !withinScope(scope, resources.getFirst())) continue;
+            try {
+                requireReferralReleaseUnavailable(target.manifest());
+                requireExecutableOfferSources(scope.tenantId().value(), target.manifest());
+            } catch (ConflictException | IllegalArgumentException unavailable) {
+                // 旧制品已不满足当前执行合同，不作为可回滚目标。
+                continue;
+            }
+            result.add(new RollbackCandidate(target.manifest().manifestId(), target.manifest().generation(),
+                    target.manifest().expiresAt(), target.manifest().artifacts()));
+        }
+        return List.copyOf(result);
+    }
+
+    private static boolean withinScope(TenantScope scope, ControlRepository.ResourceScopeRow resource) {
+        return (scope.organizations().contains("*") || scope.organizations().contains(resource.organizationId()))
+                && (resource.shopId() == null || resource.shopId().isBlank() || scope.shops().contains("*") || scope.shops().contains(resource.shopId()));
+    }
+
+    private static void requireActiveRollbackSource(StoredManifest source) {
+        if (source.state() != State.ACTIVE) throw new ConflictException("ROLLBACK_SOURCE_NOT_ACTIVE", "rollback source manifest must be active");
+    }
+
+    private static void requireDesiredRollbackSource(Slot slot, ReleaseManifest source) {
+        if (slot.desiredGeneration() != source.generation()) throw staleRollbackSource();
+    }
+
+    private static ConflictException staleRollbackSource() {
+        return new ConflictException("ROLLBACK_SOURCE_STALE", "manifest is no longer the desired generation");
+    }
+
     @Transactional
     public ReleaseView rollback(String manifestId, long targetGeneration) {
         var scope = TenantContextHolder.requireCurrent();
@@ -231,13 +302,12 @@ public class ReleaseApplicationService {
         StoredManifest current = stored(scope.tenantId().value(), manifestId, true);
         requireManifestScope(scope, current.manifest());
         requireReferralReleaseUnavailable(current.manifest());
-        if (current.state() != State.ACTIVE) {
-            throw new ConflictException("ROLLBACK_SOURCE_NOT_ACTIVE", "rollback source manifest must be active");
-        }
+        requireActiveRollbackSource(current);
         if (!current.manifest().retainedGenerations().contains(targetGeneration)) {
             throw new ConflictException("GENERATION_NOT_RETAINED", "rollback generation is not retained");
         }
         StoredManifest target = byGeneration(scope.tenantId().value(), current.manifest(), targetGeneration);
+        requireManifestScope(scope, target.manifest());
         requireReferralReleaseUnavailable(target.manifest());
         requireExecutableOfferSources(scope.tenantId().value(), target.manifest());
         Instant now = clock.instant();
@@ -247,9 +317,7 @@ public class ReleaseApplicationService {
         }
         Slot slot = lockSlot(scope.tenantId().value(), current.manifest().environment(), current.manifest().cell(),
                 current.manifest().runtime(), current.manifest().namespace());
-        if (slot.desiredGeneration() != current.manifest().generation()) {
-            throw new ConflictException("ROLLBACK_SOURCE_STALE", "manifest is no longer the desired generation");
-        }
+        requireDesiredRollbackSource(slot, current.manifest());
         long activationSequence = slot.activationSequence() + 1;
         ActivationDirective directive = directive(target.manifest(), activationSequence, targetGeneration,
                 0, scope.actorId(), now);
@@ -574,6 +642,8 @@ public class ReleaseApplicationService {
     private record ResourceScope(String organizationId, String shopId) { }
     public record ReleaseView(ReleaseManifest manifest, State state, int readyReplicas, long readyCapacity,
             ActivationDirective activationDirective) { }
+    /** 明确具体清单和制品，供操作者核对实际回滚目标。 */
+    public record RollbackCandidate(String manifestId, long generation, Instant expiresAt, List<ArtifactReference> artifacts) { }
     public record StageReleaseRequest(String definitionId, long definitionVersion, String environment, String cell,
             String runtime, String namespace, List<ArtifactReference> artifacts, Map<String, String> schemaVersions,
             int canaryBasisPoints, Instant activationAt, List<String> approvalCaseIds) {

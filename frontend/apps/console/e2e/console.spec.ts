@@ -11,11 +11,12 @@ test('operator can enter governed campaign creation', async ({ page }) => {
   await expect(page.getByText('双11冰洗焕新')).toBeVisible()
 })
 
-test('release action requires explicit evidence and stays inert in demo mode', async ({ page }) => {
+test('release actions stay inert in demo mode', async ({ page }) => {
   await page.goto('/releases')
   await expect(page.getByRole('heading', { name: '发布中心' })).toBeVisible()
   await expect(page.getByText('演示数据')).toBeVisible()
-  await expect(page.getByRole('button', { name: /推进灰度/ })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '编译并暂存' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: /^激活 / })).toHaveCount(0)
 })
 
 test('live release confirm posts to the control API', async ({ page }) => {
@@ -61,10 +62,10 @@ test('live release confirm posts to the control API', async ({ page }) => {
     }
   })
   await page.goto('/releases')
-  await expect(page.getByRole('button', { name: /推进灰度/ })).toBeEnabled({ timeout: 10_000 })
-  await page.getByRole('button', { name: /推进灰度/ }).click()
+  await expect(page.getByRole('button', { name: '激活 man-1', exact: true })).toBeEnabled({ timeout: 10_000 })
+  await page.getByRole('button', { name: '激活 man-1', exact: true }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
-  await page.getByPlaceholder('APR-7201 / 原因').fill('APR-7201 / canary')
+  await expect(page.getByLabel('审批号与操作原因')).toHaveCount(0)
   await page.getByText('我已核对作用范围、流量和回滚目标').click()
   await page.getByRole('button', { name: '确认执行' }).click()
   await expect(page.getByText(/灰度\/激活已提交/)).toBeVisible()

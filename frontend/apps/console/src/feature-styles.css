@@ -598,3 +598,5 @@ button:focus-visible, a:focus-visible, [tabindex="0"]:focus-visible { outline:2p
 .dmn-page .dmn-toolbar label { flex-wrap: wrap; min-width: 0; max-width: 100%; }
 .dmn-column-group .record-table th:first-child { width: 84px; }
 .dmn-column-group .record-table th:last-child { width: 100px; }
+
+.release-row-actions { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }

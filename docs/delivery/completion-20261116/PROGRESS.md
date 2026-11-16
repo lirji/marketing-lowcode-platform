@@ -207,3 +207,22 @@ S01–S05已交付，S05提交61b471b已正常快进推送main，精确候选CI4
 - S11b最终本地验证：10新增后端（6真实HTTP/MySQL+4边界）、4旧ControlFlow、10架构用例PASS；147不同前端用例、最终20DMN、lint/build、合同13JSON、Hygiene PASS（无canonical formatter限制）。根代理按java-build-review做第二轮权限/锁/幂等/事务/SQL检查，独立frontend review三项（含恢复分支、演示写入、真实长UUID溢出）全部关闭。
 - 真实浏览器两视口通过：临时control18883 + 512MiB独占MySQL13319，真实创建测试活动、保存v1、刷新恢复、并发更新v2后保存返回409并保留输入、明确确认恢复v2、v1历史不变；s11b-live-result.json及s11b-live-browser-final.log。仅其他导航API用空fixture，campaign/draft请求原样转发真实服务。根代理与独立review均已实际查看最终桌面/手机截图，0页面错误/固定视口宽度无溢出。最初真实长UUID暴露选择框超宽，已修label约束并改fixture/固定viewport断言，最终4浏览器PASS。
 - 临时Java54838/Vite54700已TERM，独占marketing-dmn-live-20261116已停止（s11b-live-cleanup.json）；共享dev-infra/Flink及真实业务库未修改。本片可提交，后续精确SHA CI通过才交付main；尚未Docker部署应用。S11发布/Journey/迁移重算/曝光及S12/13仍未完成，会员来源问题仍待答。
+
+## S11c 发布目标选择与真实回滚候选（设计确定，实施中）
+- S11b已提交推送eb4bfd7（24文件），精确CI43823667689运行，尚未合主干。新分支fix/release-target-selection基于该提交，保持切片独立交付。
+- 核对事实：ReleaseCenter只对列表第一条操作；rollback用stableGeneration-1猜目标，与后端retainedGenerations/曾ACTIVE/未过期/当前slot规则不一致。激活/回滚确认框收集reason但API不发送，文案却承诺不可篡改审计；不虚构留痕。本片先做有界操作正确性，组合/定时、聚合状态仍未实现。
+- 结果：每条清单提供对应操作，回滚候选由control读取既有retained和当前slot返回（最多10），验证源为当前ACTIVE、目标曾ACTIVE/未过期且当前用户有访问权；最终rollback仍重新检查，迟到候选不启用其他清单操作。用户明确选择目标并勾选范围，不推算generation。发布replay前重新检查当前操作权限和source/target范围；为rollback target补当前范围检查。保持现有签名、slot CAS、幂等和Outbox。
+- UI仅Kill Switch收集已被真实接口保存的原因；激活/回滚显示指令真实记录的操作人，不再声称未实现的审批依据审计。完整审计原因和自动/组合发布另有后续子片，不能以本片冒充S11完成。
+- 验收：服务端候选跨槽/过期/未曾ACTIVE/权限隔离、旧幂等回执权限撤销、最终提交再次校验；组件/双视口确认选择、错误与迟到结果、合同/构建/CI。无真实业务发布。
+
+- S11b精确CI43823667689三job全部PASS，已正常快进main=origin/main=eb4bfd7，s11b-delivery.json，保持S11c工作树。S11c后端候选/源目标授权、控制器重放前校验和前端逐行操作/候选选择已写，初步编译及前端build PASS；新4真实集成+旧回归s11c-backend-first.log/session30609，前端8组件s11c-unit-first.log/session16317及合同session45202正在核查。尚无S11c浏览器验收，独立fe-review已请求。
+
+- S11c后端最终22项PASS（5新真实HTTP/MySQL、4原控制链、13Offer/Referral门禁），s11c-backend-final.log；合同/13JSON PASS。新增KillSwitch重放前当前权限校验，完整rollback事务仍保留slot CAS/Outbox。未触发真实发布relay。
+- 独立fe-review两P2确认并修：Modal onClose不稳定导致逐字输入丢焦点；网络回滚成功但回执丢失后重连候选409使同命令重试不可达。现在稳定关闭回调+pendingRef；未知/5xx结果独立使用原mutation.variables及key重放，不依赖候选查询成功。9发布组件PASS含onlineManager断网恢复；全量/双视口浏览器仍待核查，前一全量仅App旧全局按钮断言失效已按逐行操作更新。无新主干交付或Docker应用部署。
+
+### S11c 最终本地验证
+- 22后端真实MySQL/HTTP及原门禁、10架构、156全量前端（最后9发布回归）、26合同浏览器、合同/13JSON、lint/build通过。末次日志s11c-unit-final.log、s11c-build-verified.log、s11c-architecture.log；Hygiene通过（仓库无canonical formatter限制）。状态码复用共享ReleaseState；既有错误码集中于原服务校验函数，没有改变HTTP/错误语义。
+- 独立fe-review两P2均关闭：输入稳定焦点，以及真实ApiProblem(status0)未知结果原请求恢复。后端由根代理第二轮核对当前权限/目标范围/只读候选/最终CAS与幂等Outbox，无本片未关闭finding。
+- 真实浏览器桌面/Pixel7通过：隔离MySQL中种子历史清单，真实control执行9→4回滚，故意丢弃已成功响应，重连真实候选409，原参数/幂等键重放200，SQL确认desired=4且仅1条激活指令。s11c-live-result.json、s11c-live-browser-second.log；截图已实际查看，无页面错误/视口溢出。历史清单为隔离fixture，Relay关闭，不代表完整编译/审批/运行时资格或生产回滚演练。
+- 首次Java在临时MySQL就绪前失败，核对后启动成功；首次浏览器种子TenantId JSON结构错误导致500，修正隔离fixture后通过，没有修改产品反序列化或放宽测试。旧日志保留。
+- 本片临时Java60637/Vite59860及自有测试MySQL已停止，端口关闭已确认（s11c-live-cleanup.json），准备提交；尚未远程CI/主干交付/本机应用部署。S11其他子项及S12/13继续，外部会员/履约合同仍待确认。

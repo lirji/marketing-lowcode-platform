@@ -143,6 +143,9 @@ export const artifactViewSchema = artifactReferenceSchema.omit({ uri: true }).ex
 })
 export type ArtifactView = z.infer<typeof artifactViewSchema>
 
+// 与控制面稳定状态码对齐；未知状态仍可展示，但不授予写操作。
+export const ReleaseState = { STAGED: 'STAGED', ACTIVE: 'ACTIVE', ROLLED_BACK: 'ROLLED_BACK', REVOKED: 'REVOKED' } as const
+
 export const releaseViewSchema = z.object({
   manifest: z.object({
     manifestId: z.string(),
@@ -162,6 +165,9 @@ export const releaseViewSchema = z.object({
   readyCapacity: z.number().optional().default(0),
 })
 export type ReleaseView = z.infer<typeof releaseViewSchema>
+export const rollbackCandidateSchema = z.object({ manifestId: z.string(), generation: z.number().int().positive().safe(),
+  expiresAt: z.string(), artifacts: z.array(artifactReferenceSchema) })
+export type RollbackCandidate = z.infer<typeof rollbackCandidateSchema>
 
 export type CompileRequest = {
   definitionId: string

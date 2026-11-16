@@ -154,6 +154,16 @@ paths:
       parameters: [{$ref: '#/components/parameters/ManifestId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
       requestBody: {$ref: '#/components/requestBodies/JsonObject'}
       responses: *ok
+  /api/v1/releases/{manifestId}/rollback-candidates:
+    get:
+      tags: [Release]
+      operationId: getRollbackCandidates
+      x-required-permission: release:read
+      description: Read at most 10 retained targets for the currently desired ACTIVE source. Targets must have been ACTIVE, be unexpired, executable and within current campaign access scope. This is a read-time snapshot; rollback rechecks source, target and permission. Activation and rollback also recheck current access before idempotent replay.
+      parameters: [{$ref: '#/components/parameters/ManifestId'}]
+      responses:
+        '200': {description: Eligible retained versions, content: {application/json: {schema: {type: array, maxItems: 10, items: {$ref: '#/components/schemas/RollbackCandidate'}}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/releases/desired:
     get:
       tags: [Release]
@@ -818,6 +828,14 @@ components:
         canaryBasisPoints: {type: integer, minimum: 0, maximum: 10000}
         activationAt: {type: string, format: date-time}
         approvalCaseIds: {type: array, items: {type: string}}
+    RollbackCandidate:
+      type: object
+      required: [manifestId, generation, expiresAt, artifacts]
+      properties:
+        manifestId: {type: string}
+        generation: {type: integer, format: int64, minimum: 1}
+        expiresAt: {type: string, format: date-time}
+        artifacts: {type: array, items: {$ref: '#/components/schemas/ArtifactReference'}}
     DmnDraftTable:
       type: object
       additionalProperties: false
