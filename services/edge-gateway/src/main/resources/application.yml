@@ -39,7 +39,7 @@ spring:
             - id: compiler
               uri: ${COMPILER_SERVICE_URL:http://localhost:8082}
               predicates:
-                - "Path=/api/v1/compile/**,/api/v1/artifacts/**"
+                - "Path=/api/v1/compile/**,/api/v1/artifacts/**,/api/v1/dmn/**"
               filters:
                 - "CircuitBreaker=compilerCircuit"
             - id: audience

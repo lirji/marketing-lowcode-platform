@@ -2,6 +2,7 @@ package com.acme.marketing.rule.dmn;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.acme.marketing.decision.rule.DecisionTableAdapter;
 import java.math.BigDecimal;
@@ -41,5 +42,37 @@ class KieDmnDecisionTableAdapterTest {
                 compilation.table(), "DiscountTier", Map.of("amount", BigDecimal.valueOf(800)));
         assertTrue(result.success(), () -> String.join("\n", result.messages()));
         assertEquals("VIP", result.results().get("DiscountTier"));
+    }
+
+    @Test
+    void compiledBytesRemainUsableAfterGeneratedModuleIsRemoved() {
+        var adapter = new KieDmnDecisionTableAdapter();
+        var compilation = adapter.compile(NAMESPACE, "DiscountModel", DMN);
+        var services = org.kie.api.KieServices.Factory.get();
+        String digest = com.acme.marketing.platform.crypto.Digests.sha256Hex(DMN).substring(0, 16);
+        var release = services.newReleaseId("com.acme.marketing.dmn", "dmn-" + digest, "1.0.0");
+        assertNull(services.getRepository().getKieModule(release));
+        for (int i = 0; i < 3; i++) {
+            assertTrue(adapter.evaluate(compilation.table(), "DiscountTier", Map.of("amount", BigDecimal.ONE)).success());
+            assertNull(services.getRepository().getKieModule(release));
+        }
+    }
+
+    @Test
+    void concurrentAdaptersDoNotRemoveAnotherEvaluationModule() throws Exception {
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            var requests = java.util.stream.IntStream.range(0, 2).mapToObj(index -> pool.submit(() -> {
+                var adapter = new KieDmnDecisionTableAdapter();
+                for (int attempt = 0; attempt < 3; attempt++) {
+                    var compiled = adapter.compile(NAMESPACE, "DiscountModel", DMN);
+                    assertTrue(compiled.valid(), compiled.messages().toString());
+                    var evaluated = adapter.evaluate(compiled.table(), "DiscountTier", Map.of("amount", BigDecimal.valueOf(800)));
+                    assertTrue(evaluated.success(), evaluated.messages().toString());
+                    assertEquals("VIP", evaluated.results().get("DiscountTier"));
+                }
+                return true;
+            })).toList();
+            for (var request : requests) assertTrue(request.get(30, java.util.concurrent.TimeUnit.SECONDS));
+        }
     }
 }

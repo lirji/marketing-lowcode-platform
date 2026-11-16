@@ -20,7 +20,8 @@ public interface DecisionTableAdapter {
 
     record Evaluation(boolean success, Map<String, Object> results, List<String> messages) {
         public Evaluation {
-            results = Map.copyOf(results);
+            // DMN 无命中是合法的 null 结果；防修改副本不能把它误报成求值失败。
+            results = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(results));
             messages = List.copyOf(messages);
         }
     }

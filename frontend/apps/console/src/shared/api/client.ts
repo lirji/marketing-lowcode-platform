@@ -1,4 +1,5 @@
 import type { CampaignType } from '../model/campaignType'
+import { dmnAnalysisSchema, dmnEvaluationSchema, type DmnTable } from './dmn'
 import type { ProblemDetail } from '@marketing/contracts'
 import { campaignCreateBody } from '../auth/scopeChoices'
 import { runtimeConfig } from '../config/runtime'
@@ -202,6 +203,10 @@ export const api = {
   releases: () => request('/api/v1/releases', undefined, (value) => zArray(releaseViewSchema, value)),
   compile: (payload: CompileRequest, idempotencyKey?: string) =>
     request('/api/v1/compile', { method: 'POST', headers: commandHeaders(idempotencyKey), body: JSON.stringify(payload) }, (value) => parseWith(compileReportSchema, value)),
+  analyzeDmn: (table: DmnTable) =>
+    request('/api/v1/dmn/analyze', { method: 'POST', body: JSON.stringify({ table }) }, (value) => parseWith(dmnAnalysisSchema, value)),
+  evaluateDmn: (table: DmnTable, context: Record<string, string>) =>
+    request('/api/v1/dmn/evaluate', { method: 'POST', body: JSON.stringify({ table, context }) }, (value) => parseWith(dmnEvaluationSchema, value)),
   getArtifact: (artifactId: string) =>
     request(`/api/v1/artifacts/${encodeURIComponent(artifactId)}`, undefined, (value) => parseWith(artifactViewSchema, value)),
   stageRelease: (payload: StageReleaseRequest, idempotencyKey: string) =>

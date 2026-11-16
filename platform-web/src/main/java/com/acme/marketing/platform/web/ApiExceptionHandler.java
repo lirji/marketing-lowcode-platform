@@ -31,7 +31,7 @@ public final class ApiExceptionHandler {
             // fail-closed 风控和入口容量保护都表示“稍后重试”；其它上游协议失败保持 502。
             case DependencyUnavailableException dependency -> List.of(
                             "RISK_UNAVAILABLE", "EVENT_OUTBOX_BACKPRESSURE",
-                            "AWARD_INTENT_IN_PROGRESS", "AWARD_FULFILLMENT_SYNC_DISABLED").contains(dependency.code())
+                            "AWARD_INTENT_IN_PROGRESS", "AWARD_FULFILLMENT_SYNC_DISABLED", "DMN_WORKBENCH_BUSY").contains(dependency.code())
                     ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.BAD_GATEWAY;
             default -> HttpStatus.BAD_REQUEST;
         };

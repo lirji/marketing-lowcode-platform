@@ -70,6 +70,8 @@ class GatewayTimeoutIntegrationTest {
     @Test
     void compilationAndControlWritesCanCompleteAfterOneSecond() throws Exception {
         assertEquals(200, request("/api/v1/compile", "POST").statusCode());
+        assertEquals(200, request("/api/v1/dmn/analyze", "POST").statusCode());
+        assertEquals(200, request("/api/v1/dmn/evaluate", "POST").statusCode());
         assertEquals(200, request("/api/v1/campaigns", "POST").statusCode());
     }
 

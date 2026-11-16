@@ -64,6 +64,15 @@ class ApiExceptionHandlerTest {
         assertEquals(true, problem.getProperties().get("retryable"));
     }
 
+    @Test
+    void dmnWorkbenchAdmissionIsRetryableServiceUnavailable() {
+        var problem = handler.domainException(new DependencyUnavailableException(
+                "DMN_WORKBENCH_BUSY", "工作台繁忙"), request());
+        assertEquals(503, problem.getStatus());
+        assertEquals("DMN_WORKBENCH_BUSY", problem.getProperties().get("code"));
+        assertEquals(true, problem.getProperties().get("retryable"));
+    }
+
     private static MockHttpServletRequest request() {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/test");
         request.setRequestURI("/api/v1/test");

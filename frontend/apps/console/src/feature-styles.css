@@ -582,3 +582,19 @@ button:focus-visible, a:focus-visible, [tabindex="0"]:focus-visible { outline:2p
   .designer-grid { flex:none; }
   .designer-page .problems-drawer { position:static; }
 }
+
+/* DMN 编辑复用工作台字段、内部滚动与卡片间距，不让宽规则表撑开页面。 */
+.dmn-page > .panel { margin-top: 20px; }
+.dmn-page .dmn-toolbar { flex-wrap: wrap; }
+.dmn-help { color: var(--ink-400); font-size: var(--text-base); line-height: 1.7; margin: 12px 0; }
+.dmn-column-group + .dmn-column-group { margin-top: 20px; }
+.dmn-column-group .record-table input { width: 100%; min-width: 100px; border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: inherit; }
+.dmn-column-group > button { margin-top: 10px; }
+.dmn-page .dmn-row-actions { width: 160px; }
+.dmn-actions { display: flex; gap: 6px; }
+.dmn-messages { padding-left: 20px; overflow-wrap: anywhere; font-size: var(--text-base); line-height: 1.7; }
+.dmn-result-value { white-space: pre-wrap; overflow-wrap: anywhere; }
+.dmn-page .test-row { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.dmn-page .dmn-toolbar label { flex-wrap: wrap; }
+.dmn-column-group .record-table th:first-child { width: 84px; }
+.dmn-column-group .record-table th:last-child { width: 100px; }

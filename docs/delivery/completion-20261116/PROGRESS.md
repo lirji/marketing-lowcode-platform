@@ -22,7 +22,7 @@
 | S08 | 裂变可信身份/交易/SKU/终态合同与适配器、READY ACK 接线 | 已有外部合同核对 | TODO |
 | S09 | 裂变 C 端参与/邀请/绑定及持久 Worker；复用已完成资格、配额、奖励、授权与回滚机制 | S08 | TODO |
 | S10 | 裂变专用投递/取消/终态/measurement，profile/网关/镜像/备份与端到端验收 | S09 | TODO |
-| S11 | DMN 编辑分析求值、组合/定时发布、完整 Journey 及可恢复迁移/重算、真实实验曝光 | 已有合同，新增语义须核对 | TODO |
+| S11 | DMN 编辑分析求值、组合/定时发布、完整 Journey 及可恢复迁移/重算、真实实验曝光 | 已有合同，新增语义须核对 | IN_PROGRESS |
 | S12 | 分析筛选导出、资产管理、完整分页、DEMO 数据落库、前端错误采集 | 相关后端能力 | TODO |
 | S13 | 进程沙箱、生产存储/身份密钥、隐私保留、容量/故障/混合版本/灾备实证 | 明确目标/资源/真实凭据，生产部署另行授权 | TODO |
 
@@ -165,3 +165,23 @@ S01–S05已交付，S05提交61b471b已正常快进推送main，精确候选CI4
 
 - S07b隔离修复f45f1dc已独立提交推送feat/award-fulfillment-observation，未夹带已暂存S07c；完整权益包88项全部PASS（s07b-all-benefit-tests.log，应用启动测试不在该包筛选内）。远程精确CI43809440693已启动，待其全量结果；未合主干。
 - S07c17文件验证版本已锁定，准备独立提交；无本地测试运行，运行镜像和共享数据未变。
+
+## S11a DMN 真实分析与求值（验证通过，待CI交付）
+- 先前依赖：S07b f45f1dc精确CI43809440693、S07c 6bb34f1精确CI43809493388运行，均待主干交付；本片从6bb34f1建立feat/dmn-workbench。S06b/S08–10和Journey外部发奖仍受会员/上游合同阻塞，不越过默认拒绝。
+- 本子片结果：当前DMN页面可自定义输入/输出列和规则，以真实KIE引擎分析Gap/Overlap并对输入求值；空白起步、不生成业务样本。编辑后使旧结果失效，失败保留输入。本片仅计算，无发奖/发布副作用；DMN版本持久化与发布绑定留S11b，页面明示尚未保存。
+- 契约：compiler新增POST /api/v1/dmn/analyze、/api/v1/dmn/evaluate，分别definition:compile/definition:simulate权限，沿用网关编译预算与ProblemDetail。请求table={hitPolicy:UNIQUE|FIRST,inputs:[{name,type}],outputs:[{name,type}],rules:[{inputs:[string],outputs:[string]}]}，type=number|string|boolean；evaluate加context:字符串值字典。响应分别{valid,gaps,overlaps,messages}、{success,results,messages}，均为真实引擎结果。
+- 边界：最多4输入/4输出/32规则；字段名ASCII标识符且唯一；单元格256字符。仅受限数字比较、字符串/布尔等值及通配“-”；输出仅标量字面量，服务端生成并转义XML，不开放任意FEEL/XML。上下文字段和类型精确校验；数字精度/长度有界，字符串使用JSON引号。全局单个求值/分析准入，繁忙明确拒绝；不声称进程级沙箱/强制终止已完成（S13）。新增指标无租户高基数标签；不写DB，不新增服务/组件。
+- 验收：真实KIE重叠/缺口、UNIQUE冲突/FIRST顺序、无命中null、非法语法/边界/授权、并发拒绝与资源释放；真实客户端组件和桌面/手机操作、乱序结果保护、build/lint/合同及独立审查。规模为一个跨前后端子片，下一复核点是引擎输入/输出兼容验证。
+
+### S11a 验证检查点
+- 后端真实KIE/HTTP/错误处理首轮26项PASS（s11a-backend-second.log）；首轮测试访问包私有TenantContextHolder编译失败已改用既有callInScope机制。进一步资源回收/并发与既有编译回归待复验；新接口不访问共享数据库。
+- 前端136全量组件PASS，独立审查3个P2（权限分别控制、文本null与无结果区分、键盘重排行焦点）均修并有回归，最终DMN10项PASS。两浏览器首轮PASS；中间轮新带引号文本与规则格同名导致测试选择器歧义，限定真实结果表后2项PASS（s11a-browser-reviewed.log），根代理已查看手机结果，调整字段方向/操作列宽避免占满窄屏。
+- S07b最新CI43809440693所有业务/集成测试通过，仅最后ArchUnit异常类Unavailable缺Exception后缀失败。根代理在原3文件改为UnavailableException；不修改断言/架构规则，当前跑s07b-architecture-fix.log后独立补交。S07c6bb34f1包含同一祖先，精确CI待最终查询；S07b/c尚未主干合并。
+
+- S07b/S07c已交付：8a59f2f精确CI43810321895 Java/合同/架构、前端、Compose/Helm全部PASS，正常快进推送main并核对本地/远程一致8a59f2f（s07bc-delivery.json）。保留S11a未提交工作树，不包含新DMN实现；无部署。
+- S11a根代理追加解析前512KiB限制并验证已知/分块正文与权限先行，最终36后端（27compiler含8旧编译+3adapter+6handler）PASS，s11a-backend-bounded.log。前端137不同用例验证有效；最终10DMN组件、lint/build PASS；两浏览器最终截图已由根代理及frontend_gaps实际查看，3个P2独立复核全关闭。合同/13JSON、Hygiene（无formatter限制）PASS。
+- 真实浏览器联调准备：已打包计算服务，只绑定127.0.0.1:18882、Flyway关闭、数据库指向不可用9端口，避免访问共享数据；日志s11a-live-server.log。尚未验证启动或浏览器结果。后端子代理本轮遇额度限制停止，根代理已接手收尾；不因此声明整个计划完成。
+
+- S11a最终本地验证39后端（新增两DMN网关HTTP路由在1.5秒下仍成功，在线Decision维持短预算）、137不同前端用例、lint/build、合同/13JSON、Compose/Helm/11告警、Hygiene全部PASS（无canonical formatter限制）。部署校验初次使用相对DEV_INFRA_ROOT导致Docker挂载失败，改绝对路径后PASS，无产品缺陷或共享基础设施变更。
+- 最终真实浏览器：临时完整compiler应用127.0.0.1:18882（Flyway OFF、不可用DB端口9）与前端4177，桌面/Pixel7共6次实际KIE请求PASS，0页面错误/0视口溢出；s11a-live-result.json、s11a-live-browser-final.log与s11a-live-*.png，截图已实际查看。首次联调看到单输出重复name/typeRef引发DMN标准警告，已按引擎标准移除、加断言并重新打包复测；无命中仍真实null。
+- 临时Java/Vite已发送TERM停止，仅本任务PID48653/47767，后续核验进程与端口；旧第一次服务PID47572已确认143退出。无共享库写入、外部发奖、Docker应用部署或新worktree。S11a准备单个逻辑提交，S11b版本持久化及其它S11项仍未开始实现。
