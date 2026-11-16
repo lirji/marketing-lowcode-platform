@@ -50,13 +50,42 @@ export function OperationsPage() {
   </PageTabs></div>
 }
 
-function TraceSearch() {
-  const [kind, setKind] = useState<'request' | 'order'>('request')
+const traceQueries = {
+  request: { label: '请求 ID（Request ID）', placeholder: '填写完整请求 ID', hint: '请求 ID 标识一次营销处理请求，可在业务调用回执中获取。', lookup: api.traceByRequest },
+  order: { label: '订单 ID（Order ID）', placeholder: '填写完整订单 ID', hint: '订单 ID 是订单系统中的唯一编号。', lookup: api.traceByOrder },
+}
+type TraceQueryKind = keyof typeof traceQueries
+
+export function TraceSearch() {
+  const [kind, setKind] = useState<TraceQueryKind>('request')
   const [searchId, setSearchId] = useState(api.demoMode ? 'req-20260902-8F2A' : '')
-  const [searched, setSearched] = useState(api.demoMode)
-  const trace = useMutation({ mutationFn: (id: string) => kind === 'order' ? api.traceByOrder(id) : api.traceByRequest(id) })
-  const runSearch = () => { setSearched(true); if (!api.demoMode) trace.mutate(searchId.trim()) }
-  return <div id="tab-全链路查询" role="tabpanel"><StateBanner tone="info" title="这是营销 Request ID 业务轨迹" detail="不是 Grafana Tempo。跨服务 span 请到 http://127.0.0.1:3001 的 Explore / Tempo 查看。" /><Panel className="ops-search"><div className="lookup"><label><span className="sr-only">查询类型</span><Select value={kind} onChange={(event) => setKind(event.target.value as 'request' | 'order')}><option value="request">请求 ID（Request ID）</option><option value="order">订单 ID（Order ID）</option></Select></label><label><Search size={16} /><span className="sr-only">查询值</span><input placeholder={kind === 'request' ? '填写完整请求 ID' : '填写完整订单 ID'} aria-describedby="trace-search-hint" value={searchId} onChange={(event) => setSearchId(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && runSearch()} /></label><Button tone="primary" onClick={runSearch} disabled={!searchId.trim()}>查询</Button></div><FieldHint id="trace-search-hint">{kind === 'request' ? '请求 ID 标识一次营销处理请求，可在业务调用回执中获取。' : '订单 ID 是订单系统中的唯一编号。'} 按完整 ID 精确查询。</FieldHint></Panel>{trace.isError && <StateBanner tone="error" title="轨迹查询失败" detail={problemDetail(trace.error)} />}{searched && <TraceResult requestId={searchId} live={trace.data} />}</div>
+  const [demoRequestId, setDemoRequestId] = useState(searchId)
+  const trace = useMutation({
+    mutationFn: ({ id, kind: queryKind }: { id: string; kind: TraceQueryKind }) => traceQueries[queryKind].lookup(id),
+  })
+  const runSearch = () => {
+    const id = searchId.trim()
+    if (!id) return
+    if (api.demoMode) setDemoRequestId(id)
+    else trace.mutate({ id, kind })
+  }
+  return <div id="tab-全链路查询" role="tabpanel">
+    <StateBanner tone="info" title="这是营销 Request ID 业务轨迹" detail="不是 Grafana Tempo。跨服务 span 请到 http://127.0.0.1:3001 的 Explore / Tempo 查看。" />
+    <Panel className="ops-search"><div className="lookup">
+      <label><span className="sr-only">查询类型</span><Select value={kind} onChange={(event) => {
+        setKind(event.target.value as TraceQueryKind)
+        trace.reset()
+      }}>{Object.entries(traceQueries).map(([value, query]) => <option key={value} value={value}>{query.label}</option>)}</Select></label>
+      <label><Search size={16} /><span className="sr-only">查询值</span><input placeholder={traceQueries[kind].placeholder} aria-describedby="trace-search-hint" value={searchId} onChange={(event) => setSearchId(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && runSearch()} /></label>
+      <Button tone="primary" onClick={runSearch} disabled={!searchId.trim()}>查询</Button>
+    </div><FieldHint id="trace-search-hint">{traceQueries[kind].hint} 按完整 ID 精确查询。</FieldHint></Panel>
+    {trace.isPending && <StateBanner tone="info" title="正在查询轨迹" detail={`正在查询 ${trace.variables.id}，请稍候。`} />}
+    {trace.isError && <StateBanner tone="error" title="轨迹查询失败" detail={problemDetail(trace.error)} />}
+    {api.demoMode ? <TraceResult requestId={demoRequestId} /> : trace.isSuccess && (
+      trace.data ? <TraceResult requestId={trace.variables.id} live={trace.data} />
+        : <EmptyState title="未找到轨迹" detail="该 ID 暂无可用轨迹，请核对完整 ID 后重试。" />
+    )}
+  </div>
 }
 
 function TraceResult({ requestId, live }: { requestId: string; live?: TraceView }) {
@@ -70,10 +99,10 @@ function TraceResult({ requestId, live }: { requestId: string; live?: TraceView 
   const events = live?.events?.length
     ? live.events.map((event) => [event.at ?? live.createdAt ?? '', event.type, event.title ?? event.type, event.detail ?? '', 'good'])
     : api.demoMode ? demoEvents : []
-  return <div className="trace-layout"><Panel><PanelHeader eyebrow="TRACE" title="营销全链路" aside={<Badge tone={live ? 'good' : 'warn'}>{live ? 'API' : '演示'}</Badge>} /><div className="trace-id"><span>Request</span><code>{live?.requestId ?? requestId}</code><button type="button" aria-label="复制 Request ID" onClick={() => void navigator.clipboard.writeText(live?.requestId ?? requestId)}><Copy size={13} /></button><span>Subject</span><code>{live?.maskedSubject ?? (api.demoMode ? 'f84a6d11c29e…' : '—')}</code></div>
+  return <div className="trace-layout"><Panel><PanelHeader eyebrow="TRACE" title="营销全链路" aside={<Badge tone={live ? 'good' : 'warn'}>{live ? 'API' : api.demoMode ? '演示' : '无数据'}</Badge>} /><div className="trace-id"><span>Request</span><code>{live?.requestId ?? requestId}</code><button type="button" aria-label="复制 Request ID" onClick={() => void navigator.clipboard.writeText(live?.requestId ?? requestId)}><Copy size={13} /></button><span>Subject</span><code>{live?.maskedSubject ?? (api.demoMode ? 'f84a6d11c29e…' : '—')}</code></div>
     {live && <dl className="trace-summary"><div><dt>Trace</dt><dd>{live.traceId ?? '—'}</dd></div><div><dt>Generation</dt><dd>{live.generation ?? '—'}</dd></div><div><dt>耗时</dt><dd>{live.durationMicros != null ? `${(live.durationMicros / 1000).toFixed(1)}ms` : '—'}</dd></div><div><dt>Terms</dt><dd>{live.termsVersion ?? '—'}</dd></div></dl>}
     {events.length === 0 ? <EmptyState title="没有逐步事件" detail="当前轨迹只有摘要字段，events 为空。" /> : <RecordTable label="轨迹事件" columns={['事件时间（北京时间）', '事件类型', '事件标题', '事件详情']}>{events.map(([time, type, title, detail], index) => <tr key={`${index}-${type}`}><td>{live ? <RecordTime value={time} /> : time}</td><td>{type}</td><td>{title}</td><td>{detail || '—'}</td></tr>)}</RecordTable>}
-  </Panel><aside><Panel><PanelHeader eyebrow="DECISION EXPLAIN" title="候选与裁决" />{live ? <pre className="trace-json">{displayDiagnosticJson(live.candidates ?? live.pricing ?? {})}</pre> : <><dl className="trace-summary"><div><dt>候选</dt><dd>7</dd></div><div><dt>资格通过</dt><dd>3</dd></div><div><dt>互斥后</dt><dd>2</dd></div><div><dt>最终采用</dt><dd>1</dd></div></dl><div className="reason-codes"><Badge tone="good">CATEGORY_MATCH</Badge><Badge tone="good">PLUS_ELIGIBLE</Badge></div></>}</Panel></aside></div>
+  </Panel><aside><Panel><PanelHeader eyebrow="DECISION EXPLAIN" title="候选与裁决" />{live ? <pre className="trace-json">{displayDiagnosticJson(live.candidates ?? live.pricing ?? {})}</pre> : api.demoMode ? <><dl className="trace-summary"><div><dt>候选</dt><dd>7</dd></div><div><dt>资格通过</dt><dd>3</dd></div><div><dt>互斥后</dt><dd>2</dd></div><div><dt>最终采用</dt><dd>1</dd></div></dl><div className="reason-codes"><Badge tone="good">CATEGORY_MATCH</Badge><Badge tone="good">PLUS_ELIGIBLE</Badge></div></> : <EmptyState title="没有裁决数据" detail="当前查询未返回候选与裁决记录。" />}</Panel></aside></div>
 }
 
 function JourneyInstances() {

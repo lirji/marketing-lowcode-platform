@@ -1,17 +1,18 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
 import { AuthProvider } from '../../shared/auth/AuthContext'
 import { LoginPage } from './LoginPage'
 
 function renderLogin(path = '/login') {
   return render(
-    <MemoryRouter initialEntries={[path]}>
+    <QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[path]}>
       <AuthProvider>
         <LoginPage />
       </AuthProvider>
-    </MemoryRouter>,
+    </MemoryRouter></QueryClientProvider>,
   )
 }
 

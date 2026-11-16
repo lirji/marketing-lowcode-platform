@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { UserManager, WebStorageStateStore, type User } from 'oidc-client-ts'
 import { runtimeConfig } from '../config/runtime'
-import { setAccessTokenProvider, setIdentityProvider, setUnauthorizedHandler } from '../api/client'
+import { invalidateApiSession, setAccessTokenProvider, setIdentityProvider, setUnauthorizedHandler } from '../api/client'
 import { AuthStateContext, devAuthState, permits, type AuthState, type IdentityClaims } from './auth-context'
 import { businessTenantFromPayload, decodeJwtPayload, permissionNames, splitClaim } from './claims'
 import { getDevTenantId } from './devTenant'
@@ -25,18 +26,39 @@ function claimsFromUser(user: User | null): IdentityClaims {
 
 function DevAuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [tenantId, setTenantId] = useState(getDevTenantId)
+  const [authenticated, setAuthenticated] = useState(true)
+  const [sessionVersion, setSessionVersion] = useState(0)
+  const [transitioning, setTransitioning] = useState(false)
+  const clearSession = useCallback(async () => {
+    invalidateApiSession()
+    // 先卸载观察者，再清缓存，避免旧页面在退出途中重新发起查询并填回旧数据。
+    flushSync(() => setTransitioning(true))
+    await queryClient.cancelQueries()
+    queryClient.clear()
+  }, [queryClient])
   const login = useCallback(async (returnTo = '/') => {
     const next = getDevTenantId()
+    await clearSession()
     setTenantId(next)
+    setAuthenticated(true)
     setIdentityProvider(() => ({ tenantId: next, actorId: devAuthState.subject }))
+    // 同租户重新登录也要重置草稿和 mutation 观察者，迟到结果不能进入新会话。
+    setSessionVersion((version) => version + 1)
     navigate(sanitizeReturnTo(returnTo), { replace: true })
-  }, [navigate])
+    setTransitioning(false)
+  }, [navigate, clearSession])
   const logout = useCallback(async () => {
+    await clearSession()
+    setAuthenticated(false)
+    setSessionVersion((version) => version + 1)
     navigate('/login', { replace: true })
-  }, [navigate])
+    setTransitioning(false)
+  }, [navigate, clearSession])
   const value: AuthState = {
     ...devAuthState,
+    authenticated,
     tenantId,
     organizations: tenantId === 'retail-cn' ? ['retail-business'] : [tenantId],
     login,
@@ -48,7 +70,7 @@ function DevAuthProvider({ children }: { children: ReactNode }) {
     setIdentityProvider(() => ({ tenantId, actorId: devAuthState.subject }))
     setUnauthorizedHandler(() => undefined)
   }, [tenantId])
-  return <AuthStateContext.Provider value={value}>{children}</AuthStateContext.Provider>
+  return <AuthStateContext.Provider key={`${tenantId}:${sessionVersion}`} value={value}>{transitioning ? null : children}</AuthStateContext.Provider>
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

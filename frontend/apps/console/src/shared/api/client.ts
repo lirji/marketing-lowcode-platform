@@ -47,6 +47,19 @@ import {
 let accessTokenProvider: () => string | undefined = () => undefined
 let unauthorizedHandler: () => void = () => undefined
 let identityProvider: () => { tenantId?: string; actorId?: string } = () => ({})
+let sessionVersion = 0
+
+/** 使旧会话的读写回执失效；清查询缓存本身不会取消 mutation 的 onSuccess。 */
+export function invalidateApiSession() {
+  sessionVersion++
+}
+
+function requireCurrentSession(version: number) {
+  if (version !== sessionVersion) {
+    throw new ApiProblem({ type: 'about:blank', title: '会话已切换', status: 409, code: 'SESSION_CHANGED',
+      detail: '会话已切换，请在当前会话重新查询操作结果。', retryable: false })
+  }
+}
 
 export function setAccessTokenProvider(provider: () => string | undefined) {
   accessTokenProvider = provider
@@ -104,6 +117,7 @@ function mergeHeaders(init?: RequestInit): Headers {
 }
 
 async function request<T>(path: string, init: RequestInit | undefined, parse: (value: unknown) => T): Promise<T> {
+  const version = sessionVersion
   const method = (init?.method ?? 'GET').toUpperCase()
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), runtimeConfig.requestTimeoutMs)
@@ -117,11 +131,13 @@ async function request<T>(path: string, init: RequestInit | undefined, parse: (v
       headers: mergeHeaders(init),
       signal: controller.signal,
     })
+    requireCurrentSession(version)
     if (response.status === 401) {
       unauthorizedHandler()
     }
     if (!response.ok) {
       const raw = await response.json().catch(() => ({ title: response.statusText, status: response.status, detail: '请求失败', type: 'about:blank' }))
+      requireCurrentSession(version)
       const problem = problemDetailSchema.catch({
         type: 'about:blank',
         title: response.statusText || '请求失败',
@@ -135,8 +151,11 @@ async function request<T>(path: string, init: RequestInit | undefined, parse: (v
       throw new ApiProblem(problem)
     }
     if (response.status === 204) return undefined as T
-    return parse(await response.json())
+    const body = await response.json()
+    requireCurrentSession(version)
+    return parse(body)
   } catch (cause) {
+    requireCurrentSession(version)
     if (cause instanceof ApiProblem) throw cause
     if (cause instanceof DOMException && cause.name === 'AbortError') {
       throw new ApiProblem({ type: 'about:blank', title: 'Gateway Timeout', status: 504, detail: '请求超时或已取消', retryable: true })
