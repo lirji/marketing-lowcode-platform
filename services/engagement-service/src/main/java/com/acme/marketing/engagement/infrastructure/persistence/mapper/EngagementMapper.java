@@ -108,6 +108,10 @@ public interface EngagementMapper {
     ContactRow selectContactByKey(@Param("tenantId") String tenantId,
             @Param("contactKey") String contactKey);
 
+    /** 原始请求指纹只供幂等比对，不随触达查询暴露。 */
+    String selectContactFingerprint(@Param("tenantId") String tenantId,
+            @Param("contactKey") String contactKey);
+
     /** 按内部标识查询触达记录。 */
     ContactRow selectContactById(@Param("tenantId") String tenantId,
             @Param("contactId") String contactId);
@@ -157,7 +161,7 @@ public interface EngagementMapper {
     record CommandRetryWrite(String tenantId, String commandId, String lastError, String updatedAt) { }
     record ContactWrite(String tenantId, String contactId, String contactKey, String subjectToken,
             String campaignId, String channelName, String templateId, long templateVersion, String stateName,
-            String variablesJson, String requestedAt, String updatedAt) { }
+            String variablesJson, String requestFingerprint, String requestedAt, String updatedAt) { }
     record ContactCompleteWrite(String tenantId, String contactId, String stateName, String providerRequestId,
             String providerCode, String updatedAt) { }
     record ContactDlqWrite(String tenantId, String dlqId, String contactId, String reasonCode,

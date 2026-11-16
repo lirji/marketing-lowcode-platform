@@ -428,7 +428,22 @@ paths:
         - {in: query, name: state, required: false, schema: {type: string, enum: [PENDING, RETRY_PENDING, ACCEPTED, SENT, DELIVERED, FAILED, CLICKED, UNSUBSCRIBED]}}
         - {in: query, name: limit, required: false, schema: {type: integer, default: 50, minimum: 1, maximum: 200}}
       responses: *list
-    post: {tags: [Engagement], operationId: sendContact, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *accepted}
+    post:
+      tags: [Engagement]
+      operationId: sendContact
+      description: >-
+        contactKey is scoped to the verified tenant and permanently binds the original
+        subject, campaign, channel, recipient, template/version, variables, timezone,
+        personalization flag and requestedAt. Object key order is ignored; changed
+        payloads return 409 IDEMPOTENCY_PAYLOAD_CONFLICT even after completion.
+        requestedAt is business metadata; frequency limits use server admission time.
+        Historical PENDING/RETRY_PENDING rows without a request fingerprint return
+        409 CONTACT_RETRY_UNVERIFIABLE and require channel-result review before recovery;
+        historical rows in other states can still be read without another provider call.
+        The provider endpoint is selected by the server. Delivery acknowledgments do
+        not regress states already advanced by provider callbacks.
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses: *accepted
   /api/v1/contacts/{contactKey}:
     get: {tags: [Engagement], operationId: getContact, parameters: [{$ref: '#/components/parameters/ContactKey'}], responses: *ok}
   /api/v1/providers/callbacks:

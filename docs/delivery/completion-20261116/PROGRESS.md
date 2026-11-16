@@ -13,8 +13,9 @@
 |---|---|---|---|
 | S01 | 触达重试复核当前同意/抑制/未成年人/个性化/静默时段/模板；终态幂等且频控不重复扣减；渠道限速、熔断冷却与单探测恢复通过回归 | 现有触达/Provider 契约 | DONE |
 | S02 | DEV 身份切换清理旧查询及缓存；真实轨迹空值/失败/加载不显示演示结果，异步结果不串查询 | 当前前端 API | DONE |
-| S03 | 空库可启动控制面并完成合法首发后 Decision 才 ready；Flink 校验名称/状态/检查点及恢复选择；真实 SKU 依赖验证 | 本地资源、已有跨系统合同 | LOCAL_PASS；CI待S04 |
-| S04 | 修复 CI 暴露的纳秒存储、跨仓基础设施访问与失效 Trivy 引用；对应远程工作流实际成功 | GitHub 仓库访问凭据 | IN_PROGRESS |
+| S03 | 空库可启动控制面并完成合法首发后 Decision 才 ready；Flink 校验名称/状态/检查点及恢复选择；真实 SKU 依赖验证 | 本地资源、已有跨系统合同 | DONE |
+| S04 | 修复 CI 暴露的纳秒存储、跨仓基础设施访问与失效 Trivy 引用；对应远程工作流实际成功 | GitHub 仓库访问凭据 | DONE（待合main） |
+| S04c | 触达同键请求指纹、服务端实际时间频控、迟到投递结果不覆盖终态；历史无指纹待重试记录明确拒绝自动重发 | 既有contactKey契约；S04分支先合并 | VERIFIED（待交付） |
 | S05 | 空白画布节点专属配置、真实活动类型/设计意图保存、搜索定位/模拟输入；合法定义能校验保存 | 现有编译器支持集合 | TODO |
 | S06 | 真实人群来源及快照/segment 一致、权益目录选择、审批发布到决策 | S03/S05、上游人群合同 | TODO |
 | S07 | 普通 AwardIntent 终态/取消恢复及 Journey 接线；自动轨迹与对账闭环；真实浏览器验收 | S06、权益终态合同 | TODO |
@@ -37,7 +38,7 @@
 
 ## 验证检查点
 - S01 首轮 Mockito 桩设置失败已修；历史失败 `s01-regression.log` 保留，最终 19 项通过，测试进程已结束。
-- S04：GitHub API 查询 lirji/dev-infra 返回 404，账号仓库列表无 infra 仓库，当前项目无 Actions secrets；本机 sibling dev-infra 非 Git 目录。继续准备可复现 CI 依赖方案，不杜撰 token。
+- S04 原基础设施仓库不可访问已用公开可复现 CI 快照修复；真实本地依赖仍为共享 dev-infra。
 
 ## 已完成 S02
 - 提交 `39bbc6e` 已快进合入并推送 origin/main，本地远程一致。
@@ -47,7 +48,7 @@
 - 已实际查看桌面成功、窄屏失败/空结果/切租户截图，复用现有视觉布局；截图 `s02-screenshots/`。Code Hygiene Gate 通过（无 formatter 限制），根代理另行复查 mutation 迟到和路由退出竞态，无剩余当前片阻断项。
 - 失败证据保留：早期 logout 竞态和测试选项类型错误已修；首轮全并行日期控件超时，降低并发后通过。当前无本片测试进程；应用 Docker 尚未更新。
 
-## 已验证 S03（本地完成，空环境复验接 S04 CI）
+## 已完成 S03（本地与空环境 Runner 通过）
 - `fix/local-bootstrap-and-flink-recovery`提交3323e48已正常快进合入并推送origin/main，本地远程SHA一致；采用runtime-and-deploy/project-documentation。无新worktree。
 - 拆开网关启动与Decision规则readiness；TimeLimiter明确普通控制4s、编译15s、各运行时控制10s，在线Decision/事件保持1s。原签名首发ACK/激活使Decision从DOWN变UP；本机仅网关按原镜像+不可变配置覆盖重建，覆盖文件gateway-s03.compose.json/application.yml在证据目录，源文件一致。S01/S02业务/前端镜像尚未更新。
 - Flink提交器改为显式bootstrap profile；名称、全部子任务、近期完成checkpoint校验；已有状态必须显式三作业恢复计划和no_claim。现有三个作业未重提/取消。
@@ -56,16 +57,22 @@
 - PASS：15项脚本测试、4项Gateway HTTP/Redis故障测试；Compose/Helm/11条告警规则；隔离MySQL37份迁移和10项种子检查，临时容器已清理；Code Hygiene PASS（无formatter限制）、diff/文档链接检查通过。
 - PASS：完整真实R1 `s03-live-acceptance-warm.log`，run=960d014dd178，dev-tenant/verification-org/verification-shop，SKU-CASH-10；审批、签名激活、人群/Decision、预留确认与对账、Journey/Flink/沙箱触达、Measurement/Flink全通过。未发送真实权益或短信。目录数据实读不等于外部发奖完成。
 - 历史失败保留在S03_DIAGNOSTICS.md及各日志：冷超时/旧脚本前置条件/演示背压已修；一次隔离数据库并行时衡量投影超过90s，后来仅一次落库；释放资源后保持原时限完整复跑通过。不据此宣称生产性能通过。
-- 证据目录：`/Users/liruijun/.local/share/marketing-delivery/completion-20261116/`；关键s03-first-activation.json、s03-seed-validation/seed-result.json、s03-hygiene-seed-final.json。完整空环境启动仍待S04隔离Runner验证，不清空本地共享库。
+- 证据目录：`/Users/liruijun/.local/share/marketing-delivery/completion-20261116/`；关键s03-first-activation.json、s03-seed-validation/seed-result.json、s03-hygiene-seed-final.json。完整空环境启动已由S04隔离Runner验证；未清空本地共享库。
 
-## 当前 S04 实施
-- S04a提交94d1334已正常合入推送origin/main并核对一致。V4只扩容两列至varchar(18)，不修改历史迁移；真实MySQL用例明确9位小数，覆盖新建/更新读回和当前静默阻断。`s04a-quiet-precision.log`：11项测试通过（9项MySQL集成+2项回调），4份迁移成功，进程已结束；diff检查通过，Hygiene对纯迁移/测试改动判定NOT_APPLICABLE。本机持久数据库尚未执行该迁移。
-- 远程39bbc6e前端CI全部成功；Java失败于quiet_start VARCHAR(16)无法保存纳秒LocalTime。本机时钟精度未触发，须增加V4兼容扩容到18字符和固定纳秒用例，不截断测试输入。
-- 当前`fix/reproducible-ci-infrastructure`，基线94d1334。deployment/full-stack改用tests/fixtures/dev-infra（既有四项共享服务及Marketing配置快照，不含私密env）；本地仍默认共享dev-infra。CI临时随机凭据、诊断脱敏；核心R1显式使用只读目录合同fixture，不冒充真实外部发奖；已验证资源覆盖由MARKETING_COMPOSE_OVERRIDE选择，目录BASE_URL可配置。
-- 18项脚本测试、actionlint 1.7.12、4种Compose模型/Helm、Python编译/diff/Hygiene PASS（无formatter限制）。本机Docker容器管理API超时，deployment在promtool容器创建处等待（exec69712/pid96182/96495），隔离MySQL在创建处等待（exec20497/pid96754/96769），无成功证据；网关UP、Flink3作业仍运行，不重启共享Docker。先推候选任务分支到隔离Runner验证，远程必要检查通过后再合main。恢复需先查询两条本地未知创建结果，避免遗留或重复执行。日志s04-deployment-fixture.log/s04-mysql-fixture.log。
-- Trivy官方已迁移v前缀；核验v0.36.0签名tag，commit `ed142fd0673e97e23eac54620cfb913e5ce36c25`，证据s04-trivy-tag.json/commit.json及官方releases页面。后续固定SHA，保留现有安全检查强度。
-- 候选3698e1e已推送任务分支，尚未合main。远程CI 43800797985的前端与Compose/Helm/完整MySQL迁移成功，Java运行中；S04a基线94d1334的完整Java反应堆已在43800234197成功。本机deployment后续11条Prometheus规则通过，但因运行期间脚本增量修改造成shell读取截断而失败（不是PASS）；以不可变候选的远程验证为准。
-- 首次全栈43800805620失败：官方旧MinIO镜像Docker Hub拉取被拒，Quay同tag也401。CI改为官方固定源码构建，MinIO安全发布9e49d5e/mc7394ce0、Go1.27.4、Alpine3.22固定digest，保留许可证；仅CI调整，不改共享实例。首次安全43800801760失败在Gitleaks8条历史误报，逐项核验5源码哈希/2压测用户标识/1临时库密码；本地扫描另外识别同5个哈希在更早保留提交中的记录，共13个精确fingerprint，不屏蔽路径/规则。Gitleaks8.24.3校验官方checksum后扫描76个提交，最终0发现（s04-gitleaks-final.log）；actionlint/Compose/bash/diff通过。源码构建与后续Trivy仍待本版远程实测。
+## 已验证 S04（待按依赖顺序合入 main）
+- S04a `94d1334` 已合入并推送。V4 将静默时段扩容至 varchar(18)，真实 MySQL 纳秒时间新建/更新与阻断共11项测试通过；本地持久库未迁移。
+- 分支 `fix/reproducible-ci-infrastructure`：`3698e1e` 与 `7b49a92` 已推送。CI 使用版本化 dev-infra 快照、临时随机凭据和诊断脱敏；本地默认仍用共享 dev-infra。R1 明确使用只读权益目录合同 fixture，未声称真实外部发奖。
+- CI MinIO/mc 按已核验官方固定源码构建，基础镜像固定 digest，保留许可证；解决官方旧二进制镜像无法拉取。Trivy 固定官方 v0.36.0 提交，保持原检查强度。Gitleaks 仅忽略逐项核实的13条精确历史 fingerprint，无路径/规则宽泛排除。
+- 本地18项脚本测试、actionlint、4种 Compose 模型/Helm、Python 编译、diff/Hygiene PASS（无 formatter 限制）。Gitleaks 8.24.3 扫描76个提交，零发现。
+- **远程 PASS**：CI [43800797985](https://github.com/lirji/marketing-lowcode-platform/actions/runs/43800797985) 对应3698e1e，Java/契约/架构、前端、部署及38迁移均通过；7b49a92 未改产品 Java/TS。Security [43801234881](https://github.com/lirji/marketing-lowcode-platform/actions/runs/43801234881) 对应7b49a92，Gitleaks/Trivy/SBOM/两语言CodeQL全部通过。
+- **空环境全栈 PASS**：[43801238973](https://github.com/lirji/marketing-lowcode-platform/actions/runs/43801238973) 对应7b49a92，固定源码 MinIO 构建、空库启动和 R1（f46d52db16d9）、种子后第二轮新业务ID验收（bd3f19b51174）及 teardown 成功。真实项目服务/MySQL/Redis/Kafka/Flink，外部目录为合成只读 fixture，触达为 SANDBOX、轨迹为手动写入，不代表真实外部履约或生产验收。
+- 本机冗余迁移测试已停止且临时容器确认不存在，连接中断属于主动停止结果；本机 deployment 执行期间修改脚本导致截断失败，远程不可变版已通过。历史失败和当前范围保存于 `S04_REMOTE_EVIDENCE.json`、`s04-*.log`，无未知数据库操作。
+
+## 当前 S04c 实施
+- 分支 `fix/contact-request-idempotency` 基于7b49a92，先合S04再合本片。V5新增可空请求指纹，稳定排序JSON保留类型与数组顺序；同键异载荷返回既有 `IDEMPOTENCY_PAYLOAD_CONFLICT`，历史无指纹待投递返回 `CONTACT_RETRY_UNVERIFIABLE`，其他状态只读返回。
+- 频控按服务端 Clock 准入时间；迟到 Provider 返回仅条件更新 PENDING/RETRY_PENDING，不能覆盖已推进回执、误写失败DLQ/事件。
+- 两维独立审查发现首次并发插入竞态；修复为先争取唯一键后校验许可/扣频控，失败整体回滚。唯一键竞争失败在回滚后的新事务中读取赢家，核对身份后只读返回，不重复调用Provider。已有待投递记录仍可并发重试，依赖渠道稳定业务键去重，未宣称全局单飞。
+- 最终27项（25真实MySQL集成+2回调）通过，包含频控拒绝后的记录回滚断言；契约Maven/13份JSON、Hygiene和diff检查通过（无formatter限制）。独立业务/事务复核无新增阻断。证据`s04c-final.log`、`s04c-contracts.log`、`s04c-hygiene.json`。无真实短信、无共享库迁移。
 
 ## 下一步
-推送已通过静态/脚本检查的S04候选分支，触发CI、安全与全栈工作流，按远程实际失败整改，通过后合main；S05–S13保留完整待办。
+完成S04c最终验证与复核、逻辑提交；按S04→S04c顺序正常合入推送main。随后S05→S13连续推进，源代码准备记录见证据目录 `NEXT_S05_NOTES.md`。Docker应用仍为旧镜像，后续按实际受影响服务重建验证，不能以源码测试替代已部署状态。

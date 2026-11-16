@@ -115,18 +115,18 @@ public class MybatisEngagementRepository implements EngagementRepository {
 
     @Override
     public void insertContact(String tenantId, String contactId, SendRequest request,
-            String variablesJson, Instant updatedAt) {
+            String variablesJson, String requestFingerprint, Instant updatedAt) {
         requireOne(mapper.insertContact(new EngagementMapper.ContactWrite(tenantId, contactId,
                 request.contactKey(), request.subjectToken(), request.campaignId(), request.channel(),
-                request.templateId(), request.templateVersion(), ContactState.PENDING.name(), variablesJson,
+                request.templateId(), request.templateVersion(), ContactState.PENDING.name(), variablesJson, requestFingerprint,
                 format(request.requestedAt()), format(updatedAt))), "新增触达尝试");
     }
 
     @Override
-    public void completeContact(String tenantId, String contactId, String state, String providerRequestId,
+    public boolean completeContact(String tenantId, String contactId, String state, String providerRequestId,
             String providerCode, Instant updatedAt) {
-        requireOne(mapper.completeContact(new EngagementMapper.ContactCompleteWrite(tenantId, contactId, state,
-                providerRequestId, providerCode, format(updatedAt))), "回写服务商发送结果");
+        return mapper.completeContact(new EngagementMapper.ContactCompleteWrite(tenantId, contactId, state,
+                providerRequestId, providerCode, format(updatedAt))) == 1;
     }
 
     @Override
@@ -205,6 +205,11 @@ public class MybatisEngagementRepository implements EngagementRepository {
     @Override
     public Optional<ContactView> findContactByKey(String tenantId, String contactKey) {
         return optionalContact(mapper.selectContactByKey(tenantId, contactKey));
+    }
+
+    @Override
+    public Optional<String> findContactFingerprint(String tenantId, String contactKey) {
+        return Optional.ofNullable(mapper.selectContactFingerprint(tenantId, contactKey));
     }
 
     @Override

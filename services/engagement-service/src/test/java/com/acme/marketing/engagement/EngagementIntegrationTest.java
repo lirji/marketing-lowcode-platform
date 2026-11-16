@@ -7,6 +7,7 @@ import static org.mockito.Mockito.*;
 
 import com.acme.marketing.contracts.event.JourneyEffectCommand;
 import com.acme.marketing.engagement.application.EngagementService;
+import com.acme.marketing.engagement.application.EngagementRepository;
 import com.acme.marketing.testsupport.MySqlIntegrationTest;
 import com.acme.marketing.provider.ProviderConnector;
 import com.acme.marketing.provider.ProviderResult;
@@ -22,6 +23,10 @@ import java.time.LocalTime;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -31,6 +36,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -41,12 +47,189 @@ class EngagementIntegrationTest extends MySqlIntegrationTest {
     @Autowired private EngagementService service;
     @Autowired private JdbcTemplate jdbc;
     @MockitoBean private ProviderConnector provider;
+    @MockitoBean private Clock clock;
+    @MockitoSpyBean private EngagementRepository repository;
     private final HttpClient client = HttpClient.newHttpClient();
 
     @BeforeEach
     void useSandboxProvider() {
+        when(clock.instant()).thenReturn(Instant.now());
+        when(clock.getZone()).thenReturn(java.time.ZoneOffset.UTC);
         SandboxProviderConnector sandbox = new SandboxProviderConnector(Clock.systemUTC());
         when(provider.send(any(), any())).thenAnswer(call -> sandbox.send(call.getArgument(0), call.getArgument(1)));
+    }
+
+    /** 幂等身份必须在许可判断之前校验，变更任一业务目标都不能借原触达的频控名额重发。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"subjectToken", "campaignId", "channel", "recipientToken", "templateId",
+            "templateVersion", "variables", "timezone", "personalized", "requestedAt"})
+    void contactKeyCannotBeReusedForChangedPayload(String changedField) throws Exception {
+        Map<String, Object> send = contactFixture();
+        retryProvider(send);
+        post("/api/v1/contacts", send);
+        Map<String, Object> changed = new java.util.LinkedHashMap<>(send);
+        Object replacement = switch (changedField) {
+            case "templateVersion" -> 2;
+            case "variables" -> Map.of("name", "Another recipient");
+            case "timezone" -> "Asia/Shanghai";
+            case "personalized" -> true;
+            case "requestedAt" -> clock.instant().plusSeconds(60);
+            default -> "different-" + send.get(changedField);
+        };
+        changed.put(changedField, replacement);
+        HttpResponse<String> conflict = rawPost("/api/v1/contacts", changed);
+        assertEquals(409, conflict.statusCode(), conflict.body());
+        assertTrue(conflict.body().contains("IDEMPOTENCY_PAYLOAD_CONFLICT"), conflict.body());
+        verify(provider, times(1)).send(any(), any());
+        assertEquals(1, jdbc.queryForObject("select sum(contact_count) from mk_frequency_bucket "
+                + "where tenant_id=? and campaign_id=?", Integer.class, "tenant-a", send.get("campaignId")));
+    }
+
+    @Test
+    void nestedVariableOrderDoesNotChangeIdentityAndTerminalStillChecksIt() throws Exception {
+        Map<String, Object> send = contactFixture();
+        send.put("variables", Map.of("name", "Ada", "nested", Map.of("a", 1, "b", 2)));
+        retryProvider(send);
+        JsonNode first = post("/api/v1/contacts", send);
+        var nested = new java.util.LinkedHashMap<String, Object>();
+        nested.put("b", 2); nested.put("a", 1);
+        var reordered = new java.util.LinkedHashMap<String, Object>();
+        reordered.put("nested", nested); reordered.put("name", "Ada");
+        send.put("variables", reordered);
+        doReturn(new ProviderResult(ProviderResult.Status.ACCEPTED,
+                "canonical-provider", "HTTP_202", 1, clock.instant(), Map.of())).when(provider).send(any(), any());
+        JsonNode accepted = post("/api/v1/contacts", send);
+        assertEquals(first.get("contactId"), accepted.get("contactId"));
+        assertEquals("ACCEPTED", accepted.get("state").asString());
+        assertEquals(accepted, post("/api/v1/contacts", send));
+        send.put("recipientToken", "changed-recipient");
+        HttpResponse<String> conflict = rawPost("/api/v1/contacts", send);
+        assertEquals(409, conflict.statusCode(), conflict.body());
+        assertTrue(conflict.body().contains("IDEMPOTENCY_PAYLOAD_CONFLICT"));
+        verify(provider, times(2)).send(any(), any());
+    }
+
+    @Test
+    void legacyAttemptWithoutFingerprintCannotAcquireAnArbitraryNewRecipient() throws Exception {
+        Map<String, Object> send = contactFixture();
+        retryProvider(send);
+        JsonNode first = post("/api/v1/contacts", send);
+        jdbc.update("update mk_contact_attempt set request_fingerprint=null where tenant_id=? and contact_id=?",
+                "tenant-a", first.get("contactId").asString());
+        send.put("recipientToken", "not-provable-historical-recipient");
+        HttpResponse<String> blocked = rawPost("/api/v1/contacts", send);
+        assertEquals(409, blocked.statusCode(), blocked.body());
+        assertTrue(blocked.body().contains("CONTACT_RETRY_UNVERIFIABLE"));
+        assertEquals("RETRY_PENDING", get("/api/v1/contacts/" + send.get("contactKey")).get("state").asString());
+        // 历史终态只读重放，不会使用无法核实的请求调用渠道。
+        jdbc.update("update mk_contact_attempt set state_name='DELIVERED' where tenant_id=? and contact_id=?",
+                "tenant-a", first.get("contactId").asString());
+        assertEquals("DELIVERED", post("/api/v1/contacts", send).get("state").asString());
+        verify(provider, times(1)).send(any(), any());
+    }
+
+    @Test
+    void callerTimestampsCannotMoveFrequencyConsumptionOutsideTheCurrentWindow() throws Exception {
+        Map<String, Object> send = contactFixture();
+        send.put("requestedAt", clock.instant().minusSeconds(172800));
+        post("/api/v1/contacts", send);
+        long bucket = Math.floorDiv(clock.instant().getEpochSecond(), 3600);
+        assertEquals(bucket, jdbc.queryForObject("select window_bucket from mk_frequency_bucket "
+                + "where tenant_id=? and campaign_id=?", Long.class, "tenant-a", send.get("campaignId")));
+        send.put("contactKey", UUID.randomUUID().toString());
+        send.put("requestedAt", clock.instant().plusSeconds(172800));
+        HttpResponse<String> capped = rawPost("/api/v1/contacts", send);
+        assertEquals(409, capped.statusCode(), capped.body());
+        assertTrue(capped.body().contains("FREQUENCY_CAP_REACHED"));
+        assertEquals(0, jdbc.queryForObject("select count(*) from mk_contact_attempt where tenant_id=? and contact_key=?",
+                Integer.class, "tenant-a", send.get("contactKey")));
+        assertEquals(1, jdbc.queryForObject("select contact_count from mk_frequency_bucket where tenant_id=? and campaign_id=?",
+                Integer.class, "tenant-a", send.get("campaignId")));
+        verify(provider, times(1)).send(any(), any());
+    }
+
+    @Test
+    void providerResponseArrivingAfterDeliveredCallbackCannotRegressOrCreateDlq() throws Exception {
+        Map<String, Object> send = contactFixture();
+        retryProvider(send);
+        JsonNode first = post("/api/v1/contacts", send);
+        doAnswer(invocation -> {
+            post("/api/v1/providers/callbacks", Map.of("providerEventId", UUID.randomUUID().toString(),
+                    "providerRequestId", first.get("providerRequestId").asString(), "status", "DELIVERED",
+                    "occurredAt", clock.instant(), "attributes", Map.of()));
+            return new ProviderResult(ProviderResult.Status.PERMANENT_FAILURE,
+                    first.get("providerRequestId").asString(), "LATE_FAILURE", 1, clock.instant(), Map.of());
+        }).when(provider).send(any(), any());
+        assertEquals("DELIVERED", post("/api/v1/contacts", send).get("state").asString());
+        assertEquals(0, jdbc.queryForObject("select count(*) from mk_contact_dlq where tenant_id=? and contact_id=?",
+                Integer.class, "tenant-a", first.get("contactId").asString()));
+        assertEquals(0, jdbc.queryForObject("select count(*) from mk_engagement_outbox "
+                + "where tenant_id=? and contact_id=? and event_type='ContactFAILED'",
+                Integer.class, "tenant-a", first.get("contactId").asString()));
+    }
+
+    /** 两个HTTP事务都先读到不存在，再竞争真实唯一键，覆盖不能依赖普通顺序重放证明的竞态。 */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void concurrentFirstRequestsShareOneClaimOrRejectChangedPayload(boolean changedPayload) throws Exception {
+        Map<String, Object> send = contactFixture();
+        Map<String, Object> second = new java.util.LinkedHashMap<>(send);
+        if (changedPayload) second.put("recipientToken", "another-recipient");
+        CyclicBarrier initialReads = new CyclicBarrier(2);
+        AtomicInteger reads = new AtomicInteger();
+        doAnswer(call -> {
+            Object found = call.callRealMethod();
+            if (reads.incrementAndGet() <= 2) initialReads.await(10, TimeUnit.SECONDS);
+            return found;
+        }).when(repository).findContactByKey("tenant-a", send.get("contactKey").toString());
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var firstCall = executor.submit(() -> rawPost("/api/v1/contacts", send));
+            var secondCall = executor.submit(() -> rawPost("/api/v1/contacts", second));
+            HttpResponse<String> first = firstCall.get(30, TimeUnit.SECONDS);
+            HttpResponse<String> other = secondCall.get(30, TimeUnit.SECONDS);
+            if (changedPayload) {
+                HttpResponse<String> accepted = first.statusCode() == 202 ? first : other;
+                HttpResponse<String> conflict = first.statusCode() == 409 ? first : other;
+                assertEquals(202, accepted.statusCode(), accepted.body());
+                assertEquals(409, conflict.statusCode(), conflict.body());
+                assertTrue(conflict.body().contains("IDEMPOTENCY_PAYLOAD_CONFLICT"));
+            } else {
+                assertEquals(202, first.statusCode(), first.body());
+                assertEquals(202, other.statusCode(), other.body());
+                assertEquals(mapper.readTree(first.body()).get("contactId"),
+                        mapper.readTree(other.body()).get("contactId"));
+            }
+        }
+        verify(provider, times(1)).send(any(), any());
+        assertEquals(1, jdbc.queryForObject("select count(*) from mk_contact_attempt where tenant_id=? and contact_key=?",
+                Integer.class, "tenant-a", send.get("contactKey")));
+        assertEquals(1, jdbc.queryForObject("select contact_count from mk_frequency_bucket where tenant_id=? and campaign_id=?",
+                Integer.class, "tenant-a", send.get("campaignId")));
+    }
+
+    /** 每个用例使用独立业务范围，保留真实MySQL约束与HTTP边界。 */
+    private Map<String, Object> contactFixture() throws Exception {
+        String id = "identity-" + UUID.randomUUID();
+        put("/api/v1/consents", Map.of("subjectToken", id, "channel", "SMS", "allowed", true,
+                "minor", false, "personalizationAllowed", true, "source", "identity-test",
+                "effectiveAt", clock.instant().minusSeconds(10)));
+        put("/api/v1/contacts/frequency-policies", Map.of("campaignId", id, "channel", "SMS",
+                "windowSeconds", 3600, "maxContacts", 1, "quietStart", LocalTime.MIDNIGHT,
+                "quietEnd", LocalTime.MIDNIGHT));
+        post("/api/v1/templates", Map.of("templateId", id, "version", 1, "channel", "SMS",
+                "content", "Hello {{name}}", "requiredVariables", Set.of("name")));
+        return new java.util.LinkedHashMap<>(Map.ofEntries(
+                Map.entry("contactKey", id), Map.entry("subjectToken", id), Map.entry("campaignId", id),
+                Map.entry("channel", "SMS"), Map.entry("recipientToken", "phone-token"),
+                Map.entry("templateId", id), Map.entry("templateVersion", 1),
+                Map.entry("variables", Map.of("name", "Ada")), Map.entry("timezone", "UTC"),
+                Map.entry("personalized", false), Map.entry("requestedAt", clock.instant())));
+    }
+
+    private void retryProvider(Map<String, Object> request) {
+        doReturn(new ProviderResult(ProviderResult.Status.RETRY_EXHAUSTED,
+                request.get("contactKey").toString(), "RETRY_EXHAUSTED", 1, clock.instant(), Map.of()))
+                .when(provider).send(any(), any());
     }
 
     @ParameterizedTest

@@ -23,6 +23,13 @@
 
 ## 健康判断
 
+触达恢复：V5 之前的 `PENDING` / `RETRY_PENDING` 若没有请求指纹，重发返回
+`CONTACT_RETRY_UNVERIFIABLE`。先按租户、contactKey、providerRequestId 核查渠道实际结果；
+不要清空记录、修改 contactKey 绕过频控或用当前请求反填历史指纹。已知终态走已有回执/
+结果查询；无法核实投递结果时保留待核查状态。新增请求的原始业务字段不可变，变化会返回
+`IDEMPOTENCY_PAYLOAD_CONFLICT`。V5 只添加可空摘要列，旧行不虚构补齐，旧二进制仍可读写；
+灰度期间仍写无指纹记录的旧实例必须先升级，再恢复自动重试。本文不提供强制发奖/发短信绕过。
+
 ```bash
 kubectl -n marketing get deploy,pod,hpa,pdb
 kubectl -n marketing get events --sort-by=.lastTimestamp

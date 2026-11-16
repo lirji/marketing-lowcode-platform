@@ -174,10 +174,10 @@
     <insert id="insertContact">
         INSERT INTO mk_contact_attempt (
             tenant_id, contact_id, contact_key, subject_token, campaign_id, channel_name,
-            template_id, template_version, state_name, variables_json, requested_at, updated_at
+            template_id, template_version, state_name, variables_json, request_fingerprint, requested_at, updated_at
         ) VALUES (
             #{tenantId}, #{contactId}, #{contactKey}, #{subjectToken}, #{campaignId}, #{channelName},
-            #{templateId}, #{templateVersion}, #{stateName}, #{variablesJson}, #{requestedAt}, #{updatedAt}
+            #{templateId}, #{templateVersion}, #{stateName}, #{variablesJson}, #{requestFingerprint}, #{requestedAt}, #{updatedAt}
         )
     </insert>
 
@@ -189,6 +189,7 @@
             updated_at = #{updatedAt}
         WHERE tenant_id = #{tenantId}
           AND contact_id = #{contactId}
+          AND state_name IN ('PENDING', 'RETRY_PENDING')
     </update>
 
     <insert id="insertContactDlq">
@@ -314,6 +315,13 @@
             provider_request_id AS providerRequestId,
             provider_code AS providerCode,
             updated_at AS updatedAt
+        FROM mk_contact_attempt
+        WHERE tenant_id = #{tenantId}
+          AND contact_key = #{contactKey}
+    </select>
+
+    <select id="selectContactFingerprint" resultType="java.lang.String">
+        SELECT request_fingerprint
         FROM mk_contact_attempt
         WHERE tenant_id = #{tenantId}
           AND contact_key = #{contactKey}

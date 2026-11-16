@@ -61,10 +61,10 @@ public interface EngagementRepository {
 
     /** 新增触达尝试。 */
     void insertContact(String tenantId, String contactId, SendRequest request,
-            String variablesJson, Instant updatedAt);
+            String variablesJson, String requestFingerprint, Instant updatedAt);
 
-    /** 回写服务商发送结果。 */
-    void completeContact(String tenantId, String contactId, String state, String providerRequestId,
+    /** 只回写仍待投递的记录；终态或更高状态已经到达时返回false，不能回退。 */
+    boolean completeContact(String tenantId, String contactId, String state, String providerRequestId,
             String providerCode, Instant updatedAt);
 
     /** 新增永久失败触达的 DLQ 记录。 */
@@ -106,6 +106,9 @@ public interface EngagementRepository {
 
     /** 按业务幂等键查询触达记录。 */
     Optional<ContactView> findContactByKey(String tenantId, String contactKey);
+
+    /** 查询不可变请求指纹；历史记录没有完整原始请求时返回空，不做猜测性回填。 */
+    Optional<String> findContactFingerprint(String tenantId, String contactKey);
 
     /** 按内部标识查询触达记录。 */
     Optional<ContactView> findContactById(String tenantId, String contactId);

@@ -6,6 +6,7 @@ import com.acme.marketing.contracts.event.JourneyEffectCommand;
 import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.error.ConflictException;
 import com.acme.marketing.platform.error.NotFoundException;
+import com.acme.marketing.platform.idempotency.IdempotencyConflictException;
 import com.acme.marketing.platform.web.TenantContextHolder;
 import com.acme.marketing.provider.ProviderCallback;
 import com.acme.marketing.provider.ProviderConnector;
@@ -23,15 +24,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectWriter;
+import tools.jackson.databind.SerializationFeature;
 
 @Service
 public final class EngagementService {
     private final EngagementRepository repository;
     private final ObjectMapper mapper;
+    private final ObjectWriter requestWriter;
     private final Clock clock;
     private final ProviderConnector provider;
     private final ProviderRoute providerRoute;
@@ -41,6 +46,7 @@ public final class EngagementService {
             ProviderConnector provider, ProviderRoute providerRoute, TransactionTemplate transactions) {
         this.repository = repository;
         this.mapper = mapper;
+        this.requestWriter = mapper.writer().with(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS);
         this.clock = clock;
         this.provider = provider;
         this.providerRoute = providerRoute;
@@ -169,24 +175,43 @@ public final class EngagementService {
     }
 
     private ContactView sendForTenant(String tenantId, SendRequest request) {
-        Pending pending = transactions.execute(ignored -> prepare(tenantId, request));
+        Pending pending;
+        try {
+            pending = transactions.execute(ignored -> prepare(tenantId, request));
+        } catch (DuplicateKeyException collision) {
+            // 首次并发请求由唯一键决定归属；原事务已回滚，新事务才能读到赢家提交的身份。
+            pending = transactions.execute(ignored -> {
+                ContactView winner = contactByKey(tenantId, request.contactKey()).orElse(null);
+                if (winner == null) throw collision;
+                verifyContactIdentity(tenantId, request, winner, requestFingerprint(request));
+                // 赢家已取得发送资格，竞争失败者只读返回，不能再次调用渠道或占用频控。
+                return new Pending(false, winner);
+            });
+        }
         if (pending == null) throw new IllegalStateException("contact transaction returned no result");
         if (!pending.created()) return pending.view();
         ProviderRequest providerRequest = new ProviderRequest(tenantId, request.contactKey(),
                 request.channel(), request.recipientToken(), request.templateId() + ':' + request.templateVersion(),
                 providerRoute.endpoint(tenantId, request.channel()), request.variables(), clock.instant());
         ProviderResult result = provider.send(providerRequest, ProviderPolicy.defaults());
-        return transactions.execute(ignored -> complete(tenantId, pending.view().contactId(), result));
+        String contactId = pending.view().contactId();
+        return transactions.execute(ignored -> complete(tenantId, contactId, result));
     }
 
     private Pending prepare(String tenantId, SendRequest request) {
         ContactView current = contactByKey(tenantId, request.contactKey()).orElse(null);
-        if (current != null && current.state() != ContactState.PENDING
-                && current.state() != ContactState.RETRY_PENDING) {
-            return new Pending(false, current);
+        String fingerprint = requestFingerprint(request);
+        if (current != null) {
+            verifyContactIdentity(tenantId, request, current, fingerprint);
+            if (!retryable(current)) return new Pending(false, current);
+        }
+        Instant now = clock.instant();
+        String contactId = current == null ? UUID.randomUUID().toString() : current.contactId();
+        if (current == null) {
+            // 先争取请求键再锁频控，防止并发异载荷先被误判为频控超限；后续许可失败会整体回滚。
+            repository.insertContact(tenantId, contactId, request, json(request.variables()), fingerprint, now);
         }
         // 重试可能跨越撤回同意、抑制生效或静默时段，不能复用首次发送时的许可。
-        Instant now = clock.instant();
         ConsentView consent = consent(tenantId, request.subjectToken(), request.channel());
         if (!consent.allowed() || consent.effectiveAt().isAfter(now)) {
             throw new ConflictException("CONSENT_REQUIRED", "current channel consent is required");
@@ -211,11 +236,22 @@ public final class EngagementService {
         }
         // 原触达已经占用频控名额；重试通过当前策略后复用该记录，不能再次扣减。
         if (current != null) return new Pending(true, current);
-        consumeFrequency(tenantId, request, policy);
-        String contactId = UUID.randomUUID().toString();
-        repository.insertContact(tenantId, contactId, request, json(request.variables()), now);
+        consumeFrequency(tenantId, request, policy, now);
         outbox(tenantId, contactId, "ContactRequested", now);
         return new Pending(true, new ContactView(contactId, request.contactKey(), ContactState.PENDING, "", "", now));
+    }
+
+    /** 请求键绑定不可变身份，不能使用新请求补猜历史收件人。 */
+    private void verifyContactIdentity(String tenantId, SendRequest request, ContactView current, String fingerprint) {
+        String original = repository.findContactFingerprint(tenantId, request.contactKey()).orElse(null);
+        if (original == null && retryable(current)) throw ContactDeliveryProblem.RETRY_UNVERIFIABLE.exception();
+        if (original != null && !Digests.constantTimeEquals(original, fingerprint)) {
+            throw new IdempotencyConflictException();
+        }
+    }
+
+    private static boolean retryable(ContactView contact) {
+        return contact.state() == ContactState.PENDING || contact.state() == ContactState.RETRY_PENDING;
     }
 
     private ContactView complete(String tenantId, String contactId, ProviderResult result) {
@@ -225,7 +261,10 @@ public final class EngagementService {
             case PERMANENT_FAILURE -> ContactState.FAILED;
         };
         Instant now = clock.instant();
-        repository.completeContact(tenantId, contactId, state.name(), result.providerRequestId(), result.code(), now);
+        // 回执可能在重试HTTP尚未返回时先推进到终态；迟到结果不能回退状态或重复写出终态事件。
+        if (!repository.completeContact(tenantId, contactId, state.name(), result.providerRequestId(), result.code(), now)) {
+            return contactById(tenantId, contactId);
+        }
         if (state == ContactState.FAILED) {
             repository.insertContactDlq(tenantId, UUID.randomUUID().toString(), contactId, result.code(), now);
         }
@@ -379,8 +418,9 @@ public final class EngagementService {
                         "frequency policy is missing"));
     }
 
-    private void consumeFrequency(String tenantId, SendRequest request, FrequencyPolicy policy) {
-        long bucket = Math.floorDiv(request.requestedAt().getEpochSecond(), policy.windowSeconds());
+    private void consumeFrequency(String tenantId, SendRequest request, FrequencyPolicy policy, Instant admittedAt) {
+        // requestedAt仅作业务元数据；按实际准入时间扣频控，不能通过回填历史时间绕过当前窗口。
+        long bucket = Math.floorDiv(admittedAt.getEpochSecond(), policy.windowSeconds());
         Integer storedCount = repository.lockFrequencyCount(tenantId, request.campaignId(), request.channel(),
                 request.subjectToken(), bucket).orElse(null);
         int count = storedCount == null ? 0 : storedCount;
@@ -415,6 +455,23 @@ public final class EngagementService {
         try { return mapper.writeValueAsString(value); }
         catch (JacksonException failure) { throw new IllegalArgumentException("engagement payload cannot be serialized", failure); }
     }
+
+    /** 递归排序JSON对象键，保留字段类型与数组顺序；渠道地址由服务端治理，不属于客户端命令。 */
+    private String requestFingerprint(SendRequest request) {
+        ContactIdentity identity = new ContactIdentity(request.subjectToken(), request.campaignId(), request.channel(),
+                request.recipientToken(), request.templateId(), request.templateVersion(), request.variables(),
+                request.timezone(), request.personalized(), request.requestedAt());
+        try {
+            return Digests.sha256Hex(requestWriter.writeValueAsString(identity));
+        } catch (JacksonException failure) {
+            throw new IllegalStateException("cannot encode contact identity", failure);
+        }
+    }
+
+    /** 指纹仅存摘要，不新增收件人明文存储或扩展查询响应。 */
+    private record ContactIdentity(String subjectToken, String campaignId, String channel, String recipientToken,
+            String templateId, long templateVersion, Map<String, Object> variables, String timezone,
+            boolean personalized, Instant requestedAt) { }
 
     private void outbox(String tenantId, String contactId, String eventType, Instant now) {
         long sequence = nextOutboxSequence(tenantId, contactId, now);
