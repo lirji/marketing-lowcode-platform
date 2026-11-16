@@ -102,7 +102,7 @@ public final class EngagementService {
         transactions.executeWithoutResult(ignored -> repository.insertTemplate(scope.tenantId().value(),
                 scope.actorId(), request, now));
         return new TemplateView(request.templateId(), request.version(), request.channel(), request.content(),
-                request.requiredVariables(), "APPROVED", now);
+                request.requiredVariables(), TemplateState.APPROVED.code(), now);
     }
 
     public List<TemplateView> templates() {
@@ -181,12 +181,14 @@ public final class EngagementService {
 
     private Pending prepare(String tenantId, SendRequest request) {
         ContactView current = contactByKey(tenantId, request.contactKey()).orElse(null);
-        if (current != null) {
-            return new Pending(current.state() == ContactState.PENDING
-                    || current.state() == ContactState.RETRY_PENDING, current);
+        if (current != null && current.state() != ContactState.PENDING
+                && current.state() != ContactState.RETRY_PENDING) {
+            return new Pending(false, current);
         }
+        // 重试可能跨越撤回同意、抑制生效或静默时段，不能复用首次发送时的许可。
+        Instant now = clock.instant();
         ConsentView consent = consent(tenantId, request.subjectToken(), request.channel());
-        if (!consent.allowed() || consent.effectiveAt().isAfter(clock.instant())) {
+        if (!consent.allowed() || consent.effectiveAt().isAfter(now)) {
             throw new ConflictException("CONSENT_REQUIRED", "current channel consent is required");
         }
         if (consent.minor() && request.personalized()) {
@@ -199,16 +201,18 @@ public final class EngagementService {
             throw new ConflictException("SUBJECT_SUPPRESSED", "subject is suppressed");
         }
         FrequencyPolicy policy = policy(tenantId, request.campaignId(), request.channel());
-        if (inQuietHours(request.requestedAt(), request.timezone(), policy.quietStart(), policy.quietEnd())) {
+        if (inQuietHours(now, request.timezone(), policy.quietStart(), policy.quietEnd())) {
             throw new ConflictException("QUIET_HOURS", "contact is inside subject quiet hours");
         }
         TemplateView template = template(tenantId, request.templateId(), request.templateVersion());
-        if (!template.channel().equals(request.channel()) || !request.variables().keySet().containsAll(template.requiredVariables())) {
+        if (!TemplateState.APPROVED.code().equals(template.state()) || !template.channel().equals(request.channel())
+                || !request.variables().keySet().containsAll(template.requiredVariables())) {
             throw new ConflictException("TEMPLATE_VARIABLES_INVALID", "required template variables are missing");
         }
+        // 原触达已经占用频控名额；重试通过当前策略后复用该记录，不能再次扣减。
+        if (current != null) return new Pending(true, current);
         consumeFrequency(tenantId, request, policy);
         String contactId = UUID.randomUUID().toString();
-        Instant now = clock.instant();
         repository.insertContact(tenantId, contactId, request, json(request.variables()), now);
         outbox(tenantId, contactId, "ContactRequested", now);
         return new Pending(true, new ContactView(contactId, request.contactKey(), ContactState.PENDING, "", "", now));

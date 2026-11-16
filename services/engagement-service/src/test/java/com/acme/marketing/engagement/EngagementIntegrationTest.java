@@ -2,25 +2,35 @@ package com.acme.marketing.engagement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 import com.acme.marketing.contracts.event.JourneyEffectCommand;
 import com.acme.marketing.engagement.application.EngagementService;
 import com.acme.marketing.testsupport.MySqlIntegrationTest;
+import com.acme.marketing.provider.ProviderConnector;
+import com.acme.marketing.provider.ProviderResult;
+import com.acme.marketing.provider.SandboxProviderConnector;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -30,7 +40,92 @@ class EngagementIntegrationTest extends MySqlIntegrationTest {
     @Autowired private ObjectMapper mapper;
     @Autowired private EngagementService service;
     @Autowired private JdbcTemplate jdbc;
+    @MockitoBean private ProviderConnector provider;
     private final HttpClient client = HttpClient.newHttpClient();
+
+    @BeforeEach
+    void useSandboxProvider() {
+        SandboxProviderConnector sandbox = new SandboxProviderConnector(Clock.systemUTC());
+        when(provider.send(any(), any())).thenAnswer(call -> sandbox.send(call.getArgument(0), call.getArgument(1)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"consent", "minor", "personalization", "suppression", "quiet", "template"})
+    void retryRechecksCurrentGuardsBeforeCallingProvider(String changedGuard) throws Exception {
+        String suffix = "retry-" + changedGuard;
+        Instant now = Instant.now();
+        Map<String, Object> consent = new java.util.LinkedHashMap<>(Map.of(
+                "subjectToken", suffix, "channel", "SMS", "allowed", true, "minor", false,
+                "personalizationAllowed", true, "source", "retry-test", "effectiveAt", now.minusSeconds(10)));
+        put("/api/v1/consents", consent);
+        Map<String, Object> policy = new java.util.LinkedHashMap<>(Map.of("campaignId", suffix, "channel", "SMS",
+                "windowSeconds", 86400, "maxContacts", 1, "quietStart", LocalTime.MIDNIGHT,
+                "quietEnd", LocalTime.MIDNIGHT));
+        put("/api/v1/contacts/frequency-policies", policy);
+        post("/api/v1/templates", Map.of("templateId", suffix, "version", 1, "channel", "SMS",
+                "content", "Hello {{name}}", "requiredVariables", Set.of("name")));
+        Map<String, Object> send = Map.ofEntries(
+                Map.entry("contactKey", suffix), Map.entry("subjectToken", suffix), Map.entry("campaignId", suffix),
+                Map.entry("channel", "SMS"), Map.entry("recipientToken", "phone-token"),
+                Map.entry("templateId", suffix), Map.entry("templateVersion", 1),
+                Map.entry("variables", Map.of("name", "Ada")), Map.entry("timezone", "UTC"),
+                Map.entry("personalized", true), Map.entry("requestedAt", now.minusSeconds(43200)));
+        doReturn(new ProviderResult(ProviderResult.Status.RETRY_EXHAUSTED,
+                suffix, "RETRY_EXHAUSTED", 1, now, Map.of())).when(provider).send(any(), any());
+        JsonNode first = post("/api/v1/contacts", send);
+        assertEquals("RETRY_PENDING", first.get("state").asString());
+
+        switch (changedGuard) {
+            case "consent" -> { consent.put("allowed", false); put("/api/v1/consents", consent); }
+            case "minor" -> { consent.put("minor", true); put("/api/v1/consents", consent); }
+            case "personalization" -> { consent.put("personalizationAllowed", false); put("/api/v1/consents", consent); }
+            case "suppression" -> put("/api/v1/consents/suppressions", Map.of("subjectToken", suffix, "channel", "SMS",
+                    "reason", "withdrawn", "expiresAt", now.plusSeconds(3600)));
+            case "quiet" -> {
+                LocalTime current = LocalTime.now(java.time.ZoneOffset.UTC);
+                policy.put("quietStart", current.minusMinutes(5));
+                policy.put("quietEnd", current.plusMinutes(5));
+                put("/api/v1/contacts/frequency-policies", policy);
+            }
+            case "template" -> jdbc.update("update mk_template_version set state_name='REVOKED' "
+                    + "where tenant_id=? and template_id=?", "tenant-a", suffix);
+            default -> throw new AssertionError(changedGuard);
+        }
+        HttpResponse<String> blocked = rawPost("/api/v1/contacts", send);
+        assertEquals(409, blocked.statusCode(), blocked.body());
+        String code = switch (changedGuard) {
+            case "consent" -> "CONSENT_REQUIRED";
+            case "minor" -> "MINOR_PERSONALIZATION_BLOCKED";
+            case "personalization" -> "PERSONALIZATION_OPT_OUT";
+            case "suppression" -> "SUBJECT_SUPPRESSED";
+            case "quiet" -> "QUIET_HOURS";
+            case "template" -> "TEMPLATE_VARIABLES_INVALID";
+            default -> throw new AssertionError(changedGuard);
+        };
+        assertTrue(blocked.body().contains(code), blocked.body());
+        verify(provider, times(1)).send(any(), any());
+
+        // 恢复策略后同一触达可以继续；原频控上限为 1，重复扣减会在此失败。
+        consent.put("allowed", true); consent.put("minor", false); consent.put("personalizationAllowed", true);
+        put("/api/v1/consents", consent);
+        put("/api/v1/consents/suppressions", Map.of("subjectToken", suffix, "channel", "SMS", "reason", "expired",
+                "expiresAt", now.minusSeconds(1)));
+        policy.put("quietStart", LocalTime.MIDNIGHT); policy.put("quietEnd", LocalTime.MIDNIGHT);
+        put("/api/v1/contacts/frequency-policies", policy);
+        jdbc.update("update mk_template_version set state_name='APPROVED' where tenant_id=? and template_id=?",
+                "tenant-a", suffix);
+        doReturn(new ProviderResult(ProviderResult.Status.ACCEPTED,
+                suffix, "HTTP_202", 1, Instant.now(), Map.of())).when(provider).send(any(), any());
+        JsonNode accepted = post("/api/v1/contacts", send);
+        assertEquals(first.get("contactId"), accepted.get("contactId"));
+        assertEquals("ACCEPTED", accepted.get("state").asString());
+        assertEquals(1, jdbc.queryForObject("select sum(contact_count) from mk_frequency_bucket "
+                + "where tenant_id=? and campaign_id=?", Integer.class, "tenant-a", suffix));
+        consent.put("allowed", false);
+        put("/api/v1/consents", consent);
+        assertEquals(accepted, post("/api/v1/contacts", send));
+        verify(provider, times(2)).send(any(), any());
+    }
 
     @Test
     void consentTemplateFrequencyIdempotencyAndReceiptOrderingAreEnforced() throws Exception {

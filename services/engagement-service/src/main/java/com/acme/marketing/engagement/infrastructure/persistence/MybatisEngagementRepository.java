@@ -71,7 +71,7 @@ public class MybatisEngagementRepository implements EngagementRepository {
     public void insertTemplate(String tenantId, String actorId, TemplateRequest request, Instant createdAt) {
         requireOne(mapper.insertTemplate(new EngagementMapper.TemplateWrite(tenantId, request.templateId(),
                 request.version(), request.channel(), request.content(), String.join(",", request.requiredVariables()),
-                "APPROVED", actorId, format(createdAt))), "新增模板版本");
+                com.acme.marketing.engagement.application.TemplateState.APPROVED.code(), actorId, format(createdAt))), "新增模板版本");
     }
 
     @Override
