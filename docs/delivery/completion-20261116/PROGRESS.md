@@ -14,7 +14,7 @@
 | S01 | 触达重试复核当前同意/抑制/未成年人/个性化/静默时段/模板；终态幂等且频控不重复扣减；渠道限速、熔断冷却与单探测恢复通过回归 | 现有触达/Provider 契约 | DONE |
 | S02 | DEV 身份切换清理旧查询及缓存；真实轨迹空值/失败/加载不显示演示结果，异步结果不串查询 | 当前前端 API | DONE |
 | S03 | 空库可启动控制面并完成合法首发后 Decision 才 ready；Flink 校验名称/状态/检查点及恢复选择；真实 SKU 依赖验证 | 本地资源、已有跨系统合同 | LOCAL_PASS；CI待S04 |
-| S04 | 修复 CI 跨仓基础设施访问与失效 Trivy 引用；对应远程工作流实际成功 | GitHub 仓库访问凭据 | TODO |
+| S04 | 修复 CI 暴露的纳秒存储、跨仓基础设施访问与失效 Trivy 引用；对应远程工作流实际成功 | GitHub 仓库访问凭据 | IN_PROGRESS |
 | S05 | 空白画布节点专属配置、真实活动类型/设计意图保存、搜索定位/模拟输入；合法定义能校验保存 | 现有编译器支持集合 | TODO |
 | S06 | 真实人群来源及快照/segment 一致、权益目录选择、审批发布到决策 | S03/S05、上游人群合同 | TODO |
 | S07 | 普通 AwardIntent 终态/取消恢复及 Journey 接线；自动轨迹与对账闭环；真实浏览器验收 | S06、权益终态合同 | TODO |
@@ -48,7 +48,7 @@
 - 失败证据保留：早期 logout 竞态和测试选项类型错误已修；首轮全并行日期控件超时，降低并发后通过。当前无本片测试进程；应用 Docker 尚未更新。
 
 ## 已验证 S03（本地完成，空环境复验接 S04 CI）
-- 分支`fix/local-bootstrap-and-flink-recovery`，基线39bbc6e，待本逻辑提交合入发布；采用runtime-and-deploy/project-documentation。无新worktree。
+- `fix/local-bootstrap-and-flink-recovery`提交3323e48已正常快进合入并推送origin/main，本地远程SHA一致；采用runtime-and-deploy/project-documentation。无新worktree。
 - 拆开网关启动与Decision规则readiness；TimeLimiter明确普通控制4s、编译15s、各运行时控制10s，在线Decision/事件保持1s。原签名首发ACK/激活使Decision从DOWN变UP；本机仅网关按原镜像+不可变配置覆盖重建，覆盖文件gateway-s03.compose.json/application.yml在证据目录，源文件一致。S01/S02业务/前端镜像尚未更新。
 - Flink提交器改为显式bootstrap profile；名称、全部子任务、近期完成checkpoint校验；已有状态必须显式三作业恢复计划和no_claim。现有三个作业未重提/取消。
 - 真实SKU目录：`marketing-benefit-catalog-only-v3`复用既有权益镜像，768MiB、所有workers/outbox/consumer关闭、Flyway关闭；`mk_catalog_ro_20261116`仅有benefit_center SELECT（SHOW GRANTS实证），GET200/5项，unless-stopped。v1/v2失败试验容器停止；原deploy-benefit-center-1保持Created。私密env在证据目录0600保存，不入Git。
@@ -59,9 +59,10 @@
 - 证据目录：`/Users/liruijun/.local/share/marketing-delivery/completion-20261116/`；关键s03-first-activation.json、s03-seed-validation/seed-result.json、s03-hygiene-seed-final.json。完整空环境启动仍待S04隔离Runner验证，不清空本地共享库。
 
 ## 当前 S04 准备
+- S04a分支`fix/quiet-hours-nanosecond-storage`，基线3323e48；新增V4只扩容两列至varchar(18)，不修改历史迁移；真实MySQL用例明确9位小数，覆盖新建/更新读回和当前静默阻断。`s04a-quiet-precision.log`：11项测试通过（9项MySQL集成+2项回调），4份迁移成功，进程已结束；diff检查通过，Hygiene对纯迁移/测试改动判定NOT_APPLICABLE，未冒称Java静态分析通过。本机持久数据库尚未执行该迁移。准备正常提交合入推送。
 - 远程39bbc6e前端CI全部成功；Java失败于quiet_start VARCHAR(16)无法保存纳秒LocalTime。本机时钟精度未触发，须增加V4兼容扩容到18字符和固定纳秒用例，不截断测试输入。
 - deployment/full-stack依赖不存在的lirji/dev-infra仓库；本机非Git。已在证据目录`s04-ci-infra-draft/`准备由现有配置抽取的CI-only四项共享服务及Marketing配置（无私密env，尚未写仓库）。本地默认继续用共享dev-infra；CI显式选择版本化fixture。需明确权益目录合同fixture与真实跨系统验收的区别。
 - Trivy官方已迁移v前缀；核验v0.36.0签名tag，commit `ed142fd0673e97e23eac54620cfb913e5ce36c25`，证据s04-trivy-tag.json/commit.json及官方releases页面。后续固定SHA，保留现有安全检查强度。
 
 ## 下一步
-提交发布已验证的S03；新分支修复静默时间纳秒存储并用真实MySQL验证，然后S04 CI基础设施/Trivy/空环境验收。S05–S13保留完整待办。
+交付已验证S04a，然后S04 CI基础设施/Trivy/空环境验收。S05–S13保留完整待办。

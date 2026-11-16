@@ -82,10 +82,14 @@ class EngagementIntegrationTest extends MySqlIntegrationTest {
             case "suppression" -> put("/api/v1/consents/suppressions", Map.of("subjectToken", suffix, "channel", "SMS",
                     "reason", "withdrawn", "expiresAt", now.plusSeconds(3600)));
             case "quiet" -> {
-                LocalTime current = LocalTime.now(java.time.ZoneOffset.UTC);
+                // 固定九位小数，避免本机微秒时钟掩盖Linux CI暴露的列长度问题。
+                LocalTime current = LocalTime.now(java.time.ZoneOffset.UTC).withNano(123456789);
                 policy.put("quietStart", current.minusMinutes(5));
                 policy.put("quietEnd", current.plusMinutes(5));
                 put("/api/v1/contacts/frequency-policies", policy);
+                assertEquals(current.minusMinutes(5).toString(), jdbc.queryForObject(
+                        "select quiet_start from mk_frequency_policy where tenant_id=? and campaign_id=? and channel_name=?",
+                        String.class, "tenant-a", suffix, "SMS"));
             }
             case "template" -> jdbc.update("update mk_template_version set state_name='REVOKED' "
                     + "where tenant_id=? and template_id=?", "tenant-a", suffix);
@@ -125,6 +129,26 @@ class EngagementIntegrationTest extends MySqlIntegrationTest {
         put("/api/v1/consents", consent);
         assertEquals(accepted, post("/api/v1/contacts", send));
         verify(provider, times(2)).send(any(), any());
+    }
+
+    /** 创建与更新都必须完整保留API已接受的LocalTime精度，不能只让一次更新成功。 */
+    @Test
+    void frequencyPolicyPreservesNanosecondsOnInsertAndUpdate() throws Exception {
+        String campaign = "quiet-precision-" + UUID.randomUUID();
+        Map<String, Object> policy = new java.util.LinkedHashMap<>(Map.of(
+                "campaignId", campaign, "channel", "SMS", "windowSeconds", 3600,
+                "maxContacts", 5, "quietStart", LocalTime.of(22, 0, 0, 123456789),
+                "quietEnd", LocalTime.of(7, 0, 0, 987654321)));
+        for (int attempt = 0; attempt < 2; attempt++) {
+            put("/api/v1/contacts/frequency-policies", policy);
+            Map<String, Object> stored = jdbc.queryForMap(
+                    "select quiet_start,quiet_end from mk_frequency_policy where tenant_id=? and campaign_id=? and channel_name=?",
+                    "tenant-a", campaign, "SMS");
+            assertEquals(policy.get("quietStart").toString(), stored.get("quiet_start"));
+            assertEquals(policy.get("quietEnd").toString(), stored.get("quiet_end"));
+            policy.put("quietStart", LocalTime.MIN.withNano(999999999));
+            policy.put("quietEnd", LocalTime.MAX);
+        }
     }
 
     @Test
