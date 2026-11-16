@@ -14,7 +14,7 @@ describe('API session fencing', () => {
     const response = deferred<Response>()
     vi.stubGlobal('fetch', vi.fn(() => response.promise))
     const success = vi.fn()
-    const pending = api.createCampaign({ name: 'old campaign', objective: 'old objective', organizationId: 'org-a', shopId: '' }).then(success)
+    const pending = api.createCampaign({ name: 'old campaign', objective: 'old objective', organizationId: 'org-a', shopId: '', campaignType: 'STANDARD' }).then(success)
     const rejection = expect(pending).rejects.toMatchObject({ code: 'SESSION_CHANGED', retryable: false })
     invalidateApiSession()
     response.resolve(new Response(JSON.stringify({ id: 'old-id', name: 'old campaign', objective: 'old objective', status: 'DRAFT', createdAt: '2026-11-16T00:00:00Z' })))

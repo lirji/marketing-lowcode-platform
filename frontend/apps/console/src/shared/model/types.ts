@@ -20,4 +20,4 @@ export type NodeDefinition = {
   configSchema: Record<string, unknown>
 }
 
-export type Problem = { code: string; message: string; pointer: string; severity: 'ERROR' | 'WARNING' }
+export type Problem = { code: string; message: string; pointer: string; nodeId?: string | null; severity: 'ERROR' | 'WARNING' }

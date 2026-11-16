@@ -14,9 +14,9 @@ describe('graph mapping', () => {
   it('round-trips designer nodes through GraphDefinition', () => {
     const graph = toGraphDefinition({ definitionId: 'offer-1', dialect: 'OFFER_DECISION_DAG', nodes, edges, title: '主会场' })
     expect(graph.nodes.map((node) => node.stableTypeId)).toContain('offer.start')
-    expect(graph.nodes.some((node) => node.stableTypeId === 'offer.end')).toBe(true)
+    expect(graph.nodes.some((node) => node.stableTypeId === 'offer.end')).toBe(false)
     const restored = fromGraphDefinition(graph)
-    expect(restored.nodes.map((node) => node.id)).toEqual(['start', 'cond', 'offer-1-end'])
+    expect(restored.nodes.map((node) => node.id)).toEqual(['start', 'cond'])
     expect(restored.edges[0]?.source).toBe('start')
   })
 

@@ -1,3 +1,4 @@
+import { CAMPAIGN_TYPE, type CampaignType } from '../../shared/model/campaignType'
 import { RecordTable, RecordTime } from '../../components/RecordTable'
 import { FieldHint } from '../../components/FieldHint'
 import { Select } from '../../components/Select'
@@ -24,7 +25,7 @@ const campaignSchema = z.object({
   shopId: z.string().trim(),
 })
 type CampaignInput = z.infer<typeof campaignSchema>
-type DesignIntent = 'STANDARD' | 'REFERRAL'
+type DesignIntent = CampaignType
 
 const statusMeta: Record<Campaign['status'], { label: string; tone: 'good'|'warn'|'danger'|'neutral'|'info' }> = {
   DRAFT: { label: '草稿', tone: 'neutral' }, IN_REVIEW: { label: '审核中', tone: 'warn' },
@@ -60,15 +61,15 @@ export function CampaignsPage() {
     mutationFn: async (payload: CampaignInput & { designIntent: DesignIntent }) => {
       const { designIntent, ...body } = payload
       if (!api.demoMode) {
-        const campaign = await api.createCampaign(body)
+        const campaign = await api.createCampaign({ ...body, campaignType: designIntent })
         return { campaign, designIntent }
       }
       return {
-        campaign: { ...body, id: `CMP-${1100 + localCampaigns.length + 1}`, status: 'DRAFT' as const, createdBy: auth.displayName, createdAt: new Date().toISOString() } satisfies Campaign,
+        campaign: { ...body, campaignType: designIntent, id: `CMP-${1100 + localCampaigns.length + 1}`, status: 'DRAFT' as const, createdBy: auth.displayName, createdAt: new Date().toISOString() } satisfies Campaign,
         designIntent,
       }
     },
-    onSuccess: ({ campaign: value, designIntent }) => {
+    onSuccess: ({ campaign: value }) => {
       if (api.demoMode) {
         setLocalCampaigns((items) => [value, ...items])
         void queryClient.invalidateQueries({ queryKey: ['campaigns'] })
@@ -81,7 +82,7 @@ export function CampaignsPage() {
       })
       void queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       setParams({})
-      const path = designIntent === 'REFERRAL' ? '/designers/referral' : '/designers/offer'
+      const path = value.campaignType === CAMPAIGN_TYPE.REFERRAL ? '/designers/referral' : '/designers/offer'
       navigate(`${path}?campaignId=${encodeURIComponent(value.id)}`, { state: { campaignName: value.name } })
     },
   })
@@ -111,10 +112,11 @@ export function CampaignsPage() {
               <td>{item.shopId === undefined ? '未提供' : item.shopId || '全部店铺'}</td>
               <td><RecordTime value={item.createdAt} /></td>
               <td><RecordTime value={item.updatedAt} /></td>
-              <td><div className="row-actions"><button type="button" className="row-action" aria-expanded={readyId === item.id} aria-controls={readyId === item.id ? `readiness-${item.id}` : undefined} onClick={() => setReadyId((current) => current === item.id ? null : item.id)}>{readyId === item.id ? '收起就绪' : '查看就绪'}</button><ActionMenu label="设计" subject={item.name} items={[
+              <td><div className="row-actions"><button type="button" className="row-action" aria-expanded={readyId === item.id} aria-controls={readyId === item.id ? `readiness-${item.id}` : undefined} onClick={() => setReadyId((current) => current === item.id ? null : item.id)}>{readyId === item.id ? '收起就绪' : '查看就绪'}</button><ActionMenu label="设计" subject={item.name} items={item.campaignType === CAMPAIGN_TYPE.REFERRAL ? [
+                { label: '邀请有礼', to: `/designers/referral?campaignId=${encodeURIComponent(item.id)}`, state: { campaignName: item.name } },
+              ] : [
                 { label: 'Offer 规则', to: `/designers/offer?campaignId=${encodeURIComponent(item.id)}`, state: { campaignName: item.name } },
                 { label: 'Journey 旅程', to: `/designers/journey?campaignId=${encodeURIComponent(item.id)}`, state: { campaignName: item.name } },
-                { label: '邀请有礼', to: `/designers/referral?campaignId=${encodeURIComponent(item.id)}`, state: { campaignName: item.name } },
               ]} /></div></td>
             </tr>
             {readyId === item.id && <tr className="readiness-row"><td colSpan={11}><div id={`readiness-${item.id}`}><CampaignReadiness campaignId={item.id} /></div></td></tr>}
@@ -126,8 +128,8 @@ export function CampaignsPage() {
 }
 
 function campaignTypeLabel(value: string): string {
-  if (value === 'REFERRAL') return '邀请有礼'
-  if (value === 'STANDARD') return '标准营销'
+  if (value === CAMPAIGN_TYPE.REFERRAL) return '邀请有礼'
+  if (value === CAMPAIGN_TYPE.STANDARD) return '标准营销'
   return '类型待确认'
 }
 
@@ -139,7 +141,7 @@ function CampaignModal({ onClose, onSubmit, submitting, error, organizations, sh
     organizationId: organizations[0] ?? '',
     shopId: shops[0]?.value ?? '',
   })
-  const [designIntent, setDesignIntent] = useState<DesignIntent>('STANDARD')
+  const [designIntent, setDesignIntent] = useState<DesignIntent>(CAMPAIGN_TYPE.STANDARD)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
@@ -147,5 +149,5 @@ function CampaignModal({ onClose, onSubmit, submitting, error, organizations, sh
     if (!result.success) { setErrors(Object.fromEntries(result.error.issues.map((issue) => [String(issue.path[0]), issue.message]))); return }
     setErrors({}); onSubmit(result.data, designIntent)
   }
-  return <Modal title="创建营销活动" description="先建立治理边界，随后再组合五类低代码定义。" onClose={onClose}><form className="form-grid" onSubmit={submit}><label className="field span-2"><span>活动名称</span><input autoFocus aria-label="活动名称" value={values.name} onChange={(event) => setValues({ ...values, name: event.target.value })} aria-invalid={Boolean(errors.name)} aria-describedby="name-hint name-error" placeholder="例如：双11家电主会场" /><FieldHint id="name-hint">填写便于识别和搜索的业务名称，2–80 字。</FieldHint>{errors.name && <small id="name-error">{errors.name}</small>}</label><label className="field span-2"><span>可衡量目标</span><textarea aria-label="可衡量目标" value={values.objective} onChange={(event) => setValues({ ...values, objective: event.target.value })} aria-invalid={Boolean(errors.objective)} aria-describedby="objective-hint" placeholder="目标人群、核心动作与期望结果" /><FieldHint id="objective-hint">说明面向谁、希望完成什么动作及预期结果，4–240 字；列表会展示此目标。</FieldHint>{errors.objective && <small>{errors.objective}</small>}</label><label className="field"><span>所属组织</span><Select value={values.organizationId} onChange={(event) => setValues({ ...values, organizationId: event.target.value })} disabled={noOrg} aria-invalid={noOrg}>{organizations.map((item) => <option value={item} key={item}>{item}</option>)}</Select>{noOrg && <small>当前身份没有组织范围，无法创建活动。</small>}</label><label className="field"><span>店铺范围</span><Select value={values.shopId} onChange={(event) => setValues({ ...values, shopId: event.target.value })}>{shops.map((item) => <option value={item.value} key={item.value || 'all-scope'}>{item.label}</option>)}</Select>{shops.length === 1 && shops[0]?.value === '' && <small>当前身份未声明店铺，将按全部店铺范围创建。</small>}</label><label className="field span-2"><span>创建后进入</span><Select value={designIntent} onChange={(event) => setDesignIntent(event.target.value as DesignIntent)}><option value="STANDARD">标准营销 · Offer 设计器</option><option value="REFERRAL">邀请有礼 · 裂变规则设计器</option></Select><small>选择创建后要打开的设计器，不影响已保存的活动信息。</small></label><div className="span-2"><CampaignCreateReadiness designIntent={designIntent} /></div>{error && <StateBanner tone="error" title="创建失败" detail={error} />}<footer className="modal-actions span-2"><Button type="button" onClick={onClose}>取消</Button><Button tone="primary" type="submit" disabled={submitting || noOrg}>{submitting ? '正在创建…' : '创建并进入设计'}</Button></footer></form></Modal>
+  return <Modal title="创建营销活动" description="选择活动类型与治理范围，再配置相应规则。" onClose={onClose}><form className="form-grid" onSubmit={submit}><label className="field span-2"><span>活动名称</span><input autoFocus aria-label="活动名称" value={values.name} onChange={(event) => setValues({ ...values, name: event.target.value })} aria-invalid={Boolean(errors.name)} aria-describedby="name-hint name-error" placeholder="例如：双11家电主会场" /><FieldHint id="name-hint">填写便于识别和搜索的业务名称，2–80 字。</FieldHint>{errors.name && <small id="name-error">{errors.name}</small>}</label><label className="field span-2"><span>可衡量目标</span><textarea aria-label="可衡量目标" value={values.objective} onChange={(event) => setValues({ ...values, objective: event.target.value })} aria-invalid={Boolean(errors.objective)} aria-describedby="objective-hint" placeholder="目标人群、核心动作与期望结果" /><FieldHint id="objective-hint">说明面向谁、希望完成什么动作及预期结果，4–240 字；列表会展示此目标。</FieldHint>{errors.objective && <small>{errors.objective}</small>}</label><label className="field"><span>所属组织</span><Select value={values.organizationId} onChange={(event) => setValues({ ...values, organizationId: event.target.value })} disabled={noOrg} aria-invalid={noOrg}>{organizations.map((item) => <option value={item} key={item}>{item}</option>)}</Select>{noOrg && <small>当前身份没有组织范围，无法创建活动。</small>}</label><label className="field"><span>店铺范围</span><Select value={values.shopId} onChange={(event) => setValues({ ...values, shopId: event.target.value })}>{shops.map((item) => <option value={item.value} key={item.value || 'all-scope'}>{item.label}</option>)}</Select>{shops.length === 1 && shops[0]?.value === '' && <small>当前身份未声明店铺，将按全部店铺范围创建。</small>}</label><label className="field span-2"><span>活动类型</span><Select aria-label="活动类型" aria-describedby="campaign-type-hint" value={designIntent} onChange={(event) => setDesignIntent(event.target.value as DesignIntent)}><option value="STANDARD">标准营销 · Offer 设计器</option><option value="REFERRAL">邀请有礼 · 裂变规则设计器</option></Select><FieldHint id="campaign-type-hint">活动类型将保存到控制面；标准营销使用 Offer / Journey，邀请有礼使用裂变规则，创建后不可更改。</FieldHint></label><div className="span-2"><CampaignCreateReadiness designIntent={designIntent} /></div>{error && <StateBanner tone="error" title="创建失败" detail={error} />}<footer className="modal-actions span-2"><Button type="button" onClick={onClose}>取消</Button><Button tone="primary" type="submit" disabled={submitting || noOrg}>{submitting ? '正在创建…' : '创建并进入设计'}</Button></footer></form></Modal>
 }

@@ -29,6 +29,12 @@ describe('orgChoicesFromIdentity', () => {
 })
 
 describe('campaignCreateBody', () => {
+  it('preserves the actual referral type with and without a shop scope', () => {
+    for (const shopId of ['', 'east-shop']) {
+      expect(campaignCreateBody({ name: '邀请活动', objective: '提升邀请转化', organizationId: 'org', shopId, campaignType: 'REFERRAL' })).toMatchObject({ campaignType: 'REFERRAL' })
+    }
+  })
+
   it('omits blank shopId so control-plane skips requireShop', () => {
     expect(campaignCreateBody({
       name: '双11',

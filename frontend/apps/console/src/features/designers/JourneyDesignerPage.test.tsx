@@ -19,7 +19,7 @@ vi.mock('../../shared/api/client', async (importOriginal) => {
           id: 'cmp-spring',
           name: '春季会员日',
           objective: '提升复购',
-          status: 'DRAFT',
+          status: 'DRAFT', campaignType: 'STANDARD',
           createdAt: '2026-09-07T00:00:00Z',
         },
       ],

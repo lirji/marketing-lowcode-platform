@@ -16,7 +16,7 @@ test('custom selects filter visible records and preserve the containing form on 
   await page.getByRole('button', { name: '创建活动', exact: true }).click()
   const modal = page.getByRole('dialog', { name: '创建营销活动' })
   await expect(modal.getByRole('textbox', { name: '活动名称', exact: true })).toHaveAccessibleDescription(/2–80/)
-  const intent = modal.getByRole('combobox', { name: /创建后进入/ })
+  const intent = modal.getByRole('combobox', { name: '活动类型', exact: true })
   await intent.click()
   await page.getByRole('option', { name: '邀请有礼 · 裂变规则设计器', exact: true }).click()
   await expect(modal).toBeVisible()

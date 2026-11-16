@@ -6,5 +6,6 @@ export type DesignerNode = Node<{
   tone: 'teal' | 'blue' | 'amber' | 'violet' | 'slate'
   config: Record<string, string>
   stableTypeId?: string
+  ports?: { inputs: readonly string[]; outputs: readonly string[] }
   semanticVersion?: string
 }, 'marketing'>

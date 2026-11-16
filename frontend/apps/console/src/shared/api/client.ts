@@ -1,3 +1,4 @@
+import type { CampaignType } from '../model/campaignType'
 import type { ProblemDetail } from '@marketing/contracts'
 import { campaignCreateBody } from '../auth/scopeChoices'
 import { runtimeConfig } from '../config/runtime'
@@ -174,7 +175,7 @@ function commandHeaders(idempotencyKey?: string): Record<string, string> {
 export const api = {
   demoMode: runtimeConfig.demoMode,
   campaigns: () => request('/api/v1/campaigns', undefined, (value) => zArray(campaignSchema, value)),
-  createCampaign: (payload: { name: string; objective: string; organizationId: string; shopId: string }) =>
+  createCampaign: (payload: { name: string; objective: string; organizationId: string; shopId: string; campaignType: CampaignType }) =>
     request('/api/v1/campaigns', {
       method: 'POST',
       headers: commandHeaders(),

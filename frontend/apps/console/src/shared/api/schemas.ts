@@ -272,6 +272,10 @@ export const nodeRegistrySchema = z.object({
   semanticVersion: z.string(),
   dialects: z.array(z.string()).default([]),
   runtimeTarget: z.string().optional(),
+  inputPorts: z.record(z.string(), z.string()).optional(),
+  outputPorts: z.record(z.string(), z.string()).optional(),
+  configSchemaRef: z.string().optional(),
+  uiSchemaRef: z.string().optional(),
   costWeight: z.number().optional(),
   sideEffect: z.string().optional(),
 })

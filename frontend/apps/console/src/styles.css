@@ -162,3 +162,16 @@ main { min-width: 0; }.topbar { height: 64px; padding: 0 28px; display: flex; al
 @media (max-width:720px) {
   :root { --text-title:24px; --text-metric:24px; }
 }
+
+/* 节点契约表单与试算输入复用现有字号和控件，长标识在侧栏完整换行。 */
+.node-config-fields { border:0; margin:0; padding:0; min-width:0; }
+.node-config-fields > .field > label { font-weight:600; }
+.node-config-fields .field-hint,.node-routes,.selected-node small { overflow-wrap:anywhere; }
+.node-routes,.node-extra-fields { margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
+.node-routes > strong,.node-extra-fields > strong { display:block; margin-bottom:12px; }
+.node-config-fields details { margin:12px 0; }
+.node-config-fields summary { cursor:pointer; margin-bottom:12px; }
+.designer-simulation-inputs { display:flex; flex-wrap:wrap; align-items:center; gap:16px; padding:12px 20px; background:var(--surface,#fff); border-bottom:1px solid var(--line); }
+.designer-simulation-inputs .field { flex:0 1 190px; margin:0; }
+.designer-simulation-inputs p { flex:1 1 280px; margin:0; font-size:var(--text-xs); color:var(--ink-400); line-height:1.6; }
+@media(max-width:640px) { .designer-simulation-inputs { padding:12px; } .designer-simulation-inputs .field { flex:1 1 120px; } }

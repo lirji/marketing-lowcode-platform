@@ -56,10 +56,24 @@ describe('OfferDesignerPage campaign binding', () => {
         id: 'cmp-spring',
         name: '春季会员日',
         objective: '提升复购',
-        status: 'DRAFT',
+        status: 'DRAFT', campaignType: 'STANDARD',
         createdAt: '2026-09-07T00:00:00Z',
       },
     ])
+  })
+
+  it('does not mount an editable graph while the actual campaign type is unresolved', async () => {
+    mocks.campaigns.mockImplementation(() => new Promise(() => {}))
+    renderOffer('/designers/offer?campaignId=cmp-spring', { campaignName: '不能代替类型的标题' })
+    expect(await screen.findByText('正在确认活动类型')).toBeInTheDocument()
+    expect(screen.queryByText('开始')).not.toBeInTheDocument()
+  })
+
+  it('keeps editing closed when campaign lookup fails', async () => {
+    mocks.campaigns.mockRejectedValue(new Error('unavailable'))
+    renderOffer('/designers/offer?campaignId=cmp-spring')
+    expect(await screen.findByText('无法确认活动类型')).toBeInTheDocument()
+    expect(screen.queryByText('开始')).not.toBeInTheDocument()
   })
 
   it('shows the new campaign instead of the 双11 demo offer', async () => {

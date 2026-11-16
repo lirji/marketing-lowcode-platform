@@ -316,7 +316,7 @@ test('journey canvas connects named ports and saves original metadata', async ({
     window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true,
       OIDC_AUTHORITY: 'http://localhost:8180/realms/marketing', OIDC_CLIENT_ID: 'marketing-console', OIDC_SCOPE: 'openid profile email' }
   })
-  await page.route('**/api/v1/campaigns', (route) => route.fulfill({ json: [{ id: 'canvas', name: 'Canvas', objective: 'test', status: 'DRAFT', createdAt: '2026-01-01T00:00:00Z' }] }))
+  await page.route('**/api/v1/campaigns', (route) => route.fulfill({ json: [{ id: 'canvas', name: 'Canvas', objective: 'test', status: 'DRAFT', campaignType: 'STANDARD', createdAt: '2026-01-01T00:00:00Z' }] }))
   await page.route('**/api/v1/registries/nodes', (route) => route.fulfill({ json: graph.nodes.map((node) => ({ ...node, dialects: [graph.dialect] })) }))
   await page.route(/\/api\/v1\/definitions\/latest\?/, (route) => route.fulfill({ json: bundle }))
   await page.route('**/api/v1/definitions', (route) => route.fulfill({ json: { ...bundle, version: 5, graph: route.request().postDataJSON().graph } }))

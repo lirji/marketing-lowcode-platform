@@ -2,6 +2,7 @@ import type { Edge } from '@xyflow/react'
 import type { GraphDefinition } from '../../shared/api/schemas'
 import type { DesignerNode } from './designerTypes'
 import { nodePorts } from './nodePorts'
+import { NODE_LABELS } from './nodeConfig'
 
 const TYPE_BY_TONE: Record<DesignerNode['data']['tone'], string> = {
   slate: 'offer.start',
@@ -37,9 +38,6 @@ export function toGraphDefinition(input: {
     semanticVersion: node.data.semanticVersion ?? input.original?.nodes.find((saved) => saved.id === node.id)?.semanticVersion ?? '1.0.0',
     config: node.data.config,
   }))
-  if (!input.original && input.dialect === 'OFFER_DECISION_DAG' && !nodes.some((node) => node.stableTypeId === 'offer.end')) {
-    nodes.push({ id: `${input.definitionId}-end`, stableTypeId: 'offer.end', semanticVersion: '1.0.0', config: {} })
-  }
   const edges = input.edges.map((edge) => ({
     id: edge.id,
     sourceNodeId: edge.source,
@@ -84,7 +82,7 @@ export function fromGraphDefinition(graph: GraphDefinition): SnapshotLike {
     type: 'marketing',
     position: { x: 40 + (index % 4) * 210, y: 80 + Math.floor(index / 4) * 140 },
     data: {
-      label: node.stableTypeId.split('.').pop() ?? node.id,
+      label: NODE_LABELS[node.stableTypeId] ?? node.stableTypeId.split('.').pop() ?? node.id,
       subtitle: node.stableTypeId,
       tone: toneForType(node.stableTypeId),
       config: node.config,

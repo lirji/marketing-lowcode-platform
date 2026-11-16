@@ -1,10 +1,11 @@
+import { CAMPAIGN_TYPE, isKnownCampaignType } from '../../shared/model/campaignType'
 import { displayTimestamp } from '../../components/dateTime'
 import { RecordTable, RecordTime } from '../../components/RecordTable'
 import { DateTimePicker } from '../../components/DateTimePicker'
 import { FieldHint } from '../../components/FieldHint'
 import { Select } from '../../components/Select'
 import { useEffect, useMemo, useState, useId, type ReactNode } from 'react'
-import { useLocation, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { CheckCircle2, FlaskConical, Plus, Save, Trash2 } from 'lucide-react'
 import { Badge, Button, DemoBanner, PageHeader, Panel, PanelHeader, StateBanner } from '../../components/ui'
@@ -91,7 +92,7 @@ export function ReferralDesignerPage() {
   const [serverIssues, setServerIssues] = useState<{ code: string; message: string; pointer: string; severity: string }[]>([])
   const [simulation, setSimulation] = useState<ReferralSimulationResult>()
   const canWrite = auth.hasPermission('definition:write')
-  const live = !api.demoMode && Boolean(campaignId) && canWrite
+  const live = !api.demoMode && Boolean(campaignId) && canWrite && campaign?.campaignType === CAMPAIGN_TYPE.REFERRAL
 
   const benefits = useQuery({
     queryKey: ['benefits'],
@@ -204,6 +205,12 @@ export function ReferralDesignerPage() {
   const actionError = saveMutation.error ?? validateMutation.error ?? simulateMutation.error
   const catalogError = benefits.isError ? catalogProblemDetail(benefits.error, auth.tenantId) : skus.isError ? catalogProblemDetail(skus.error, auth.tenantId) : undefined
 
+  if (campaignId && !api.demoMode && !isKnownCampaignType(campaign?.campaignType)) {
+    return <div className="workspace"><StateBanner tone={campaigns.isError ? 'error' : 'info'} title={campaigns.isPending ? '正在确认活动类型' : '无法确认活动类型'} detail="取得当前活动的真实类型后才能编辑，请返回活动列表刷新后重试。" /><Link to="/campaigns">返回计划与活动</Link></div>
+  }
+  if (campaign?.campaignType === CAMPAIGN_TYPE.STANDARD) {
+    return <div className="workspace"><StateBanner tone="info" title="此活动属于标准营销" detail="标准活动使用 Offer / Journey 设计器，邀请有礼需要单独创建裂变活动。" /><Link to={`/designers/offer?campaignId=${encodeURIComponent(campaignId ?? '')}`}>打开 Offer 设计器</Link></div>
+  }
   return (
     <div className="workspace referral-page">
       <PageHeader

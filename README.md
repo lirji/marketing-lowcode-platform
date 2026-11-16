@@ -94,6 +94,14 @@ pnpm frontend:dev
 - 数据面：事件接入、受众快照与实时 membership、Flink keyed state/timer 旅程、触达同意/静默时段/频控、实验曝光、转化归因与水位。
 - 平台面：OIDC JWT、租户/组织/门店范围、RFC 9457 错误、OpenAPI/AsyncAPI/JSON Schema、审计、OTel、Prometheus、Grafana、Docker Compose、Helm 和 CI 安全门禁。
 
+### 控制台规则编写
+
+- 创建活动时实际保存 `STANDARD` / `REFERRAL` 类型；类型尚未确认时关闭编辑入口，避免把标准规则写入裂变活动。
+- Offer / Journey 支持按节点配置金额、比例、日期、权益版本、条件、等待和触达参数。通过「出口连接」或画布连线连接显式节点；不会自动补入隐藏结束节点。Offer 当前仅支持定额/比例与完整单链，不开放尚不可执行的条件分支。
+- 保存、校验、试算与审核绑定同一修订；继续编辑会使原校验失效。保存成功但校验失败时保留版本和输入，可重试校验。
+- Offer 金额试算使用实际输入的金额/币种，不验证库存、时间或领取资格；有商品/人群等范围时由后端拒绝缺上下文的试算。Journey 完整仿真尚待补齐，界面不再显示伪价格结果。资源发放台账不等于外部权益到账。
+- 浏览器合同验收：`pnpm --filter @marketing/console exec playwright test lowcode-authoring.spec.ts`。可选真实本地验收：设置 `MARKETING_LIVE_UI=1`，使用 `--project=chromium --grep 'complete explicit Offer|Journey timer' --workers=1`；需要本机18080网关、DEV身份及真实权益目录，会在dev-tenant创建隔离活动和定义，不执行审核/发布/发奖。
+
 ## 架构导航
 
 ```text
