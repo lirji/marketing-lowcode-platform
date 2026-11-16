@@ -1,10 +1,11 @@
 # 文档同步地图
 
-最新增量同步：2026-11-16，`completion-20261116/S03`，源码基线 `39bbc6e1f42d9d194d742ac41abc7d2995472626`。本次仅同步 Compose 启动、Flink 提交/恢复保护与验收重试；当前本机业务镜像仍为历史版本，不能视为新镜像或空环境全链路已通过。
+最新增量同步：2026-11-16，`completion-20261116/S04`，源码基线 `94d133442733587e3aa0acb37fd27194f7d5195a`。本次同步 CI 基础设施/目录合同样例与验收边界；S03 真实本地 R1 已通过，当前本机多数业务镜像仍为历史版本，不能视为新镜像或空环境全链路已通过。
 
 | 代码区域 | 权威入口 | 同步内容 |
 | --- | --- | --- |
 | deploy/compose.yaml、bootstrap/submit-flink-jobs/flink-state/smoke/acceptance-r1 | [README](../README.md)、[运行手册](operations/RUNBOOK.md) | 首发 readiness、显式提交、恢复计划、检查点、传输重试与未知写结果 |
+| .github/workflows、tests/fixtures/dev-infra、benefit-catalog、ci-resources | [CI 固定样例说明](../tests/fixtures/dev-infra/README.md)、[README](../README.md) | 临时基础设施、合同样例验收范围、资源覆盖、临时凭据与诊断脱敏 |
 | 本轮验收与后续范围 | [实施进度](delivery/completion-20261116/PROGRESS.md) | 已通过证据、实际失败与待办，不将配置变更写成已部署 |
 | Event 演示 outbox 与种子验证 | [演示数据](../README.md#本地演示数据) | PUBLISHED终态与深度分桶一致，不把展示记录送入实时队列或计作积压 |
 

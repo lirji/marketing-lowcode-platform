@@ -1,0 +1,59 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "type": "stat", "title": "Healthy service instances", "id": 1,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(up{job=~\"(marketing-services|marketing-control-service|rule-compiler-worker|audience-service|offer-decision-service|benefit-funding-service|event-gateway-service|journey-service|engagement-service|measurement-service|edge-gateway)\"})", "refId": "A" }],
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "red" }, { "color": "green", "value": 10 }] } }, "overrides": [] }
+    },
+    {
+      "type": "stat", "title": "5m server error ratio", "id": 2,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "marketing:http_errors:ratio5m", "refId": "A" }],
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "thresholds": { "mode": "absolute", "steps": [{ "color": "green" }, { "color": "red", "value": 0.01 }] } }, "overrides": [] }
+    },
+    {
+      "type": "timeseries", "title": "Request rate by service", "id": 3,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum by (job) (rate(http_server_requests_seconds_count{job=~\"(marketing-services|marketing-control-service|rule-compiler-worker|audience-service|offer-decision-service|benefit-funding-service|event-gateway-service|journey-service|engagement-service|measurement-service|edge-gateway)\"}[5m]))", "legendFormat": "{{job}}", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "type": "timeseries", "title": "HTTP p99 latency", "id": 4,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "marketing:http_latency:p99_5m", "legendFormat": "{{job}} / {{instance}}", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "type": "timeseries", "title": "JVM heap utilization", "id": 5,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum by(instance)(jvm_memory_used_bytes{area=\"heap\"}) / sum by(instance)(jvm_memory_max_bytes{area=\"heap\"})", "legendFormat": "{{instance}}", "refId": "A" }],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] }
+    },
+    {
+      "type": "logs", "title": "Correlated service logs", "id": 6,
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [{ "expr": "{service_namespace=\"marketing\"}", "refId": "A" }],
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 16 }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 42,
+  "tags": ["marketing", "r1", "slo"],
+  "templating": { "list": [] },
+  "time": { "from": "now-3h", "to": "now" },
+  "timezone": "utc",
+  "title": "Marketing Platform · Runtime & SLO",
+  "uid": "marketing-r1-runtime",
+  "version": 1
+}

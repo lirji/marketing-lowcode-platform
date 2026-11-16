@@ -353,7 +353,7 @@ def dashboard(from_time: str, to_time: str) -> dict[str, Any]:
 
 def main() -> None:
     step(f"acceptance run={SUFFIX} tenant={TENANT}")
-    step("checking the real active benefit SKU catalog before creating acceptance data")
+    step("checking the configured active benefit SKU catalog before creating acceptance data")
     skus = call("GET", "/api/v1/benefit-skus?status=ACTIVE")
     selected_sku = os.environ.get("ACCEPTANCE_BENEFIT_SKU_ID")
     eligible_skus = [sku for sku in skus if sku["status"] == "ACTIVE"

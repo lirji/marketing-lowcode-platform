@@ -56,6 +56,13 @@ compose() {
   if [[ -n "${PLATFORM_PORTS_FILE:-}" && -r "${PLATFORM_PORTS_FILE}" ]]; then
     args+=(--env-file "${PLATFORM_PORTS_FILE}")
   fi
+  if [[ -n "${MARKETING_COMPOSE_OVERRIDE:-}" ]]; then
+    [[ -f "${MARKETING_COMPOSE_OVERRIDE}" ]] || {
+      echo "Missing Compose override: ${MARKETING_COMPOSE_OVERRIDE}" >&2
+      return 1
+    }
+    args+=(-f "${MARKETING_COMPOSE_OVERRIDE}")
+  fi
   docker compose "${args[@]}" "$@"
 }
 

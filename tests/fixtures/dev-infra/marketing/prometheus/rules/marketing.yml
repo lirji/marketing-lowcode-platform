@@ -1,0 +1,77 @@
+groups:
+  - name: marketing-sli-recording
+    interval: 30s
+    rules:
+      - record: marketing:http_requests:rate5m
+        expr: sum by (job, instance, uri, method) (rate(http_server_requests_seconds_count{job=~"(marketing-services|marketing-control-service|rule-compiler-worker|audience-service|offer-decision-service|benefit-funding-service|event-gateway-service|journey-service|engagement-service|measurement-service|edge-gateway)"}[5m]))
+      - record: marketing:http_errors:ratio5m
+        expr: sum(rate(http_server_requests_seconds_count{job=~"(marketing-services|marketing-control-service|rule-compiler-worker|audience-service|offer-decision-service|benefit-funding-service|event-gateway-service|journey-service|engagement-service|measurement-service|edge-gateway)",outcome="SERVER_ERROR"}[5m])) / clamp_min(sum(rate(http_server_requests_seconds_count{job=~"(marketing-services|marketing-control-service|rule-compiler-worker|audience-service|offer-decision-service|benefit-funding-service|event-gateway-service|journey-service|engagement-service|measurement-service|edge-gateway)"}[5m])), 0.001)
+      - record: marketing:http_latency:p99_5m
+        expr: histogram_quantile(0.99, sum by (le, job, instance) (rate(http_server_requests_seconds_bucket{job=~"(marketing-services|marketing-control-service|rule-compiler-worker|audience-service|offer-decision-service|benefit-funding-service|event-gateway-service|journey-service|engagement-service|measurement-service|edge-gateway)"}[5m])))
+
+  - name: marketing-availability
+    rules:
+      - alert: MarketingServiceDown
+        expr: up{job=~"(marketing-services|marketing-control-service|rule-compiler-worker|audience-service|offer-decision-service|benefit-funding-service|event-gateway-service|journey-service|engagement-service|measurement-service|edge-gateway)"} == 0
+        for: 2m
+        labels: { severity: page, owner: marketing-platform }
+        annotations:
+          summary: "Marketing service is unavailable"
+          description: "{{ $labels.instance }} has failed Prometheus scrapes for two minutes."
+          runbook_url: "docs/operations/alerts.md#marketingservicedown"
+      - alert: MarketingHighErrorBurn
+        expr: marketing:http_errors:ratio5m > 0.01
+        for: 5m
+        labels: { severity: page, owner: marketing-platform }
+        annotations:
+          summary: "Marketing API error budget is burning"
+          description: "5-minute HTTP 5xx ratio is {{ $value | humanizePercentage }}."
+          runbook_url: "docs/operations/alerts.md#marketinghigherrorburn"
+      - alert: DecisionLatencySloBreach
+        expr: marketing:http_latency:p99_5m{job="offer-decision-service"} > 0.03 or marketing:http_latency:p99_5m{job="marketing-services",instance=~"offer-decision-service.*"} > 0.03
+        for: 5m
+        labels: { severity: page, owner: decision-runtime }
+        annotations:
+          summary: "Decision p99 exceeds 30 ms"
+          description: "Decision runtime p99 is {{ $value | humanizeDuration }}."
+          runbook_url: "docs/operations/alerts.md#decisionlatencyslobreach"
+      - alert: MarketingJvmHeapPressure
+        expr: sum by (instance) (jvm_memory_used_bytes{area="heap"}) / clamp_min(sum by (instance) (jvm_memory_max_bytes{area="heap"}), 1) > 0.85
+        for: 10m
+        labels: { severity: ticket, owner: marketing-platform }
+        annotations:
+          summary: "Sustained JVM heap pressure"
+          description: "{{ $labels.instance }} heap usage is above 85%."
+          runbook_url: "docs/operations/alerts.md#marketingjvmheappressure"
+      - alert: TelemetryExporterDroppingData
+        expr: sum(rate(otelcol_exporter_send_failed_spans[5m])) + sum(rate(otelcol_exporter_send_failed_log_records[5m])) > 0
+        for: 5m
+        labels: { severity: ticket, owner: observability }
+        annotations:
+          summary: "OpenTelemetry exporter is dropping telemetry"
+          description: "Collector export failures are non-zero; application traffic remains isolated from exporter backpressure."
+          runbook_url: "docs/operations/alerts.md#telemetryexporterdroppingdata"
+      - alert: FlinkJobRestarting
+        expr: increase(flink_jobmanager_job_numRestarts[15m]) > 2
+        for: 1m
+        labels: { severity: page, owner: stream-runtime }
+        annotations:
+          summary: "Flink job is repeatedly restarting"
+          description: "{{ $labels.job_name }} restarted more than twice in fifteen minutes."
+          runbook_url: "docs/operations/alerts.md#flinkjobrestarting"
+      - alert: MarketingOutboxDeadLettered
+        expr: sum by (job, outbox) (increase(marketing_outbox_dead_lettered_total[5m])) > 0
+        for: 1m
+        labels: { severity: page, owner: marketing-platform }
+        annotations:
+          summary: "A transactional outbox exhausted retries"
+          description: "{{ $labels.job }}/{{ $labels.outbox }} dead-lettered {{ $value }} records in five minutes."
+          runbook_url: "docs/operations/alerts.md#marketingoutboxdeadlettered"
+      - alert: MarketingOutboxFailureBurst
+        expr: sum by (job, outbox) (rate(marketing_outbox_failed_total[5m])) > 0.1
+        for: 5m
+        labels: { severity: ticket, owner: marketing-platform }
+        annotations:
+          summary: "Transactional outbox publish failures are sustained"
+          description: "{{ $labels.job }}/{{ $labels.outbox }} is failing at {{ $value }} records/s."
+          runbook_url: "docs/operations/alerts.md#marketingoutboxfailureburst"

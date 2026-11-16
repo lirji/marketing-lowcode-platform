@@ -1,0 +1,22 @@
+{
+  "source": "existing shared dev-infra configuration",
+  "capturedAt": "2026-11-16",
+  "scope": "CI fixture; root compose reduced to mysql84/redis7/kafka38/minio",
+  "files": {
+    "marketing/alertmanager/alertmanager.yml": "71a17edec1bc290b15fe2ca8e396a7bcf8b3f13bc5fc766291f001e80e8780d3",
+    "marketing/clickhouse/init/01-marketing.sql": "4dc3081726af442d2a0b0947689bb00fef09d4cf629d20aed29b654e16904141",
+    "marketing/compose.yaml": "088465dac8d4d74809bea5b662b976c24b13579c09402e0ed8e0e254359e8a83",
+    "marketing/grafana/dashboards/marketing-platform.json": "a21a251875caee40afb7db45863c34935c07eee9f03f7424fb57f3a6f14cb736",
+    "marketing/grafana/provisioning/dashboards/dashboards.yml": "3b80643248a358aa3531159815e9b1a398be78aa99d799aeab746334f36e3c60",
+    "marketing/grafana/provisioning/datasources/datasources.yml": "dbaa834320d37c99beb409465ca696d11445ad489f82a3b24b8944ee78631128",
+    "marketing/kafka/create-topics.sh": "e3cf67ae6eb93f903f2140fa7ad39abd85a69c4cd1582a7b69e0c6b3f86aa0b6",
+    "marketing/keycloak/marketing-realm.json": "36f2ea6315acc9890954d8da7b47f5b9a13fa8b67a2948970c4e4a629ac4310b",
+    "marketing/loki/loki.yaml": "16fd06c7a38ea758e40cedb3747c76554b2b8e9f43815660acb63d627a641100",
+    "marketing/mysql/01-databases.sh": "79fb9ecb751e2261cf22a8f38cfefc77545ed11ad4538720892b366ab731cae8",
+    "marketing/mysql/reference-marketing.cnf": "07390d27761acb13a2bc834365ef82bbfd0a33de1efeb35cc20a109873615e1a",
+    "marketing/otel/collector.yaml": "cf35bd2ea9e379dc12e05467e1c50e3b38928fb2e43e82277908d39255d180b6",
+    "marketing/prometheus/prometheus.yml": "214d68ac19c3d47416bd470b77605445b9e581a6aebb83917dab0f403f4447ba",
+    "marketing/prometheus/rules/marketing.yml": "2bb334b5eea3cd5c18c5a57acbc777b841bd85843fccb0634b3578e74dc5bf02",
+    "marketing/tempo/tempo.yaml": "998a3aca6a20312fd9c997ad9cfc55f550ac60653e6ff4f166c1fa6c186e0215"
+  }
+}

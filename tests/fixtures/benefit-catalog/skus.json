@@ -1,0 +1,10 @@
+[
+  {
+    "skuId": "CI-CASH-10", "benefitType": "CASH", "faceValueMinor": 1000,
+    "currency": "CNY", "status": "ACTIVE", "enabled": true,
+    "validityType": "RELATIVE", "validFrom": null, "validTo": null,
+    "relativeDays": 30, "usableWeekdays": [], "dailyQuota": 10000,
+    "userLimitPerDay": 10, "userLimitTotal": 100, "equivalentSkuId": null,
+    "version": 1
+  }
+]

@@ -1,0 +1,197 @@
+name: dev-infra-marketing
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks: [dev-infra]
+
+services:
+  marketing-clickhouse:
+    <<: *service-defaults
+    image: clickhouse:26.3.25.2-jammy
+    environment:
+      CLICKHOUSE_DB: marketing
+      CLICKHOUSE_USER: marketing
+      CLICKHOUSE_PASSWORD: ${MARKETING_DB_PASSWORD:?set MARKETING_DB_PASSWORD in the marketing project .env}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${CLICKHOUSE_NATIVE_PORT:-9009}:9000"
+    mem_limit: ${MARKETING_CLICKHOUSE_MEMORY_LIMIT:-1g}
+    volumes:
+      - marketing-clickhouse-data:/var/lib/clickhouse
+      - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
+    cap_add: [SYS_NICE]
+    healthcheck:
+      test: [CMD-SHELL, "wget -q -O - http://127.0.0.1:8123/ping | grep -q Ok"]
+      interval: 10s
+      timeout: 4s
+      retries: 15
+    networks:
+      dev-infra:
+        aliases: [infra-marketing-clickhouse]
+
+  marketing-keycloak:
+    <<: *service-defaults
+    image: quay.io/keycloak/keycloak:26.7.3
+    command: ["start-dev", "--import-realm", "--health-enabled=true", "--metrics-enabled=true"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in the marketing project .env}
+      KC_DB: mysql
+      KC_DB_URL: jdbc:mysql://infra-mysql84:3306/marketing_keycloak
+      KC_DB_USERNAME: marketing_keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set KEYCLOAK_DB_PASSWORD in the marketing project .env}
+      KC_HOSTNAME: http://host.docker.internal:${KEYCLOAK_PORT:-8180}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      JAVA_OPTS_KC_HEAP: -XX:MaxRAMPercentage=65 -XX:InitialRAMPercentage=25
+    ports:
+      - "${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${KEYCLOAK_PORT:-8180}:8080"
+    mem_limit: ${MARKETING_KEYCLOAK_MEMORY_LIMIT:-768m}
+    volumes:
+      - ./keycloak/marketing-realm.json:/opt/keycloak/data/import/marketing-realm.json:ro
+    extra_hosts: [host.docker.internal:host-gateway]
+    networks:
+      dev-infra:
+        aliases: [infra-marketing-keycloak]
+
+  marketing-otel-collector:
+    <<: *service-defaults
+    image: otel/opentelemetry-collector-contrib:0.159.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./otel/collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${OTLP_GRPC_PORT:-4317}:4317"
+      - "${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${OTLP_HTTP_PORT:-4318}:4318"
+    mem_limit: ${MARKETING_OTEL_MEMORY_LIMIT:-512m}
+    depends_on:
+      marketing-tempo: { condition: service_started }
+      marketing-loki: { condition: service_started }
+    healthcheck:
+      test: [CMD, /otelcol-contrib, validate, --config=/etc/otelcol-contrib/config.yaml]
+      interval: 20s
+      timeout: 30s
+      retries: 3
+      start_period: 20s
+    networks:
+      dev-infra:
+        aliases: [infra-marketing-otel-collector, infra-otel-collector]
+
+  # 各 Spring Boot 3 项目通过只读共享卷挂载同一版本的 OTel Java Agent。
+  # 这是一次性初始化容器，不依赖或修改业务镜像。
+  marketing-otel-java-agent:
+    <<: *service-defaults
+    image: otel/autoinstrumentation-java:2.30.0
+    entrypoint: ["cp", "/javaagent.jar", "/otel/opentelemetry-javaagent.jar"]
+    restart: "no"
+    volumes:
+      - otel-java-agent:/otel
+    networks:
+      dev-infra:
+        aliases: [infra-otel-java-agent]
+
+  marketing-tempo:
+    <<: *service-defaults
+    image: grafana/tempo:3.0.0
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo.yaml:ro
+      - marketing-tempo-data:/var/tempo
+    ports:
+      - "${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${TEMPO_PORT:-3200}:3200"
+    mem_limit: ${MARKETING_TEMPO_MEMORY_LIMIT:-512m}
+    networks:
+      dev-infra:
+        aliases: [infra-tempo]
+
+  marketing-loki:
+    <<: *service-defaults
+    image: grafana/loki:3.7.6
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./loki/loki.yaml:/etc/loki/local-config.yaml:ro
+      - marketing-loki-data:/loki
+    ports:
+      - "${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${LOKI_PORT:-3100}:3100"
+    mem_limit: ${MARKETING_LOKI_MEMORY_LIMIT:-512m}
+    networks:
+      dev-infra:
+        aliases: [infra-loki]
+
+  marketing-prometheus:
+    <<: *service-defaults
+    image: prom/prometheus:v3.13.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle
+      - --web.enable-remote-write-receiver
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - marketing-prometheus-data:/prometheus
+    ports:
+      - "${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${PROMETHEUS_PORT:-9090}:9090"
+    mem_limit: ${MARKETING_PROMETHEUS_MEMORY_LIMIT:-512m}
+    networks:
+      dev-infra:
+        aliases: [infra-prometheus]
+
+  marketing-alertmanager:
+    <<: *service-defaults
+    image: prom/alertmanager:v0.28.1
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--storage.path=/alertmanager"]
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - marketing-alertmanager-data:/alertmanager
+    ports:
+      - "${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${ALERTMANAGER_PORT:-9093}:9093"
+    mem_limit: ${MARKETING_ALERTMANAGER_MEMORY_LIMIT:-256m}
+
+  marketing-grafana:
+    <<: *service-defaults
+    image: grafana/grafana:13.2.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in the marketing project .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SERVER_ROOT_URL: http://localhost:${GRAFANA_PORT:-3001}
+    volumes:
+      - marketing-grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${GRAFANA_PORT:-3001}:3000"
+    mem_limit: ${MARKETING_GRAFANA_MEMORY_LIMIT:-512m}
+    depends_on:
+      marketing-prometheus: { condition: service_started }
+      marketing-tempo: { condition: service_started }
+      marketing-loki: { condition: service_started }
+    networks:
+      dev-infra:
+        aliases: [infra-grafana]
+
+networks:
+  dev-infra:
+    external: true
+    name: ${DEV_INFRA_NETWORK:-dev-infra}
+
+volumes:
+  marketing-clickhouse-data:
+    name: dev-infra-marketing-clickhouse-data
+  marketing-prometheus-data:
+    name: dev-infra-marketing-prometheus-data
+  marketing-alertmanager-data:
+    name: dev-infra-marketing-alertmanager-data
+  marketing-grafana-data:
+    name: dev-infra-marketing-grafana-data
+  marketing-tempo-data:
+    name: dev-infra-marketing-tempo-data
+  marketing-loki-data:
+    name: dev-infra-marketing-loki-data
+  otel-java-agent:
+    name: dev-infra-otel-java-agent

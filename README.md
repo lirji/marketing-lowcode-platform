@@ -147,6 +147,8 @@ python3 scripts/capacity.py --help
 
 本地应用 Compose 配合 `dev-infra` 构成可复现开发拓扑，不是生产拓扑。生产使用 [Helm Chart](deploy/helm/marketing-platform/README.md)，强制 OIDC、非 root、只读根文件系统、健康探针、PDB/HPA 和不可变镜像策略，并连接托管高可用数据服务。密钥只能由 Vault/云密钥管理 + External Secrets 等注入，不能提交到 values 或 Git。
 
+CI 显式使用本仓库的 [基础设施固定样例](tests/fixtures/dev-infra/README.md)，不依赖不可访问的跨仓 checkout。本地仍默认使用共享 `dev-infra`。Full stack 工作流验证空环境核心 R1，外部权益目录使用带机器认证的只读合同样例；结果不代表真实外部发奖或生产就绪。`BENEFIT_CENTER_BASE_URL` 在 Compose 中可配置，`MARKETING_COMPOSE_OVERRIDE` 可显式选择资源覆盖文件，缺失文件会失败。
+
 ## 关键边界
 
 - 平台不会重造商品、订单、支付、会员主数据或商业短信/Push 平台；通过版本契约、防腐层和连接器对接。

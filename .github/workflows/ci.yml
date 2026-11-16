@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches: [main]
@@ -68,18 +69,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      DEV_INFRA_ROOT: ${{ github.workspace }}/dev-infra
+      DEV_INFRA_ROOT: ${{ github.workspace }}/tests/fixtures/dev-infra
     steps:
       - uses: actions/checkout@v4
-      - name: Check out shared development infrastructure
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/dev-infra
-          path: dev-infra
-          persist-credentials: false
       - uses: azure/setup-helm@v4
         with: {version: v4.1.0}
-      - run: chmod +x scripts/*.sh scripts/capacity.py dev-infra/bin/marketing-infra dev-infra/marketing/mysql/01-databases.sh dev-infra/marketing/kafka/create-topics.sh
+      - run: chmod +x scripts/*.sh scripts/capacity.py "$DEV_INFRA_ROOT/bin/marketing-infra" "$DEV_INFRA_ROOT/marketing/mysql/01-databases.sh" "$DEV_INFRA_ROOT/marketing/kafka/create-topics.sh"
       - run: ./scripts/verify-deployment.sh
       - name: Validate every Flyway migration on MySQL 8.4
         run: ./scripts/verify-mysql-migrations.sh

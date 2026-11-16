@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+# CI fixture only implements the network contract used by marketing-infra.
+[[ "${1:-}" == network ]] || { echo "CI fixture only supports network" >&2; exit 2; }
+network_name="${DEV_INFRA_NETWORK:-dev-infra}"
+docker network inspect "$network_name" >/dev/null 2>&1 || docker network create "$network_name"

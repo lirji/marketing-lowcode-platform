@@ -1,0 +1,184 @@
+{
+  "services": {
+    "marketing-control-service": {
+      "environment": {
+        "JAVA_TOOL_OPTIONS": "-Xms64m -Xmx384m -XX:+ExitOnOutOfMemoryError -Djava.io.tmpdir=/tmp/marketing"
+      },
+      "deploy": {
+        "resources": {
+          "limits": {
+            "memory": "768M"
+          },
+          "reservations": {
+            "memory": "128M"
+          }
+        }
+      }
+    },
+    "rule-compiler-worker": {
+      "environment": {
+        "JAVA_TOOL_OPTIONS": "-Xms64m -Xmx384m -XX:+ExitOnOutOfMemoryError -Djava.io.tmpdir=/tmp/marketing"
+      },
+      "deploy": {
+        "resources": {
+          "limits": {
+            "memory": "768M"
+          },
+          "reservations": {
+            "memory": "128M"
+          }
+        }
+      }
+    },
+    "audience-service": {
+      "environment": {
+        "JAVA_TOOL_OPTIONS": "-Xms64m -Xmx384m -XX:+ExitOnOutOfMemoryError -Djava.io.tmpdir=/tmp/marketing"
+      },
+      "deploy": {
+        "resources": {
+          "limits": {
+            "memory": "768M"
+          },
+          "reservations": {
+            "memory": "128M"
+          }
+        }
+      }
+    },
+    "offer-decision-service": {
+      "environment": {
+        "JAVA_TOOL_OPTIONS": "-Xms64m -Xmx512m -XX:+ExitOnOutOfMemoryError -Djava.io.tmpdir=/tmp/marketing"
+      },
+      "deploy": {
+        "resources": {
+          "limits": {
+            "memory": "1G"
+          },
+          "reservations": {
+            "memory": "128M"
+          }
+        }
+      }
+    },
+    "benefit-funding-service": {
+      "environment": {
+        "JAVA_TOOL_OPTIONS": "-Xms64m -Xmx384m -XX:+ExitOnOutOfMemoryError -Djava.io.tmpdir=/tmp/marketing"
+      },
+      "deploy": {
+        "resources": {
+          "limits": {
+            "memory": "768M"
+          },
+          "reservations": {
+            "memory": "128M"
+          }
+        }
+      }
+    },
+    "event-gateway-service": {
+      "environment": {
+        "JAVA_TOOL_OPTIONS": "-Xms64m -Xmx384m -XX:+ExitOnOutOfMemoryError -Djava.io.tmpdir=/tmp/marketing"
+      },
+      "deploy": {
+        "resources": {
+          "limits": {
+            "memory": "768M"
+          },
+          "reservations": {
+            "memory": "128M"
+          }
+        }
+      }
+    },
+    "journey-service": {
+      "environment": {
+        "JAVA_TOOL_OPTIONS": "-Xms64m -Xmx384m -XX:+ExitOnOutOfMemoryError -Djava.io.tmpdir=/tmp/marketing"
+      },
+      "deploy": {
+        "resources": {
+          "limits": {
+            "memory": "768M"
+          },
+          "reservations": {
+            "memory": "128M"
+          }
+        }
+      }
+    },
+    "engagement-service": {
+      "environment": {
+        "JAVA_TOOL_OPTIONS": "-Xms64m -Xmx384m -XX:+ExitOnOutOfMemoryError -Djava.io.tmpdir=/tmp/marketing"
+      },
+      "deploy": {
+        "resources": {
+          "limits": {
+            "memory": "768M"
+          },
+          "reservations": {
+            "memory": "128M"
+          }
+        }
+      }
+    },
+    "measurement-service": {
+      "environment": {
+        "JAVA_TOOL_OPTIONS": "-Xms64m -Xmx384m -XX:+ExitOnOutOfMemoryError -Djava.io.tmpdir=/tmp/marketing"
+      },
+      "deploy": {
+        "resources": {
+          "limits": {
+            "memory": "768M"
+          },
+          "reservations": {
+            "memory": "128M"
+          }
+        }
+      }
+    },
+    "edge-gateway": {
+      "environment": {
+        "JAVA_TOOL_OPTIONS": "-Xms64m -Xmx384m -XX:+ExitOnOutOfMemoryError -Djava.io.tmpdir=/tmp/marketing"
+      },
+      "deploy": {
+        "resources": {
+          "limits": {
+            "memory": "768M"
+          },
+          "reservations": {
+            "memory": "128M"
+          }
+        }
+      }
+    },
+    "flink-jobmanager": {
+      "environment": {
+        "FLINK_PROPERTIES": "jobmanager.rpc.address: flink-jobmanager\nrest.address: flink-jobmanager\ntaskmanager.numberOfTaskSlots: 6\nparallelism.default: 2\nstate.checkpoints.dir: file:///opt/flink/checkpoints\nexecution.checkpointing.savepoint-dir: file:///opt/flink/savepoints\nexecution.checkpointing.interval: 30s\nexecution.checkpointing.timeout: 2min\nrestart-strategy.type: exponential-delay\nrestart-strategy.exponential-delay.initial-backoff: 1s\nrestart-strategy.exponential-delay.max-backoff: 1min\nweb.cancel.enable: false\nmetrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory\nmetrics.reporter.prom.port: 9249\njobmanager.memory.process.size: 768m\ntaskmanager.memory.process.size: 1280m\n"
+      },
+      "deploy": {
+        "resources": {
+          "limits": {
+            "memory": "1G"
+          }
+        }
+      }
+    },
+    "flink-taskmanager": {
+      "environment": {
+        "FLINK_PROPERTIES": "jobmanager.rpc.address: flink-jobmanager\nrest.address: flink-jobmanager\ntaskmanager.numberOfTaskSlots: 6\nparallelism.default: 2\nstate.checkpoints.dir: file:///opt/flink/checkpoints\nexecution.checkpointing.savepoint-dir: file:///opt/flink/savepoints\nexecution.checkpointing.interval: 30s\nexecution.checkpointing.timeout: 2min\nrestart-strategy.type: exponential-delay\nrestart-strategy.exponential-delay.initial-backoff: 1s\nrestart-strategy.exponential-delay.max-backoff: 1min\nweb.cancel.enable: false\nmetrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory\nmetrics.reporter.prom.port: 9249\njobmanager.memory.process.size: 768m\ntaskmanager.memory.process.size: 1280m\n"
+      },
+      "deploy": {
+        "resources": {
+          "limits": {
+            "memory": "1536M"
+          }
+        }
+      }
+    },
+    "flink-job-submit": {
+      "environment": {
+        "FLINK_PROPERTIES": "jobmanager.rpc.address: flink-jobmanager\nrest.address: flink-jobmanager\ntaskmanager.numberOfTaskSlots: 6\nparallelism.default: 2\nstate.checkpoints.dir: file:///opt/flink/checkpoints\nexecution.checkpointing.savepoint-dir: file:///opt/flink/savepoints\nexecution.checkpointing.interval: 30s\nexecution.checkpointing.timeout: 2min\nrestart-strategy.type: exponential-delay\nrestart-strategy.exponential-delay.initial-backoff: 1s\nrestart-strategy.exponential-delay.max-backoff: 1min\nweb.cancel.enable: false\nmetrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory\nmetrics.reporter.prom.port: 9249\njobmanager.memory.process.size: 768m\ntaskmanager.memory.process.size: 1280m\n",
+        "JVM_ARGS": "-Xms32m -Xmx256m"
+      }
+    }
+  }
+}

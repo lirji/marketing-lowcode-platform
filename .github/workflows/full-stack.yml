@@ -1,4 +1,4 @@
-name: Full stack acceptance
+name: Full stack acceptance (core R1 with catalog fixture)
 
 on:
   workflow_dispatch:
@@ -17,32 +17,55 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      DEV_INFRA_ROOT: ${{ github.workspace }}/dev-infra
+      DEV_INFRA_ROOT: ${{ github.workspace }}/tests/fixtures/dev-infra
+      MARKETING_COMPOSE_OVERRIDE: ${{ github.workspace }}/tests/fixtures/ci-resources.compose.json
+      BENEFIT_CENTER_BASE_URL: http://host.docker.internal:18183
+      ACCEPTANCE_BENEFIT_SKU_ID: CI-CASH-10
+      COMPOSE_PARALLEL_LIMIT: "1"
     steps:
       - uses: actions/checkout@v4
-      - name: Check out shared development infrastructure
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/dev-infra
-          path: dev-infra
-          persist-credentials: false
       - name: Prepare ephemeral dev-infra credentials
         run: |
-          cp dev-infra/.env.example dev-infra/.env
-          sed -i 's/=change-me/=ci-/g' dev-infra/.env
+          python3 - <<'PY'
+          import os, pathlib, secrets
+          root = pathlib.Path(os.environ['DEV_INFRA_ROOT'])
+          template = (root / '.env.example').read_text()
+          for key in ('MYSQL84_ROOT_PASSWORD', 'REDIS7_PASSWORD', 'MINIO_ROOT_PASSWORD'):
+              secret = secrets.token_hex(24)
+              print(f'::add-mask::{secret}')
+              template = template.replace(f'{key}=change-me', f'{key}={secret}')
+          with (root / '.env').open('x') as target:
+              target.write(template)
+          (root / '.env').chmod(0o600)
+          token = secrets.token_hex(32)
+          print(f'::add-mask::{token}')
+          with open(os.environ['GITHUB_ENV'], 'a') as target:
+              target.write(f'BENEFIT_CENTER_BEARER_TOKEN={token}\n')
+          PY
+      - name: Start read-only catalog contract fixture
+        run: |
+          mkdir -p artifacts
+          python3 tests/fixtures/benefit-catalog/server.py --bind 0.0.0.0 > artifacts/catalog-fixture.log 2>&1 &
+          echo "$!" > artifacts/catalog-fixture.pid
+          curl --fail --silent --retry 10 --retry-connrefused --retry-delay 1 \
+            -H "Authorization: Bearer $BENEFIT_CENTER_BEARER_TOKEN" -H 'X-Tenant-Id: retail-cn' \
+            'http://127.0.0.1:18183/internal/v1/catalog/skus?status=ACTIVE' > artifacts/catalog-fixture.json
+          printf '%s\n' 'Core R1 with a synthetic read-only catalog; no real external fulfillment.' > artifacts/acceptance-scope.md
       - name: Build and start complete R1
         run: ./scripts/bootstrap.sh --skip-verify
-      - name: Repeat smoke to prove idempotent reads
+      - name: Repeat acceptance with new IDs after seed initialization
         run: ./scripts/smoke.sh
       - name: Capture diagnostics
         if: always()
         run: |
           mkdir -p artifacts
-          docker compose --env-file .env -f deploy/compose.yaml ps --all > artifacts/compose-ps.txt
-          docker compose --env-file .env -f deploy/compose.yaml logs --no-color > artifacts/compose.log 2>&1
-          ./dev-infra/bin/marketing-infra status .env > artifacts/infra-ps.txt
-          docker compose --env-file dev-infra/.env -f dev-infra/compose.yaml logs --no-color mysql84 redis7 kafka38 minio > artifacts/shared-infra.log 2>&1
-          docker compose --env-file dev-infra/.env --env-file .env -f dev-infra/marketing/compose.yaml logs --no-color > artifacts/marketing-infra.log 2>&1
+          source scripts/_lib.sh
+          compose ps --all > artifacts/compose-ps.txt || true
+          compose logs --no-color > artifacts/compose.log 2>&1 || true
+          marketing_infra status > artifacts/infra-ps.txt 2>&1 || true
+          infra_compose logs --no-color mysql84 redis7 kafka38 minio > artifacts/shared-infra.log 2>&1 || true
+          marketing_infra_compose logs --no-color > artifacts/marketing-infra.log 2>&1 || true
+          python3 scripts/redact-ci-artifacts.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -55,4 +78,9 @@ jobs:
           if [[ -f .env ]]; then
             CONFIRM_PURGE=marketing-r1 ./scripts/dev-down.sh --purge
           fi
-          docker compose --env-file dev-infra/.env -f dev-infra/compose.yaml down --remove-orphans
+          if [[ -f "$DEV_INFRA_ROOT/.env" ]]; then
+            docker compose --project-name dev-infra --env-file "$DEV_INFRA_ROOT/.env" -f "$DEV_INFRA_ROOT/compose.yaml" --profile '*' down --remove-orphans
+          fi
+          if [[ -f artifacts/catalog-fixture.pid ]]; then
+            kill "$(cat artifacts/catalog-fixture.pid)" || true
+          fi

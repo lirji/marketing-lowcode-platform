@@ -1,0 +1,39 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    platform: marketing-r1
+    cell: compose-local
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: [marketing-alertmanager:9093]
+
+scrape_configs:
+  - job_name: marketing-services
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - edge-gateway:8080
+          - marketing-control-service:8081
+          - rule-compiler-worker:8082
+          - audience-service:8083
+          - offer-decision-service:8084
+          - benefit-funding-service:8085
+          - event-gateway-service:8086
+          - journey-service:8087
+          - engagement-service:8088
+          - measurement-service:8089
+  - job_name: flink
+    static_configs:
+      - targets: [flink-jobmanager:9249, flink-taskmanager:9249]
+  - job_name: otel-collector
+    static_configs:
+      - targets: [marketing-otel-collector:8888]
+  - job_name: prometheus
+    static_configs:
+      - targets: [marketing-prometheus:9090]

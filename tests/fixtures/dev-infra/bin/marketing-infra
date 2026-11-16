@@ -1,0 +1,235 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+DEV_ENV_FILE="${DEV_INFRA_ENV_FILE:-${PROJECT_DIR}/.env}"
+BASE_COMPOSE_FILE="${PROJECT_DIR}/compose.yaml"
+MARKETING_COMPOSE_FILE="${PROJECT_DIR}/marketing/compose.yaml"
+
+usage() {
+  cat <<'USAGE'
+Usage: bin/marketing-infra <command> <marketing-env-file> [service-or-command...]
+
+Commands:
+  up                 Start shared dependencies, provision isolated resources,
+                     then start Marketing ClickHouse and Keycloak
+  up-observability   Run 'up' and also start OTel, Tempo, Loki, Prometheus,
+                     Alertmanager and Grafana
+  provision          Idempotently create MySQL users/databases, Kafka topics
+                     and MinIO buckets
+  stop               Stop Marketing-dedicated infrastructure; shared services stay up
+  down               Remove Marketing-dedicated containers; keep every data volume
+  status             Show Marketing and shared dependency status
+  logs               Follow Marketing-dedicated infrastructure logs
+  config             Validate both Compose models
+  endpoints          Print Marketing infrastructure endpoints
+  shared-exec        Execute a command in a shared service
+  project-exec       Execute a command in a Marketing-dedicated service
+USAGE
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || { echo "Required command not found: $1" >&2; exit 1; }
+}
+
+require_file() {
+  [[ -f "$1" ]] || { echo "Missing environment file: $1" >&2; exit 1; }
+}
+
+base_compose() {
+  docker compose --project-name dev-infra \
+    --env-file "${DEV_ENV_FILE}" -f "${BASE_COMPOSE_FILE}" "$@"
+}
+
+marketing_compose() {
+  docker compose --project-name dev-infra-marketing \
+    --env-file "${DEV_ENV_FILE}" --env-file "${MARKETING_ENV_FILE}" \
+    -f "${MARKETING_COMPOSE_FILE}" "$@"
+}
+
+load_configuration() {
+  require_file "${DEV_ENV_FILE}"
+  require_file "${MARKETING_ENV_FILE}"
+  if grep -Eq '^[A-Z0-9_]+=[[:space:]]*change-me' "${DEV_ENV_FILE}"; then
+    echo "Refusing to start with change-me credentials in ${DEV_ENV_FILE}." >&2
+    exit 1
+  fi
+
+  set -a
+  # shellcheck disable=SC1090
+  source "${DEV_ENV_FILE}"
+  set +a
+  SHARED_MYSQL_ROOT_PASSWORD="${MYSQL84_ROOT_PASSWORD:?set MYSQL84_ROOT_PASSWORD in ${DEV_ENV_FILE}}"
+  SHARED_REDIS_PASSWORD="${REDIS7_PASSWORD:?set REDIS7_PASSWORD in ${DEV_ENV_FILE}}"
+  SHARED_MINIO_ROOT_USER="${MINIO_ROOT_USER:?set MINIO_ROOT_USER in ${DEV_ENV_FILE}}"
+  SHARED_MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in ${DEV_ENV_FILE}}"
+
+  set -a
+  # shellcheck disable=SC1090
+  source "${MARKETING_ENV_FILE}"
+  set +a
+
+  # The application env may still contain credentials from the legacy
+  # project-owned stack. Shared Compose interpolation must always use the
+  # dev-infra credentials captured above.
+  MYSQL84_ROOT_PASSWORD="${SHARED_MYSQL_ROOT_PASSWORD}"
+  REDIS7_PASSWORD="${SHARED_REDIS_PASSWORD}"
+  MINIO_ROOT_USER="${SHARED_MINIO_ROOT_USER}"
+  MINIO_ROOT_PASSWORD="${SHARED_MINIO_ROOT_PASSWORD}"
+  export MYSQL84_ROOT_PASSWORD REDIS7_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD
+
+  case "${SHARED_REDIS_PASSWORD}" in
+    *[!A-Za-z0-9_.~-]*)
+      echo "REDIS7_PASSWORD must be URL-safe for Marketing's Redis URL (letters, numbers, _, ., ~, -)." >&2
+      exit 1
+      ;;
+  esac
+}
+
+ensure_network() {
+  "${PROJECT_DIR}/bin/dev-infra" network
+}
+
+start_shared() {
+  base_compose up -d --wait mysql84 redis7 kafka38 minio
+}
+
+provision_mysql() {
+  local -a variables=(
+    CONTROL_DB_PASSWORD CONTROL_MIGRATION_DB_PASSWORD
+    COMPILER_DB_PASSWORD COMPILER_MIGRATION_DB_PASSWORD
+    AUDIENCE_DB_PASSWORD AUDIENCE_MIGRATION_DB_PASSWORD
+    DECISION_DB_PASSWORD DECISION_MIGRATION_DB_PASSWORD
+    BENEFIT_DB_PASSWORD BENEFIT_MIGRATION_DB_PASSWORD
+    EVENTS_DB_PASSWORD EVENTS_MIGRATION_DB_PASSWORD
+    JOURNEY_DB_PASSWORD JOURNEY_MIGRATION_DB_PASSWORD
+    ENGAGEMENT_DB_PASSWORD ENGAGEMENT_MIGRATION_DB_PASSWORD
+    MEASUREMENT_DB_PASSWORD MEASUREMENT_MIGRATION_DB_PASSWORD
+    KEYCLOAK_DB_PASSWORD
+  )
+  local -a environment_args=(-e "MYSQL_ROOT_PASSWORD=${SHARED_MYSQL_ROOT_PASSWORD}")
+  local variable_name
+  for variable_name in "${variables[@]}"; do
+    [[ -n "${!variable_name:-}" ]] || { echo "${variable_name} is required in ${MARKETING_ENV_FILE}" >&2; exit 1; }
+    environment_args+=(-e "${variable_name}=${!variable_name}")
+  done
+  base_compose exec -T "${environment_args[@]}" mysql84 bash -s \
+    < "${PROJECT_DIR}/marketing/mysql/01-databases.sh"
+}
+
+provision_kafka() {
+  base_compose exec -T kafka38 bash -s < "${PROJECT_DIR}/marketing/kafka/create-topics.sh"
+}
+
+provision_minio() {
+  docker run --rm --network "${DEV_INFRA_NETWORK:-dev-infra}" \
+    --entrypoint /bin/sh \
+    -e "MINIO_ROOT_USER=${SHARED_MINIO_ROOT_USER}" \
+    -e "MINIO_ROOT_PASSWORD=${SHARED_MINIO_ROOT_PASSWORD}" \
+    minio/mc:RELEASE.2025-08-13T08-35-41Z -ec '
+      mc alias set shared http://infra-minio:9000 "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}"
+      mc mb --ignore-existing shared/marketing-artifacts
+      mc mb --ignore-existing shared/marketing-raw-events
+      mc version enable shared/marketing-artifacts
+    '
+}
+
+provision_all() {
+  provision_mysql
+  provision_kafka
+  provision_minio
+  echo "Marketing shared resources are provisioned."
+}
+
+start_project() {
+  marketing_compose up -d --wait marketing-clickhouse marketing-keycloak
+}
+
+start_observability() {
+  marketing_compose up -d \
+    marketing-tempo marketing-loki marketing-prometheus marketing-alertmanager \
+    marketing-otel-java-agent marketing-otel-collector marketing-grafana
+}
+
+command_name="${1:-help}"
+if [[ "${command_name}" == "help" || "${command_name}" == "-h" || "${command_name}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+shift
+MARKETING_ENV_FILE="${1:-}"
+[[ -n "${MARKETING_ENV_FILE}" ]] || { usage >&2; exit 2; }
+shift
+
+require_command docker
+docker compose version >/dev/null
+load_configuration
+
+case "${command_name}" in
+  up)
+    ensure_network
+    start_shared
+    provision_all
+    start_project
+    ;;
+  up-observability)
+    ensure_network
+    start_shared
+    start_observability
+    ;;
+  provision)
+    ensure_network
+    start_shared
+    provision_all
+    ;;
+  stop)
+    marketing_compose stop "$@"
+    ;;
+  down)
+    marketing_compose down --remove-orphans
+    ;;
+  status)
+    base_compose ps mysql84 redis7 kafka38 minio
+    marketing_compose ps -a
+    ;;
+  logs)
+    marketing_compose logs -f --tail=200 "$@"
+    ;;
+  config)
+    base_compose config --quiet
+    marketing_compose config --quiet
+    echo "Marketing infrastructure configuration is valid."
+    ;;
+  endpoints)
+    cat <<EOF
+Marketing infrastructure (host):
+  MySQL:       ${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${MYSQL84_HOST_PORT:-43306}
+  Redis:       ${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${REDIS7_HOST_PORT:-46379}
+  Kafka:       ${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${KAFKA38_HOST_PORT:-49092}
+  MinIO:       http://${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${MINIO_API_HOST_PORT:-49000}
+  ClickHouse:  http://${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${CLICKHOUSE_HTTP_PORT:-8123}
+  Keycloak:    http://${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${KEYCLOAK_PORT:-8180}
+  Prometheus:  http://${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${PROMETHEUS_PORT:-9090} (optional)
+  Grafana:     http://${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${GRAFANA_PORT:-3001} (optional)
+
+Container addresses on ${DEV_INFRA_NETWORK:-dev-infra}:
+  infra-mysql84:3306  infra-redis7:6379  infra-kafka38:9092  infra-minio:9000
+  infra-marketing-clickhouse:8123  infra-marketing-keycloak:8080
+  infra-otel-collector:4318 / infra-marketing-otel-collector:4318 (optional)
+EOF
+    ;;
+  shared-exec)
+    [[ $# -gt 1 ]] || { echo "shared-exec requires SERVICE COMMAND..." >&2; exit 2; }
+    base_compose exec -T "$@"
+    ;;
+  project-exec)
+    [[ $# -gt 1 ]] || { echo "project-exec requires SERVICE COMMAND..." >&2; exit 2; }
+    marketing_compose exec -T "$@"
+    ;;
+  *)
+    echo "Unknown command: ${command_name}" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

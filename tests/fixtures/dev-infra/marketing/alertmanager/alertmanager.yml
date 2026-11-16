@@ -1,0 +1,15 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: local-audit-log
+  group_by: [alertname, owner, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: local-audit-log
+
+# Production overlays must replace the local receiver with an approved paging integration
+# sourced from an external secret. No webhook credentials belong in this repository.

@@ -58,11 +58,12 @@
 - 历史失败保留在S03_DIAGNOSTICS.md及各日志：冷超时/旧脚本前置条件/演示背压已修；一次隔离数据库并行时衡量投影超过90s，后来仅一次落库；释放资源后保持原时限完整复跑通过。不据此宣称生产性能通过。
 - 证据目录：`/Users/liruijun/.local/share/marketing-delivery/completion-20261116/`；关键s03-first-activation.json、s03-seed-validation/seed-result.json、s03-hygiene-seed-final.json。完整空环境启动仍待S04隔离Runner验证，不清空本地共享库。
 
-## 当前 S04 准备
-- S04a分支`fix/quiet-hours-nanosecond-storage`，基线3323e48；新增V4只扩容两列至varchar(18)，不修改历史迁移；真实MySQL用例明确9位小数，覆盖新建/更新读回和当前静默阻断。`s04a-quiet-precision.log`：11项测试通过（9项MySQL集成+2项回调），4份迁移成功，进程已结束；diff检查通过，Hygiene对纯迁移/测试改动判定NOT_APPLICABLE，未冒称Java静态分析通过。本机持久数据库尚未执行该迁移。准备正常提交合入推送。
+## 当前 S04 实施
+- S04a提交94d1334已正常合入推送origin/main并核对一致。V4只扩容两列至varchar(18)，不修改历史迁移；真实MySQL用例明确9位小数，覆盖新建/更新读回和当前静默阻断。`s04a-quiet-precision.log`：11项测试通过（9项MySQL集成+2项回调），4份迁移成功，进程已结束；diff检查通过，Hygiene对纯迁移/测试改动判定NOT_APPLICABLE。本机持久数据库尚未执行该迁移。
 - 远程39bbc6e前端CI全部成功；Java失败于quiet_start VARCHAR(16)无法保存纳秒LocalTime。本机时钟精度未触发，须增加V4兼容扩容到18字符和固定纳秒用例，不截断测试输入。
-- deployment/full-stack依赖不存在的lirji/dev-infra仓库；本机非Git。已在证据目录`s04-ci-infra-draft/`准备由现有配置抽取的CI-only四项共享服务及Marketing配置（无私密env，尚未写仓库）。本地默认继续用共享dev-infra；CI显式选择版本化fixture。需明确权益目录合同fixture与真实跨系统验收的区别。
+- 当前`fix/reproducible-ci-infrastructure`，基线94d1334。deployment/full-stack改用tests/fixtures/dev-infra（既有四项共享服务及Marketing配置快照，不含私密env）；本地仍默认共享dev-infra。CI临时随机凭据、诊断脱敏；核心R1显式使用只读目录合同fixture，不冒充真实外部发奖；已验证资源覆盖由MARKETING_COMPOSE_OVERRIDE选择，目录BASE_URL可配置。
+- 18项脚本测试、actionlint 1.7.12、4种Compose模型/Helm、Python编译/diff/Hygiene PASS（无formatter限制）。本机Docker容器管理API超时，deployment在promtool容器创建处等待（exec69712/pid96182/96495），隔离MySQL在创建处等待（exec20497/pid96754/96769），无成功证据；网关UP、Flink3作业仍运行，不重启共享Docker。先推候选任务分支到隔离Runner验证，远程必要检查通过后再合main。恢复需先查询两条本地未知创建结果，避免遗留或重复执行。日志s04-deployment-fixture.log/s04-mysql-fixture.log。
 - Trivy官方已迁移v前缀；核验v0.36.0签名tag，commit `ed142fd0673e97e23eac54620cfb913e5ce36c25`，证据s04-trivy-tag.json/commit.json及官方releases页面。后续固定SHA，保留现有安全检查强度。
 
 ## 下一步
-交付已验证S04a，然后S04 CI基础设施/Trivy/空环境验收。S05–S13保留完整待办。
+推送已通过静态/脚本检查的S04候选分支，触发CI、安全与全栈工作流，按远程实际失败整改，通过后合main；S05–S13保留完整待办。

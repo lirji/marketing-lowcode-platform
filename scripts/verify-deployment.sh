@@ -21,8 +21,11 @@ docker compose --env-file .env.example -f deploy/compose.yaml --profile referral
   | python3 scripts/verify-compose-model.py
 docker compose --env-file .env.example -f deploy/compose.yaml --profile bootstrap config --format json \
   | python3 scripts/verify-compose-model.py
+docker compose --env-file .env.example -f deploy/compose.yaml \
+  -f tests/fixtures/ci-resources.compose.json --profile bootstrap config --format json \
+  | python3 scripts/verify-compose-model.py
 docker compose --env-file "${DEV_INFRA_ROOT}/.env.example" \
-  -f "${DEV_INFRA_ROOT}/compose.yaml" config --quiet
+  -f "${DEV_INFRA_ROOT}/compose.yaml" --profile '*' config --quiet
 docker compose --env-file "${DEV_INFRA_ROOT}/.env.example" --env-file .env.example \
   -f "${DEV_INFRA_ROOT}/marketing/compose.yaml" config --quiet
 

@@ -1,0 +1,216 @@
+{
+  "name": "dev-infra",
+  "services": {
+    "mysql84": {
+      "command": [
+        "--character-set-server=utf8mb4",
+        "--collation-server=utf8mb4_unicode_ci"
+      ],
+      "environment": {
+        "MYSQL_DATABASE": "${MYSQL84_DEFAULT_DATABASE:-dev_infra}",
+        "MYSQL_ROOT_PASSWORD": "${MYSQL84_ROOT_PASSWORD:?set MYSQL84_ROOT_PASSWORD in .env}",
+        "TZ": "${TZ:-Asia/Taipei}"
+      },
+      "healthcheck": {
+        "interval": "5s",
+        "retries": 30,
+        "start_period": "20s",
+        "test": [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -uroot -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"
+        ],
+        "timeout": "3s"
+      },
+      "image": "mysql:8.4",
+      "mem_limit": "${MYSQL84_MEMORY_LIMIT:-1g}",
+      "networks": {
+        "dev-infra": {
+          "aliases": [
+            "infra-mysql84"
+          ]
+        }
+      },
+      "ports": [
+        "${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${MYSQL84_HOST_PORT:-43306}:3306"
+      ],
+      "profiles": [
+        "core",
+        "mysql"
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+        {
+          "source": "mysql84-data",
+          "target": "/var/lib/mysql",
+          "type": "volume",
+          "volume": {}
+        }
+      ]
+    },
+    "redis7": {
+      "command": [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--appendfsync",
+        "everysec",
+        "--requirepass",
+        "${REDIS7_PASSWORD:?set REDIS7_PASSWORD in .env}"
+      ],
+      "environment": {
+        "REDIS7_PASSWORD": "${REDIS7_PASSWORD:?set REDIS7_PASSWORD in .env}"
+      },
+      "healthcheck": {
+        "interval": "5s",
+        "retries": 20,
+        "test": [
+          "CMD-SHELL",
+          "redis-cli -a \"$${REDIS7_PASSWORD}\" ping | grep -q PONG"
+        ],
+        "timeout": "3s"
+      },
+      "image": "redis:7-alpine",
+      "mem_limit": "${REDIS7_MEMORY_LIMIT:-384m}",
+      "networks": {
+        "dev-infra": {
+          "aliases": [
+            "infra-redis7"
+          ]
+        }
+      },
+      "ports": [
+        "${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${REDIS7_HOST_PORT:-46379}:6379"
+      ],
+      "profiles": [
+        "core",
+        "redis"
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+        {
+          "source": "redis7-data",
+          "target": "/data",
+          "type": "volume",
+          "volume": {}
+        }
+      ]
+    },
+    "kafka38": {
+      "environment": {
+        "KAFKA_ADVERTISED_LISTENERS": "INTERNAL://infra-kafka38:9092,HOST://${KAFKA38_ADVERTISED_HOST:-localhost}:${KAFKA38_HOST_PORT:-49092}",
+        "KAFKA_AUTO_CREATE_TOPICS_ENABLE": "false",
+        "KAFKA_CONTROLLER_LISTENER_NAMES": "CONTROLLER",
+        "KAFKA_CONTROLLER_QUORUM_VOTERS": "1@kafka38:9093",
+        "KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS": 0,
+        "KAFKA_HEAP_OPTS": "${KAFKA38_HEAP_OPTS:--Xms512m -Xmx512m}",
+        "KAFKA_INTER_BROKER_LISTENER_NAME": "INTERNAL",
+        "KAFKA_LISTENERS": "INTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,HOST://0.0.0.0:19092",
+        "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP": "INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT,HOST:PLAINTEXT",
+        "KAFKA_LOG_DIRS": "/var/lib/kafka/data",
+        "KAFKA_NODE_ID": 1,
+        "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR": 1,
+        "KAFKA_PROCESS_ROLES": "broker,controller",
+        "KAFKA_TRANSACTION_STATE_LOG_MIN_ISR": 1,
+        "KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR": 1
+      },
+      "healthcheck": {
+        "interval": "15s",
+        "retries": 30,
+        "start_period": "20s",
+        "test": [
+          "CMD-SHELL",
+          "KAFKA_HEAP_OPTS='-Xms16m -Xmx64m' /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"
+        ],
+        "timeout": "20s"
+      },
+      "image": "apache/kafka:3.8.0",
+      "mem_limit": "${KAFKA38_MEMORY_LIMIT:-1g}",
+      "networks": {
+        "dev-infra": {
+          "aliases": [
+            "infra-kafka38"
+          ]
+        }
+      },
+      "ports": [
+        "${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${KAFKA38_HOST_PORT:-49092}:19092"
+      ],
+      "profiles": [
+        "messaging",
+        "kafka"
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+        {
+          "source": "kafka38-data",
+          "target": "/var/lib/kafka/data",
+          "type": "volume",
+          "volume": {}
+        }
+      ]
+    },
+    "minio": {
+      "command": "server /data --console-address \":9001\"",
+      "environment": {
+        "MINIO_ROOT_PASSWORD": "${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}",
+        "MINIO_ROOT_USER": "${MINIO_ROOT_USER:-devinfra}"
+      },
+      "healthcheck": {
+        "interval": "10s",
+        "retries": 20,
+        "start_period": "10s",
+        "test": [
+          "CMD-SHELL",
+          "mc ready local >/dev/null 2>&1 || exit 1"
+        ],
+        "timeout": "5s"
+      },
+      "image": "minio/minio:RELEASE.2025-09-07T16-13-09Z",
+      "mem_limit": "${MINIO_MEMORY_LIMIT:-1g}",
+      "networks": {
+        "dev-infra": {
+          "aliases": [
+            "infra-minio"
+          ]
+        }
+      },
+      "ports": [
+        "${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${MINIO_API_HOST_PORT:-49000}:9000",
+        "${DEV_INFRA_BIND_ADDRESS:-127.0.0.1}:${MINIO_CONSOLE_HOST_PORT:-49001}:9001"
+      ],
+      "profiles": [
+        "object",
+        "minio"
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+        {
+          "source": "minio-data",
+          "target": "/data",
+          "type": "volume",
+          "volume": {}
+        }
+      ]
+    }
+  },
+  "networks": {
+    "dev-infra": {
+      "external": true,
+      "name": "${DEV_INFRA_NETWORK:-dev-infra}"
+    }
+  },
+  "volumes": {
+    "mysql84-data": {
+      "name": "dev-infra-mysql84-data"
+    },
+    "redis7-data": {
+      "name": "dev-infra-redis7-data"
+    },
+    "kafka38-data": {
+      "name": "dev-infra-kafka38-data"
+    },
+    "minio-data": {
+      "name": "dev-infra-minio-data"
+    }
+  }
+}
