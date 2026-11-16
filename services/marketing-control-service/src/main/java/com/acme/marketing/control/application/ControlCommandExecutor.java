@@ -32,6 +32,13 @@ public class ControlCommandExecutor {
         this.retentionSeconds = retentionSeconds;
     }
 
+    /** 草稿写入只涉及本库，单独施加事务预算，保持已有控制命令的超时语义不变。 */
+    @Transactional(timeout = 10)
+    public <T> T executeDraft(TenantId tenantId, String operation, String idempotencyKey, Object payload,
+            Class<T> responseType, Supplier<T> command) {
+        return execute(tenantId, operation, idempotencyKey, payload, responseType, command);
+    }
+
     @Transactional
     public <T> T execute(TenantId tenantId, String operation, String idempotencyKey, Object payload,
             Class<T> responseType, Supplier<T> command) {

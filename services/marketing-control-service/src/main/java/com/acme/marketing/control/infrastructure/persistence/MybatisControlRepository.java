@@ -20,6 +20,13 @@ public class MybatisControlRepository implements ControlRepository {
             Set<String> shops, String campaignType) { return mapper.selectCampaigns(tenantId, organizations, shops, campaignType); }
     @Override public Optional<CampaignOwnershipRow> findCampaignOwnership(String tenantId, String campaignId,
             boolean lock) { return Optional.ofNullable(mapper.selectCampaignOwnership(tenantId, campaignId, lock)); }
+    @Override public Optional<DmnDraftRow> findLatestDmnDraft(String tenantId, String campaignId, boolean lock) {
+        return Optional.ofNullable(mapper.selectLatestDmnDraft(tenantId, campaignId, lock));
+    }
+    @Override public Optional<DmnDraftRow> findDmnDraft(String tenantId, String campaignId, long version) {
+        return Optional.ofNullable(mapper.selectDmnDraft(tenantId, campaignId, version));
+    }
+    @Override public void saveDmnDraft(DmnDraftRow row) { one(mapper.insertDmnDraft(row), "保存DMN草稿版本"); }
     @Override public List<String> findDefinitionOwners(String tenantId, String definitionId) {
         return mapper.selectDefinitionOwners(tenantId, definitionId);
     }

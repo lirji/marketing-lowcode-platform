@@ -595,6 +595,6 @@ button:focus-visible, a:focus-visible, [tabindex="0"]:focus-visible { outline:2p
 .dmn-messages { padding-left: 20px; overflow-wrap: anywhere; font-size: var(--text-base); line-height: 1.7; }
 .dmn-result-value { white-space: pre-wrap; overflow-wrap: anywhere; }
 .dmn-page .test-row { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-.dmn-page .dmn-toolbar label { flex-wrap: wrap; }
+.dmn-page .dmn-toolbar label { flex-wrap: wrap; min-width: 0; max-width: 100%; }
 .dmn-column-group .record-table th:first-child { width: 84px; }
 .dmn-column-group .record-table th:last-child { width: 100px; }

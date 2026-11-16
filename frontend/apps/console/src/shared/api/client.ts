@@ -1,5 +1,5 @@
 import type { CampaignType } from '../model/campaignType'
-import { dmnAnalysisSchema, dmnEvaluationSchema, type DmnTable } from './dmn'
+import { dmnAnalysisSchema, dmnEvaluationSchema, dmnDraftSchema, type DmnTable } from './dmn'
 import type { ProblemDetail } from '@marketing/contracts'
 import { campaignCreateBody } from '../auth/scopeChoices'
 import { runtimeConfig } from '../config/runtime'
@@ -205,6 +205,10 @@ export const api = {
     request('/api/v1/compile', { method: 'POST', headers: commandHeaders(idempotencyKey), body: JSON.stringify(payload) }, (value) => parseWith(compileReportSchema, value)),
   analyzeDmn: (table: DmnTable) =>
     request('/api/v1/dmn/analyze', { method: 'POST', body: JSON.stringify({ table }) }, (value) => parseWith(dmnAnalysisSchema, value)),
+  latestDmnDraft: (campaignId: string) =>
+    request(`/api/v1/campaigns/${encodeURIComponent(campaignId)}/dmn-drafts/latest`, undefined, (value) => parseWith(dmnDraftSchema, value)),
+  saveDmnDraft: (campaignId: string, expectedVersion: number, table: DmnTable, idempotencyKey: string) =>
+    request(`/api/v1/campaigns/${encodeURIComponent(campaignId)}/dmn-drafts`, { method: 'POST', headers: commandHeaders(idempotencyKey), body: JSON.stringify({ expectedVersion, table }) }, (value) => parseWith(dmnDraftSchema, value)),
   evaluateDmn: (table: DmnTable, context: Record<string, string>) =>
     request('/api/v1/dmn/evaluate', { method: 'POST', body: JSON.stringify({ table, context }) }, (value) => parseWith(dmnEvaluationSchema, value)),
   getArtifact: (artifactId: string) =>

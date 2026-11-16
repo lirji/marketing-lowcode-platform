@@ -384,4 +384,24 @@
         WHERE tenant_id = #{tenantId} AND event_id = #{eventId} AND published_at IS NULL
     </update>
 
+    <sql id="dmnDraftColumns">
+        tenant_id AS tenantId, campaign_id AS campaignId, version_no AS versionNo,
+        table_json AS tableJson, content_hash AS contentHash, command_id AS commandId,
+        created_by AS createdBy, created_at AS createdAt
+    </sql>
+    <select id="selectLatestDmnDraft" resultType="com.acme.marketing.control.application.ControlRepository$DmnDraftRow">
+        SELECT <include refid="dmnDraftColumns"/> FROM mk_dmn_draft_version
+        WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId}
+        ORDER BY version_no DESC LIMIT 1
+        <if test="lock">FOR UPDATE</if>
+    </select>
+    <select id="selectDmnDraft" resultType="com.acme.marketing.control.application.ControlRepository$DmnDraftRow">
+        SELECT <include refid="dmnDraftColumns"/> FROM mk_dmn_draft_version
+        WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId} AND version_no = #{version}
+    </select>
+    <insert id="insertDmnDraft">
+        INSERT INTO mk_dmn_draft_version
+            (tenant_id, campaign_id, version_no, table_json, content_hash, command_id, created_by, created_at)
+        VALUES (#{tenantId}, #{campaignId}, #{versionNo}, #{tableJson}, #{contentHash}, #{commandId}, #{createdBy}, #{createdAt})
+    </insert>
 </mapper>

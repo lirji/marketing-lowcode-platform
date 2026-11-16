@@ -6,7 +6,7 @@ import { api } from '../../shared/api/client'
 
 const permissions = vi.hoisted(() => ({ values: new Set(['*']) }))
 vi.mock('../../shared/auth/useAuth', () => ({ useAuth: () => ({ hasPermission: (permission: string) => permissions.values.has('*') || permissions.values.has(permission) }) }))
-vi.mock('../../shared/api/client', () => ({ api: { analyzeDmn: vi.fn(), evaluateDmn: vi.fn() } }))
+vi.mock('../../shared/api/client', async (original) => ({ ...await original<typeof import('../../shared/api/client')>(), api: { analyzeDmn: vi.fn(), evaluateDmn: vi.fn(), campaigns: vi.fn(), latestDmnDraft: vi.fn(), saveDmnDraft: vi.fn() } }))
 const analysis = { valid: true, gaps: [], overlaps: [], messages: [] }
 async function fillTable() {
   const user = userEvent.setup()
@@ -16,7 +16,7 @@ async function fillTable() {
   await user.type(screen.getByLabelText('规则 1 输出 1'), '"VIP"')
   return user
 }
-beforeEach(() => { vi.resetAllMocks(); permissions.values = new Set(['*']) })
+beforeEach(() => { vi.resetAllMocks(); permissions.values = new Set(['*']); vi.mocked(api.campaigns).mockResolvedValue([]) })
 
 describe('DmnDesignerPage', () => {
   it('disables unavailable permissions separately', () => {

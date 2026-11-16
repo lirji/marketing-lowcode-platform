@@ -14,6 +14,16 @@ public interface ControlRepository {
     List<CampaignRow> findCampaigns(String tenantId, Set<String> organizations, Set<String> shops, String campaignType);
     Optional<CampaignOwnershipRow> findCampaignOwnership(String tenantId, String campaignId, boolean lock);
 
+    /** 保存时使用锁定读，确保并发等待结束后读取到最新提交版本。 */
+    Optional<DmnDraftRow> findLatestDmnDraft(String tenantId, String campaignId, boolean lock);
+    /** 历史版本始终按租户和归属活动精确查询。 */
+    Optional<DmnDraftRow> findDmnDraft(String tenantId, String campaignId, long version);
+    /** 仅插入不可变版本，不提供覆盖历史草稿的写入口。 */
+    void saveDmnDraft(DmnDraftRow row);
+    /** 保存作者、原始命令和内容摘要，使每个版本可追溯。 */
+    record DmnDraftRow(String tenantId, String campaignId, long versionNo, String tableJson,
+            String contentHash, String commandId, String createdBy, String createdAt) { }
+
     List<String> findDefinitionOwners(String tenantId, String definitionId);
     Optional<DefinitionRow> findDefinitionBySemanticHash(String tenantId, String definitionId, String semanticHash);
     Optional<Long> findLatestDefinitionVersion(String tenantId, String definitionId);

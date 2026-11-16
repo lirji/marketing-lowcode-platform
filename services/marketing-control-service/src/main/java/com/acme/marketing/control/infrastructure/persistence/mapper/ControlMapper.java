@@ -15,6 +15,11 @@ public interface ControlMapper {
             @Param("organizations") Set<String> organizations, @Param("shops") Set<String> shops, @Param("campaignType") String campaignType);
     ControlRepository.CampaignOwnershipRow selectCampaignOwnership(@Param("tenantId") String tenantId,
             @Param("campaignId") String campaignId, @Param("lock") boolean lock);
+    ControlRepository.DmnDraftRow selectLatestDmnDraft(@Param("tenantId") String tenantId,
+            @Param("campaignId") String campaignId, @Param("lock") boolean lock);
+    ControlRepository.DmnDraftRow selectDmnDraft(@Param("tenantId") String tenantId,
+            @Param("campaignId") String campaignId, @Param("version") long version);
+    int insertDmnDraft(ControlRepository.DmnDraftRow row);
     List<String> selectDefinitionOwners(@Param("tenantId") String tenantId,
             @Param("definitionId") String definitionId);
     ControlRepository.DefinitionRow selectDefinitionBySemanticHash(@Param("tenantId") String tenantId,

@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, FlaskConical, Plus, ShieldCheck, Trash2 } from 'lucide-react'
 import { Select } from '../../components/Select'
 import { RecordTable } from '../../components/RecordTable'
 import { Badge, Button, EmptyState, PageHeader, Panel, PanelHeader, StateBanner } from '../../components/ui'
 import { api } from '../../shared/api/client'
 import { useAuth } from '../../shared/auth/useAuth'
-import { DMN_TYPES, type DmnAnalysis, type DmnColumn, type DmnEvaluation, type DmnTable, type DmnType } from '../../shared/api/dmn'
+import { DMN_TYPES, newDmnTable, type DmnAnalysis, type DmnColumn, type DmnEvaluation, type DmnTable, type DmnType } from '../../shared/api/dmn'
+import { DmnDraftStorage } from './DmnDraftStorage'
 
 const DIRECTION = { INPUTS: 'inputs', OUTPUTS: 'outputs' } as const
 const DIRECTIONS = [DIRECTION.INPUTS, DIRECTION.OUTPUTS]
@@ -18,14 +19,20 @@ const TEXT = {
 }
 const TYPE_LABEL: Record<DmnType, string> = { number: '数字', string: '文本', boolean: '布尔' }
 const RESERVED_NAMES = new Set(['DmnWorkbenchModel', 'DmnWorkbenchDecision'])
-const initialTable = (): DmnTable => ({ hitPolicy: 'UNIQUE', inputs: [{ name: '', type: 'number' }], outputs: [{ name: '', type: 'string' }], rules: [{ inputs: [''], outputs: [''] }] })
 
 /** 草稿与服务端计算结果分离；编辑即废弃旧结果，迟到响应不能覆盖新输入。 */
 export function DmnDesignerPage() {
   const auth = useAuth()
+  // 身份与数据范围变化时丢弃上一会话的编辑状态，旧回执由 API 会话栅栏拒绝。
+  const scope = JSON.stringify([auth.tenantId, auth.subject, auth.organizations, auth.shops, auth.permissions])
+  return <DmnEditor key={scope} />
+}
+
+function DmnEditor() {
+  const auth = useAuth()
   const canAnalyze = auth.hasPermission('definition:compile')
   const canEvaluate = auth.hasPermission('definition:simulate')
-  const [table, setTable] = useState<DmnTable>(initialTable)
+  const [table, setTable] = useState<DmnTable>(newDmnTable)
   const [rowKeys, setRowKeys] = useState(() => [crypto.randomUUID()])
   const [context, setContext] = useState<string[]>([''])
   const [analysis, setAnalysis] = useState<DmnAnalysis>()
@@ -35,6 +42,11 @@ export function DmnDesignerPage() {
   const revision = useRef(0)
   const mounted = useRef(true)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  const restore = useCallback((next: DmnTable) => {
+    revision.current++
+    setTable(next); setRowKeys(next.rules.map(() => crypto.randomUUID())); setContext(next.inputs.map(() => ''))
+    setAnalysis(undefined); setEvaluation(undefined); setError('')
+  }, [])
 
   const edit = (next: DmnTable) => {
     revision.current++
@@ -105,7 +117,7 @@ export function DmnDesignerPage() {
   return <div className="workspace dmn-page">
     <PageHeader eyebrow="DMN_DECISION_TABLE" title="DMN 决策表" description="配置字段与规则，检查覆盖范围，再用测试输入执行真实引擎试算。"
       actions={<><Button disabled={!!busy || !canAnalyze} title={!canAnalyze ? '需要规则编译权限' : undefined} onClick={() => void run('analyze')}><ShieldCheck size={15} />{busy === 'analyze' ? '正在分析…' : '分析表格'}</Button><Button tone="primary" disabled={!!busy || !canEvaluate} title={!canEvaluate ? '需要规则试算权限' : undefined} onClick={() => void run('evaluate')}><FlaskConical size={15} />{busy === 'evaluate' ? '正在求值…' : '运行测试行'}</Button></>} />
-    <StateBanner tone="info" title="未保存草稿" detail="当前支持真实分析和试算；版本保存及发布尚未接入。离开页面会丢失草稿，试算不会发放权益或发布规则。" />
+    <DmnDraftStorage table={table} onRestore={restore} />
     {(!canAnalyze || !canEvaluate) && <StateBanner tone="warn" title="部分操作不可用" detail={[!canAnalyze && '分析需要规则编译权限', !canEvaluate && '试算需要规则试算权限'].filter(Boolean).join('；')} />}
     {error && <StateBanner tone="error" title="未完成计算" detail={error} />}
     {busy && <StateBanner tone="info" title="引擎计算中" detail="可以继续编辑；编辑后的草稿会忽略此次旧结果，请等待本次结束后重新计算。" />}

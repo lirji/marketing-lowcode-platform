@@ -92,6 +92,63 @@ public class ControlApplicationService {
                 .toList();
     }
 
+    /** 重放命令前也检查当前权限与活动范围，旧成功回执不授予已撤销的访问权。 */
+    public void authorizeDmnWrite(String campaignId) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("definition:write");
+        requireCampaignScope(scope, campaignId, false);
+    }
+
+    /** 活动行锁串行化版本分配；草稿、命令回执及既有审计链由同一事务提交。 */
+    @Transactional(timeout = 10)
+    public DmnDraftView saveDmnDraft(String campaignId, long expectedVersion, DmnDraftTable table, String commandId) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("definition:write");
+        if (table == null) throw DmnDraftError.INPUT_INVALID.invalid();
+        if (expectedVersion < 0 || expectedVersion == Long.MAX_VALUE) throw DmnDraftError.VERSION_INVALID.invalid();
+        requireCampaignScope(scope, campaignId, true);
+        var current = repository.findLatestDmnDraft(scope.tenantId().value(), campaignId, true);
+        long latest = current.map(ControlRepository.DmnDraftRow::versionNo).orElse(0L);
+        if (expectedVersion != latest) throw new ConflictException(DmnDraftError.VERSION_CONFLICT, DmnDraftError.VERSION_CONFLICT_MESSAGE);
+        String content = json(table);
+        String hash = com.acme.marketing.platform.crypto.Digests.sha256Hex(content);
+        if (current.isPresent() && current.orElseThrow().contentHash().equals(hash)) return dmnDraftView(current.orElseThrow());
+        Instant now = clock.instant();
+        var row = new ControlRepository.DmnDraftRow(scope.tenantId().value(), campaignId, latest + 1,
+                content, hash, commandId, scope.actorId(), format(now));
+        repository.saveDmnDraft(row);
+        audit(scope.tenantId().value(), scope.actorId(), "DMN_DRAFT_SAVED", campaignId + ':' + row.versionNo(), now);
+        return dmnDraftView(row);
+    }
+
+    /** 读取活动最新草稿；不把不存在的草稿替换成已保存空表。 */
+    public DmnDraftView latestDmnDraft(String campaignId) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("definition:read");
+        requireCampaignScope(scope, campaignId, false);
+        return dmnDraftView(repository.findLatestDmnDraft(scope.tenantId().value(), campaignId, false)
+                .orElseThrow(() -> new NotFoundException(DmnDraftError.NOT_FOUND, DmnDraftError.NOT_FOUND_MESSAGE)));
+    }
+
+    /** 历史版本仅查询；沿用活动当前数据范围，不绕过权限读取旧版本。 */
+    public DmnDraftView dmnDraftVersion(String campaignId, long version) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("definition:read");
+        if (version < 1) throw DmnDraftError.VERSION_INVALID.invalid();
+        requireCampaignScope(scope, campaignId, false);
+        return dmnDraftView(repository.findDmnDraft(scope.tenantId().value(), campaignId, version)
+                .orElseThrow(() -> new NotFoundException(DmnDraftError.NOT_FOUND, DmnDraftError.NOT_FOUND_MESSAGE)));
+    }
+
+    private DmnDraftView dmnDraftView(ControlRepository.DmnDraftRow row) {
+        return new DmnDraftView(row.campaignId(), row.versionNo(), row.contentHash(), row.createdBy(),
+                Instant.parse(row.createdAt()), mapper.readValue(row.tableJson(), DmnDraftTable.class));
+    }
+
+    /** 保存回执始终指向具体不可变版本，不携带任何审核或发布状态。 */
+    public record DmnDraftView(String campaignId, long version, String contentHash, String createdBy,
+            Instant createdAt, DmnDraftTable table) { }
+
     @Transactional
     public DefinitionView saveDefinition(String campaignId, GraphDefinition graph) {
         var scope = TenantContextHolder.requireCurrent();

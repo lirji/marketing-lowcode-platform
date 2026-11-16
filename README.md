@@ -214,7 +214,11 @@ Redis本身的持久化/容量和JDBC历史命令清理仍按原幂等存储治�
 
 ### DMN 工作台分析与试算
 
-`/designers/dmn` 从空表开始编辑输入/输出字段及规则，通过真实 KIE 引擎分析覆盖缺口与重叠、运行测试输入。分析调用 `POST /api/v1/dmn/analyze`（`definition:compile`），求值调用 `POST /api/v1/dmn/evaluate`（`definition:simulate`）；网关复用编译服务路由与时间预算。两者都没有持久化、发布或权益副作用；当前页面仍是未保存草稿，离开后不会恢复，DMN 版本保存与发布关联待后续切片。
+`/designers/dmn` 从空表开始编辑输入/输出字段及规则，通过真实 KIE 引擎分析覆盖缺口与重叠、运行测试输入。分析调用 `POST /api/v1/dmn/analyze`（`definition:compile`），求值调用 `POST /api/v1/dmn/evaluate`（`definition:simulate`）；网关复用编译服务路由与时间预算。两者都没有持久化、发布或权益副作用。
+
+选择活动后可保存及恢复真实草稿版本。控制服务 `POST /api/v1/campaigns/{campaignId}/dmn-drafts` 使用 `definition:write`、`Idempotency-Key` 和 `expectedVersion`（首次为 0）；读取 `/latest`、`/versions/{version}` 使用 `definition:read`。V5 迁移新增 `mk_dmn_draft_version`，沿用当前活动的租户/组织/店铺范围，借活动行锁串行分配不可变版本，草稿/幂等回执/审计同事务提交。相同当前内容不产生空版本；过期基准返回 `409 DMN_DRAFT_VERSION_CONFLICT`，页面保留输入，明确确认后才加载最新。旧幂等回执也要重新验证当前访问权。不存在版本返回 `404 DMN_DRAFT_NOT_FOUND`，不会把一般网络或权限错误解释为空白草稿。
+
+保存允许未填写完整的名称/单元格，结构仍限 1–4 输入、1–4 输出、1–32 规则、名称 32 字符/单元格 256 字符；正文解析前限 512 KiB。测试输入和计算结果不持久化，保存不代表语义通过。首次绑定尚无草稿的活动会保留已编辑内容；保存期间继续编辑仍显示未保存；演示模式禁止保存数据库版本。重新打开页面后选择相同活动可恢复最新草稿，界面显示基准版本、保存人及北京时间。DMN 草稿尚未接入审核/发布或在线事实映射，不因保存成功改变运行规则。
 
 请求中的 `table` 包含 `hitPolicy`、`inputs`、`outputs`、`rules`，求值额外传 `context` 字符串字典。当前支持 UNIQUE / FIRST、1–4 输入与 1–4 输出、最多 32 规则；列名为唯一 ASCII 标识符，不能用模型/决策名称及 FEEL 保留字。单元格最多 256 字符，仅允许通配 `-`、单个数字比较、字符串或布尔等值；输出仅标量字面量。数字最多 18 位数字和 6 位小数，不接受公式、函数或任意 XML。测试上下文逐列匹配类型；文本不加引号，规则内的文本使用 JSON 双引号。
 

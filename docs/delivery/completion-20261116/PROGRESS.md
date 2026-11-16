@@ -185,3 +185,25 @@ S01–S05已交付，S05提交61b471b已正常快进推送main，精确候选CI4
 - S11a最终本地验证39后端（新增两DMN网关HTTP路由在1.5秒下仍成功，在线Decision维持短预算）、137不同前端用例、lint/build、合同/13JSON、Compose/Helm/11告警、Hygiene全部PASS（无canonical formatter限制）。部署校验初次使用相对DEV_INFRA_ROOT导致Docker挂载失败，改绝对路径后PASS，无产品缺陷或共享基础设施变更。
 - 最终真实浏览器：临时完整compiler应用127.0.0.1:18882（Flyway OFF、不可用DB端口9）与前端4177，桌面/Pixel7共6次实际KIE请求PASS，0页面错误/0视口溢出；s11a-live-result.json、s11a-live-browser-final.log与s11a-live-*.png，截图已实际查看。首次联调看到单输出重复name/typeRef引发DMN标准警告，已按引擎标准移除、加断言并重新打包复测；无命中仍真实null。
 - 临时Java/Vite已发送TERM停止，仅本任务PID48653/47767，后续核验进程与端口；旧第一次服务PID47572已确认143退出。无共享库写入、外部发奖、Docker应用部署或新worktree。S11a准备单个逻辑提交，S11b版本持久化及其它S11项仍未开始实现。
+
+## S11b DMN 版本保存（设计确定，实施中）
+- 基于e1964fc建立feat/dmn-version-storage；S11a已推feat/dmn-workbench，精确CI43821070821运行，未合主干。其临时服务与Vite均确认143正常退出，未留本片运行服务。
+- 结果：DMN草稿可归属当前有权限的活动，保存不可变版本，重新打开恢复最新版本；服务端保留历史版本可按版本读取。沿用control的数据所有权、租户/组织/店铺范围和审计链。保存草稿不授予审核/发布资格，不把DMN任意列自动接入在线决策事实。
+- 数据：新增V5 mk_dmn_draft_version，主键(tenant,campaign,version)、FK已有campaign；table_json为有界草稿、content_hash、created_by/created_at。每活动一条DMN版本序列，借已有campaign行锁序列化保存，expectedVersion必填（首次0），不符409；不改历史版本。相同当前内容不产生空版本；同键重放使用既有ControlCommandExecutor并在重放前重新验证当前权限/活动范围。无消息或新基础设施。
+- API：POST /api/v1/campaigns/{campaignId}/dmn-drafts 要求definition:write、Idempotency-Key，body={expectedVersion,table}；GET同路径/latest与/versions/{version}要求definition:read。响应{campaignId,version,contentHash,createdBy,createdAt,table}；未保存404 DMN_DRAFT_NOT_FOUND，版本冲突409 DMN_DRAFT_VERSION_CONFLICT。512KiB解析前上限、结构与字符串类型严格校验；草稿允许空字段/单元格及不完整规则语义，但维度1–4列/1–32规则、字段32字符、格256字符有界。真正语义分析仍由S11a完成。
+- 前端：复用当前活动API和Select，选择活动后加载真实版本；保存后显示版本与北京时间，编辑后明确未保存。旧加载/保存回执不覆盖新草稿；409保留输入，并明确选择后加载最新。切换活动会丢失未保存修改时在页面内确认。服务端版本是权威，不用localStorage代替数据库。
+- 验收：真实MySQL首次并发/同基线争用/同键回放及异载荷、跨租户/组织/店铺与权限撤销、审计同事务回滚、历史不可变；组件与真实HTTP浏览器保存恢复/冲突/失败，合同、build/lint/CI。先实现后端存储闭环，再接页面并验证，不以保存成功冒充发布完成。
+
+### S11b 实施与验证检查点
+- S11a已正常快进交付main=e1964fc，精确CI43821070821三job全PASS，s11a-delivery.json；S11b工作树保留，未部署应用。
+- 后端V5/Mapper XML/活动锁/预期版本/幂等重放前权限/同事务审计和3API已写；前端活动选择、保存/恢复、冲突保留、在途编辑保护与重试键已写，当前均待最终验证。
+- 首轮后端fixture误将活动创建201断言为200已修；第二轮确认平台组织/店铺拒绝沿用400（权限拒绝403），不借本片修改全局合同。审计故障触发器需要独占Testcontainers允许创建，现已隔离，不修改共享DB权限；第三轮s11b-backend-third.log运行。
+- 前端首轮构建useRef初值和Badge tone类型错误已修。独立fe-review发现首次绑定丢未绑定草稿、DEMO_MODE可能真实保存两P2，均已修待回归；截图/真实浏览器未验证。无业务发布或真实权益副作用。
+
+- 本地Docker曾在并存两隔离MySQL启动时显著迟滞，第三轮未完成，已仅TERM本任务测试PID52411/52410并停止自有6037测试实例；9863实例由Testcontainers清理，状态已核对，无共享服务停止/重启。s11b-docker-block.json记录结果。Docker随后恢复，Flink原3作业ID与运行状态保留（s11b-flink-preserved.json）。
+- 改独占DMN测试库限制512MiB且单独运行，6真实HTTP/MySQL用例全部PASS（s11b-backend-isolated.log），含审计故障回滚；旧4ControlFlow用例在此前已PASS。追加4草稿边界测试及空元素处理后最终10项复验/打包运行s11b-backend-final.log/session49400。
+- 前端146全量PASS，新增首次绑定失败恢复后20DMN专项PASS（共147不同用例）；lint/build/合同13JSON/Hygiene PASS，4浏览器PASS。独立fe-review两P2及恢复分支均复核关闭，根代理/独立review实际查看桌面/手机截图。当前真实数据库浏览器联调尚未进行，不以fixture浏览器替代。
+
+- S11b最终本地验证：10新增后端（6真实HTTP/MySQL+4边界）、4旧ControlFlow、10架构用例PASS；147不同前端用例、最终20DMN、lint/build、合同13JSON、Hygiene PASS（无canonical formatter限制）。根代理按java-build-review做第二轮权限/锁/幂等/事务/SQL检查，独立frontend review三项（含恢复分支、演示写入、真实长UUID溢出）全部关闭。
+- 真实浏览器两视口通过：临时control18883 + 512MiB独占MySQL13319，真实创建测试活动、保存v1、刷新恢复、并发更新v2后保存返回409并保留输入、明确确认恢复v2、v1历史不变；s11b-live-result.json及s11b-live-browser-final.log。仅其他导航API用空fixture，campaign/draft请求原样转发真实服务。根代理与独立review均已实际查看最终桌面/手机截图，0页面错误/固定视口宽度无溢出。最初真实长UUID暴露选择框超宽，已修label约束并改fixture/固定viewport断言，最终4浏览器PASS。
+- 临时Java54838/Vite54700已TERM，独占marketing-dmn-live-20261116已停止（s11b-live-cleanup.json）；共享dev-infra/Flink及真实业务库未修改。本片可提交，后续精确SHA CI通过才交付main；尚未Docker部署应用。S11发布/Journey/迁移重算/曝光及S12/13仍未完成，会员来源问题仍待答。
