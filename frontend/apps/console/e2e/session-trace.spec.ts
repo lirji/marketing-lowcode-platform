@@ -75,3 +75,23 @@ test('DEV logout and login reload the selected tenant without cached records', a
   expect(requestedTenants).toContain('tenant-b')
   await page.screenshot({ path: info.outputPath('tenant-switched.png'), fullPage: true })
 })
+
+test('missing aggregate trace falls back to a real automatic decision snapshot', async ({ page }, info) => {
+  await page.route('**/api/v1/traces/requests/automatic-request', (route) => route.fulfill({ status: 404, json: { type: 'about:blank', title: '不存在', status: 404, detail: '无聚合轨迹' } }))
+  await page.route('**/api/v1/decisions/traces/requests/automatic-request', (route) => route.fulfill({ json: {
+    requestId: 'automatic-request', orderId: 'order-1', traceId: 'quote-real', maskedSubject: 'masked-real',
+    generation: 7, durationMicros: 1250, termsVersion: '', createdAt: '2026-11-16T01:00:00Z',
+    candidates: { count: 1, truncated: false, outcomes: [{ offerId: 'offer-real', outcome: 'ELIGIBLE' }] },
+    pricing: { currency: 'CNY', originalMinor: 1000, payableMinor: 900, discountMinor: 100, appliedOfferCount: 1 },
+    events: [{ at: '2026-11-16T01:00:00Z', type: 'DECISION_EVALUATED', title: '决策计算完成', detail: '记录本次候选裁决与报价摘要，不代表下单、资源预占或发奖。' }],
+  } }))
+  await page.goto('/operations')
+  await page.getByPlaceholder('填写完整请求 ID').fill('automatic-request')
+  await page.getByRole('button', { name: '查询', exact: true }).click()
+  await expect(page.getByText('决策计算完成', { exact: true })).toBeVisible()
+  await expect(page.getByText('quote-real', { exact: true })).toBeVisible()
+  await expect(page.getByText('没有逐步事件', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('预算与库存原子预占成功', { exact: true })).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
+  await page.screenshot({ path: info.outputPath('automatic-decision-trace.png'), fullPage: true })
+})

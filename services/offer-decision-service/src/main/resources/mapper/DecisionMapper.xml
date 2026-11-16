@@ -51,6 +51,21 @@
           AND idempotency_key = #{idempotencyKey}
     </update>
 
+    <update id="saveTrace">
+        UPDATE mk_decision_command SET trace_json=#{traceJson},trace_request_hash=#{requestHash},
+            trace_order_hash=#{orderHash},trace_sort=#{sort}
+        WHERE tenant_id=#{tenantId} AND idempotency_key=#{idempotencyKey} AND state_name='COMPLETED'
+    </update>
+    <select id="findTrace" resultType="java.lang.String" useCache="false" flushCache="true">
+        SELECT trace_json FROM mk_decision_command
+        WHERE tenant_id=#{tenantId} AND state_name='COMPLETED' AND expires_at &gt; #{now} AND trace_json IS NOT NULL
+        <choose>
+          <when test="requestHash != null">AND trace_request_hash=#{requestHash}</when>
+          <otherwise>AND trace_order_hash=#{orderHash}</otherwise>
+        </choose>
+        ORDER BY trace_sort DESC LIMIT 1
+    </select>
+
     <insert id="insertRuntimeGeneration">
         INSERT INTO mk_runtime_generation (
             tenant_id,

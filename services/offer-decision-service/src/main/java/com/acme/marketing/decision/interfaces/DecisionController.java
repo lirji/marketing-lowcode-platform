@@ -13,6 +13,9 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import com.acme.marketing.decision.application.AutomaticDecisionTrace;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -50,6 +53,18 @@ public class DecisionController {
         if (requests.size() > 50) throw new IllegalArgumentException("decision batch exceeds 50 requests");
         var scope = TenantContextHolder.requireCurrent();
         return requests.stream().map(request -> idempotency.execute(scope, request)).toList();
+    }
+
+    /** 自动轨迹来自完成命令的原子记录，禁止读取他租户结果。 */
+    @GetMapping("/decisions/traces/requests/{requestId}")
+    public AutomaticDecisionTrace traceByRequest(@PathVariable String requestId) {
+        return idempotency.trace(TenantContextHolder.requireCurrent(), requestId, false);
+    }
+
+    /** 按订单定位最近一次决策计算，不表示订单已经确认。 */
+    @GetMapping("/decisions/traces/orders/{orderId}")
+    public AutomaticDecisionTrace traceByOrder(@PathVariable String orderId) {
+        return idempotency.trace(TenantContextHolder.requireCurrent(), orderId, true);
     }
 
     @PutMapping("/decisions/runtime/manifest")

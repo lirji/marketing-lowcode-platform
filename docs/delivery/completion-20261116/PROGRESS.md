@@ -139,3 +139,29 @@ S01–S05已交付，S05提交61b471b已正常快进推送main，精确候选CI4
 
 - 后端两项独立finding已复核关闭；前端两项已修并通过回归，独立复核PASS，无剩余本片阻断finding。本片未开启真实查询/发奖，未部署新镜像，保留全部任务证据和旧镜像。
 - 最终合同脚本PASS（全部合同测试及13份JSON），Compose/Helm检查PASS。准备在feat/award-fulfillment-observation按单个纵向片提交，后续以精确SHA远程CI决定主干交付；本地验证不冒充已部署。
+
+
+## S07c 自动决策轨迹（验证通过，待交付）
+- 分支feat/automatic-decision-traces基于afee6fc；S07b已推任务分支，精确CI43807716729前端/部署PASS、后端FAIL，先定位日志，不合主干。原S07b产品验证33业务+5异常+5合同、126不同前端、2浏览器、合同/Compose/Hygiene PASS，双独立审查通过；尚未部署。
+- 当前Journey GRANT仅携带本地resourceKey/quantity/subjectToken，不含可信会员映射、OfferToken/正式资格和新发奖来源合同；保留本地资源账本，不擅自接对外AwardIntent。权益按来源取消墓碑依旧缺上游实现。此两项保留待合同，不冒充S07完成。
+- 自动轨迹优先补“真实Decision计算自动记录并可查”，事件仅说明真实发生的决策，不虚构Reserve/Confirm/Exposure。复用当前幂等存储权威：JDBC在同一command行/事务保存脱敏trace及查询索引；REDIS在现有COMPLETE Lua内以同tenant hash tag原子写查询索引/脱敏trace，沿用24小时窗口。不引入MySQL+Redis双写事务、不切换线上幂等存储、不新增Kafka主题或后台进程。
+- 兼容：旧command无trace仍可重放，轨迹明确未找到；按请求/订单返回当前可查的最新决策，稳定时间+quoteId排序；只有已完成请求可查，不返回OfferToken或原始主体/购物车。现有measurement手工轨迹入口保留，控制台在其明确404时查询自动决策摘要，其他错误不隐藏。
+- 验收：真实MySQL/Redis并发、幂等回放、身份/过期隔离、完成原子性与索引排序；前端成功/404/失败路径真实契约验证。当前未写S07c产品源码。
+
+- S07c初步源码已写：AutomaticDecisionTrace有界脱敏摘要、V3同command列索引、Redis COMPLETE同slot原子更新索引、GET端点；编译PASS（s07c-compile.log），尚未测试或前端接入。S07b远程后端失败优先修复，失败日志s07b-ci-failed.log；两个子片改动必须分开提交。
+
+- S07b CI唯一失败为ReferralHeldReviewMySqlTest固定12个迁移而当前V13有13个，已按新schema更新计数，7专项PASS（s07b-ci-migration-recheck.log）；单独测试提交推原S07b分支重跑，不夹带S07c。S07c真实MySQL/隔离Redis测试运行中（s07c-backend-first.log），尚未完成。
+
+- S07c第二轮10项后端PASS（6真实MySQL/Redis双模式+3旧持久化+1路由）；初轮2个测试fixture错误（Mockito覆盖stub时调用旧answer、spy Spring代理）已修，不是放松业务断言。新增真实HTTP权限/跨租户验收待最终运行。
+- 前端显式404补查自动摘要，401/403/5xx不回退；初轮请求计数误包含已有client-error遥测，改精确限定业务请求，4项PASS。独立审查发现两次请求间会话切换间隙，已保存整次查询sessionVersion并在补查前/返回前校验，新增microtask会话切换回归待结果。
+- 浏览器原轨迹/会话隔离+新自动摘要共6项PASS（s07c-browser），合同脚本PASS。S07b重跑首次在下载Maven时HTTP429，未执行测试；已仅重跑失败后端job（43808335508 attempt2），前端/部署PASS保持，当前后端执行中。
+
+- S07c最终12后端PASS（7真实双存储/HTTP/回滚/乱序/权限/旧回放+3已有持久化+路由+决策），129全量组件、lint/build、6浏览器、合同/13JSON PASS。最终桌面/手机自动摘要截图已实际查看；候选与报价同时显示，未知terms显示未提供，标题不冒充全链路齐备。
+- 独立审查会话P2已修复复核PASS；JDBC/Redis原子性无剩余本片finding。证据s07c-backend-final.log、s07c-unit-final.log、s07c-browser-final/等。S07c尚未部署或提交；S07b精确9b290a0 CI后端attempt2仍在运行，等待正常主干交付。
+
+- S07c最终Hygiene通过（无formatter限制），客户端5项末次复验PASS，diff通过。准备当前任务逻辑提交；用户输入、生产/共享数据和外部仓库不变。
+
+- S07b CI attempt2发现新测试共用MySQL造成待发fixture被旧Relay测试扫描（预期1次实际13次），属于测试隔离缺陷，未放宽原断言。正在改AwardFulfillmentIntegrationTest独占Testcontainers MySQL并跑完整权益服务89项；日志s07b-all-benefit-tests.log。S07c17文件已暂存待提交，S07b测试隔离修复必须用--only单独提交并推原分支，不夹带S07c。
+
+- S07b隔离修复f45f1dc已独立提交推送feat/award-fulfillment-observation，未夹带已暂存S07c；完整权益包88项全部PASS（s07b-all-benefit-tests.log，应用启动测试不在该包筛选内）。远程精确CI43809440693已启动，待其全量结果；未合主干。
+- S07c17文件验证版本已锁定，准备独立提交；无本地测试运行，运行镜像和共享数据未变。

@@ -50,6 +50,7 @@ let accessTokenProvider: () => string | undefined = () => undefined
 let unauthorizedHandler: () => void = () => undefined
 let identityProvider: () => { tenantId?: string; actorId?: string } = () => ({})
 let sessionVersion = 0
+const HTTP_NOT_FOUND = 404
 
 /** 使旧会话的读写回执失效；清查询缓存本身不会取消 mutation 的 onSuccess。 */
 export function invalidateApiSession() {
@@ -245,10 +246,8 @@ export const api = {
     request(`/api/v1/award-intents/${encodeURIComponent(intentId)}/fulfillment`, undefined, (value) => parseWith(awardFulfillmentSchema, value)),
   refreshAwardFulfillment: (intentId: string) =>
     request(`/api/v1/award-intents/${encodeURIComponent(intentId)}/fulfillment:refresh`, { method: 'POST' }, (value) => parseWith(awardFulfillmentSchema, value)),
-  traceByRequest: (requestId: string) =>
-    request(`/api/v1/traces/requests/${encodeURIComponent(requestId)}`, undefined, (value) => parseWith(traceViewSchema, value)),
-  traceByOrder: (orderId: string) =>
-    request(`/api/v1/traces/orders/${encodeURIComponent(orderId)}`, undefined, (value) => parseWith(traceViewSchema, value)),
+  traceByRequest: (requestId: string) => decisionTrace('requests', requestId),
+  traceByOrder: (orderId: string) => decisionTrace('orders', orderId),
   enrollment: (enrollmentId: string) =>
     request(`/api/v1/enrollments/${encodeURIComponent(enrollmentId)}`, undefined, (value) => parseWith(enrollmentViewSchema, value)),
   enrollments: (query?: { status?: string; journeyId?: string; limit?: number }) => {
@@ -305,3 +304,20 @@ export async function optionalResource<T>(load: () => Promise<T>): Promise<T | u
 
 export type { Campaign, GraphDefinition }
 export { graphDefinitionSchema }
+
+/** 手工/聚合轨迹明确不存在时，再查询真实决策摘要；认证与依赖故障必须原样暴露。 */
+async function decisionTrace(kind: 'requests' | 'orders', identity: string) {
+  const version = sessionVersion
+  const suffix = `${kind}/${encodeURIComponent(identity)}`
+  try {
+    const result = await request(`/api/v1/traces/${suffix}`, undefined, (value) => parseWith(traceViewSchema, value))
+    requireCurrentSession(version)
+    return result
+  } catch (error) {
+    requireCurrentSession(version)
+    if (!(error instanceof ApiProblem) || error.status !== HTTP_NOT_FOUND) throw error
+    const result = await request(`/api/v1/decisions/traces/${suffix}`, undefined, (value) => parseWith(traceViewSchema, value))
+    requireCurrentSession(version)
+    return result
+  }
+}

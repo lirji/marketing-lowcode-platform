@@ -19,6 +19,12 @@ public interface DecisionCommandRepository {
     /** 将当前调用拥有的幂等记录标记为完成。 */
     void complete(String tenantId, String idempotencyKey, String responseJson);
 
+    /** 在当前完成事务中保存脱敏摘要，不能在回放时重新生成另一份事实。 */
+    void saveTrace(String tenantId, String idempotencyKey, String traceJson, String requestHash, String orderHash, String sort);
+
+    /** 按受租户隔离的请求或订单索引读取未过期的最新完成结果。 */
+    Optional<String> findTrace(String tenantId, String requestHash, String orderHash, Instant now);
+
     /** 数据库存储的幂等请求状态。 */
     record StoredCommand(String payloadHash, String state, String responseJson) { }
 }

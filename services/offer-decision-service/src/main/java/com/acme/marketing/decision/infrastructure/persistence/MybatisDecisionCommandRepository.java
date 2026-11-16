@@ -43,6 +43,17 @@ public class MybatisDecisionCommandRepository implements DecisionCommandReposito
                 : Optional.of(new StoredCommand(row.payloadHash(), row.stateName(), row.responseJson()));
     }
 
+    /** 与完成命令共享事务，任何持久化失败都回滚整个首次决策。 */
+    @Override public void saveTrace(String tenantId, String idempotencyKey, String traceJson, String requestHash, String orderHash, String sort) {
+        if (mapper.saveTrace(tenantId, idempotencyKey, traceJson, requestHash, orderHash, sort) != 1)
+            throw new IllegalStateException("自动轨迹未写入已完成的决策");
+    }
+
+    /** 空结果包括过期和旧版本未生成摘要，不能从外部拼造轨迹。 */
+    @Override public Optional<String> findTrace(String tenantId, String requestHash, String orderHash, Instant now) {
+        return Optional.ofNullable(mapper.findTrace(tenantId, requestHash, orderHash, format(now)));
+    }
+
     @Override
     public void complete(String tenantId, String idempotencyKey, String responseJson) {
         int updated = mapper.completeCommand(tenantId, idempotencyKey, responseJson);

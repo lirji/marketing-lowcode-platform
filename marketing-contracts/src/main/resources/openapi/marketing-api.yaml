@@ -539,6 +539,26 @@ paths:
         - {in: query, name: policy, required: true, schema: {type: string, enum: [FIRST_TOUCH, LAST_TOUCH, LINEAR]}}
         - {in: query, name: windowSeconds, required: true, schema: {type: integer, format: int64, minimum: 1}}
       responses: *ok
+  /api/v1/decisions/traces/requests/{requestId}:
+    get:
+      tags: [Decision]
+      operationId: getAutomaticDecisionTraceByRequest
+      description: Requires trace:read. Reads the newest decision-time snapshot from the configured JDBC or Redis idempotency authority. Visible for at most the existing 24-hour window. Legacy records without a trace return 404; no fulfillment events are inferred.
+      parameters:
+        - {in: path, name: requestId, required: true, schema: {type: string, minLength: 1}}
+      responses:
+        '200': {description: Sanitized decision snapshot, content: {application/json: {schema: {$ref: '#/components/schemas/AutomaticDecisionTrace'}}}}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/decisions/traces/orders/{orderId}:
+    get:
+      tags: [Decision]
+      operationId: getAutomaticDecisionTraceByOrder
+      description: Requires trace:read. Returns the newest decision-time snapshot for this order within the same tenant. This is not order confirmation or award delivery. Ties are ordered by quoteId.
+      parameters:
+        - {in: path, name: orderId, required: true, schema: {type: string, minLength: 1}}
+      responses:
+        '200': {description: Sanitized decision snapshot, content: {application/json: {schema: {$ref: '#/components/schemas/AutomaticDecisionTrace'}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/traces:
     post: {tags: [Measurement], operationId: recordDecisionTrace, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
   /api/v1/traces/requests/{requestId}:
@@ -818,6 +838,36 @@ components:
       properties:
         releasable: {type: boolean, const: true}
         references: {type: array, minItems: 1, uniqueItems: true, items: {type: string}}
+    AutomaticDecisionTrace:
+      type: object
+      additionalProperties: false
+      required: [traceId, requestId, orderId, maskedSubject, generation, durationMicros, candidates, pricing, termsVersion, expiresAt, legalHold, createdAt, events]
+      properties:
+        traceId: {type: string, description: Original quoteId}
+        requestId: {type: string}
+        orderId: {type: string}
+        maskedSubject: {type: string, description: Tenant-scoped hash prefix; no original subject}
+        generation: {type: integer, format: int64}
+        durationMicros: {type: integer, format: int64, minimum: 0}
+        candidates: {type: object, description: Bounded outcomes with total count and explicit truncation flag}
+        pricing: {type: object, description: Currency and aggregate minor-unit amounts; no cart lines or offerToken}
+        termsVersion: {type: string, const: '', description: Not available in this decision summary}
+        expiresAt: {type: string, format: date-time}
+        legalHold: {type: boolean, const: false}
+        createdAt: {type: string, format: date-time, description: Original decidedAt; never rewritten during replay}
+        events:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [at, type, title, detail]
+            properties:
+              at: {type: string, format: date-time}
+              type: {type: string, const: DECISION_EVALUATED}
+              title: {type: string}
+              detail: {type: string}
     DecisionRequest:
       type: object
       additionalProperties: false

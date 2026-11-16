@@ -44,3 +44,37 @@ describe('API session fencing', () => {
     expect(unauthorized).not.toHaveBeenCalled()
   })
 })
+
+
+describe('automatic decision trace fallback', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  it('reads an automatic snapshot only after an explicit missing aggregate trace', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ type: 'about:blank', title: '不存在', status: 404 }), { status: 404 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ traceId: 'quote-1', requestId: 'request-1', events: [] })))
+    vi.stubGlobal('fetch', fetch)
+    expect((await api.traceByRequest('request-1')).traceId).toBe('quote-1')
+    expect(fetch.mock.calls[1][0]).toContain('/api/v1/decisions/traces/requests/request-1')
+  })
+  it('rejects a session switch between the missing response and fallback request', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce({ ok: false, status: 404,
+      json: () => Promise.resolve({ type: 'about:blank', title: '不存在', detail: '无轨迹', status: 404 }).then((value) => {
+        // request 的最后一次检查之后、外层补查 catch 之前切换会话。
+        queueMicrotask(() => queueMicrotask(() => invalidateApiSession()))
+        return value
+      }),
+    }).mockResolvedValueOnce(new Response(JSON.stringify({ traceId: 'new-tenant-trace', events: [] })))
+    vi.stubGlobal('fetch', fetch)
+    await expect(api.traceByRequest('old-tenant-request')).rejects.toMatchObject({ code: 'SESSION_CHANGED' })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves permission and dependency failures without querying another endpoint', async () => {
+    for (const status of [401, 403, 502, 503]) {
+      const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ type: 'about:blank', title: '失败', status }), { status }))
+      vi.stubGlobal('fetch', fetch)
+      await expect(api.traceByOrder('order-1')).rejects.toMatchObject({ status })
+      expect(fetch.mock.calls.filter(([url]) => String(url).includes('/api/v1/traces/'))).toHaveLength(1)
+      expect(fetch.mock.calls.some(([url]) => String(url).includes('/api/v1/decisions/traces/'))).toBe(false)
+    }
+  })
+})

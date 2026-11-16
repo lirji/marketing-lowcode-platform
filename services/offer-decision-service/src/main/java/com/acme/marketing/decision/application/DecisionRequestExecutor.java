@@ -3,6 +3,8 @@ package com.acme.marketing.decision.application;
 import com.acme.marketing.decision.application.DecisionCommandRepository.StoredCommand;
 import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.error.ConflictException;
+import com.acme.marketing.platform.error.NotFoundException;
+import static com.acme.marketing.platform.time.SqlTime.format;
 import com.acme.marketing.platform.identity.TenantScope;
 import java.time.Clock;
 import java.util.List;
@@ -34,7 +36,21 @@ public class DecisionRequestExecutor {
     private static final DefaultRedisScript<Long> COMPLETE = new DefaultRedisScript<>("""
             if redis.call('HGET', KEYS[1], 'payloadHash') ~= ARGV[1] then return 0 end
             if redis.call('HGET', KEYS[1], 'state') ~= 'PROCESSING' then return 0 end
-            redis.call('HSET', KEYS[1], 'state', 'COMPLETED', 'responseJson', ARGV[2])
+            -- Lua不回滚已执行写入，先校验所有索引类型再修改完成状态。
+            for i=2,3 do
+              local kind = redis.call('TYPE', KEYS[i]).ok
+              if kind ~= 'none' and kind ~= 'hash' then return -2 end
+            end
+            redis.call('HSET', KEYS[1], 'state', 'COMPLETED', 'responseJson', ARGV[2], 'traceJson', ARGV[4])
+            for i=2,3 do
+              if i == 2 or ARGV[6] == '1' then
+                local previous = redis.call('HGET', KEYS[i], 'sort')
+                if not previous or previous < ARGV[5] then
+                  redis.call('HSET', KEYS[i], 'sort', ARGV[5], 'traceJson', ARGV[4])
+                  redis.call('EXPIRE', KEYS[i], ARGV[3])
+                end
+              end
+            end
             redis.call('EXPIRE', KEYS[1], ARGV[3])
             return 1
             """, Long.class);
@@ -73,6 +89,10 @@ public class DecisionRequestExecutor {
 
     public DecisionApplicationService.DecisionResponse execute(
             TenantScope scope, DecisionApplicationService.DecisionRequest request) {
+        // 回放同样需要当前权限和范围，不能绕过已撤销的调用资格。
+        scope.requirePermission("decision:evaluate");
+        scope.requireOrganization(request.organizationId());
+        request.cart().lines().stream().map(line -> line.shopId()).distinct().forEach(scope::requireShop);
         if (!request.idempotencyKey().matches("[a-zA-Z0-9_.:-]{8,128}")) {
             throw new IllegalArgumentException("decision idempotency key is invalid");
         }
@@ -108,6 +128,9 @@ public class DecisionRequestExecutor {
         }
         DecisionApplicationService.DecisionResponse response = decisions.evaluate(scope, request);
         commandRepository.complete(tenantId, request.idempotencyKey(), json(response));
+        AutomaticDecisionTrace trace = AutomaticDecisionTrace.from(scope, request, response, RETENTION_SECONDS);
+        commandRepository.saveTrace(tenantId, request.idempotencyKey(), json(trace), Digests.sha256Hex(request.requestId()),
+                request.orderId().isBlank() ? null : Digests.sha256Hex(request.orderId()), traceSort(trace));
         return response;
     }
 
@@ -132,8 +155,11 @@ public class DecisionRequestExecutor {
         try {
             DecisionApplicationService.DecisionResponse response = decisions.evaluate(scope, request);
             String responseJson = json(response);
-            Long completed = redis.execute(COMPLETE, List.of(key), payloadHash, responseJson,
-                    Long.toString(RETENTION_SECONDS));
+            AutomaticDecisionTrace trace = AutomaticDecisionTrace.from(scope, request, response, RETENTION_SECONDS);
+            Long completed = redis.execute(COMPLETE, List.of(key,
+                            traceKey(scope, false, request.requestId()), traceKey(scope, true, request.orderId())),
+                    payloadHash, responseJson, Long.toString(RETENTION_SECONDS), json(trace), traceSort(trace),
+                    request.orderId().isBlank() ? "0" : "1");
             if (completed == null || completed != 1) {
                 throw new ConflictException("IDEMPOTENCY_OWNERSHIP_LOST", "Redis command ownership was lost");
             }
@@ -143,6 +169,32 @@ public class DecisionRequestExecutor {
             throw failure;
         }
     }
+
+    /** 当前租户的自动决策摘要；订单查询返回最近完成的决策，而非订单履约结果。 */
+    public AutomaticDecisionTrace trace(TenantScope scope, String identity, boolean byOrder) {
+        scope.requirePermission("trace:read");
+        if (identity == null || identity.isBlank()) throw new IllegalArgumentException("轨迹查询标识不能为空");
+        String encoded;
+        if (store == Store.REDIS) {
+            Object value = redis.opsForHash().get(traceKey(scope, byOrder, identity), "traceJson");
+            encoded = value instanceof String text ? text : null;
+        } else {
+            String hash = Digests.sha256Hex(identity);
+            encoded = commandRepository.findTrace(scope.tenantId().value(), byOrder ? null : hash,
+                    byOrder ? hash : null, clock.instant()).orElse(null);
+        }
+        if (encoded == null) throw traceNotFound();
+        AutomaticDecisionTrace result = objectMapper.readValue(encoded, AutomaticDecisionTrace.class);
+        if (!clock.instant().isBefore(result.expiresAt())
+                || !identity.equals(byOrder ? result.orderId() : result.requestId())) throw traceNotFound();
+        return result;
+    }
+
+    private static String traceKey(TenantScope scope, boolean byOrder, String identity) {
+        return "mk:decision:trace:{" + scope.tenantId().value() + "}:" + (byOrder ? "order:" : "request:") + Digests.sha256Hex(identity);
+    }
+    private static String traceSort(AutomaticDecisionTrace trace) { return format(trace.createdAt()) + ':' + trace.traceId(); }
+    private static NotFoundException traceNotFound() { return new NotFoundException("TRACE_NOT_FOUND", "没有可查的自动决策轨迹，记录可能已过期或由旧版本生成"); }
 
     private String json(Object value) {
         try { return objectMapper.writeValueAsString(value); }
