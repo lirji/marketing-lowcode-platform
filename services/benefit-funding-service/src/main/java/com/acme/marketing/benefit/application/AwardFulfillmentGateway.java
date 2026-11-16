@@ -21,10 +21,10 @@ public interface AwardFulfillmentGateway {
             Long amountMinor, String currency, Long skuVersion, String status) { }
 
     /** 仅携带稳定原因码，不包含远程地址、响应正文、凭据或主体。 */
-    final class Unavailable extends RuntimeException {
+    final class UnavailableException extends RuntimeException {
         private static final long serialVersionUID = 1L;
         private final String code;
-        public Unavailable(String code) { super(code); this.code = code; }
+        public UnavailableException(String code) { super(code); this.code = code; }
         public String code() { return code; }
     }
 }

@@ -54,7 +54,7 @@ public final class HttpAwardFulfillmentGateway implements AwardFulfillmentGatewa
     }
 
     @Override public Order query(String tenantId, String sourceSystem, String sourceRequestId) {
-        if (!permits.tryAcquire()) throw new Unavailable(AWARD_CENTER_QUERY_CAPACITY);
+        if (!permits.tryAcquire()) throw new UnavailableException(AWARD_CENTER_QUERY_CAPACITY);
         var span = telemetry.getTracer("marketing-award-observer").spanBuilder("benefit.order.lookup").setSpanKind(SpanKind.CLIENT).startSpan();
         var scope = span.makeCurrent();
         try {
@@ -71,22 +71,22 @@ public final class HttpAwardFulfillmentGateway implements AwardFulfillmentGatewa
             } finally {
                 if (!request.isDone()) request.cancel(true);
             }
-            if (response.statusCode() == 404) throw new Unavailable(AWARD_CENTER_ORDER_NOT_FOUND);
-            if (response.statusCode() != 200) throw new Unavailable(AWARD_CENTER_QUERY_HTTP_ + response.statusCode());
+            if (response.statusCode() == 404) throw new UnavailableException(AWARD_CENTER_ORDER_NOT_FOUND);
+            if (response.statusCode() != 200) throw new UnavailableException(AWARD_CENTER_QUERY_HTTP_ + response.statusCode());
             return mapper.readValue(response.body(), Order.class);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt(); span.setStatus(StatusCode.ERROR);
-            throw new Unavailable(AWARD_CENTER_QUERY_INTERRUPTED);
-        } catch (Unavailable unavailable) {
+            throw new UnavailableException(AWARD_CENTER_QUERY_INTERRUPTED);
+        } catch (UnavailableException unavailable) {
             span.setStatus(StatusCode.ERROR); throw unavailable;
         } catch (TimeoutException timeoutFailure) {
-            span.setStatus(StatusCode.ERROR); throw new Unavailable(AWARD_CENTER_QUERY_TIMEOUT);
+            span.setStatus(StatusCode.ERROR); throw new UnavailableException(AWARD_CENTER_QUERY_TIMEOUT);
         } catch (ExecutionException invalid) {
             span.setStatus(StatusCode.ERROR);
-            if (invalid.getCause() instanceof Unavailable unavailable) throw unavailable;
-            throw new Unavailable(AWARD_CENTER_QUERY_UNAVAILABLE);
+            if (invalid.getCause() instanceof UnavailableException unavailable) throw unavailable;
+            throw new UnavailableException(AWARD_CENTER_QUERY_UNAVAILABLE);
         } catch (RuntimeException invalid) {
-            span.setStatus(StatusCode.ERROR); throw new Unavailable(AWARD_CENTER_QUERY_UNAVAILABLE);
+            span.setStatus(StatusCode.ERROR); throw new UnavailableException(AWARD_CENTER_QUERY_UNAVAILABLE);
         } finally { scope.close(); span.end(); permits.release(); }
     }
 
@@ -110,7 +110,7 @@ public final class HttpAwardFulfillmentGateway implements AwardFulfillmentGatewa
             for (ByteBuffer buffer : buffers) received += buffer.remaining();
             if (received > MAX_RESPONSE_BYTES) {
                 rejected = true; subscription.cancel();
-                delegate.onError(new Unavailable(AWARD_CENTER_QUERY_INVALID));
+                delegate.onError(new UnavailableException(AWARD_CENTER_QUERY_INVALID));
             } else delegate.onNext(buffers);
         }
         @Override public void onError(Throwable failure) { if (!rejected) delegate.onError(failure); }

@@ -109,7 +109,7 @@ public class AwardFulfillmentService {
                     completed++; meters.counter("marketing.award.fulfillment.check", "result", "observed").increment();
                 } else meters.counter("marketing.award.fulfillment.check", "result", "lease_lost").increment();
             } catch (RuntimeException failure) {
-                String code = failure instanceof AwardFulfillmentGateway.Unavailable unavailable
+                String code = failure instanceof AwardFulfillmentGateway.UnavailableException unavailable
                         ? unavailable.code() : AWARD_FULFILLMENT_CHECK_FAILED;
                 recordFailure(candidate, code);
             }
@@ -165,7 +165,7 @@ public class AwardFulfillmentService {
                 row.itemsJson() == null ? List.of() : mapper.readValue(row.itemsJson(), new TypeReference<List<ItemView>>() { })))
                 .orElseGet(() -> new View(id, SyncStatus.UNOBSERVED.code(), null, null, null, "", 0, enabled, List.of()));
     }
-    private static AwardFulfillmentGateway.Unavailable unavailable(String code) { return new AwardFulfillmentGateway.Unavailable(code); }
+    private static AwardFulfillmentGateway.UnavailableException unavailable(String code) { return new AwardFulfillmentGateway.UnavailableException(code); }
     /** 对运营返回脱敏后的项结果；不返回原始主体、令牌和完整远程响应。 */
     public record ItemView(String clientItemId, String skuId, String status, long quantity, Long skuVersion) { }
     /** checkedAt 是查询时间；已观察的业务结果与同步任务的状态分别展示。 */
