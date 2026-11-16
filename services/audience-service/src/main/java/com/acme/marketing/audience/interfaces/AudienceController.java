@@ -61,8 +61,15 @@ public class AudienceController {
 
     @PostMapping("/audiences/{segmentId}/versions/{version}/snapshots") @ResponseStatus(HttpStatus.CREATED)
     public AudienceService.SnapshotView snapshot(@PathVariable String segmentId, @PathVariable long version,
+            @RequestHeader(value = "Idempotency-Key", required = false) String key,
             @RequestBody AudienceService.SnapshotRequest request) {
-        return service.createSnapshot(segmentId, version, request);
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("audience:snapshot");
+        // 兼容旧调用方；提供键时把路径也纳入命令身份，避免同键跨人群/版本误重放。
+        if (key == null) return service.createSnapshot(segmentId, version, request);
+        return commands.execute(scope.tenantId(), "audience.snapshot.create", key,
+                new SnapshotCommand(segmentId, version, request), AudienceService.SnapshotView.class,
+                () -> service.createSnapshot(segmentId, version, request));
     }
 
     @PutMapping("/audiences/snapshots/{snapshotId}/memberships")
@@ -77,4 +84,6 @@ public class AudienceController {
             @RequestParam AudienceService.StalePolicy stalePolicy) {
         return service.membership(snapshotId, subjectToken, usedAt, stalePolicy);
     }
+
+    private record SnapshotCommand(String segmentId, long version, AudienceService.SnapshotRequest snapshot) { }
 }

@@ -9,6 +9,8 @@ import type { AudienceView, FieldDefinition } from '../../shared/api/schemas'
 
 const mocks = {
   audiences: vi.fn<(...args: unknown[]) => Promise<AudienceView[]>>(),
+  previewAudience: vi.fn(),
+  snapshotAudience: vi.fn(),
   fields: vi.fn<(...args: unknown[]) => Promise<FieldDefinition[]>>(),
 }
 
@@ -23,6 +25,8 @@ vi.mock('../../shared/api/client', async (importOriginal) => {
       },
       audiences: () => mocks.audiences(),
       fields: () => mocks.fields(),
+      previewAudience: () => mocks.previewAudience(),
+      snapshotAudience: () => mocks.snapshotAudience(),
     },
   }
 })
@@ -64,6 +68,24 @@ describe('AudienceBuilderPage', () => {
   beforeEach(() => {
     mocks.audiences.mockReset()
     mocks.fields.mockReset()
+    mocks.previewAudience.mockReset()
+    mocks.snapshotAudience.mockReset()
+  })
+
+  it('never creates browser-generated members while the real profile source is unavailable', async () => {
+    mocks.audiences.mockResolvedValue([{ segmentId: 'real-rule', version: 1, name: '已保存规则', status: 'ACTIVE',
+      rule: { match: 'ALL', conditions: [{ fieldId: 'level', operator: 'EQ', value: 'GOLD' }] } }])
+    mocks.fields.mockResolvedValue([{ fieldId: 'level', valueType: 'STRING' }])
+    renderAudience()
+    await screen.findByDisplayValue('GOLD')
+    expect(screen.getByText('画像来源尚未接入')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '预估人数' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '保存快照' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: '预估人数' }))
+    await userEvent.click(screen.getByRole('button', { name: '保存快照' }))
+    expect(mocks.previewAudience).not.toHaveBeenCalled()
+    expect(mocks.snapshotAudience).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '保存规则' })).toBeEnabled()
   })
 
   it('does not seed PLUS 家电 mock rules when the API is empty', async () => {

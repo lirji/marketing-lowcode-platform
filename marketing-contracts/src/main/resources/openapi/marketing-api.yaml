@@ -208,15 +208,38 @@ paths:
     post:
       tags: [Audience]
       operationId: createAudienceSnapshot
-      parameters: [{$ref: '#/components/parameters/SegmentId'}, {$ref: '#/components/parameters/Version'}]
+      description: >-
+        Imports an explicit member baseline, not a full-population rule calculation.
+        Initial memberCount/checksum describe creation; later membership updates do not rewrite that baseline.
+        At most 10000 distinct nonblank subjects; watermark <= asOf < expiresAt and creation must precede expiresAt.
+        An optional Idempotency-Key replays the original response within command retention. Identity includes
+        tenant, segmentId, version, the unordered member set and timestamps; conflicting reuse returns 409.
+        Omitting the key retains the legacy non-idempotent behavior. Snapshot IDs are not segment IDs and
+        creation alone does not publish membership to Decision.
+      parameters:
+        - {$ref: '#/components/parameters/SegmentId'}
+        - {$ref: '#/components/parameters/Version'}
+        - {in: header, name: Idempotency-Key, required: false, schema: {type: string, minLength: 8, maxLength: 128}}
       requestBody: {$ref: '#/components/requestBodies/JsonObject'}
       responses: *created
   /api/v1/audiences/snapshots/{snapshotId}/memberships:
-    put: {tags: [Audience], operationId: updateAudienceMembership, parameters: [{$ref: '#/components/parameters/SnapshotId'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+    put:
+      tags: [Audience]
+      operationId: updateAudienceMembership
+      description: >-
+        subjectToken must be nonblank, version must be positive, and member must be an explicit boolean.
+        Unique-key arbitration applies only newer versions, including concurrent first writes.
+        Older updates return the actual current member/version with STALE_UPDATE_IGNORED.
+        The same version with a different member value returns 409 AUDIENCE_MEMBERSHIP_VERSION_CONFLICT;
+        the same version/value is an idempotent replay. These updates do not freeze snapshot membership.
+      parameters: [{$ref: '#/components/parameters/SnapshotId'}]
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses: *ok
   /api/v1/audiences/snapshots/{snapshotId}/memberships/{subjectToken}:
     get:
       tags: [Audience]
       operationId: getAudienceMembership
+      description: At usedAt equal to or later than expiresAt, the requested stalePolicy applies. usedAt is an explicit historical lookup time, not an assertion of current eligibility.
       parameters:
         - {$ref: '#/components/parameters/SnapshotId'}
         - {$ref: '#/components/parameters/SubjectToken'}

@@ -12,7 +12,6 @@ import { useAuth } from '../../shared/auth/useAuth'
 import type { AudienceView, FieldDefinition } from '../../shared/api/schemas'
 
 type Condition = { id: number; field: string; operator: string; value: string }
-type PreviewView = { estimatedCount: number; sampleSubjectTokens: string[] }
 
 const UI_OPERATORS = ['=', '!=', '>', '>=', '<', '<=', 'IN'] as const
 const ORDERED_VALUE_TYPES: ReadonlySet<string> = new Set(['DECIMAL', 'INSTANT'])
@@ -50,43 +49,6 @@ function toRule(match: 'ALL' | 'ANY', conditions: Condition[]) {
   }
 }
 
-function matchingValue(condition: Condition) {
-  if (condition.operator === 'IN') return condition.value.split(',')[0]?.trim() || '1'
-  if (condition.operator === '>') {
-    const number = Number(condition.value)
-    return Number.isFinite(number) ? String(number + 1) : condition.value
-  }
-  if (condition.operator === '<') {
-    const number = Number(condition.value)
-    return Number.isFinite(number) ? String(number - 1) : condition.value
-  }
-  if (condition.operator === '!=') return `${condition.value}-other`
-  return condition.value
-}
-
-function missingValue(condition: Condition) {
-  if (condition.operator === 'IN') return '__none__'
-  if (condition.operator === '!=') return condition.value
-  const number = Number(condition.value)
-  if (Number.isFinite(number) && ['>=', '>', '<=', '<'].includes(condition.operator)) {
-    return String(condition.operator.startsWith('>') ? number - 1 : number + 1)
-  }
-  return `${condition.value}-miss`
-}
-
-function sampleProfiles(conditions: Condition[]) {
-  const hit = Object.fromEntries(conditions.map((condition) => [condition.field, matchingValue(condition)]))
-  const miss = Object.fromEntries(conditions.map((condition) => [condition.field, missingValue(condition)]))
-  return [
-    { subjectToken: 'sample-hit-1', attributes: hit },
-    { subjectToken: 'sample-hit-2', attributes: hit },
-    { subjectToken: 'sample-hit-3', attributes: hit },
-    { subjectToken: 'sample-miss-1', attributes: miss },
-    { subjectToken: 'sample-miss-2', attributes: miss },
-    { subjectToken: 'sample-miss-3', attributes: miss },
-  ]
-}
-
 function fieldAge(seconds?: number) {
   if (seconds == null) return '—'
   if (seconds < 60) return `${seconds}s`
@@ -106,13 +68,9 @@ export function AudienceBuilderPage() {
   const [version, setVersion] = useState<number>()
   const [conditions, setConditions] = useState<Condition[]>([])
   const [match, setMatch] = useState<'ALL' | 'ANY'>('ALL')
-  const [previewed, setPreviewed] = useState(false)
-  const [preview, setPreview] = useState<PreviewView | null>(null)
   const [notice, setNotice] = useState('')
   const [hydrated, setHydrated] = useState(false)
   const canWrite = auth.hasPermission('audience:write')
-  const canPreview = auth.hasPermission('audience:preview')
-  const canSnapshot = auth.hasPermission('audience:snapshot')
   const audiences = useQuery({ queryKey: ['audiences'], queryFn: api.audiences, enabled: !api.demoMode && auth.hasPermission('audience:read') })
   const fields = useQuery({ queryKey: ['fields'], queryFn: api.fields, enabled: !api.demoMode && auth.hasPermission('audience-field:read') })
   const fieldOptions = fieldOptionsFrom(fields.data)
@@ -122,8 +80,6 @@ export function AudienceBuilderPage() {
     setName('')
     setMatch('ALL')
     setConditions([])
-    setPreview(null)
-    setPreviewed(false)
   }
   const applySegment = (item: AudienceView) => {
     setSegmentId(item.segmentId)
@@ -131,8 +87,6 @@ export function AudienceBuilderPage() {
     setName(item.name)
     setMatch(item.rule?.match === 'ANY' ? 'ANY' : 'ALL')
     setConditions(fromAudience(item))
-    setPreview(null)
-    setPreviewed(false)
   }
 
   useEffect(() => {
@@ -164,43 +118,16 @@ export function AudienceBuilderPage() {
       void queryClient.invalidateQueries({ queryKey: ['audiences'] })
     },
   })
-  const previewMutation = useMutation({
-    mutationFn: async () => {
-      if (!segmentId || version == null) throw new Error('请先保存人群')
-      return api.previewAudience(segmentId, version, sampleProfiles(conditions))
-    },
-    onSuccess: (value) => {
-      setPreview({ estimatedCount: value.estimatedCount, sampleSubjectTokens: value.sampleSubjectTokens })
-      setPreviewed(true)
-    },
-  })
-  const snapshot = useMutation({
-    mutationFn: async () => {
-      if (!segmentId || version == null) throw new Error('请先保存人群')
-      const tokens = preview?.sampleSubjectTokens ?? []
-      if (tokens.length === 0) throw new Error('请先预估并得到样本主体')
-      const asOf = new Date().toISOString()
-      return api.snapshotAudience(segmentId, version, {
-        subjectTokens: tokens,
-        asOf,
-        watermark: asOf,
-        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
-      })
-    },
-    onSuccess: (value) => setNotice(`快照 ${value.snapshotId} 已写入，成员 ${value.memberCount ?? preview?.sampleSubjectTokens.length ?? 0}`),
-  })
   const fieldMeta = (fieldId: string) => fields.data?.find((item) => item.fieldId === fieldId)
 
   return <div className="workspace audience-page">
-    <PageHeader eyebrow={version ? `AUDIENCE_EXPRESSION · v${version}` : 'AUDIENCE_EXPRESSION'} title={name.trim() || '新人群'} description="规则、来源、新鲜度和隐私策略共同决定可用人群，不接受请求端伪造标签。" actions={<><Button onClick={() => previewMutation.mutate()} disabled={api.demoMode || !canPreview || !segmentId || version == null || previewMutation.isPending} title={api.demoMode ? '演示模式不预估' : !segmentId ? '请先保存人群' : '按当前条件生成样本，命中以已保存版本为准'}><Eye size={15} />预估人数</Button><Button disabled={api.demoMode || !canSnapshot || !preview?.sampleSubjectTokens.length || snapshot.isPending} title={api.demoMode ? '演示模式不可执行' : '用预览样本写入快照'} onClick={() => snapshot.mutate()}><ShieldCheck size={15} />保存快照</Button>{!api.demoMode && canWrite && <Button tone="primary" disabled={save.isPending || !name.trim()} onClick={() => save.mutate()}><Save size={15} />保存规则</Button>}</>} />
+    <PageHeader eyebrow={version ? `AUDIENCE_EXPRESSION · v${version}` : 'AUDIENCE_EXPRESSION'} title={name.trim() || '新人群'} description="保存圈选规则与字段用途；真实人群的计算需要已接入的画像来源。" actions={<><Button disabled title="画像来源接入后可预估真实人群"><Eye size={15} />预估人数</Button><Button disabled title="真实人群计算完成后可生成快照"><ShieldCheck size={15} />保存快照</Button>{!api.demoMode && canWrite && <Button tone="primary" disabled={save.isPending || !name.trim()} onClick={() => save.mutate()}><Save size={15} />保存规则</Button>}</>} />
     <DemoBanner />
-    {!api.demoMode && <StateBanner tone="info" title="控制面预览按提交样本评估" detail="不是全量人口普查。预估与快照使用已保存版本；修改条件后请先保存。" />}
+    {!api.demoMode && <StateBanner tone="info" title="画像来源尚未接入" detail="可以保存圈选规则；接入真实会员画像后才能预估人数和生成完整人群快照。" />}
     {notice && <StateBanner tone="success" title="已写入控制面" detail={notice} />}
     {audiences.isError && <StateBanner tone="error" title="人群加载失败" detail={problemDetail(audiences.error)} />}
     {fields.isError && <StateBanner tone="error" title="字段目录加载失败" detail={problemDetail(fields.error)} />}
     {save.isError && <StateBanner tone="error" title="保存失败" detail={problemDetail(save.error)} />}
-    {previewMutation.isError && <StateBanner tone="error" title="预估失败" detail={problemDetail(previewMutation.error)} />}
-    {snapshot.isError && <StateBanner tone="error" title="快照失败" detail={problemDetail(snapshot.error)} />}
     {!api.demoMode && <div className="form-grid audience-basics">
       <label className="field"><span>人群名称</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="未命名人群" /></label>
       <label className="field"><span>已保存版本</span>
@@ -252,7 +179,7 @@ export function AudienceBuilderPage() {
         <p className="muted">排除集尚未接入控制面，不会显示虚构快照。</p>
       </Panel>
       <aside className="audience-aside">
-        <Panel><PanelHeader eyebrow="PREVIEW" title="人群预估" aside={<Badge tone="info">样本评估</Badge>} />{previewed && preview ? <><strong className="audience-number">{preview.estimatedCount}</strong><p className="muted">控制面样本命中 {preview.estimatedCount}；主体 {preview.sampleSubjectTokens.join('、') || '无'}</p></> : <p>保存规则后预估。人数来自控制面样本评估，不是演示人口。</p>}</Panel>
+        <Panel><PanelHeader eyebrow="PREVIEW" title="人群预估" aside={<Badge tone="warn">待接入数据源</Badge>} /><p>暂无可验证的真实人数。规则已保存不代表全量人群已完成计算。</p></Panel>
         <Panel><PanelHeader eyebrow="DATA GOVERNANCE" title="字段来源与用途" /><LiveProvenance fields={fields.data ?? []} used={conditions.map((item) => item.field)} /></Panel>
       </aside>
     </div>

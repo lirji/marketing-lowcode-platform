@@ -102,6 +102,12 @@ pnpm frontend:dev
 - Offer 金额试算使用实际输入的金额/币种，不验证库存、时间或领取资格；有商品/人群等范围时由后端拒绝缺上下文的试算。Journey 完整仿真尚待补齐，界面不再显示伪价格结果。资源发放台账不等于外部权益到账。
 - 浏览器合同验收：`pnpm --filter @marketing/console exec playwright test lowcode-authoring.spec.ts`。可选真实本地验收：设置 `MARKETING_LIVE_UI=1`，使用 `--project=chromium --grep 'complete explicit Offer|Journey timer' --workers=1`；需要本机18080网关、DEV身份及真实权益目录，会在dev-tenant创建隔离活动和定义，不执行审核/发布/发奖。
 
+### 人群数据边界
+
+人群页面目前可保存真实字段上的圈选规则；会员画像来源尚待接入，人数预估和完整快照暂不可操作。页面不会生成虚构主体，也不会把前20条预览样本作为全量人群写库。现有样本API只计算调用方明确提交的样本，不能证明全量圈选完成。
+
+显式快照导入限10000个不同主体，必须满足 `watermark <= asOf < expiresAt` 且创建时未过期。可携带 `Idempotency-Key` 重放同一人群版本、成员集合和时间的首次结果；无键保留旧行为。成员更新使用正版本和数据库唯一键仲裁；旧版本返回真实当前状态，同版本异状态返回409。初始成员数/校验和描述创建基线，后续成员允许更新；快照ID与segment ID尚未完成决策投影接线，保存成功不等于在线资格生效。
+
 ## 架构导航
 
 ```text

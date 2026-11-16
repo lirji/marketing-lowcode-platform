@@ -22,6 +22,14 @@ import tools.jackson.databind.ObjectMapper;
  */
 @Service
 public class AudienceService {
+    /** 同步快照入口的事务预算；大人群必须走后续的持久化批量圈选。 */
+    public static final int MAX_SNAPSHOT_MEMBERS = 10_000;
+    private static final String MEMBERSHIP_VERSION_CONFLICT = "AUDIENCE_MEMBERSHIP_VERSION_CONFLICT";
+    private static final String MEMBERSHIP_VERSION_CONFLICT_MESSAGE = "相同成员版本不能表示不同的成员状态";
+    private static final String SNAPSHOT_EXPIRED_MESSAGE = "快照创建时已过期";
+    private static final String SNAPSHOT_MEMBERS_INVALID_MESSAGE = "快照成员必须非空白且不能超过 " + MAX_SNAPSHOT_MEMBERS + " 人";
+    private static final String SNAPSHOT_TIME_INVALID_MESSAGE = "快照时间必须满足 watermark <= asOf < expiresAt";
+    private static final String MEMBERSHIP_INVALID_MESSAGE = "成员主体不能为空、版本必须为正整数且必须明确成员状态";
     private final AudienceRepository repository;
     private final ObjectMapper objectMapper;
     private final Clock clock;
@@ -84,15 +92,13 @@ public class AudienceService {
         return new Preview(count, sample, clock.instant());
     }
 
-    /** 创建带成员明细的不可变人群快照。 */
+    /** 保存初始快照基线；既有流更新接口只推进成员状态，不改写初始计数与校验和。 */
     @Transactional
     public SnapshotView createSnapshot(String segmentId, long version, SnapshotRequest request) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("audience:snapshot");
         segment(scope.tenantId().value(), segmentId, version);
-        if (request.expiresAt() == null || !request.expiresAt().isAfter(request.asOf())) {
-            throw new IllegalArgumentException("snapshot expiry must be after as-of time");
-        }
+        if (!request.expiresAt().isAfter(clock.instant())) throw new IllegalArgumentException(SNAPSHOT_EXPIRED_MESSAGE);
         List<String> hashes = request.subjectTokens().stream().map(AudienceService::subjectHash).sorted().distinct().toList();
         String checksum = "sha256:" + Digests.sha256Hex(String.join("\n", hashes));
         String snapshotId = UUID.randomUUID().toString();
@@ -109,20 +115,14 @@ public class AudienceService {
         scope.requirePermission("audience:stream-update");
         snapshot(scope.tenantId().value(), snapshotId);
         String hash = subjectHash(update.subjectToken());
-        var current = repository.lockMembershipVersion(scope.tenantId().value(), snapshotId, hash);
-        if (current.isPresent() && update.version() <= current.orElseThrow()) {
-            long currentVersion = current.orElseThrow();
-            return new MembershipView(snapshotId, update.subjectToken(), false, currentVersion,
-                    "STALE_UPDATE_IGNORED");
+        // 唯一键与条件 upsert 同时覆盖首条成员的并发插入，避免先查空行再 INSERT 的竞争。
+        var current = repository.saveMembershipIfNewer(scope.tenantId().value(), snapshotId, hash, update.version(),
+                update.member(), clock.instant());
+        if (current.version() == update.version() && current.member() != update.member()) {
+            throw new ConflictException(MEMBERSHIP_VERSION_CONFLICT, MEMBERSHIP_VERSION_CONFLICT_MESSAGE);
         }
-        if (current.isEmpty()) {
-            repository.insertMembership(scope.tenantId().value(), snapshotId, hash, update.version(), update.member(),
-                    clock.instant());
-        } else {
-            repository.updateMembership(scope.tenantId().value(), snapshotId, hash, update.version(), update.member(),
-                    clock.instant());
-        }
-        return new MembershipView(snapshotId, update.subjectToken(), update.member(), update.version(), "UPDATED");
+        return new MembershipView(snapshotId, update.subjectToken(), current.member(), current.version(),
+                current.version() > update.version() ? "STALE_UPDATE_IGNORED" : "UPDATED");
     }
 
     /** 按快照时效策略查询成员状态。 */
@@ -130,7 +130,7 @@ public class AudienceService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("audience:lookup");
         SnapshotView snapshot = snapshot(scope.tenantId().value(), snapshotId);
-        if (usedAt.isAfter(snapshot.expiresAt())) {
+        if (!usedAt.isBefore(snapshot.expiresAt())) {
             return switch (stalePolicy) {
                 case REJECT_CANDIDATE -> new MembershipView(snapshotId, subjectToken, false, 0, "STALE_REJECTED");
                 case GENERIC_PATH -> new MembershipView(snapshotId, subjectToken, false, 0, "STALE_GENERIC_PATH");
@@ -214,10 +214,27 @@ public class AudienceService {
     }
     public record Preview(long estimatedCount, List<String> sampleSubjectTokens, Instant calculatedAt) { }
     public record SnapshotRequest(Set<String> subjectTokens, Instant asOf, Instant watermark, Instant expiresAt) {
-        public SnapshotRequest { subjectTokens = Set.copyOf(subjectTokens); }
+        public SnapshotRequest {
+            if (subjectTokens == null || subjectTokens.size() > MAX_SNAPSHOT_MEMBERS
+                    || subjectTokens.stream().anyMatch(token -> token == null || token.isBlank())) {
+                throw new IllegalArgumentException(SNAPSHOT_MEMBERS_INVALID_MESSAGE);
+            }
+            if (asOf == null || watermark == null || expiresAt == null || watermark.isAfter(asOf)
+                    || !expiresAt.isAfter(asOf)) {
+                throw new IllegalArgumentException(SNAPSHOT_TIME_INVALID_MESSAGE);
+            }
+            // 成员集合没有输入顺序语义；固定排序使进程重启后的幂等指纹保持一致。
+            subjectTokens = java.util.Collections.unmodifiableSet(new java.util.TreeSet<>(subjectTokens));
+        }
     }
     public record SnapshotView(String snapshotId, String segmentId, long segmentVersion, Instant asOf,
             Instant watermark, Instant expiresAt, long memberCount, String checksum, String state) { }
-    public record MembershipUpdate(String subjectToken, long version, boolean member) { }
+    public record MembershipUpdate(String subjectToken, long version, Boolean member) {
+        public MembershipUpdate {
+            if (subjectToken == null || subjectToken.isBlank() || version < 1 || member == null) {
+                throw new IllegalArgumentException(MEMBERSHIP_INVALID_MESSAGE);
+            }
+        }
+    }
     public record MembershipView(String snapshotId, String subjectToken, boolean member, long version, String freshness) { }
 }

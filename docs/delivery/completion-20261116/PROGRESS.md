@@ -17,7 +17,7 @@
 | S04 | 修复 CI 暴露的纳秒存储、跨仓基础设施访问与失效 Trivy 引用；对应远程工作流实际成功 | GitHub 仓库访问凭据 | DONE |
 | S04c | 触达同键请求指纹、服务端实际时间频控、迟到投递结果不覆盖终态；历史无指纹待重试记录明确拒绝自动重发 | 既有contactKey契约；S04分支先合并 | DONE |
 | S05 | 空白画布节点专属配置、真实活动类型/设计意图保存、搜索定位/模拟输入；合法定义能校验保存 | 现有编译器支持集合 | DONE |
-| S06 | 真实人群来源及快照/segment 一致、权益目录选择、审批发布到决策 | S03/S05、上游人群合同 | TODO |
+| S06 | 真实人群来源及快照/segment 一致、权益目录选择、审批发布到决策 | S03/S05、上游人群合同 | IN_PROGRESS |
 | S07 | 普通 AwardIntent 终态/取消恢复及 Journey 接线；自动轨迹与对账闭环；真实浏览器验收 | S06、权益终态合同 | TODO |
 | S08 | 裂变可信身份/交易/SKU/终态合同与适配器、READY ACK 接线 | 已有外部合同核对 | TODO |
 | S09 | 裂变 C 端参与/邀请/绑定及持久 Worker；复用已完成资格、配额、奖励、授权与回滚机制 | S08 | TODO |
@@ -75,7 +75,7 @@
 - 最终27项（25真实MySQL集成+2回调）通过，包含频控拒绝后的记录回滚断言；契约Maven/13份JSON、Hygiene和diff检查通过（无formatter限制）。独立业务/事务复核无新增阻断。证据`s04c-final.log`、`s04c-contracts.log`、`s04c-hygiene.json`。无真实短信、无共享库迁移。
 
 ## 下一步
-S01–S04c已交付；S05当前修订实现/独立复核/验证通过，正在逻辑提交和精确候选CI。随后S06→S13继续；先补人群快照/动态segment的身份一致性，真实会员来源仍待业务确认。Docker应用仍为旧镜像，后续按实际受影响服务重建验证，不能以源码测试替代已部署状态。
+S01–S05已交付，S05提交61b471b已正常快进推送main，精确候选CI43804843190全部PASS。随后S06→S13继续；先补人群快照/动态segment的身份一致性，真实会员来源仍待业务确认。Docker应用仍为旧镜像，后续按实际受影响服务重建验证，不能以源码测试替代已部署状态。
 
 ## S05 实现与验证
 - 分支 feat/usable-lowcode-editors，基于已推候选 b67dbc7（S04c）；S04 已合 main/origin 7b49a92，S04c 精确候选 CI43802922378 的Java/契约/架构、前端与部署全部PASS，b67dbc7已正常合入main/origin。
@@ -90,10 +90,25 @@ S01–S04c已交付；S05当前修订实现/独立复核/验证通过，正在�
 - 6项桌面/Pixel7合同fixture浏览器PASS（s05-e2e-third.log）；真实本机网关+现有服务、真实MySQL目录/定义：Offer新建→空白编辑→保存校验→2500分试算优惠500分、Journey等待120秒与elapsed出口→保存校验，两项PASS（s05-live-third.log）。未审核/发布/实际触达或发奖，此项后续S06/07验收。真实联调仅转发原API请求，不替换业务响应。
 - 真实Offer活动0a89cd5b-a7f2-4cf5-9e8a-ac725a6a3389（截图可追溯），其他隔离验收数据保留，不清共享库。首次真实UI测试因拦截/api/**误伤源码模块导致加载失败，已缩为/api/v1/**；首次裂变选择器缺明确aria-label已修。
 - 已实际查看桌面真实试算、手机配置及最终桌面Offer/手机Journey截图；修复窄屏Problems遮挡、小图Minimap与默认节点重叠，保留搜索/名称/完整字段，低频资金/范围折叠。证据s05-fixture-final/、s05-live-final/、s05-browser-recheck/。
-- fe-review由frontend_gaps独立检查状态/API，两个P2已修并复核PASS；根代理完成视觉与对抗验证。S05已验证，待本次Git交付；S06–S13仍在执行范围。
+- fe-review由frontend_gaps独立检查状态/API，两个P2已修并复核PASS；根代理完成视觉与对抗验证。S05已验证并交付61b471b；S06–S13仍在执行范围。
 
 ### S05 最终复核
 - 两项独立审查P2已关闭并复核通过：实际活动类型未解析前关闭三个设计器写入口；保存成功/校验失败正确保留新版本，后续动作清除旧错误。新增组件回归覆盖两类失败恢复。
 - 最终122项组件测试PASS（s05-unit-final4.log），build/lint通过；全量50项浏览器首轮46PASS，4项旧文案/旧菜单预期已按真实活动类型修正，受影响42项复验全部PASS（s05-e2e-recheck.log），其他8项首轮PASS仍有效。
-- 最终截图s05-browser-recheck已人工复核。Hygiene通过（s05-hygiene-final.json，无canonical formatter限制），diff检查通过。真实服务两项验收通过；当前后端接口未变，后续页面类型保护通过实际API类型及组件/浏览器验证。Docker UI仍旧镜像，下一步Git交付并继续S06。
+- 最终截图s05-browser-recheck已人工复核。Hygiene通过（s05-hygiene-final.json，无canonical formatter限制），diff检查通过。真实服务两项验收通过；当前后端接口未变，后续页面类型保护通过实际API类型及组件/浏览器验证。Docker UI仍旧镜像，61b471b已交付，继续S06。
 - S06外部业务信息待用户异步回答：会员身份/画像权威来源（commerce-platform会员域 / 外部系统 / 隔离演示验收）。已查本仓库分析与交易集成合同，均明确未确认来源，不能假定登录sub等于会员ID。此等待不阻止已授权的内部一致性及其他独立项。
+
+## S06 当前子片 S06a（验证通过）
+- 分支 fix/audience-snapshot-integrity 基于S05候选61b471b；S05精确CI43804843190全部PASS，61b471b已正常快进合入并推送main。
+- 范围：移除UI生成六个虚构主体并把20条预览样本当全量快照的路径；保存规则仍可用，真实预估/快照明确待画像来源。保留原样本API供显式合同测试，不声称真实圈选。
+- 现有快照命令补可选Idempotency-Key（兼容无键旧请求）；指纹含segment/version/无序成员集合与时间。复用本库mk_api_command，不新增数据库/中间件。
+- 成员更新由唯一键条件upsert仲裁首次并发与乱序，回读真实成员状态；同版本不同状态409。快照初始count/checksum与后续可变membership的语义明确，不擅自承诺冻结。
+- 输入校验：同步快照最多10000成员、非空白主体、watermark<=asOf<expiresAt、创建时未过期；成员版本为正；expiresAt瞬间即过期，与Decision对齐。
+- 验收：真实MySQL并发首次更新/逆序/同版本冲突、快照重放与跨路径异载荷、过期边界/无效时间/容量；组件和桌面手机页面验证不发送伪造预览/快照。
+- S06b真实来源、全量计算、snapshot/segment投影、审批发布决策尚未实现。待业务身份来源回答；不以S06a补强冒充S06完成。
+
+### S06a 验证检查点
+- 后端10项PASS（7个真实MySQL集成，s06a-backend-second.log）。首次并发测试复现MySQL RR no-op upsert后旧读视图返回500，已用写后专用FOR UPDATE当前读修复；独立复核business_gaps PASS。
+- 前端lint/build PASS；其他32文件118组件PASS，人群文件测试mock提升错误已修，最终该文件5项PASS，共123不同用例；桌面/Pixel7两项浏览器PASS，截图已实际查看，按钮状态与字段布局无覆盖/溢出。日志s06a-unit*.log、s06a-e2e.log及s06a-browser/。
+- 最终后端10项PASS（s06a-backend-final.log），补充缺member字段不能隐式撤销的回归；合同Maven/13份JSON及Hygiene PASS（无formatter限制），diff PASS。S06a准备逻辑提交；未部署人群服务，未修改共享数据，无新worktree。画像来源问题仍待用户回答。
+- S05控制台镜像正在从61b471b的git archive构建，exec49754，s05-console-build.log；只计划更新本机console，部署尚未执行。

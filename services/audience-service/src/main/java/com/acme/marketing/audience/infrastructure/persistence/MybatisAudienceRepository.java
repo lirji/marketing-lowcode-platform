@@ -122,22 +122,14 @@ public class MybatisAudienceRepository implements AudienceRepository {
     }
 
     @Override
-    public Optional<Long> lockMembershipVersion(String tenantId, String snapshotId, String subjectHash) {
-        return Optional.ofNullable(mapper.selectMembershipVersionForUpdate(tenantId, snapshotId, subjectHash));
-    }
-
-    @Override
-    public void insertMembership(String tenantId, String snapshotId, String subjectHash, long version,
+    public StoredMembership saveMembershipIfNewer(String tenantId, String snapshotId, String subjectHash, long version,
             boolean member, Instant updatedAt) {
-        requireOne(mapper.insertMember(memberWrite(tenantId, snapshotId, subjectHash, version, member, updatedAt)),
-                "新增人群成员");
-    }
-
-    @Override
-    public void updateMembership(String tenantId, String snapshotId, String subjectHash, long version,
-            boolean member, Instant updatedAt) {
-        requireOne(mapper.updateMember(memberWrite(tenantId, snapshotId, subjectHash, version, member, updatedAt)),
-                "更新人群成员");
+        // MySQL 的 upsert 返回值取决于插入/更新/重复，不用 requireOne 错判合法重放。
+        mapper.upsertMemberIfNewer(memberWrite(tenantId, snapshotId, subjectHash, version, member, updatedAt));
+        // REPEATABLE READ 下，无变化的 upsert 不会刷新快照；必须当前读才能看到并发赢家。
+        MembershipRow row = mapper.selectMembershipForUpdate(tenantId, snapshotId, subjectHash);
+        if (row == null) throw new IllegalStateException("成员更新后缺少持久化记录");
+        return new StoredMembership(row.activeValue(), row.membershipVersion());
     }
 
     @Override

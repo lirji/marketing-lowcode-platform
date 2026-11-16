@@ -199,45 +199,22 @@
           AND snapshot_id = #{snapshotId}
     </select>
 
-    <select id="selectMembershipVersionForUpdate" resultType="java.lang.Long">
-        SELECT membership_version
-        FROM mk_audience_member
-        WHERE tenant_id = #{tenantId}
-          AND snapshot_id = #{snapshotId}
-          AND subject_hash = #{subjectHash}
-        FOR UPDATE
-    </select>
-
-    <insert id="insertMember">
+    <!-- 所有赋值先比较旧版本，最后推进版本号；避免后续表达式读到已更新版本。 -->
+    <insert id="upsertMemberIfNewer">
         INSERT INTO mk_audience_member (
-            tenant_id,
-            snapshot_id,
-            subject_hash,
-            membership_version,
-            active_value,
-            updated_at
+            tenant_id, snapshot_id, subject_hash, membership_version, active_value, updated_at
         ) VALUES (
-            #{tenantId},
-            #{snapshotId},
-            #{subjectHash},
-            #{membershipVersion},
-            #{activeValue},
-            #{updatedAt}
-        )
+            #{tenantId}, #{snapshotId}, #{subjectHash}, #{membershipVersion}, #{activeValue}, #{updatedAt}
+        ) AS incoming
+        ON DUPLICATE KEY UPDATE
+            active_value = IF(incoming.membership_version &gt; mk_audience_member.membership_version,
+                incoming.active_value, mk_audience_member.active_value),
+            updated_at = IF(incoming.membership_version &gt; mk_audience_member.membership_version,
+                incoming.updated_at, mk_audience_member.updated_at),
+            membership_version = GREATEST(incoming.membership_version, mk_audience_member.membership_version)
     </insert>
 
-    <update id="updateMember">
-        UPDATE mk_audience_member
-        SET membership_version = #{membershipVersion},
-            active_value = #{activeValue},
-            updated_at = #{updatedAt}
-        WHERE tenant_id = #{tenantId}
-          AND snapshot_id = #{snapshotId}
-          AND subject_hash = #{subjectHash}
-    </update>
-
-    <select id="selectMembership"
-            resultType="com.acme.marketing.audience.infrastructure.persistence.mapper.AudienceMapper$MembershipRow">
+    <sql id="membershipSelect">
         SELECT
             active_value AS activeValue,
             membership_version AS membershipVersion
@@ -245,6 +222,17 @@
         WHERE tenant_id = #{tenantId}
           AND snapshot_id = #{snapshotId}
           AND subject_hash = #{subjectHash}
+    </sql>
+
+    <select id="selectMembership" useCache="false" flushCache="true"
+            resultType="com.acme.marketing.audience.infrastructure.persistence.mapper.AudienceMapper$MembershipRow">
+        <include refid="membershipSelect" />
+    </select>
+
+    <select id="selectMembershipForUpdate" useCache="false" flushCache="true"
+            resultType="com.acme.marketing.audience.infrastructure.persistence.mapper.AudienceMapper$MembershipRow">
+        <include refid="membershipSelect" />
+        FOR UPDATE
     </select>
 
 </mapper>

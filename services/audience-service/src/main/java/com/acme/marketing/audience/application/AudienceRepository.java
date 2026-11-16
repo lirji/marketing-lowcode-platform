@@ -48,15 +48,8 @@ public interface AudienceRepository {
     /** 按租户和快照标识查询快照。 */
     Optional<SnapshotView> findSnapshot(String tenantId, String snapshotId);
 
-    /** 锁定成员行并返回当前版本；不存在时为空。 */
-    Optional<Long> lockMembershipVersion(String tenantId, String snapshotId, String subjectHash);
-
-    /** 插入新的快照成员。 */
-    void insertMembership(String tenantId, String snapshotId, String subjectHash, long version,
-            boolean member, Instant updatedAt);
-
-    /** 更新已存在的快照成员。 */
-    void updateMembership(String tenantId, String snapshotId, String subjectHash, long version,
+    /** 插入新成员或仅应用更高版本；唯一约束仲裁并发首次写入。 */
+    StoredMembership saveMembershipIfNewer(String tenantId, String snapshotId, String subjectHash, long version,
             boolean member, Instant updatedAt);
 
     /** 查询成员当前状态。 */

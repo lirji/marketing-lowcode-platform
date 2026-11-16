@@ -46,18 +46,15 @@ public interface AudienceMapper {
     /** 查询指定快照。 */
     SnapshotRow selectSnapshot(@Param("tenantId") String tenantId, @Param("snapshotId") String snapshotId);
 
-    /** 使用悲观锁读取成员版本。 */
-    Long selectMembershipVersionForUpdate(@Param("tenantId") String tenantId,
-            @Param("snapshotId") String snapshotId, @Param("subjectHash") String subjectHash);
-
-    /** 插入单个成员。 */
-    int insertMember(MemberWrite member);
-
-    /** 更新单个成员。 */
-    int updateMember(MemberWrite member);
+    /** 依唯一键原子插入或仅更新到更高版本。 */
+    int upsertMemberIfNewer(MemberWrite member);
 
     /** 查询单个成员状态。 */
     MembershipRow selectMembership(@Param("tenantId") String tenantId,
+            @Param("snapshotId") String snapshotId, @Param("subjectHash") String subjectHash);
+
+    /** 写入后当前读，避免可重复读快照隐藏并发首次插入的赢家。 */
+    MembershipRow selectMembershipForUpdate(@Param("tenantId") String tenantId,
             @Param("snapshotId") String snapshotId, @Param("subjectHash") String subjectHash);
 
     /** 字段定义写模型。 */

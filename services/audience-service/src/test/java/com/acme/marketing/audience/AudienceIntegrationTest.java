@@ -97,6 +97,128 @@ class AudienceIntegrationTest extends MySqlIntegrationTest {
         assertEquals(1, occurrences);
     }
 
+    @Test
+    void snapshotReplayUsesPathAndUnorderedMembersAsCommandIdentity() throws Exception {
+        String segmentId = newSegment();
+        String path = "/api/v1/audiences/" + segmentId + "/versions/1/snapshots";
+        Instant now = Instant.now();
+        Map<String, Object> request = new java.util.HashMap<>(Map.of("subjectTokens", List.of("s2", "s1"),
+                "asOf", now, "watermark", now, "expiresAt", now.plusSeconds(3600)));
+        String key = "snapshot-" + UUID.randomUUID();
+        HttpResponse<String> first = postRaw(path, request, key);
+        assertEquals(201, first.statusCode(), first.body());
+        request.put("subjectTokens", List.of("s1", "s2"));
+        assertEquals(first.body(), postRaw(path, request, key).body());
+        assertEquals(409, postRaw("/api/v1/audiences/" + newSegment() + "/versions/1/snapshots", request, key).statusCode());
+        request.put("subjectTokens", List.of("s3"));
+        assertEquals(409, postRaw(path, request, key).statusCode());
+        String id = mapper.readTree(first.body()).get("snapshotId").asString();
+        var atExpiry = get("/api/v1/audiences/snapshots/" + id + "/memberships/s1?usedAt="
+                + now.plusSeconds(3600) + "&stalePolicy=REJECT_CANDIDATE");
+        assertEquals("STALE_REJECTED", atExpiry.get("freshness").asString());
+        assertEquals(false, atExpiry.get("member").asBoolean());
+        // 权限必须在幂等重放前复核，旧响应不是绕过当前权限的通行证。
+        var forbidden = client.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+                .header("X-Dev-Tenant-Id", "tenant-a").header("X-Dev-Actor-Id", "read-only")
+                .header("X-Dev-Permissions", "audience:read").header("Idempotency-Key", key)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(request))).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, forbidden.statusCode(), forbidden.body());
+    }
+
+    @Test
+    void snapshotRejectsInvalidTimesMembersAndAlreadyExpiredCreation() throws Exception {
+        String path = "/api/v1/audiences/" + newSegment() + "/versions/1/snapshots";
+        Instant now = Instant.now();
+        Map<String, Object> valid = Map.of("subjectTokens", List.of("s1"), "asOf", now,
+                "watermark", now, "expiresAt", now.plusSeconds(3600));
+        for (Map<String, Object> change : List.of(Map.<String, Object>of("watermark", now.plusSeconds(1)),
+                Map.<String, Object>of("expiresAt", now), Map.<String, Object>of("subjectTokens", List.of(" ")),
+                Map.<String, Object>of("subjectTokens", java.util.stream.IntStream.range(0, 10001)
+                        .mapToObj(i -> "subject-" + i).toList()),
+                Map.<String, Object>of("asOf", now.minusSeconds(3600), "watermark", now.minusSeconds(3600),
+                        "expiresAt", now.minusSeconds(1)))) {
+            Map<String, Object> invalid = new java.util.HashMap<>(valid); invalid.putAll(change);
+            assertEquals(400, postRaw(path, invalid, "invalid-" + UUID.randomUUID()).statusCode());
+        }
+        var missing = new java.util.HashMap<>(valid); missing.remove("watermark");
+        assertEquals(400, postRaw(path, missing, "missing-" + UUID.randomUUID()).statusCode());
+    }
+
+    @Test
+    void concurrentFirstMembershipWritesRemainMonotonicAndReturnTheStoredState() throws Exception {
+        Instant now = Instant.now();
+        String id = post("/api/v1/audiences/" + newSegment() + "/versions/1/snapshots", Map.of(
+                "subjectTokens", List.of(), "asOf", now, "watermark", now, "expiresAt", now.plusSeconds(3600)))
+                .get("snapshotId").asString();
+        String path = "/api/v1/audiences/snapshots/" + id + "/memberships";
+        var start = new java.util.concurrent.CountDownLatch(1);
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(8)) {
+            var writes = java.util.stream.IntStream.rangeClosed(1, 8).mapToObj(version -> pool.submit(() -> {
+                start.await();
+                return putRaw(path, Map.of("subjectToken", "concurrent", "version", version, "member", true));
+            })).toList();
+            start.countDown();
+            for (var write : writes) {
+                var response = write.get(30, java.util.concurrent.TimeUnit.SECONDS);
+                assertEquals(200, response.statusCode(), response.body());
+                assertTrue(mapper.readTree(response.body()).get("member").asBoolean());
+            }
+        }
+        JsonNode stale = put(path, Map.of("subjectToken", "concurrent", "version", 2, "member", false));
+        assertEquals(8, stale.get("version").asLong());
+        assertTrue(stale.get("member").asBoolean());
+        assertEquals("STALE_UPDATE_IGNORED", stale.get("freshness").asString());
+        var conflict = putRaw(path, Map.of("subjectToken", "concurrent", "version", 8, "member", false));
+        assertEquals(409, conflict.statusCode(), conflict.body());
+        assertTrue(conflict.body().contains("AUDIENCE_MEMBERSHIP_VERSION_CONFLICT"));
+        assertEquals(400, putRaw(path, Map.of("subjectToken", "new", "version", 0, "member", true)).statusCode());
+        assertEquals(400, putRaw(path, Map.of("subjectToken", " ", "version", 1, "member", true)).statusCode());
+        assertEquals(400, putRaw(path, Map.of("subjectToken", "concurrent", "version", 9)).statusCode());
+        JsonNode current = get(path + "/concurrent?usedAt=" + now + "&stalePolicy=REJECT_CANDIDATE");
+        assertEquals(8, current.get("version").asLong());
+        assertTrue(current.get("member").asBoolean());
+    }
+
+    @Test
+    void concurrentConflictingFirstVersionHasOneWinner() throws Exception {
+        Instant now = Instant.now();
+        String id = post("/api/v1/audiences/" + newSegment() + "/versions/1/snapshots", Map.of(
+                "subjectTokens", List.of(), "asOf", now, "watermark", now, "expiresAt", now.plusSeconds(3600)))
+                .get("snapshotId").asString();
+        String path = "/api/v1/audiences/snapshots/" + id + "/memberships";
+        var start = new java.util.concurrent.CountDownLatch(1);
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            var writes = List.of(true, false).stream().map(member -> pool.submit(() -> {
+                start.await();
+                return putRaw(path, Map.of("subjectToken", "same-version", "version", 1, "member", member));
+            })).toList();
+            start.countDown();
+            var first = writes.get(0).get(30, java.util.concurrent.TimeUnit.SECONDS);
+            var second = writes.get(1).get(30, java.util.concurrent.TimeUnit.SECONDS);
+            assertEquals(Set.of(200, 409), Set.of(first.statusCode(), second.statusCode()), first.body() + second.body());
+            JsonNode current = get(path + "/same-version?usedAt=" + now + "&stalePolicy=REJECT_CANDIDATE");
+            assertEquals(first.statusCode() == 200, current.get("member").asBoolean());
+        }
+    }
+
+    private String newSegment() throws Exception {
+        String id = "zz-" + UUID.randomUUID();
+        post("/api/v1/fields", Map.of("fieldId", id, "valueType", "STRING", "owner", "identity",
+                "provenance", "isolated-contract-test", "classification", "PERSONAL", "allowedUses", Set.of("ELIGIBILITY"),
+                "maxAgeSeconds", 3600, "nullPolicy", "NO_MATCH", "missingPolicy", "NO_MATCH", "retentionDays", 30));
+        post("/api/v1/audiences", Map.of("segmentId", id, "name", "ZZ isolated", "rule", Map.of(
+                "match", "ALL", "conditions", List.of(Map.of("fieldId", id, "operator", "EQ", "value", "yes")))));
+        return id;
+    }
+
+    private HttpResponse<String> putRaw(String path, Object body) throws Exception {
+        return client.send(base(path).header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
     private JsonNode post(String path, Object body) throws Exception {
         return exchange(base(path).header("Content-Type", "application/json")
                 .header("Idempotency-Key", "audience-test-" + UUID.randomUUID())
