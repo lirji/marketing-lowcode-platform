@@ -32,6 +32,32 @@ curl -fsS http://127.0.0.1:18080/actuator/health/readiness
 
 Readiness 表示实例可接新流量，不等于所有异步投影实时。额外验证：当前 desired/loaded generation 一致；Flink 最近 checkpoint 成功；Kafka lag 没有持续增长；Measurement watermark 在 SLO 内；ResourceAccount 对账差异为零。
 
+本地空库启动时，Decision 没有合法 generation，readiness DOWN 是预期状态。网关不再以此阻断控制面启动；`smoke.sh --wait` 等待 Decision liveness 后，通过真实审批、编译、验签、ACK 和激活建立规则。范围优惠的金额预览必须返回 `OFFER_PREVIEW_CONTEXT_REQUIRED`，后续完整购物车 Decision 请求才验证资格与价格。验收使用 `ACCEPTANCE_TENANT_ID` / `ACCEPTANCE_ORGANIZATION_ID` / `ACCEPTANCE_SHOP_ID` 指定隔离范围，会实际写入验收记录。
+
+该租户必须已有权益中台治理通过的 ACTIVE SKU，建议用 `ACCEPTANCE_BENEFIT_SKU_ID` 明确选择。验收先查目录，再登记本项目自己的 ACTIVE BenefitDefinition，并用 `benefitId@version` 发布；目录为空或不可达会在新增验收记录前失败，不自动创建或激活外部 SKU。权益中台默认地址为 `BENEFIT_CENTER_BASE_URL`；只启动目录并关闭 workers/relay/consumer 只能证明目录读取，不能证明真实发奖闭环。
+
+网关 HTTP 读取默认 12 秒，CircuitBreaker 的 TimeLimiter 单独设预算：普通控制操作 4 秒、编译 15 秒、Decision/Journey 各自的运行时控制路由 10 秒、在线 Decision 和事件接入仍为 1 秒。配置分别为 `GATEWAY_RESPONSE_TIMEOUT` / `GATEWAY_CONTROL_TIMEOUT` / `GATEWAY_COMPILER_TIMEOUT` / `GATEWAY_RUNTIME_TIMEOUT` / `GATEWAY_DECISION_TIMEOUT` / `GATEWAY_EVENT_TIMEOUT`。编译器 DRL 内部上限为 10 秒；扩大环境预算应核对排队与连接预算，不能仅更改外层。框架的两个超时机制不同，参考 [Spring Cloud CircuitBreaker 官方配置说明](https://docs.spring.io/spring-cloud-circuitbreaker/reference/spring-cloud-circuitbreaker-resilience4j/circuit-breaker-properties-configuration.html)。
+
+验收请求只有只读、业务幂等键或已核实内容寻址幂等的编译操作才对临时传输错误重试，最多三次且保持原始请求字节。504 不代表服务端回滚。日志中的 `ACCEPTANCE_RUN_ID` 用于查找业务记录；固定该 ID **不保证整段脚本可任意阶段重跑**，含动态时间的写入应先核实已提交结果及幂等指纹。
+
+### 本地 Flink 提交与恢复
+
+普通 Compose 启动不包含 `bootstrap` profile 的提交器；使用 `./scripts/submit-flink-jobs.sh`。脚本仅在集群没有运行作业且状态卷不存在 `_metadata` 时首次提交。三个指定作业必须各一个、所有子任务 RUNNING、最近完成 checkpoint 不超过 180 秒。作业缺失、名称冲突、重复、子任务未就绪或 checkpoint 陈旧均不会触发盲目重提。
+
+已有作业历史或 checkpoint/savepoint 时，先确认兼容制品和各作业对应的元数据路径，再提供恢复计划：
+
+```json
+{
+  "audience": "file:///opt/flink/checkpoints/<audience-job-id>/chk-<n>/_metadata",
+  "journey": "file:///opt/flink/checkpoints/<journey-job-id>/chk-<n>/_metadata",
+  "measurement": "file:///opt/flink/checkpoints/<measurement-job-id>/chk-<n>/_metadata"
+}
+```
+
+替换占位符为状态卷中真实且互不相同的路径，执行 `./scripts/submit-flink-jobs.sh --restore-plan /absolute/path/restore.json`。脚本核对三份元数据存在，以 `--claimMode no_claim` 恢复，保留源检查点的所有权，并等待新完成检查点；不会取消现有作业，也不会自动挑选最新目录。部分提交失败时应查实际作业状态并处理，不能直接重试提交剩余或删除状态。
+
+本机入口以 `.flink-submit.lock/` 互斥；异常退出遗留锁时先核对进程和 Flink 作业，再清理失效锁。该锁不提供跨主机互斥，只允许单一运维入口操作同一集群。恢复模式的本地路径契约不适用于远程对象存储；生产升级另按 savepoint 与兼容验证流程执行。
+
 ## 常见故障
 
 ### Decision 延迟或错误升高
@@ -60,6 +86,7 @@ Readiness 表示实例可接新流量，不等于所有异步投影实时。额�
 
 - Kafka 不可用：观察 `marketing_outbox_pending{outbox="events"}`、`marketing_outbox_oldest_age_seconds{outbox="events"}` 和 `marketing_outbox_backpressure_active{outbox="events"}`；HTTP 接入在全局/单租户深度或最老年龄达到阈值后返回 `503 EVENT_OUTBOX_BACKPRESSURE`，阈值内已成功提交 receipt/outbox 的请求仍返回 202。不要通过抬高阈值把数据库磁盘或连接池耗尽。
 - Kafka 恢复后确认过期 lease 被重新认领、pending 与 oldest age 持续下降、DLQ 没有异常增长，再逐步放开入口；Relay 等待 ACK 的阶段不应持有 `mk_event_outbox` 行锁或数据库连接。
+- 若 oldest age 很大但 publish_attempts/lease_version 一直为零，核对 publish_state 与 published_at/dead_lettered_at 是否矛盾。旧演示种子曾写入已发布时间却遗漏终态，导致展示行被背压计作积压。先确认仅限三种 `mock-outbox-*` 演示记录及计数未增加，再修正元数据；不能通过删除真实消息或提高背压阈值处理。
 - Decision 使用已加载制品；外部副作用保持本地 outbox 待发。
 - Flink restart loop：检查第一个异常、checkpoint 可读性、schema compatibility、transaction timeout 和 DLQ，不连续删除 state。
 - 有有效 checkpoint 时从 checkpoint 自动恢复；升级/回滚用 savepoint。只有经批准且能接受状态丢失时才无状态重启。

@@ -146,6 +146,13 @@ def verify(output_dir):
         for sql in (base, retail, extra):
             mysql(sql)
         check("重复导入各表记录数不增长", first_counts == row_counts())
+        check("演示outbox终态一致且不会触发真实发布或背压", mysql("""
+            SELECT COUNT(*) FROM marketing_events.mk_event_outbox
+            WHERE publish_state <> 'PUBLISHED' OR published_at IS NULL
+               OR depth_bucket_id <> MOD(CRC32(outbox_id),64);
+        """) == "0" and mysql("""
+            SELECT COALESCE(SUM(pending_count),0) FROM marketing_events.mk_event_outbox_depth;
+        """) == "0")
         check("重复导入保留非演示账户、分桶及原分配",
               protected_snapshot("mk_resource_account") == before_accounts
               and protected_snapshot("mk_resource_escrow_bucket") == before_buckets

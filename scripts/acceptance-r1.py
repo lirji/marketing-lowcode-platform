@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 import unicodedata
@@ -14,6 +15,7 @@ import urllib.parse
 import urllib.request
 import uuid
 from datetime import datetime, timedelta, timezone
+from http import HTTPStatus
 from typing import Any, Callable
 
 
@@ -22,8 +24,12 @@ TENANT = os.environ.get("ACCEPTANCE_TENANT_ID", "retail-cn")
 ORGANIZATION = os.environ.get("ACCEPTANCE_ORGANIZATION_ID", "retail-business")
 SHOP = os.environ.get("ACCEPTANCE_SHOP_ID", "all-shops")
 RELEASE_KEY_ID = os.environ.get("RELEASE_SIGNING_KEY_ID", "release-local-1")
-AUDIENCE_ID = os.environ.get("ACCEPTANCE_AUDIENCE_ID", "r1-qualified-audience")
-SUFFIX = uuid.uuid4().hex[:12]
+SUFFIX = os.environ.get("ACCEPTANCE_RUN_ID") or uuid.uuid4().hex[:12]
+if not re.fullmatch(r"[0-9a-f]{12}", SUFFIX):
+    raise ValueError("ACCEPTANCE_RUN_ID must be 12 lowercase hexadecimal characters")
+AUDIENCE_ID = os.environ.get("ACCEPTANCE_AUDIENCE_ID", f"r1-qualified-{SUFFIX}")
+RETRYABLE_HTTP_STATUSES = frozenset({408, 429, 502, 503, 504})
+MAX_TRANSPORT_ATTEMPTS = 3
 
 
 class ApiError(RuntimeError):
@@ -45,6 +51,7 @@ def call(
     *,
     actor: str = "r1-acceptance",
     idempotency_key: str | None = None,
+    replay_safe: bool = False,
 ) -> Any:
     encoded = None if body is None else json.dumps(
         body, ensure_ascii=False, separators=(",", ":")
@@ -64,12 +71,21 @@ def call(
     request = urllib.request.Request(
         GATEWAY + path, data=encoded, headers=headers, method=method
     )
-    try:
-        with urllib.request.urlopen(request, timeout=15) as response:
-            payload = response.read().decode("utf-8")
-    except urllib.error.HTTPError as failure:
-        payload = failure.read().decode("utf-8", errors="replace")
-        raise ApiError(failure.code, method, path, payload) from failure
+    # 网关超时不等于业务回滚；只读、业务幂等键或已核实内建幂等的操作才重试原始字节。
+    retry_safe = method in {"GET", "HEAD"} or idempotency_key is not None or replay_safe
+    for attempt in range(MAX_TRANSPORT_ATTEMPTS):
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                payload = response.read().decode("utf-8")
+            break
+        except urllib.error.HTTPError as failure:
+            payload = failure.read().decode("utf-8", errors="replace")
+            if not retry_safe or failure.code not in RETRYABLE_HTTP_STATUSES or attempt + 1 == MAX_TRANSPORT_ATTEMPTS:
+                raise ApiError(failure.code, method, path, payload) from failure
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            if not retry_safe or attempt + 1 == MAX_TRANSPORT_ATTEMPTS:
+                raise
+        time.sleep(attempt + 1)
     if not payload:
         return None
     try:
@@ -118,7 +134,7 @@ def campaign(name: str) -> dict[str, Any]:
     )
 
 
-def approve_graph(campaign_id: str, graph: dict[str, Any], simulate: bool) -> tuple[int, str, str]:
+def approve_graph(campaign_id: str, graph: dict[str, Any], simulate: bool, *, scoped_preview: bool = False) -> tuple[int, str, str]:
     definition = call(
         "POST",
         "/api/v1/definitions",
@@ -141,13 +157,22 @@ def approve_graph(campaign_id: str, graph: dict[str, Any], simulate: bool) -> tu
         "control-plane semantic hash changed during validation",
     )
     if simulate:
-        simulation = call(
-            "POST",
-            f"/api/v1/definitions/{definition_id}/versions/{version}:simulate",
-            {"amountMinor": "10000"},
-            actor=f"r1-author-{SUFFIX}",
-        )
-        require(simulation["discountMinor"] == 1000, "offer simulation is not deterministic")
+        # 金额预览没有资格上下文，范围优惠必须拒绝；完整资格与价格由后续真实 Decision 验收。
+        try:
+            simulation = call(
+                "POST",
+                f"/api/v1/definitions/{definition_id}/versions/{version}:simulate",
+                {"amountMinor": "10000"},
+                actor=f"r1-author-{SUFFIX}",
+            )
+        except ApiError as failure:
+            if not scoped_preview or failure.status != HTTPStatus.CONFLICT:
+                raise
+            require(json.loads(failure.body).get("code") == "OFFER_PREVIEW_CONTEXT_REQUIRED",
+                    "scoped preview failed for an unexpected reason")
+        else:
+            require(not scoped_preview, "amount-only preview accepted a scoped policy without eligibility context")
+            require(simulation["discountMinor"] == 1000, "offer simulation is not deterministic")
     submitted = call(
         "POST",
         f"/api/v1/definitions/{definition_id}/versions/{version}:submit",
@@ -188,6 +213,8 @@ def compile_graph(
             "source": None,
             "graph": graph,
         },
+        # 编译制品 ID 绑定租户/定义/版本/内容/签名键，ArtifactStore.putIfAbsent 保证相同输入重放。
+        replay_safe=True,
     )
     require(report["valid"], f"compiler rejected graph: {report['messages']}")
     artifact = call("GET", f"/api/v1/artifacts/{report['artifactId']}")
@@ -325,6 +352,14 @@ def dashboard(from_time: str, to_time: str) -> dict[str, Any]:
 
 
 def main() -> None:
+    step(f"acceptance run={SUFFIX} tenant={TENANT}")
+    step("checking the real active benefit SKU catalog before creating acceptance data")
+    skus = call("GET", "/api/v1/benefit-skus?status=ACTIVE")
+    selected_sku = os.environ.get("ACCEPTANCE_BENEFIT_SKU_ID")
+    eligible_skus = [sku for sku in skus if sku["status"] == "ACTIVE"
+                     and (selected_sku is None or sku["skuId"] == selected_sku)]
+    require(bool(eligible_skus), "no ACTIVE benefit SKU for the acceptance tenant; provision it through benefit-center governance and set ACCEPTANCE_BENEFIT_SKU_ID")
+    sku = eligible_skus[0]
     step("registering governed audience and authenticated event source")
     field_id = f"r1-score-{SUFFIX}"
     call(
@@ -383,6 +418,13 @@ def main() -> None:
 
     step("authoring, approving, compiling, and activating offer policy")
     benefit_id = f"coupon-{SUFFIX}"
+    benefit = call(
+        "PUT", f"/api/v1/benefits/{benefit_id}",
+        {"name": f"R1 acceptance {SUFFIX}", "status": "ACTIVE", "resourceKey": "",
+         "benefitSkuId": sku["skuId"], "policy": {"type": sku["benefitType"]}},
+        idempotency_key=f"benefit-{SUFFIX}",
+    )
+    benefit_reference = f"{benefit_id}@{benefit['version']}"
     funder_id = f"platform-{SUFFIX}"
     offer_definition = f"offer-r1-{SUFFIX}"
     offer_campaign = campaign(f"R1 offer {SUFFIX}")
@@ -398,7 +440,7 @@ def main() -> None:
                 "semanticVersion": "1.0.0",
                 "config": {
                     "offerId": f"fixed-{SUFFIX}",
-                    "benefitDefinitionVersion": benefit_id,
+                    "benefitDefinitionVersion": benefit_reference,
                     "amountMinor": "1000",
                     "thresholdMinor": "5000",
                     "validFrom": "2025-01-01T00:00:00Z",
@@ -420,7 +462,7 @@ def main() -> None:
         "annotations": {"terms": "满50元减10元；以最终结算页为准"},
     }
     offer_version, offer_case, offer_hash = approve_graph(
-        offer_campaign["id"], offer_graph, True
+        offer_campaign["id"], offer_graph, True, scoped_preview=True
     )
     offer_artifact, offer_reference = compile_graph(
         offer_graph, offer_version, "OFFER_POLICY", offer_hash
@@ -445,9 +487,10 @@ def main() -> None:
         "schemaVersion": "1.0.0",
         "data": {"profileVersion": 1, "segmentIds": [AUDIENCE_ID]},
     }
-    profile_receipt = call("POST", "/api/v1/events", profile_event)
-    require(profile_receipt["status"] == "ACCEPTED", "profile event was not accepted")
-    duplicate_profile = call("POST", "/api/v1/events", profile_event)
+    # Event Gateway 在事务中按 eventId 去重；首次回执超时后的原请求重放可返回 DUPLICATE。
+    profile_receipt = call("POST", "/api/v1/events", profile_event, replay_safe=True)
+    require(profile_receipt["status"] in {"ACCEPTED", "DUPLICATE"}, "profile event was not accepted")
+    duplicate_profile = call("POST", "/api/v1/events", profile_event, replay_safe=True)
     require(duplicate_profile["status"] == "DUPLICATE", "event replay was not idempotent")
 
     cart = {
@@ -483,7 +526,7 @@ def main() -> None:
             "cart": cart,
             "audienceSnapshotIds": [AUDIENCE_ID],
         }
-        response = call("POST", "/api/v1/decisions:evaluate", request)
+        response = call("POST", "/api/v1/decisions:evaluate", request, replay_safe=True)
         if not response["pricing"]["appliedOffers"]:
             return None
         return response, request
@@ -492,11 +535,11 @@ def main() -> None:
     require(decision["generation"] == offer_manifest["generation"], "decision used a stale generation")
     require(decision["pricing"]["payable"]["minorUnits"] == 9000, "decision price is incorrect")
     require(bool(decision["offerToken"]), "eligible decision did not issue a signed offer token")
-    replayed_decision = call("POST", "/api/v1/decisions:evaluate", decision_request)
+    replayed_decision = call("POST", "/api/v1/decisions:evaluate", decision_request, replay_safe=True)
     require(replayed_decision == decision, "decision idempotency did not return the original response")
 
     step("reserving and settling fenced inventory and platform budget")
-    inventory_key = f"INVENTORY:{benefit_id}"
+    inventory_key = f"INVENTORY:{benefit_reference}"
     budget_key = f"BUDGET:PLATFORM:{funder_id}:CNY"
     call(
         "POST",
@@ -706,8 +749,8 @@ def main() -> None:
             "signal": {"type": "START", "attributes": {}},
         },
     }
-    journey_receipt = call("POST", "/api/v1/events", journey_event)
-    require(journey_receipt["status"] == "ACCEPTED", "journey signal was not accepted")
+    journey_receipt = call("POST", "/api/v1/events", journey_event, replay_safe=True)
+    require(journey_receipt["status"] in {"ACCEPTED", "DUPLICATE"}, "journey signal was not accepted")
 
     def completed_enrollment() -> dict[str, Any] | None:
         value = call("GET", f"/api/v1/enrollments/{enrollment_id}")
@@ -739,8 +782,8 @@ def main() -> None:
             "attributes": {"campaignId": offer_campaign["id"], "revenueMinor": "5000"},
         },
     }
-    streamed_receipt = call("POST", "/api/v1/events", streamed_fact)
-    require(streamed_receipt["status"] == "ACCEPTED", "streamed fact was not accepted")
+    streamed_receipt = call("POST", "/api/v1/events", streamed_fact, replay_safe=True)
+    require(streamed_receipt["status"] in {"ACCEPTED", "DUPLICATE"}, "streamed fact was not accepted")
 
     def streamed_projection() -> dict[str, Any] | None:
         value = dashboard(measure_from, measure_to)

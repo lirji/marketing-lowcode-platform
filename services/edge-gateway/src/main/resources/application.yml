@@ -10,7 +10,8 @@ spring:
     timeout: ${GATEWAY_REDIS_COMMAND_TIMEOUT:500ms}
   http.clients:
     connect-timeout: ${GATEWAY_CONNECT_TIMEOUT:1s}
-    read-timeout: ${GATEWAY_RESPONSE_TIMEOUT:3s}
+    # HTTP 预算覆盖最长编译；各路由仍由独立 TimeLimiter 限制，不放宽实时决策。
+    read-timeout: ${GATEWAY_RESPONSE_TIMEOUT:12s}
   cloud:
     gateway:
       server:
@@ -47,6 +48,12 @@ spring:
                 - "Path=/api/v1/audiences/**,/api/v1/fields/**"
               filters:
                 - "CircuitBreaker=audienceCircuit"
+            - id: decision-runtime
+              uri: ${DECISION_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - "Path=/api/v1/decisions/runtime/**"
+              filters:
+                - "CircuitBreaker=decisionRuntimeCircuit"
             - id: decision
               uri: ${DECISION_SERVICE_URL:http://localhost:8084}
               predicates:
@@ -65,6 +72,12 @@ spring:
                 - "Path=/api/v1/events/**,/api/v1/quarantine/**"
               filters:
                 - "CircuitBreaker=eventCircuit"
+            - id: journey-runtime
+              uri: ${JOURNEY_SERVICE_URL:http://localhost:8087}
+              predicates:
+                - "Path=/api/v1/journey-runtime/**"
+              filters:
+                - "CircuitBreaker=journeyRuntimeCircuit"
             - id: journey
               uri: ${JOURNEY_SERVICE_URL:http://localhost:8087}
               predicates:
@@ -111,7 +124,9 @@ resilience4j.circuitbreaker:
   instances:
     controlCircuit: {baseConfig: default}
     referralCircuit: {baseConfig: default}
-    compilerCircuit: {baseConfig: default}
+    compilerCircuit: {baseConfig: default, slowCallDurationThreshold: 10s}
+    decisionRuntimeCircuit: {baseConfig: default, slowCallDurationThreshold: 5s}
+    journeyRuntimeCircuit: {baseConfig: default, slowCallDurationThreshold: 5s}
     audienceCircuit: {baseConfig: default}
     decisionCircuit: {baseConfig: default, slowCallDurationThreshold: 500ms}
     benefitCircuit: {baseConfig: default}
@@ -119,6 +134,17 @@ resilience4j.circuitbreaker:
     journeyCircuit: {baseConfig: default}
     engagementCircuit: {baseConfig: default}
     measurementCircuit: {baseConfig: default}
+# 明确区分 HTTP 等待与 CircuitBreaker 的总时间预算；取消等待不表示下游写入回滚。
+resilience4j.timelimiter:
+  configs.default:
+    timeoutDuration: ${GATEWAY_CONTROL_TIMEOUT:4s}
+    cancelRunningFuture: true
+  instances:
+    compilerCircuit: {timeoutDuration: "${GATEWAY_COMPILER_TIMEOUT:15s}"}
+    decisionRuntimeCircuit: {timeoutDuration: "${GATEWAY_RUNTIME_TIMEOUT:10s}"}
+    journeyRuntimeCircuit: {timeoutDuration: "${GATEWAY_RUNTIME_TIMEOUT:10s}"}
+    decisionCircuit: {timeoutDuration: "${GATEWAY_DECISION_TIMEOUT:1s}"}
+    eventCircuit: {timeoutDuration: "${GATEWAY_EVENT_TIMEOUT:1s}"}
 management:
   endpoints.web.exposure.include: health,info,prometheus
   endpoint.health.probes.enabled: true

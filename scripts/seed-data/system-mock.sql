@@ -356,17 +356,18 @@ ON DUPLICATE KEY UPDATE last_version=GREATEST(last_version,VALUES(last_version))
 
 INSERT INTO marketing_events.mk_event_outbox
   (tenant_id,outbox_id,receipt_id,event_type,destination_topic,partition_key,stream_sequence,payload_json,
-   created_at,published_at,dead_lettered_at,publish_attempts,next_attempt_at,last_error)
+   created_at,published_at,dead_lettered_at,publish_attempts,next_attempt_at,last_error,publish_state,depth_bucket_id)
 VALUES
   (@tenant,'mock-outbox-profile','mock-receipt-profile','PROFILE_CHANGED','mk.profile.change.v1',CONCAT(@tenant,':',@subject),1,
-   JSON_OBJECT('tenantId',@tenant,'subjectToken',@subject,'profileVersion',1,'segmentIds',JSON_ARRAY(@audience),'occurredAtEpochMillis',CAST(UNIX_TIMESTAMP(DATE_SUB(UTC_TIMESTAMP(),INTERVAL 4 HOUR))*1000 AS UNSIGNED)),@t4h,@t4h,NULL,0,@t4h,''),
+   JSON_OBJECT('tenantId',@tenant,'subjectToken',@subject,'profileVersion',1,'segmentIds',JSON_ARRAY(@audience),'occurredAtEpochMillis',CAST(UNIX_TIMESTAMP(DATE_SUB(UTC_TIMESTAMP(),INTERVAL 4 HOUR))*1000 AS UNSIGNED)),@t4h,@t4h,NULL,0,@t4h,'','PUBLISHED',MOD(CRC32('mock-outbox-profile'),64)),
   (@tenant,'mock-outbox-journey','mock-receipt-journey','JOURNEY_SIGNAL','mk.journey.signal.v1',CONCAT(@tenant,':mock-enr-cart-001'),1,
-   JSON_OBJECT('tenantId',@tenant,'enrollmentId','mock-enr-cart-001','subjectToken',@subject,'planReference',JSON_OBJECT('artifactId','mock-artifact-journey-v1','generation',731,'journeyId',@journey_definition,'journeyVersion',1),'signal',JSON_OBJECT('type','START','signalId','mock-journey-start-001')),@t3h,@t3h,NULL,0,@t3h,''),
+   JSON_OBJECT('tenantId',@tenant,'enrollmentId','mock-enr-cart-001','subjectToken',@subject,'planReference',JSON_OBJECT('artifactId','mock-artifact-journey-v1','generation',731,'journeyId',@journey_definition,'journeyVersion',1),'signal',JSON_OBJECT('type','START','signalId','mock-journey-start-001')),@t3h,@t3h,NULL,0,@t3h,'','PUBLISHED',MOD(CRC32('mock-outbox-journey'),64)),
   (@tenant,'mock-outbox-fact','mock-receipt-fact','MARKETING_FACT','mk.marketing.fact.v1',CONCAT(@tenant,':mock-conversion-ha-001'),1,
-   JSON_OBJECT('eventId','mock-conversion-ha-001','tenantId',@tenant,'type','CONVERSION','businessKey',@order_id,'subjectToken',@subject,'occurredAt',@t1h,'ingestedAt',@t1h,'schemaVersion','1.0.0','attributes',JSON_OBJECT('campaignId',@campaign,'revenueMinor','579900'),'correctionOf','','correctionRootId','mock-conversion-ha-001'),@t1h,@t1h,NULL,0,@t1h,'')
+   JSON_OBJECT('eventId','mock-conversion-ha-001','tenantId',@tenant,'type','CONVERSION','businessKey',@order_id,'subjectToken',@subject,'occurredAt',@t1h,'ingestedAt',@t1h,'schemaVersion','1.0.0','attributes',JSON_OBJECT('campaignId',@campaign,'revenueMinor','579900'),'correctionOf','','correctionRootId','mock-conversion-ha-001'),@t1h,@t1h,NULL,0,@t1h,'','PUBLISHED',MOD(CRC32('mock-outbox-fact'),64))
 ON DUPLICATE KEY UPDATE event_type=VALUES(event_type),destination_topic=VALUES(destination_topic),partition_key=VALUES(partition_key),
   stream_sequence=VALUES(stream_sequence),payload_json=VALUES(payload_json),created_at=VALUES(created_at),published_at=VALUES(published_at),
-  dead_lettered_at=VALUES(dead_lettered_at),publish_attempts=VALUES(publish_attempts),next_attempt_at=VALUES(next_attempt_at),last_error=VALUES(last_error);
+  dead_lettered_at=VALUES(dead_lettered_at),publish_attempts=VALUES(publish_attempts),next_attempt_at=VALUES(next_attempt_at),last_error=VALUES(last_error),
+  publish_state=VALUES(publish_state),depth_bucket_id=VALUES(depth_bucket_id);
 
 INSERT INTO marketing_events.mk_event_stream_position
   (tenant_id,destination_topic,partition_key,last_sequence,updated_at)

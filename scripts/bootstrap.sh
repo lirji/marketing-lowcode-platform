@@ -162,6 +162,7 @@ else
 fi
 
 compose up --detach --build --remove-orphans
+"${PROJECT_ROOT}/scripts/submit-flink-jobs.sh"
 if [[ "${with_observability}" == true ]]; then
   "${PROJECT_ROOT}/scripts/smoke.sh" --wait --observability
 else

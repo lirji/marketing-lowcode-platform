@@ -104,6 +104,7 @@ htmlcov/
 .claude/settings.local.json
 /.codex/tasks/
 CODEX_PROGRESS.md
+/.flink-submit.lock/
 
 # Plain text files
 *.txt

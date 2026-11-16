@@ -1,5 +1,13 @@
 # 文档同步地图
 
+最新增量同步：2026-11-16，`completion-20261116/S03`，源码基线 `39bbc6e1f42d9d194d742ac41abc7d2995472626`。本次仅同步 Compose 启动、Flink 提交/恢复保护与验收重试；当前本机业务镜像仍为历史版本，不能视为新镜像或空环境全链路已通过。
+
+| 代码区域 | 权威入口 | 同步内容 |
+| --- | --- | --- |
+| deploy/compose.yaml、bootstrap/submit-flink-jobs/flink-state/smoke/acceptance-r1 | [README](../README.md)、[运行手册](operations/RUNBOOK.md) | 首发 readiness、显式提交、恢复计划、检查点、传输重试与未知写结果 |
+| 本轮验收与后续范围 | [实施进度](delivery/completion-20261116/PROGRESS.md) | 已通过证据、实际失败与待办，不将配置变更写成已部署 |
+| Event 演示 outbox 与种子验证 | [演示数据](../README.md#本地演示数据) | PUBLISHED终态与深度分桶一致，不把展示记录送入实时队列或计作积压 |
+
 本次增量同步基线：`6b9092feed4d49696aa4498d118a14f241268568`；日期：2026-10-19；任务：pending-files-update。范围为登录说明、演示种子及原有 45 份历史分析/评审；不代表重新核验全部业务或环境。
 
 | 本次区域 | 权威入口 | 同步内容 |

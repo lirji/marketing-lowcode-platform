@@ -6,9 +6,11 @@
 
 新增裂变能力正在分阶段实施，当前能力、专项证据和未开放门禁见[裂变后端实施导航](docs/REFERRAL_IMPLEMENTATION_STATUS.md)。完整裂变尚未达到上述R1生产候选结论。
 
-## 五分钟体验
+## 本地启动
 
 前置条件：Docker Desktop、Java 21、pnpm 9，以及同级目录的 `dev-infra`。数据库与中间件统一复用 `dev-infra`；首次启动会生成仅本机可读的 `.env`、初始化隔离资源并构建业务镜像：
+
+完整发布验收还要求 `BENEFIT_CENTER_BASE_URL` 指向可达的权益中台，验收租户已有治理通过的 ACTIVE SKU。用 `ACCEPTANCE_TENANT_ID` / `ACCEPTANCE_ORGANIZATION_ID` / `ACCEPTANCE_SHOP_ID` / `ACCEPTANCE_BENEFIT_SKU_ID` 指定本地测试范围；目录为空时不会绕过发布门禁或伪造 SKU。未提供这些变量时仍使用参考租户 `retail-cn`。
 
 ```bash
 cd ../dev-infra && make init   # 首次执行；随后替换 .env 中的 change-me
@@ -23,6 +25,10 @@ cd ../marketing-lowcode-platform
 ```
 
 若检测到旧版 `marketing-r1-mysql-1` 容器，启动脚本会拒绝自动切到空的共享数据库。先按 `dev-infra/docs/marketing-platform-integration.md` 备份并迁移数据；确认迁移完成或明确接受空库切换后，才可使用 `CONFIRM_DEV_INFRA_CUTOVER=marketing-r1 ./scripts/bootstrap.sh --allow-legacy-cutover`。
+
+网关启动只等待 Decision 进程启动，首个合法制品激活之前 Decision readiness 保持 DOWN。`smoke.sh --wait` 等待 liveness 后执行审批、签名制品、READY ACK 和激活，不用空规则伪造就绪。该脚本会写本地验收数据；不要对生产环境执行。
+
+Flink 提交器位于 `bootstrap` profile；普通 `docker compose up` 不会提交作业。`bootstrap.sh` 通过 `scripts/submit-flink-jobs.sh` 核对三个指定作业、全部子任务和最近完成的 checkpoint；健康集群直接复用。存在遗留状态时需要明确的恢复计划，见[本地 Flink 恢复](docs/operations/RUNBOOK.md#本地-flink-提交与恢复)。
 
 9 个领域服务不再包含 H2 后端。通过 Compose 启动时，它们连接 `dev-infra` 的 `infra-mysql84:3306`；直接从 IDE 或 Maven 启动时，默认连接宿主机 `127.0.0.1:43306`。先加载项目 `.env` 中对应的应用与迁移密码，例如 `set -a; source .env; set +a`。集成测试使用临时 MySQL 8.4 Testcontainers，不写入持久开发库；Docker 较慢时允许最多 5 分钟完成首次初始化。
 
@@ -76,6 +82,7 @@ pnpm frontend:dev
 - 补充 SQL 会清理 `retail-cn` 下四个历史残缺的 `rcn-app-*` 演示申请；资金分桶只处理明确列出的演示租户、资源和申请。
 - 三份 SQL 分别提交事务，失败时先查看报错；修复后可重跑。重复执行不新增同一主键记录，但不是保留演示操作历史的增量导入。
 - 种子中的发布状态、签名、摘要及渠道回执用于页面展示，不能作为真实编译、发布、发奖或跨系统链路通过的证据。
+- 演示 outbox 明确写入 `PUBLISHED` 和对应深度分桶，不进入真实发送队列；其已发布时间与终态必须一致，避免旧演示记录触发全局背压。
 
 执行 `python3 scripts/verify-seed-data.py` 可使用本机已有 `mysql:8.4.11` 镜像在隔离临时容器内验证迁移、重复导入、资金守恒和租户隔离；不连接现有开发库。
 

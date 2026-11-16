@@ -45,13 +45,19 @@ require(
 )
 require("dev-infra" in job_manager["networks"], "Flink must use shared dev-infra")
 
-submit = services["flink-job-submit"]
-require(
-    submit.get("entrypoint") == ["/docker-entrypoint.sh"],
-    "Flink submitter must preserve the upstream configuration entrypoint",
-)
-submit_command = "\n".join(submit["command"])
-require(submit_command.count("flink run -d ") == 3, "exactly three R1 Flink jobs must be submitted")
+if "flink-job-submit" in services:
+    submit = services["flink-job-submit"]
+    require("bootstrap" in submit.get("profiles", []), "Flink submission must be explicitly requested")
+    require(
+        submit.get("entrypoint") == ["/docker-entrypoint.sh"],
+        "Flink submitter must preserve the upstream configuration entrypoint",
+    )
+    submit_command = "\n".join(submit["command"])
+    require(submit_command.count("flink run -d ") == 3, "exactly three R1 Flink jobs must be submitted")
+    require(submit_command.count("--claimMode no_claim") == 3, "recovery must retain source checkpoints")
+
+require(services["edge-gateway"]["depends_on"]["offer-decision-service"]["condition"] == "service_started",
+        "control-plane bootstrap must not wait for the first Decision generation")
 
 java_services = {
     "edge-gateway",

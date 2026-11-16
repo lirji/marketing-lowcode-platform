@@ -343,7 +343,12 @@ services:
       GATEWAY_REDIS_CONNECT_TIMEOUT: ${GATEWAY_REDIS_CONNECT_TIMEOUT:-500ms}
       GATEWAY_REDIS_COMMAND_TIMEOUT: ${GATEWAY_REDIS_COMMAND_TIMEOUT:-500ms}
       GATEWAY_CONNECT_TIMEOUT: ${GATEWAY_CONNECT_TIMEOUT:-1s}
-      GATEWAY_RESPONSE_TIMEOUT: ${GATEWAY_RESPONSE_TIMEOUT:-3s}
+      GATEWAY_RESPONSE_TIMEOUT: ${GATEWAY_RESPONSE_TIMEOUT:-12s}
+      GATEWAY_CONTROL_TIMEOUT: ${GATEWAY_CONTROL_TIMEOUT:-4s}
+      GATEWAY_COMPILER_TIMEOUT: ${GATEWAY_COMPILER_TIMEOUT:-15s}
+      GATEWAY_RUNTIME_TIMEOUT: ${GATEWAY_RUNTIME_TIMEOUT:-10s}
+      GATEWAY_DECISION_TIMEOUT: ${GATEWAY_DECISION_TIMEOUT:-1s}
+      GATEWAY_EVENT_TIMEOUT: ${GATEWAY_EVENT_TIMEOUT:-1s}
       MARKETING_GATEWAY_EVENT_RATE: ${MARKETING_GATEWAY_EVENT_RATE:-10000}
       MARKETING_GATEWAY_EVENT_BURST: ${MARKETING_GATEWAY_EVENT_BURST:-10000}
       MARKETING_GATEWAY_DECISION_RATE: ${MARKETING_GATEWAY_DECISION_RATE:-30000}
@@ -358,7 +363,8 @@ services:
       marketing-control-service: { condition: service_healthy }
       rule-compiler-worker: { condition: service_healthy }
       audience-service: { condition: service_healthy }
-      offer-decision-service: { condition: service_healthy }
+      # 首个规则必须经网关发布；控制面可达不能依赖尚无 generation 的数据面 readiness。
+      offer-decision-service: { condition: service_started }
       benefit-funding-service: { condition: service_healthy }
       event-gateway-service: { condition: service_healthy }
       journey-service: { condition: service_healthy }
@@ -451,6 +457,7 @@ services:
 
   flink-job-submit:
     image: marketing/flink-jobs:${IMAGE_TAG:-local}
+    profiles: [bootstrap]
     restart: "no"
     # Preserve the upstream entrypoint so FLINK_PROPERTIES is materialized in
     # config.yaml before the CLI submits the jobs.
@@ -460,9 +467,13 @@ services:
       - -ec
       - |
         until curl -fsS http://flink-jobmanager:8081/overview >/dev/null; do sleep 2; done
-        flink run -d /opt/flink/usrlib/audience.jar
-        flink run -d /opt/flink/usrlib/journey.jar
-        flink run -d /opt/flink/usrlib/measurement.jar
+        audience_restore=(); journey_restore=(); measurement_restore=()
+        if [[ -n "$${AUDIENCE_RESTORE_PATH:-}" ]]; then audience_restore=(-s "$$AUDIENCE_RESTORE_PATH" --claimMode no_claim); fi
+        if [[ -n "$${JOURNEY_RESTORE_PATH:-}" ]]; then journey_restore=(-s "$$JOURNEY_RESTORE_PATH" --claimMode no_claim); fi
+        if [[ -n "$${MEASUREMENT_RESTORE_PATH:-}" ]]; then measurement_restore=(-s "$$MEASUREMENT_RESTORE_PATH" --claimMode no_claim); fi
+        flink run -d "$${audience_restore[@]}" /opt/flink/usrlib/audience.jar
+        flink run -d "$${journey_restore[@]}" /opt/flink/usrlib/journey.jar
+        flink run -d "$${measurement_restore[@]}" /opt/flink/usrlib/measurement.jar
     environment:
       <<: *flink-environment
       KAFKA_BOOTSTRAP_SERVERS: ${MARKETING_KAFKA_BOOTSTRAP_SERVERS:-infra-kafka38:9092}
@@ -484,6 +495,9 @@ services:
       JOURNEY_RUNTIME_DB_USER: journey_app
       JOURNEY_RUNTIME_DB_PASSWORD: ${JOURNEY_DB_PASSWORD}
     networks: [dev-infra]
+    volumes:
+      - flink-checkpoints:/opt/flink/checkpoints:ro
+      - flink-savepoints:/opt/flink/savepoints:ro
     depends_on:
       flink-jobmanager: { condition: service_started }
       flink-taskmanager: { condition: service_started }

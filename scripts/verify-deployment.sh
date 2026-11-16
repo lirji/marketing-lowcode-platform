@@ -12,11 +12,14 @@ DEV_INFRA_ROOT="${DEV_INFRA_ROOT:-$(cd "${PROJECT_ROOT}/.." && pwd)/dev-infra}"
 require_command docker
 require_command python3
 require_command helm
+python3 -m unittest discover -s tests/scripts -v
 
 docker compose --env-file .env.example -f deploy/compose.yaml config --quiet
 docker compose --env-file .env.example -f deploy/compose.yaml config --format json \
   | python3 scripts/verify-compose-model.py
 docker compose --env-file .env.example -f deploy/compose.yaml --profile referral config --format json \
+  | python3 scripts/verify-compose-model.py
+docker compose --env-file .env.example -f deploy/compose.yaml --profile bootstrap config --format json \
   | python3 scripts/verify-compose-model.py
 docker compose --env-file "${DEV_INFRA_ROOT}/.env.example" \
   -f "${DEV_INFRA_ROOT}/compose.yaml" config --quiet
