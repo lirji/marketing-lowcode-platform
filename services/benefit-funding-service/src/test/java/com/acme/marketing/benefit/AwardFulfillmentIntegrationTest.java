@@ -7,7 +7,7 @@ import com.acme.marketing.benefit.application.AwardFulfillmentRepository;
 import com.acme.marketing.benefit.application.AwardFulfillmentRepository.Completion;
 import com.acme.marketing.benefit.application.AwardFulfillmentRepository.Lease;
 import com.acme.marketing.benefit.application.AwardFulfillmentService;
-import com.acme.marketing.testsupport.MySqlIntegrationTest;
+import org.testcontainers.mysql.MySQLContainer;
 import com.sun.net.httpserver.HttpServer;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -41,7 +41,9 @@ import tools.jackson.databind.ObjectMapper;
     "marketing.award.fulfillment-enabled=true", "marketing.award.fulfillment-max-failures=2",
     "marketing.award.fulfillment-initial-delay-ms=3600000", "marketing.benefit-center.request-timeout-ms=500"
 })
-class AwardFulfillmentIntegrationTest extends MySqlIntegrationTest {
+class AwardFulfillmentIntegrationTest {
+    // 本套会直接植入待发送fixture，必须独占数据库，避免被其他测试的真实Relay扫描。
+    private static final MySQLContainer MYSQL = mysql();
     private static final Map<String, Reply> REPLIES = new ConcurrentHashMap<>();
     private static final AtomicReference<String> TENANT = new AtomicReference<>();
     private static final AtomicReference<String> AUTH = new AtomicReference<>();
@@ -57,10 +59,15 @@ class AwardFulfillmentIntegrationTest extends MySqlIntegrationTest {
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry r) {
+        r.add("spring.datasource.url", MYSQL::getJdbcUrl);
+        r.add("spring.datasource.username", MYSQL::getUsername);
+        r.add("spring.datasource.password", MYSQL::getPassword);
+        r.add("spring.flyway.user", MYSQL::getUsername);
+        r.add("spring.flyway.password", MYSQL::getPassword);
         r.add("marketing.benefit-center.base-url", () -> "http://127.0.0.1:" + SERVER.getAddress().getPort());
         r.add("marketing.benefit-center.fulfillment-bearer-token", () -> "test-query-token");
     }
-    @AfterAll static void stop() { SERVER.stop(0); HTTP_POOL.shutdownNow(); }
+    @AfterAll static void stop() { SERVER.stop(0); HTTP_POOL.shutdownNow(); MYSQL.stop(); }
     @BeforeEach void isolate() {
         // 仅隔离 Testcontainers 库中的其他测试任务，避免旧 fixture 争用当前批次。
         jdbc.update("UPDATE mk_award_fulfillment SET sync_state='PAUSED'");
@@ -205,6 +212,11 @@ class AwardFulfillmentIntegrationTest extends MySqlIntegrationTest {
     private HttpRequest.Builder base(String id, String tenant, String permission) {
         return HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/award-intents/"+id+"/fulfillment"))
                 .header("X-Dev-Tenant-Id", tenant).header("X-Dev-Actor-Id", "operator").header("X-Dev-Permissions", permission);
+    }
+    private static MySQLContainer mysql() {
+        var database = new MySQLContainer("mysql:8.4.11").withDatabaseName("fulfillment_test")
+                .withUsername("test").withPassword("test").withTmpFs(Map.of("/var/lib/mysql", "rw"));
+        database.start(); return database;
     }
     private static HttpServer server() {
         try {
