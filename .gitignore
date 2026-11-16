@@ -105,6 +105,7 @@ htmlcov/
 /.codex/tasks/
 CODEX_PROGRESS.md
 /.flink-submit.lock/
+/tests/fixtures/minio/bin/
 
 # Plain text files
 *.txt

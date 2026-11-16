@@ -127,7 +127,7 @@ provision_minio() {
     --entrypoint /bin/sh \
     -e "MINIO_ROOT_USER=${SHARED_MINIO_ROOT_USER}" \
     -e "MINIO_ROOT_PASSWORD=${SHARED_MINIO_ROOT_PASSWORD}" \
-    minio/mc:RELEASE.2025-08-13T08-35-41Z -ec '
+    marketing-ci/minio:2025-10-15 -ec '
       mc alias set shared http://infra-minio:9000 "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}"
       mc mb --ignore-existing shared/marketing-artifacts
       mc mb --ignore-existing shared/marketing-raw-events

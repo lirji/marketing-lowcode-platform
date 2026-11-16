@@ -24,6 +24,21 @@ jobs:
       COMPOSE_PARALLEL_LIMIT: "1"
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.4"
+          cache: false
+      - name: Build pinned upstream MinIO for the isolated Runner
+        run: |
+          export GOBIN="$PWD/tests/fixtures/minio/bin" CGO_ENABLED=0 GOTOOLCHAIN=local
+          mkdir -p "$GOBIN"
+          go install github.com/minio/minio@9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a
+          go install github.com/minio/mc@7394ce0dd2a80935aded936b09fa12cbb3cb8096
+          curl --fail --location --retry 3 --silent --show-error \
+            https://raw.githubusercontent.com/minio/minio/9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a/LICENSE -o "$GOBIN/MINIO-LICENSE"
+          curl --fail --location --retry 3 --silent --show-error \
+            https://raw.githubusercontent.com/minio/mc/7394ce0dd2a80935aded936b09fa12cbb3cb8096/LICENSE -o "$GOBIN/MC-LICENSE"
+          docker build --tag marketing-ci/minio:2025-10-15 tests/fixtures/minio
       - name: Prepare ephemeral dev-infra credentials
         run: |
           python3 - <<'PY'

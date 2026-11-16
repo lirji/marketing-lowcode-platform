@@ -14,6 +14,23 @@ No real local `.env`, database contents or private keys are included. Update thi
 snapshot with relevant shared-infrastructure changes, review the diff, and rerun
 Compose/Helm, migration and full-stack checks. It is not a production deployment.
 
+The historical Docker Hub and Quay MinIO images both failed registry verification
+on 2026-11-16. CI follows the [upstream source-only distribution](https://github.com/minio/minio#source-only-distribution):
+MinIO `9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a` (the
+[2025-10-15 security release](https://github.com/minio/minio/releases/tag/RELEASE.2025-10-15T17-29-55Z))
+and mc `7394ce0dd2a80935aded936b09fa12cbb3cb8096` (2025-08-13) are built with
+Go 1.27.4 and packaged in the digest-pinned [CI Dockerfile](../minio/Dockerfile).
+Licenses are retained. Only the CI MinIO image, readiness probe and provisioning
+client differ from the captured infrastructure; existing shared containers are
+not upgraded. This source build and its temporary credentials are CI tooling,
+not a supported production storage choice. The upstream project is archived.
+
+The secret scanner retains full history and its default rules. The thirteen entries
+in [`.gitleaksignore`](../../../.gitleaksignore) identify only reviewed historical
+fingerprints: five source hashes in two historical commits, two synthetic k6 subject
+IDs and a throwaway database test password. No directories or rules are excluded; real findings must
+still fail the workflow.
+
 Full-stack CI uses the read-only [catalog contract fixture](../benefit-catalog/server.py)
 for `retail-cn`, with a random machine token and one synthetic CASH SKU. Every
 Marketing service and database, queue, Flink job, signature/approval and accounting

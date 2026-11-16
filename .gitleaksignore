@@ -1,0 +1,18 @@
+# Reviewed 2026-11-16: exact historical false positives only; no path/rule exclusions.
+# SHA-256 source evidence, not credentials (JSON maps repository paths to file hashes).
+1392ca97bfe9cc6cfcd67888d318e0b2b66efe9c:docs/delivery/referral-qualification/evidence/20260908-v6/source-sha256.json:generic-api-key:12
+1392ca97bfe9cc6cfcd67888d318e0b2b66efe9c:docs/delivery/referral-qualification/evidence/20260908-v6/source-sha256.json:generic-api-key:30
+1392ca97bfe9cc6cfcd67888d318e0b2b66efe9c:docs/delivery/referral-qualification/evidence/20260908-v6/source-sha256.json:generic-api-key:36
+1392ca97bfe9cc6cfcd67888d318e0b2b66efe9c:docs/delivery/referral-qualification/evidence/20260908-v6/source-sha256.json:generic-api-key:42
+e51f781550a83cd8dffe9adeb20f90cd1e7b37db:docs/delivery/referral-completion/evidence/20260908-final/source-sha256.json:generic-api-key:3
+# Same five checksum lines in the earlier retained local integration commit.
+9ec0cb3195a43f48d109ca51bc7a88357ca486ac:docs/delivery/referral-completion/evidence/20260908-final/source-sha256.json:generic-api-key:3
+9ec0cb3195a43f48d109ca51bc7a88357ca486ac:docs/delivery/referral-qualification/evidence/20260908-v6/source-sha256.json:generic-api-key:12
+9ec0cb3195a43f48d109ca51bc7a88357ca486ac:docs/delivery/referral-qualification/evidence/20260908-v6/source-sha256.json:generic-api-key:30
+9ec0cb3195a43f48d109ca51bc7a88357ca486ac:docs/delivery/referral-qualification/evidence/20260908-v6/source-sha256.json:generic-api-key:36
+9ec0cb3195a43f48d109ca51bc7a88357ca486ac:docs/delivery/referral-qualification/evidence/20260908-v6/source-sha256.json:generic-api-key:42
+# Synthetic k6 subject identifier: no authentication capability or personal data.
+4659b111a122f9f12ffa20ee096af8569aca6457:tests/performance/mixed-capacity.js:generic-api-key:65
+594b90837032863246d1d9bc76a5e8747df52ad2:tests/performance/decision-smoke.js:generic-api-key:29
+# Password for the script-owned throwaway MySQL container, never a shared account.
+594b90837032863246d1d9bc76a5e8747df52ad2:scripts/verify-mysql-migrations.sh:generic-api-key:63

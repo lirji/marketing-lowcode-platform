@@ -64,6 +64,8 @@
 - 当前`fix/reproducible-ci-infrastructure`，基线94d1334。deployment/full-stack改用tests/fixtures/dev-infra（既有四项共享服务及Marketing配置快照，不含私密env）；本地仍默认共享dev-infra。CI临时随机凭据、诊断脱敏；核心R1显式使用只读目录合同fixture，不冒充真实外部发奖；已验证资源覆盖由MARKETING_COMPOSE_OVERRIDE选择，目录BASE_URL可配置。
 - 18项脚本测试、actionlint 1.7.12、4种Compose模型/Helm、Python编译/diff/Hygiene PASS（无formatter限制）。本机Docker容器管理API超时，deployment在promtool容器创建处等待（exec69712/pid96182/96495），隔离MySQL在创建处等待（exec20497/pid96754/96769），无成功证据；网关UP、Flink3作业仍运行，不重启共享Docker。先推候选任务分支到隔离Runner验证，远程必要检查通过后再合main。恢复需先查询两条本地未知创建结果，避免遗留或重复执行。日志s04-deployment-fixture.log/s04-mysql-fixture.log。
 - Trivy官方已迁移v前缀；核验v0.36.0签名tag，commit `ed142fd0673e97e23eac54620cfb913e5ce36c25`，证据s04-trivy-tag.json/commit.json及官方releases页面。后续固定SHA，保留现有安全检查强度。
+- 候选3698e1e已推送任务分支，尚未合main。远程CI 43800797985的前端与Compose/Helm/完整MySQL迁移成功，Java运行中；S04a基线94d1334的完整Java反应堆已在43800234197成功。本机deployment后续11条Prometheus规则通过，但因运行期间脚本增量修改造成shell读取截断而失败（不是PASS）；以不可变候选的远程验证为准。
+- 首次全栈43800805620失败：官方旧MinIO镜像Docker Hub拉取被拒，Quay同tag也401。CI改为官方固定源码构建，MinIO安全发布9e49d5e/mc7394ce0、Go1.27.4、Alpine3.22固定digest，保留许可证；仅CI调整，不改共享实例。首次安全43800801760失败在Gitleaks8条历史误报，逐项核验5源码哈希/2压测用户标识/1临时库密码；本地扫描另外识别同5个哈希在更早保留提交中的记录，共13个精确fingerprint，不屏蔽路径/规则。Gitleaks8.24.3校验官方checksum后扫描76个提交，最终0发现（s04-gitleaks-final.log）；actionlint/Compose/bash/diff通过。源码构建与后续Trivy仍待本版远程实测。
 
 ## 下一步
 推送已通过静态/脚本检查的S04候选分支，触发CI、安全与全栈工作流，按远程实际失败整改，通过后合main；S05–S13保留完整待办。
