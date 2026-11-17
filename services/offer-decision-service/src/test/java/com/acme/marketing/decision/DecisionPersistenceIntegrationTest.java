@@ -146,8 +146,12 @@ class DecisionPersistenceIntegrationTest extends MySqlIntegrationTest {
                 1, 2, "directive-signature", "{}", NOW);
         assertEquals(1, mapper.updateRuntimeSlot(active));
         assertEquals(1, mapper.selectRuntimeSlot(key).desiredGeneration());
-        assertEquals(tenantId, mapper.selectDesiredPointers(new RuntimeSlotQuery("local", "cell-a", "main"))
-                .getFirst().tenantId());
+        // 协调器查询会返回该运行位置的全部租户，其他测试的合法活动指针不能改变本用例断言。
+        var pointers = mapper.selectDesiredPointers(new RuntimeSlotQuery("local", "cell-a", "main"))
+                .stream().filter(pointer -> tenantId.equals(pointer.tenantId())).toList();
+        assertEquals(1, pointers.size());
+        assertEquals(1, pointers.getFirst().desiredGeneration());
+        assertEquals(2, pointers.getFirst().activationSequence());
     }
 
     private void verifyAudienceProjection(String tenantId) {
