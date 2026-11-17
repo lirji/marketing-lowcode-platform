@@ -7,12 +7,28 @@
 - 审计证据：`/Users/liruijun/.local/share/marketing-audits/20261116-completeness/`；Docker 启动与恢复证据：`/Users/liruijun/.local/share/marketing-deployments/20261116-start/`。
 - 规范：`~/.codex/architecture-standards.md` 业务建模、持久化、接口契约、并发安全；`personal-tech-stack.md` 并发、线程池、日志、状态机；engineering-workflows/backend-implementation/continue-approved-delivery/task-git-delivery。前端、Runtime 专项随切片读取。
 
-## 当前状态（2026-11-17）
-- S01–S05完成；S06–S13按下表推进。S12c–S12n已交付，包括资产、审批/发布分页、活动范围、首页真实表述、历史Journey转换、人群/权益/模板分页、真实错误采集及活动数据源清理。最新主干db30029，精确CI44085089985三项PASS。
-- 本机仅18个必要容器运行：13个marketing-r1、权益目录适配服务、MySQL/Redis/Kafka/ClickHouse。console=db30029、edge-gateway=7764526、engagement=166dc43、benefit-funding=607542e、audience=a260865、control=b3858e6，其余应用045dfd9；全部健康。control V7已迁移；UI8084、网关18080、Flink18081。证据见 [LOCAL_DEPLOYMENT_20261117.md](LOCAL_DEPLOYMENT_20261117.md)。
-- 用户授权Docker只运行本项目组件，已恢复Docker并保留所有容器/数据卷；13个额外无关容器及原17个langchain应用保持停止。3个Flink作业从保存点no_claim恢复，原作业ID与检查点持续推进；禁止重提空作业或重复恢复。
-- 当前fix/static-preview-truth推进S12o：首页/运营静态预览不显示假数据与旧缓存。初始构建与8浏览器定向通过，暖缓存测试识别发放页仍会展示旧记录，正补齐早返回隔离；完整验证尚未完成。
-- 真实会员/画像来源、裂变身份/交易/SKU/履约终态合同与生产环境仍有待确认项；保持默认拒绝保护，不将当前切片完成等同整个项目完成。
+## 当前状态（2026-11-17 21:39，Asia/Taipei）
+- S01–S05已完成；S06–S13仍按下表保留未完成范围。S12c–S12q已交付；最新产品提交 `dbe268b5ed25004c5ee35af171ceb147e2509e55` 已正常快进合入并推送main，精确CI `44092826351` 的Java/合同/架构、前端、Compose/Helm三项全部通过。当前任务分支 `fix/asset-preview-reads`，后续交付回执仅改文档，运行制品仍固定该产品提交。
+- 本机仅18个必要容器运行：13个marketing-r1、权益目录适配服务、MySQL/Redis/Kafka/ClickHouse；15个配置了健康检查且全部healthy，另3个未配置健康检查，全部运行且无OOM。console=dbe268b、edge-gateway=7764526、engagement=166dc43、benefit-funding=607542e、audience=a260865、control=b3858e6，其余应用045dfd9。control V7已迁移；UI8084、网关18080、Flink18081。详见 [本机部署回执](LOCAL_DEPLOYMENT_20261117.md)。
+- 用户授权Docker只运行本项目组件；13个额外无关容器及原17个langchain应用保持停止，所有容器与数据卷保留。本轮只更新console，17个其它运行容器ID/镜像/启动时间不变；3个原Flink作业及检查点继续推进，禁止重复恢复或提交空作业。
+- 最新验证：271项前端测试、98项浏览器用例通过，10项既有独立服务用例跳过；lint/build/Hygiene无阻塞，未配置canonical formatter。真实Docker四类资产页在桌面与Pixel7的分页、搜索、详情及字段/节点读取回归通过，无业务写入、API失败或页面异常。运行回执与截图：私有证据目录 `runtime-dbe268b/`。
+- 本轮新增结果：活动/首页/运营/资产的静态预览不显示假业务数据或旧缓存，资产刷新不能绕过读取门禁；OIDC身份范围变化、退出与过期清理旧请求/缓存/草稿，旧令牌401不退出已更新令牌，远端退出失败能恢复登录页。本机仍为DEV认证，真实IdP联调未验证。
+- 当前下一步不是Docker扩容，而是确认S06b的会员/画像权威来源与主体映射，并核对S08的交易合同；下节列出真实未完成项，不把局部验证通过等同项目全部完成。无运行中的本地测试、部署或迁移任务。
+
+## 未完成项与恢复顺序
+
+| 顺序 / ID | 当前事实与未完成范围 | 下一步及所需输入 |
+|---|---|---|
+| 1 / S06b | 已有同意与导入边界补强；真实人群来源、全量计算、snapshot/segment投影及审批发布到决策闭环未完成 | 先确认会员/画像的权威系统、业务会员与登录主体映射、可用读取接口。先前来源问题尚未回答，不能把OIDC sub或本地预览名单当权威会员 |
+| 2 / S07 | SKU版本前提、履约观察与恢复、轨迹及对账边界已补；真实终态查询、取消/追回和Journey发奖闭环未验证或未接完 | 需要同租户且有benefit.award.read的机器凭据、按来源取消墓碑及终态合同；Journey还缺可信会员、OfferToken和正式资格输入 |
+| 3 / S08–S10 | 裂变本地资格/配额/奖励/授权/回滚持久化保留；可信来源适配、READY ACK、C端、Worker、专用投递取消、measurement及运行端到端仍待完成 | 先签收身份、会员、订单、SKU、风控与权益合同，再逐层接入；默认拒绝保持，不能用模拟来源宣称真实闭环 |
+| 4 / S11 | DMN工作台、发布目标/回滚及Journey同源仿真已完成；活动聚合、跨slot组合、定时发布、完整Journey、可恢复迁移/重算、真实实验曝光尚未完成 | 明确跨slot原子边界、定时执行时区/审批过期/失败恢复和长任务语义；实际曝光/发奖依赖前述来源。包含待设计及待实施工作，并非全部由外部环境阻塞 |
+| 5 / S12 | 活动和时间窗口筛选/CSV、资产管理分页、审批发布分页、错误采集及静态预览真实性已补齐；归因策略筛选与敏感字段访问工单尚无完整接口 | 统计需正式策略维度及投影合同；敏感访问需授权工单合同。原审计的风险策略配置和权益历史扩展仍需按真实后端能力细化，不以现有详情页替代完整历史 |
+| 6 / S13 | 本机Docker启动、健康检查和Flink恢复已验证；进程级编译沙箱、生产存储/归档、真实OIDC/KMS/轮换、隐私保留及容量/故障/混合版本/灾备验收未完成 | 明确生产目标、资源、保留策略与验收预算；生产部署需另行授权。安全基线和方案文档不等于生产验证通过 |
+
+合同冲突已核对：同一个POST `/internal/v1/order-referral-evidence:query`，在[裂变合同第4节](../../plans/referral-campaign-20260907/EXTERNAL_CONTRACTS.md)按主体/时间窗/首单策略查询，在[交易中心合同第3节](../../plans/transaction-center-20260907/EXTERNAL_CONTRACTS_AND_API.md)却按最多100个orderIds查询；会员资格字段也不同。两份均为目标/拟新增合同，尚不能选一个直接当外部已上线。先确认权威系统与接口Owner，再统一签收版本，不在进度维护中自行改写合同。
+
+恢复入口：先读本节和根CODEX_PROGRESS，再核对Git/main及 `runtime-dbe268b/rollout-state.json`；已有通过证据与产品散列未变化时不重跑部署。业务来源确认后从S06b开始，保留现有接线边界与已完成切片；无需用户反复授权继续。
 
 ## 执行清单与验收
 
@@ -593,7 +609,7 @@
 - 浏览器使用真实oidc-client-ts和受控API/IdP，验证当前401清会话、远端退出失败恢复及原DEV/轨迹回归；手机登录失败恢复截图已查看。更新安全基线，修正owner不是业务租户的旧描述；实际IdP生产联调保持未验证。
 - 准备独立提交/精确CI与console本机更新。
 
-## S12q 资产静态预览读取门禁（IN_PROGRESS）
+## S12q 资产静态预览读取门禁（DONE）
 - 基于e9d2661建立fix/asset-preview-reads；P精确CI44090681778运行，runtime-e9d2661固定console镜像/预检PASS，尚未部署。O已完成main与本机交付。
 - 审查发现人群/权益列表虽然enabled=false，AssetTable刷新仍能手动refetch，且旧缓存可能继续渲染；模板、字段/节点及裂变/分析选项也需隔离禁用模式缓存。静态预览使用连接提示，移除可调用业务接口的入口；不把未查询显示为真实零条。真实模式分页/详情/编辑保持，字段/节点按各自读取权限显示。
 - 通过暖缓存单元测试、双视口静态资产/裂变/分析零请求检查及既有真实分页/模板回归验证；不重灌种子、不创建后台模拟记录。
@@ -605,3 +621,8 @@
 ### S12q 最终本地验证
 - 271前端测试/50文件、98浏览器PASS/10既有独立服务用例跳过，lint/build/Hygiene无阻塞；无canonical formatter。5新增用例覆盖四资产Tab暖缓存/无刷新入口、裂变/分析缓存选项及字段/节点分别鉴权；既有真实资产分页/搜索/详情/编辑回归通过。
 - 桌面/Pixel7静态首页/运营/四资产Tab/裂变/分析零业务API请求，手机资产连接提示截图已查看；未重灌数据库或新增示例记录。准备独立提交、精确CI和console本机更新。
+
+### S12q 真实运行交付
+- `dbe268b5ed25004c5ee35af171ceb147e2509e55`精确CI44092826351三项全部PASS，正常FF main并推送；固定console镜像部署PASS。18必要容器运行、15健康检查通过、无OOM，17保护容器不变，原3个Flink作业检查点推进。
+- 桌面/Pixel7真实人群、权益、模板分页/搜索/详情与字段/节点读取验收全部通过；无业务写入、API失败、页面异常或整页横向溢出。字段/节点手机截图已查看；不重灌种子、不迁移数据库、不恢复/重提Flink。
+- 证据：既有私有目录`s12q-ci-exact.json`、`s12q-git-delivery.json`及`runtime-dbe268b/{rollout-state,runtime-smoke,audience-browser,benefit-browser,template-browser,registry-browser}.json`。后续文档回执不改变本轮验证的产品代码/运行制品；本任务整体仍PARTIAL，未完成依赖见当前状态。

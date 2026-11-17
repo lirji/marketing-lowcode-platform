@@ -101,3 +101,10 @@
 ### S12p OIDC边界与DEV回归（e9d2661）
 - CI44090681778全部PASS后正常FF main，runtime-e9d2661固定console部署及真实首页/运营/DEV退出再登录PASS。18必要容器healthy、17保护容器不变、Flink检查点继续推进；零业务写入。
 - 当前本机认证仍为DEV；OIDC客户端已通过真实库和受控IdP故障的双视口验证，不代表外部IdP生产联调。记录与截图见runtime-e9d2661和s12p-*。
+
+### S12q 资产读取门禁与最终运行核对（dbe268b）
+- 2026-11-17 21:39（Asia/Taipei），精确CI44092826351三项全部PASS后，dbe268b已正常快进合入并推送main；仅更新console固定镜像，runtime-dbe268b部署和回归PASS。
+- 当前18个必要容器：13个marketing-r1、权益目录适配服务，以及共享MySQL/Redis/Kafka/ClickHouse。15个健康检查全部通过，另3个无健康检查，均运行且无OOM。17个保护容器的ID/镜像/启动时间不变，原3个Flink作业检查点继续推进；无关项目保持停止，未删除容器或数据卷。
+- 8084桌面/Pixel7真实人群、权益、消息模板分页/搜索/详情及字段/节点目录读取通过；零业务写入/API失败/页面异常。手机字段页面已查看，页面无横向溢出；静态预览零请求与暖缓存隔离另见s12q本地测试。
+- 证据在私有目录runtime-dbe268b/：artifact-manifest.json固定产品提交、镜像与回退镜像；rollout-state.json=PASS；runtime-smoke.json及四类*-browser.json全部PASS。无需重复部署/恢复/seed。UI仍为http://localhost:8084，当前DEV认证；真实OIDC与完整跨系统闭环不由本回执证明。
+- Git原目录仅一个工作树；已停止的测试容器/旧镜像/数据卷、忽略的构建输出和私有证据继续保留。未获得清理授权，不删除这些恢复或调试材料；没有新增可删除的任务工作树。
