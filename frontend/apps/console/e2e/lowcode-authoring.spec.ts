@@ -147,7 +147,8 @@ test('author a Journey timer with elapsed routing and no fake pricing simulation
   await page.getByRole('button', { name: '校验', exact: true }).click()
   await expect(page.getByRole('button', { name: '提交审核' })).toBeEnabled({ timeout: 20000 })
   await expect(page.getByRole('button', { name: '金额试算' })).toHaveCount(0)
-  await expect(page.getByText(/当前不提供完整旅程仿真/)).toBeVisible()
+  await expect(page.getByRole('button', { name: '旅程仿真', exact: true })).toBeEnabled()
+  await expect(page.getByText(/仿真仅展示输入下的状态和拟生成指令/)).toBeVisible()
   if (!live) { expect(saved?.nodes.find((node) => node.stableTypeId === 'journey.wait-timer')?.config).toEqual({ delaySeconds: '120' }); expect(saved?.edges.map((edge) => edge.sourcePort).sort()).toEqual(['elapsed', 'next']) }
   await page.screenshot({ path: info.outputPath('journey-validated.png'), fullPage: true })
 })
