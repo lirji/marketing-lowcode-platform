@@ -29,6 +29,7 @@ export function BenefitAssetList() {
     getNextPageParam: last => last.hasMore ? last.nextCursor ?? undefined : undefined,
     enabled: live,
   })
+  if (!live) return <Panel><EmptyState title={api.demoMode ? '权益列表需要连接服务' : '没有查看权益的权限'} detail={api.demoMode ? '静态预览不查询、刷新或展示业务记录；连接营销服务后读取已保存的版本。' : '请使用具备相应读取权限的身份。'} /></Panel>
   const items = searchPending ? [] : page.data?.pages.flatMap(item => item.items) ?? []
   const rows = items.map(item => [item.name, item.benefitId, String(item.version), item.benefitSkuId ?? '未绑定 SKU', item.createdAt ?? '', item.status])
   const initialError = !searchPending && page.isError && items.length === 0

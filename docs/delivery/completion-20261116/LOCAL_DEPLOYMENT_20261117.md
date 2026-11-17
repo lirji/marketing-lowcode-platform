@@ -97,3 +97,7 @@
 ### S12o 首页与运营真实数据（66ba4c9）
 - CI44087403939最终全部PASS后正常FF main，runtime-66ba4c9固定console部署与双视口真实运行PASS；18必要容器健康、17保护容器不变、Flink检查点推进。
 - 首页计数、Journey/触达/隔离列表与资金对账对照实际API；零业务写入/页面异常/API失败。DEMO验证另见s12o日志与静态预览截图；未改运行环境认证模式或种子。
+
+### S12p OIDC边界与DEV回归（e9d2661）
+- CI44090681778全部PASS后正常FF main，runtime-e9d2661固定console部署及真实首页/运营/DEV退出再登录PASS。18必要容器healthy、17保护容器不变、Flink检查点继续推进；零业务写入。
+- 当前本机认证仍为DEV；OIDC客户端已通过真实库和受控IdP故障的双视口验证，不代表外部IdP生产联调。记录与截图见runtime-e9d2661和s12p-*。

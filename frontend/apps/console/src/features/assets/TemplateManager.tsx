@@ -20,6 +20,7 @@ const stateLabel = (state?: string) => state === TEMPLATE_STATE.APPROVED ? '已�
 export function TemplateManager() {
   const auth = useAuth()
   if (!auth.hasPermission('template:read')) return <StateBanner tone="warn" title="没有查看模板的权限" detail="需要 template:read 权限。" />
+  if (api.demoMode) return <Panel><PanelHeader eyebrow="ENGAGEMENT TEMPLATES" title="渠道模板" /><Button tone="primary" disabled>新建消息模板</Button><EmptyState title="模板列表需要连接服务" detail="静态预览不读取或保存消息模板；连接后可查看实际版本与正文。" /></Panel>
   return <TemplateWorkspace key={identityKey(auth)} />
 }
 

@@ -31,3 +31,27 @@ test('static dashboard and operations show connection states without business re
   expect(requests).toEqual([])
   expect(errors).toEqual([])
 })
+
+test('static asset tabs and referral analysis never read or refresh business records', async ({ page }, info) => {
+  const requests: string[] = []
+  await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: true, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
+  await page.route('**/api/v1/**', route => { requests.push(route.request().url()); return route.fulfill({ status: 500, json: {} }) })
+  await page.goto('/assets')
+  for (const [tab, title] of [['Audience 快照', '人群列表需要连接服务'], ['权益与券', '权益列表需要连接服务'], ['消息模板', '模板列表需要连接服务'], ['字段与节点', '字段与节点需要连接服务']]) {
+    await page.getByRole('tab', { name: tab, exact: true }).click()
+    await expect(page.getByText(title, { exact: true })).toBeVisible()
+    await expect(page.getByRole('table')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /^刷新/ })).toHaveCount(0)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width + 1)
+  }
+  await page.screenshot({ path: info.outputPath('assets-static-preview.png'), fullPage: true })
+  await page.goto('/referral-operations?campaignId=untrusted-deep-link')
+  for (const tab of ['参与人', '关系 / 资格', '奖励', '异常']) {
+    await page.getByRole('tab', { name: tab, exact: true }).click()
+    await expect(page.getByRole('table')).toHaveCount(0)
+  }
+  await page.goto('/analytics')
+  await expect(page.getByText('请连接演示数据源', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '重算全部归因', exact: true })).toBeDisabled()
+  expect(requests).toEqual([])
+})

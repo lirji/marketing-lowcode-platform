@@ -32,10 +32,10 @@ export function ReferralOperationsPage() {
     enabled: live,
   })
   const options = useMemo(() => {
-    const rows = campaigns.data ?? []
+    const rows = live ? campaigns.data ?? [] : []
     const referral = rows.filter((item) => item.campaignType === 'REFERRAL')
     return referral.length > 0 ? referral : rows
-  }, [campaigns.data])
+  }, [campaigns.data, live])
 
   const scopeKey = `${auth.tenantId}|${auth.organizations.join(',')}|${auth.shops.join(',')}`
   useEffect(() => {
