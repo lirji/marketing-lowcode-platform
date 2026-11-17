@@ -1148,6 +1148,28 @@ components:
         latestSequence: {type: integer, format: int64, minimum: 1}
         current: {type: boolean, description: Whether this receipt is the highest recorded sequence; does not describe online routing}
         recordedAt: {type: string, format: date-time}
+    ReleaseBundleParticipation:
+      type: object
+      additionalProperties: false
+      description: Durable participation-to-bundle fact, not access authorization or permission to repeat side effects. No issuance endpoint yet. Consumers must compare trusted context, exact Control directive, current trust and live business guards; historical expiry is checked at admittedAt.
+      required: [bindingId, tenantId, campaignId, environment, cell, participationId, subjectHash, directiveId, activationSequence, activationSignature, bundleId, bundleVersion, contentHash, admittedAt, signatureKeyId, signature]
+      properties:
+        bindingId: {type: string, pattern: '^[A-Za-z0-9_.:-]{1,64}$'}
+        tenantId: {$ref: '#/components/schemas/TenantId'}
+        campaignId: {type: string, pattern: '^[A-Za-z0-9_.:-]{1,64}$'}
+        environment: {type: string, minLength: 1, maxLength: 32}
+        cell: {type: string, pattern: '^[A-Za-z0-9_.:-]{1,64}$'}
+        participationId: {type: string, minLength: 1, maxLength: 128, description: Trusted opaque business participation ID; exact case and whitespace preserved; blank/control/invalid Unicode forbidden}
+        subjectHash: {type: string, pattern: '^[a-f0-9]{64}$', description: Purpose and tenant bound canonical SHA256 of the trusted subject token; not anonymization}
+        directiveId: {type: string, pattern: '^[A-Za-z0-9_.:@-]{1,64}$'}
+        activationSequence: {type: integer, format: int64, minimum: 1}
+        activationSignature: {type: string, pattern: '^[A-Za-z0-9_-]{85}[AQgw]$', description: Exact Control directive signature; canonical 64-byte Ed25519 Base64URL without padding}
+        bundleId: {type: string, pattern: '^[A-Za-z0-9_.:-]{1,64}$'}
+        bundleVersion: {type: integer, format: int64, minimum: 1}
+        contentHash: {type: string, pattern: '^[a-f0-9]{64}$'}
+        admittedAt: {type: string, format: date-time, description: Persisted admission time at or after authorization and strictly before bundle expiry; no more than 60 seconds in the future}
+        signatureKeyId: {type: string, pattern: '^[A-Za-z0-9_.:@-]{1,64}$'}
+        signature: {type: string, pattern: '^[A-Za-z0-9_-]{85}[AQgw]$', description: Independent participation-purpose signature by the admission authority; every preceding field is covered}
     ReleaseBundleActivationDirective:
       type: object
       additionalProperties: false

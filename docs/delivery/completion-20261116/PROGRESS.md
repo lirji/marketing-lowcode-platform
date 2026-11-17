@@ -8,14 +8,14 @@
 - 规范：`~/.codex/architecture-standards.md` 业务建模、持久化、接口契约、并发安全；`personal-tech-stack.md` 并发、线程池、日志、状态机；engineering-workflows/backend-implementation/continue-approved-delivery/task-git-delivery。前端、Runtime 专项随切片读取。
 
 ## 当前状态（2026-11-17，恢复执行）
-- 用户已确认同一活动组合整体生效/回滚，并要求继续流程；会员/画像优先Commerce、交易证据优先交易中心、认证Auth的方向进入增量接入设计。具体技术合同和机器凭据仍按真实系统核对，不再重复询问来源选型。当前分支 `feat/activity-release-bundles` 基于 `d57a572`，S11e/f/g1/g2已交付，S11g3a Decision持久接收已验证并推送，S11g3b Journey接收正在验证；设计与切片见 [活动组合增量设计](ATOMIC_RELEASE_DESIGN.md)。
+- 用户已确认同一活动组合整体生效/回滚，并要求继续流程；会员/画像优先Commerce、交易证据优先交易中心、认证Auth的方向进入增量接入设计。具体技术合同和机器凭据仍按真实系统核对，不再重复询问来源选型。当前分支 `feat/activity-release-bundles` 基于 `d57a572`，S11e/f/g1/g2已交付，S11g3a Decision持久接收已交付，S11g3b Journey接收本地验证通过并推送，继续S11g4参与绑定；设计与切片见 [活动组合增量设计](ATOMIC_RELEASE_DESIGN.md)。
 - 先执行依赖齐备的S11e不可变组合准备与成员发布保护，再推进运行端和整体切换；上游缺少机器快照/主体映射的部分保留依赖状态。当前未修改其他仓库、未部署或迁移共享库。文档提交 `d57a572` 的CI `44095478630` 已核实三项SUCCESS，原pending记录失效。
 - S01–S05已完成；S06–S13仍按下表保留未完成范围。S12c–S12q已交付；上一轮已部署产品提交 `dbe268b5ed25004c5ee35af171ceb147e2509e55` 已正常快进合入并推送main，精确CI `44092826351` 的Java/合同/架构、前端、Compose/Helm三项全部通过。该阶段分支为 `fix/asset-preview-reads`，其后交付回执仅改文档，运行制品仍固定该产品提交。
 - 本机仅18个必要容器运行：13个marketing-r1、权益目录适配服务、MySQL/Redis/Kafka/ClickHouse；15个配置了健康检查且全部healthy，另3个未配置健康检查，全部运行且无OOM。console=dbe268b、edge-gateway=7764526、engagement=166dc43、benefit-funding=607542e、audience=a260865、control=b3858e6，其余应用045dfd9。control V7已迁移；UI8084、网关18080、Flink18081。详见 [本机部署回执](LOCAL_DEPLOYMENT_20261117.md)。
 - 用户授权Docker只运行本项目组件；13个额外无关容器及原17个langchain应用保持停止，所有容器与数据卷保留。本轮只更新console，17个其它运行容器ID/镜像/启动时间不变；3个原Flink作业及检查点继续推进，禁止重复恢复或提交空作业。
 - 上一轮部署验证：271项前端测试、98项浏览器用例通过，10项既有独立服务用例跳过；lint/build/Hygiene无阻塞，未配置canonical formatter。真实Docker四类资产页在桌面与Pixel7的分页、搜索、详情及字段/节点读取回归通过，无业务写入、API失败或页面异常。运行回执与截图：私有证据目录 `runtime-dbe268b/`。
 - 上一轮部署可见结果：活动/首页/运营/资产的静态预览不显示假业务数据或旧缓存，资产刷新不能绕过读取门禁；OIDC身份范围变化、退出与过期清理旧请求/缓存/草稿，旧令牌401不退出已更新令牌，远端退出失败能恢复登录页。本机仍为DEV认证，真实IdP联调未验证。
-- 当前HEAD/远程任务分支9930648，main/origin=dde7c6c。S11g1/2精确CI44110842403、44112359075全部SUCCESS并已正常合入main；S11g3a完整Decision28项、合同34项/架构10项/Hygiene PASS（无formatter），精确CI44114923717运行中。S11g3b已实现并编译PASS，完整Journey模块测试session37569运行中（s11g3b-module-first.log）。无部署或共享库迁移任务。
+- 当前HEAD/远程任务分支128e768，main/origin=9930648。g3a精确CI44114923717全部SUCCESS且已交付；g3b 420d84d完整Journey17项/合同34项/架构10项/Hygiene PASS，精确CI44116867989后端检查仍运行。租户JSON契约修正128e768的35项合同/13份JSON PASS，已推送，待前一CI结束再触发精确验证。工作树恢复时干净，无未知进程、部署或共享迁移。
 
 ## 未完成项与恢复顺序
 
@@ -753,3 +753,14 @@
 - 同一复核发现原ReleaseManifest与ActivationDirective的JSON schema也把同一个TenantId值对象误标为string，已一起按实际类型修正，并加入相同序列化对照验收；只有机器文档变化，无产品字节/行为变化，不扩展到无关事件类型。
 
 - 租户形状修正最终35项合同测试（机器规格由8增至9项）及13份JSON PASS：s11g-tenant-wire-final2.log。只改schema/测试/说明，既有运行源码未变；签名与真实HTTP证据继续有效。
+
+## S11g4a 参与版本凭证（设计后实施）
+- 恢复核对128e768提交及推送已成功，不重复执行。下一片定义独立用途的参与绑定凭证及接收校验，固定可信参与编号/主体和完整激活来源，允许旧参与在原清单到期后继续核验历史事实；不赋予重复副作用、跳过实时门禁或自动激活的权限。具体范围、验收和后续持久绑定依赖见增量设计。
+
+- g3b精确CI44116867989三项全部SUCCESS。128e768精确CI44118927860已启动，避免重复dispatch。g4a首轮在测试代码弃用的Jackson asText方法触发Werror，已改用项目asString（s11g4a-first.log）；继续测试，未放宽编译门禁。复核另补非法Unicode代理字符拒绝，避免UTF-8替换造成主体摘要碰撞。
+
+### S11g4a 本地验证
+- 45项合同测试及13份JSON PASS（s11g4a-contracts-final.log），新增9项参与凭证和1项schema/record对照；架构10项PASS（s11g4a-architecture-final.log）。覆盖逐字段篡改、双角色信任、全部可信上下文、授权来源替换、原成员密钥撤销、过期后历史恢复、时间纳秒边界、大小写/空格/Unicode及有界严格解析。
+- 根代理另行复核摘要规范、签名用途、源授权精确绑定、当前撤销和历史期限分离；本片无剩余阻断。没有签发/绑定HTTP或数据库改动，真正准入/幂等/执行门禁未声称完成。继续完整暂存Hygiene与Git交付，再推进运行端slot保护。
+
+- g4a完整暂存Hygiene/diff通过（s11g4a-hygiene.json），数字提示均为已命名协议边界，人工复核通过；唯一工具限制为无canonical formatter。当前精确CI44118927860仍运行，本片提交后先交付已通过CI的g3b，不取消在途验证。

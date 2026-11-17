@@ -115,6 +115,23 @@ class ContractSpecificationsTest {
     }
 
     @Test
+    void participationSchemaCoversEveryRecordFieldAndUsesTheExistingTenantWireType() throws IOException {
+        var document = yaml(RESOURCES.resolve("openapi/marketing-api.yaml"));
+        var schemas = map(map(document.get("components")).get("schemas"));
+        var schema = map(schemas.get("ReleaseBundleParticipation"));
+        var fields = map(schema.get("properties"));
+        var names = java.util.Arrays.stream(com.acme.marketing.contracts.release.ReleaseBundleParticipation.class.getRecordComponents())
+                .map(java.lang.reflect.RecordComponent::getName).collect(java.util.stream.Collectors.toSet());
+        assertEquals(names, fields.keySet());
+        assertEquals(names, new HashSet<>((List<?>) schema.get("required")));
+        assertEquals(false, schema.get("additionalProperties"));
+        assertEquals("#/components/schemas/TenantId", map(fields.get("tenantId")).get("$ref"));
+        assertEquals(128, map(fields.get("participationId")).get("maxLength"));
+        assertEquals(1, map(fields.get("activationSequence")).get("minimum"));
+        assertEquals(1, map(fields.get("bundleVersion")).get("minimum"));
+    }
+
+    @Test
     void openApiMatchesTheImplementedR1Surface() throws IOException {
         Path source = RESOURCES.resolve("openapi/marketing-api.yaml");
         Map<String, Object> document = yaml(source);

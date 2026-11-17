@@ -95,3 +95,9 @@ Journey提供对应的`POST /api/v1/journey-runtime/release-bundle-directives`�
 本片不推进Journey旧active pointer、不改enrollment/Outbox或Flink，不返回实际应用证明。后续Flink固定组合执行必须继续验证授权和参与绑定；不能把两个服务都RECORDED作为整体发布已生效。
 
 组合签名对象的`tenantId`保持既有Java值对象的实际JSON格式，例如`{"value":"dev-tenant"}`；机器合同以共享`TenantId`对象描述，不改变已发布响应为字符串。签名规范仍使用其中的租户值，签名格式不变。
+
+### 固定参与版本凭证（S11g4a）
+
+共享`ReleaseBundleParticipation`记录参与编号/主体摘要、完整作用域、原授权签名与组合版本/摘要、准入时间，独立签名覆盖全部字段。校验方须从可信入口提供预期主体、参与编号和tenant/campaign/environment/cell，并取原完整授权逐项核对；Control签名与参与签名使用分开的信任集合。
+
+老参与按准入时刻验证原清单期限，因此可以在过期后恢复；当前密钥撤销仍立即影响验证。该事实不替代实时身份/停用/风控/同意/配额或终态幂等，也不允许换参与后重用。当前交付合同与验证器，没有签发/绑定HTTP入口；持久唯一绑定、实际APPLIED准入指针及Flink执行仍待后续。

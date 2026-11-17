@@ -105,3 +105,13 @@ S11g2合同模块保持无JSON生产依赖，动作在wire中使用经Action.fro
 - Journey本库V3新增独立接收历史/head，使用相同完整作用域、二进制NO PAD排序规则与复合外键。接收时复用Journey原持久generation/签名制品/已安装定义核验；缺generation沿用原404，定义缺失或内容不一致拒绝，不伪造ACK。
 - 先锁head再查询持久成员，保证事务内一致性；提取包内核验方法供原prepareBundle和新接收服务共用，不放宽HTTP鉴权。Journey旧active pointer、定义、enrollment、Flink与Outbox保持不变。后续Flink只在执行绑定协议齐备后使用这些记录，本片不宣称应用成功。
 - 验收：与g3a同级的真实MySQL并发/重放/乱序/失败回滚/重建上下文/输入边界，加已安装Journey定义损坏拒绝和旧运行模块回归。范围Journey服务/V3、机器API与测试；无需新增基础设施或部署。
+
+## S11g4a：参与版本凭证合同
+- 沿用已批准的“同一参与保持同一完整组合”。Decision将作为后续准入绑定的唯一写入者，使用自身持久应用指针选择组合；g3的RECORDED head绝不能用于新参与选版。Control拥有发布意图，各运行端仍拥有各自安装/执行状态。本片仅交付跨边界校验合同，不开放签发或绑定HTTP入口。
+- 不新增中间件或生产依赖。选用紧凑签名事实+已有完整激活授权，复用Ed25519/CanonicalMapCodec，拒绝每次在线回源Control及以可过期短令牌代替持久绑定：后者会使合法积压/恢复事件失效。可信签发者计划复用Decision现有Offer密钥但使用独立用途`marketing.activity-bundle-participation/v1`；验证方显式分开参与签发信任与Control发布信任，不能合并密钥权限。
+- `ReleaseBundleParticipation {bindingId,tenantId,campaignId,environment,cell,participationId,subjectHash,directiveId,activationSequence,activationSignature,bundleId,bundleVersion,contentHash,admittedAt,signatureKeyId,signature}`。tenantId沿用`{value:...}`；参与编号为可信入口给出的1–128字符业务键，主体只放按租户和subjectToken规范长度编码的SHA256，不将哈希当匿名化。参与/主体不修剪或折叠大小写。源激活签名绑定整个活动归属/动作/作者/时间/完整组合，其他冗余索引必须逐项一致，不能只比较bundleId。
+- bindingId/活动/组合ID沿用现有最大64字符集合；主体token最长512字符；scope/env/cell沿用原合同，拒绝空值和控制字符。激活签名必须是64字节Ed25519的规范无padding Base64URL（86字符）；自身signature只在本地未签名构造时可空，接收时必须有效。
+- 校验函数必须接收可信预期tenant/campaign/environment/cell/participationId/subjectToken，不能从凭证本身生成预期范围。当前Decision信任验证独立签名，精确匹配所有源字段，要求authorizedAt <= admittedAt < bundle.expiresAt且admittedAt不超当前时间60秒。再以admittedAt验证完整Control/成员历史签名和当时期限，保留当前密钥撤销效果。到期后的老参与可通过历史验证，但换参与、换主体、跨租户或重新绑定不能通过。
+- 此事实无可续期的访问令牌语义，不能证明仍有资格、未停用或未完成。下游仍必须校验当前身份/范围、停用/风控/同意/配额以及持久执行幂等；Flink TTL/重放后的防重新参与、数据库唯一绑定、原清单保留和终态墓碑属后续必需验收，不能凭签名合同宣布已解决。
+- 范围：marketing-contracts类型/签名/校验/错误码、OpenAPI共享schema、测试和说明。无HTTP、迁移、指针、Outbox或生产配置变化。验收覆盖所有字段篡改、用途混用、租户/主体/参与/活动/位置误绑、源授权替换、内层密钥撤销、历史到期恢复及准入时间边界、真实JSON往返/缺字段/非法值。依赖g2，owner=backend；不可并行修改共享合同。
+- 后续g4b先实现运行端持久slot防单清单绕过，再接实际APPLIED准入指针与唯一参与绑定、Decision精确选版及事件/Flink传播；只有各入口和旧版本退出门禁齐备后才开放Control整体发布。实际C端业务编号选择和真实会员映射继续依赖上游合同，不阻止通用事实协议。
