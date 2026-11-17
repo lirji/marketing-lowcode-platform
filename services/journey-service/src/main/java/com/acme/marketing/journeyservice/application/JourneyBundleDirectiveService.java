@@ -52,6 +52,8 @@ public class JourneyBundleDirectiveService {
         Instant now = clock.instant();
         verifier.requireValid(scope.tenantId().value(), directive, now);
         releases.verifyInstalledMember(scope.tenantId().value(), member);
+        // 原slot行锁与单清单写入共用；后续冲突或事务故障必须一起撤销此标记。
+        repository.manageSlot(key, format(now));
         var existing = repository.history(key, directive.activationSequence());
         if (existing.isPresent()) {
             var row = existing.orElseThrow();

@@ -12,6 +12,8 @@ public interface BundleDirectiveMapper {
     int ensureHead(@Param("key") Key key, @Param("now") String now);
     /** 读取最新锁定值，不能使用等待锁之前的快照。 */
     Long lockHead(@Param("key") Key key);
+    /** 原子争取原slot行锁，只将组合管理标记置true，保留原指针。 */
+    int manageSlot(@Param("key") Key key, @Param("now") String now);
     /** 精确读取单条历史。 */
     StoredDirective history(@Param("key") Key key, @Param("sequence") long sequence);
     /** 精确读取指令编号已占用的序号。 */

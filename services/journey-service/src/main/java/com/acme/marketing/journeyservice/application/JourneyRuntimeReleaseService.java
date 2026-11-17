@@ -149,6 +149,8 @@ public class JourneyRuntimeReleaseService {
         }
         ensureSlot(directive);
         Slot current = slot(directive, true);
+        // HTTP和Coordinator共用持久门禁；旧回执也不能绕过组合对同一物理slot的接管。
+        if (current.bundleManaged()) throw com.acme.marketing.contracts.release.ReleaseBundleProtocolError.SLOT_MANAGED.conflict();
         if (directive.activationSequence() < current.activationSequence()) {
             if (replayTolerant) return view(installed, directive);
             throw new ConflictException("ACTIVATION_SEQUENCE_STALE", "journey activation directive is stale");
@@ -178,7 +180,7 @@ public class JourneyRuntimeReleaseService {
         JourneyRepository.RuntimeSlotRow row = repository.findRuntimeSlot(directive.tenantId().value(),
                 directive.environment(), directive.cell(), directive.namespace(), lock)
                 .orElseThrow(() -> new IllegalStateException("journey runtime slot was not created"));
-        return new Slot(row.desiredGeneration(), row.activationSequence(), row.directiveSignature());
+        return new Slot(row.desiredGeneration(), row.activationSequence(), row.directiveSignature(), row.bundleManaged());
     }
 
     private StoredGeneration generation(String tenantId, ReleaseManifest slot, long generation) {
@@ -257,7 +259,7 @@ public class JourneyRuntimeReleaseService {
     public record WarmView(String artifactId, String journeyId, long journeyVersion, RuntimeAck ack) { }
     public record ActiveView(String artifactId, String journeyId, long journeyVersion, long generation,
             long activationSequence, Instant expiresAt) { }
-    private record Slot(long desiredGeneration, long activationSequence, String signature) { }
+    private record Slot(long desiredGeneration, long activationSequence, String signature, boolean bundleManaged) { }
     private record StoredGeneration(String releaseKeyId, ReleaseManifest manifest, String artifactId,
             byte[] payload) {
         private StoredGeneration { payload = payload.clone(); }

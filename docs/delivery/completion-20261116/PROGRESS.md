@@ -7,7 +7,7 @@
 - 审计证据：`/Users/liruijun/.local/share/marketing-audits/20261116-completeness/`；Docker 启动与恢复证据：`/Users/liruijun/.local/share/marketing-deployments/20261116-start/`。
 - 规范：`~/.codex/architecture-standards.md` 业务建模、持久化、接口契约、并发安全；`personal-tech-stack.md` 并发、线程池、日志、状态机；engineering-workflows/backend-implementation/continue-approved-delivery/task-git-delivery。前端、Runtime 专项随切片读取。
 
-## 当前状态（2026-11-17，恢复执行）
+## 当前状态（2026-11-18，持续执行）
 - 用户已确认同一活动组合整体生效/回滚，并要求继续流程；会员/画像优先Commerce、交易证据优先交易中心、认证Auth的方向进入增量接入设计。具体技术合同和机器凭据仍按真实系统核对，不再重复询问来源选型。当前分支 `feat/activity-release-bundles` 基于 `d57a572`，S11e/f/g1/g2已交付，S11g3a Decision持久接收已交付，S11g3b Journey接收本地验证通过并推送，继续S11g4参与绑定；设计与切片见 [活动组合增量设计](ATOMIC_RELEASE_DESIGN.md)。
 - 先执行依赖齐备的S11e不可变组合准备与成员发布保护，再推进运行端和整体切换；上游缺少机器快照/主体映射的部分保留依赖状态。当前未修改其他仓库、未部署或迁移共享库。文档提交 `d57a572` 的CI `44095478630` 已核实三项SUCCESS，原pending记录失效。
 - S01–S05已完成；S06–S13仍按下表保留未完成范围。S12c–S12q已交付；上一轮已部署产品提交 `dbe268b5ed25004c5ee35af171ceb147e2509e55` 已正常快进合入并推送main，精确CI `44092826351` 的Java/合同/架构、前端、Compose/Helm三项全部通过。该阶段分支为 `fix/asset-preview-reads`，其后交付回执仅改文档，运行制品仍固定该产品提交。
@@ -15,7 +15,7 @@
 - 用户授权Docker只运行本项目组件；13个额外无关容器及原17个langchain应用保持停止，所有容器与数据卷保留。本轮只更新console，17个其它运行容器ID/镜像/启动时间不变；3个原Flink作业及检查点继续推进，禁止重复恢复或提交空作业。
 - 上一轮部署验证：271项前端测试、98项浏览器用例通过，10项既有独立服务用例跳过；lint/build/Hygiene无阻塞，未配置canonical formatter。真实Docker四类资产页在桌面与Pixel7的分页、搜索、详情及字段/节点读取回归通过，无业务写入、API失败或页面异常。运行回执与截图：私有证据目录 `runtime-dbe268b/`。
 - 上一轮部署可见结果：活动/首页/运营/资产的静态预览不显示假业务数据或旧缓存，资产刷新不能绕过读取门禁；OIDC身份范围变化、退出与过期清理旧请求/缓存/草稿，旧令牌401不退出已更新令牌，远端退出失败能恢复登录页。本机仍为DEV认证，真实IdP联调未验证。
-- 当前HEAD/远程任务分支128e768，main/origin=9930648。g3a精确CI44114923717全部SUCCESS且已交付；g3b 420d84d完整Journey17项/合同34项/架构10项/Hygiene PASS，精确CI44116867989后端检查仍运行。租户JSON契约修正128e768的35项合同/13份JSON PASS，已推送，待前一CI结束再触发精确验证。工作树恢复时干净，无未知进程、部署或共享迁移。
+- 当前HEAD/远程任务分支1ad2993，main/origin=420d84d。g3b与租户wire修正128e768的精确CI均PASS，g4a参与凭证1ad2993本地45合同/13JSON/10架构/Hygiene PASS，精确CI44120438060运行中。g4b运行端slot保护本地53模块用例、45合同/13JSON、10架构通过；清理顺序修正后23项相关用例重新通过且无退出超时，准备完整暂存Hygiene和交付。无部署或共享库迁移。
 
 ## 未完成项与恢复顺序
 
@@ -764,3 +764,22 @@
 - 根代理另行复核摘要规范、签名用途、源授权精确绑定、当前撤销和历史期限分离；本片无剩余阻断。没有签发/绑定HTTP或数据库改动，真正准入/幂等/执行门禁未声称完成。继续完整暂存Hygiene与Git交付，再推进运行端slot保护。
 
 - g4a完整暂存Hygiene/diff通过（s11g4a-hygiene.json），数字提示均为已命名协议边界，人工复核通过；唯一工具限制为无canonical formatter。当前精确CI44118927860仍运行，本片提交后先交付已通过CI的g3b，不取消在途验证。
+
+## S11g4b 运行端slot保护（实施中）
+- g4a提交1ad2993已推送；g3b 420d84d已按成功CI44116867989正常FF合入并推送main。128e768精确CI44118927860仍运行；g4a待它结束后dispatch。
+- 继续为Decision/Journey旧单清单写入增加同slot持久标记与回填，与组合接收同事务提交，完整设计见增量文档。保持原物理slot主键比较语义，避免独立锁表与旧slot排序规则不一致导致别名绕过；尚不开放整体生效入口。
+
+- g4b编译PASS（s11g4b-compile.log）。两个运行端标记/门禁、HTTP与Coordinator和旧RR快照/失败回滚用例已写，测试session84547（s11g4b-first.log）执行中。V5/V4旧库回填测试已补，下一步隔离运行；无共享数据库写入。
+
+- g4b首轮Decision11项+Journey12项真实HTTP/MySQL用例PASS（s11g4b-first.log），均含旧读快照后标记、HTTP/Coordinator绕过拒绝、失败回滚与重启。测试容器停止后后台同步线程报连接已关闭，以及故障注入SQL报错均有明确关闭/注入上下文，不是用例失败。开始完整模块回归与两个真实升级用例，测试环境仍隔离。
+- 128e768精确CI44118927860三项全部SUCCESS；g4a 1ad2993精确CI44120438060已启动。当前main/origin=420d84d，未切换脏工作树或取消在途验证。
+
+- 两个迁移用例和完整模块业务用例均通过：Decision32、Journey21（s11g4b-modules-final.log）。发现Decision测试JVM退出超时，线程dump定位到专属测试MySQL先停止、Spring定时任务仍访问连接池。调整本片两类测试的清理顺序为先关闭应用上下文、再停容器；保留失败/线程dump证据，待受影响测试复验，不把退出超时当生产优雅停机通过。
+
+- 清理顺序首轮修正失败：直接关闭仍在Spring缓存中的上下文导致afterTestClass再次访问时LifecycleProcessor错误（s11g4b-lifecycle-final.log），业务11项已执行但类级清理失败，不记为通过。改用Spring DirtiesContext正常移除并关闭上下文，再由低顺序TestExecutionListener停止专属数据库；继续受影响两类复验。
+
+### S11g4b 最终本地验证
+- Spring标准上下文关闭后释放MySQL的修正复验PASS：Decision11+Journey12，正常BUILD SUCCESS且无Surefire退出超时（s11g4b-lifecycle-final2.log）。完整模块32+21与两个升级用例的其余证据仍适用；产品源码未再变。
+- 最终45合同/13JSON、10架构PASS（s11g4b-contracts-final.log、s11g4b-architecture-final.log）。根代理另行复核接收head→slot与旧激活slot锁序、原子upsert保留旧指针、旧快照防绕过、回填零代际语义、事务回滚、HTTP/Coordinator覆盖及旧版本退出要求；当前片无剩余阻断。Flink与实际绑定路由仍属后续，未宣称部署或线上原子生效。
+
+- g4b完整暂存Hygiene/diff PASS（s11g4b-hygiene.json，无新增Finding，仅无formatter工具限制）。没有新worktree；忽略项为原构建/测试产物与本机恢复文件，保留不清理。准备逻辑提交；128e768精确CI已PASS可正常合并，g4a精确CI44120438060后端仍运行。

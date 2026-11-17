@@ -153,7 +153,7 @@
     <select id="selectRuntimeSlot"
             resultType="com.acme.marketing.journeyservice.application.JourneyRepository$RuntimeSlotRow">
         SELECT desired_generation AS desiredGeneration, activation_sequence AS activationSequence,
-               directive_signature AS directiveSignature
+               directive_signature AS directiveSignature, bundle_managed AS bundleManaged
         FROM mk_journey_runtime_slot
         WHERE tenant_id = #{tenantId} AND environment_name = #{environment} AND cell_id = #{cell}
           AND namespace_name = #{namespace}

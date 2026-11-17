@@ -13,6 +13,13 @@
     <select id="lockHead" resultType="java.lang.Long">
         SELECT last_sequence FROM mk_runtime_bundle_head WHERE <include refid="keyWhere"/> FOR UPDATE
     </select>
+    <insert id="manageSlot">
+        INSERT INTO mk_runtime_slot
+            (tenant_id, environment_name, cell_id, runtime_name, namespace_name, desired_generation, activation_sequence,
+             directive_signature, directive_json, updated_at, bundle_managed)
+        VALUES (#{key.tenantId}, #{key.environment}, #{key.cell}, 'decision', #{key.namespace}, 0, 0, '', '', #{now}, TRUE)
+        ON DUPLICATE KEY UPDATE bundle_managed = TRUE
+    </insert>
     <select id="history" resultType="com.acme.marketing.decision.application.BundleDirectiveRepository$StoredDirective">
         SELECT activation_sequence AS activationSequence, directive_id AS directiveId,
                directive_json AS directiveJson, recorded_at AS recordedAt

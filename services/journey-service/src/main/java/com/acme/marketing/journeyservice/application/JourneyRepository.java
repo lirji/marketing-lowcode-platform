@@ -95,7 +95,7 @@ public interface JourneyRepository {
     record RuntimeSlotWrite(String tenantId, String environmentName, String cellId, String namespaceName,
             long desiredGeneration, long activationSequence, String directiveSignature, String directiveJson,
             String updatedAt) { }
-    record RuntimeSlotRow(long desiredGeneration, long activationSequence, String directiveSignature) { }
+    record RuntimeSlotRow(long desiredGeneration, long activationSequence, String directiveSignature, boolean bundleManaged) { }
     record ActivationWrite(String tenantId, String environmentName, String cellId, String namespaceName,
             long activationSequence, long generationNo, String directiveSignature, String directiveJson,
             String activatedAt) { }

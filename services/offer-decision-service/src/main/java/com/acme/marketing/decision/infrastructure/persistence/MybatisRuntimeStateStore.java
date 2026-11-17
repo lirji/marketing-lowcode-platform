@@ -68,6 +68,8 @@ public class MybatisRuntimeStateStore implements RuntimeStateStore {
     public void activate(ActivationDirective directive) {
         ensureSlot(directive);
         SlotPointerRow current = pointer(directive, true);
+        // 必须读取锁内最新标记，先前快照或原幂等回执不能恢复单清单发布权。
+        if (current.bundleManaged()) throw com.acme.marketing.contracts.release.ReleaseBundleProtocolError.SLOT_MANAGED.conflict();
         if (directive.activationSequence() < current.activationSequence()) {
             throw new ConflictException("ACTIVATION_SEQUENCE_STALE", "activation directive is stale");
         }

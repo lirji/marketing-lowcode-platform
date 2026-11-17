@@ -127,7 +127,7 @@ public interface DecisionMapper {
 
     /** 运行时槽位指针读模型。 */
     record SlotPointerRow(long desiredGeneration, long activationSequence,
-            String directiveSignature, String directiveJson) { }
+            String directiveSignature, String directiveJson, boolean bundleManaged) { }
 
     /** 租户期望 generation 指针。 */
     record DesiredPointerRow(String tenantId, long desiredGeneration, long activationSequence) { }

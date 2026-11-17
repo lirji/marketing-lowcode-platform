@@ -86,13 +86,13 @@ V10在原slot行增加组合管理标记，并回填历史组合成员；不改�
 
 `POST /api/v1/decisions/runtime/release-bundle-directives`要求`runtime:activate`并接收最多1MiB的严格JSON整体授权。先验证当前可信签名/租户/时间、本地完整slot及已安装制品，再在同一数据库事务记录不可变历史与最高接收序号。相同序号相同内容返回原接收时间；同序号异内容或复用指令编号409，未知旧序号409，已记录旧授权重放成功但`current=false`。
 
-`GET /api/v1/decisions/runtime/release-bundle-directives/{campaignId}/latest`在相同权限下查询最高已接收授权；跨租户和大小写不同的活动键严格隔离。返回`state=RECORDED`，`current`仅指最高接收序号；不改变旧线上指针，不是READY/APPLIED回执。过期历史仍可读，后续使用必须重新验证有效期及实时停用。V4仅在隔离MySQL验证，未部署或迁移共享库。
+`GET /api/v1/decisions/runtime/release-bundle-directives/{campaignId}/latest`在相同权限下查询最高已接收授权；跨租户和大小写不同的活动键严格隔离。返回`state=RECORDED`，`current`仅指最高接收序号；不改变旧线上指针，不是READY/APPLIED回执；接收成功会将本站slot持久标记为组合管理。过期历史仍可读，后续使用必须重新验证有效期及实时停用。V4仅在隔离MySQL验证，未部署或迁移共享库。
 
 ### Journey持久接收整体授权（S11g3b）
 
 Journey提供对应的`POST /api/v1/journey-runtime/release-bundle-directives`与`GET .../{campaignId}/latest`，使用相同的`runtime:activate`、1MiB严格解析和`RECORDED`合同。它在Journey自己的V3表保存授权历史/head，除原签名制品外还核对真实已安装的Journey定义；缺generation沿用404，定义缺失或内容不符拒绝。
 
-本片不推进Journey旧active pointer、不改enrollment/Outbox或Flink，不返回实际应用证明。后续Flink固定组合执行必须继续验证授权和参与绑定；不能把两个服务都RECORDED作为整体发布已生效。
+接收成功会将本站slot持久标记为组合管理；不推进Journey旧active pointer、不改enrollment/Outbox或Flink，不返回实际应用证明。后续Flink固定组合执行必须继续验证授权和参与绑定；不能把两个服务都RECORDED作为整体发布已生效。
 
 组合签名对象的`tenantId`保持既有Java值对象的实际JSON格式，例如`{"value":"dev-tenant"}`；机器合同以共享`TenantId`对象描述，不改变已发布响应为字符串。签名规范仍使用其中的租户值，签名格式不变。
 
@@ -101,3 +101,9 @@ Journey提供对应的`POST /api/v1/journey-runtime/release-bundle-directives`�
 共享`ReleaseBundleParticipation`记录参与编号/主体摘要、完整作用域、原授权签名与组合版本/摘要、准入时间，独立签名覆盖全部字段。校验方须从可信入口提供预期主体、参与编号和tenant/campaign/environment/cell，并取原完整授权逐项核对；Control签名与参与签名使用分开的信任集合。
 
 老参与按准入时刻验证原清单期限，因此可以在过期后恢复；当前密钥撤销仍立即影响验证。该事实不替代实时身份/停用/风控/同意/配额或终态幂等，也不允许换参与后重用。当前交付合同与验证器，没有签发/绑定HTTP入口；持久唯一绑定、实际APPLIED准入指针及Flink执行仍待后续。
+
+### 运行端旧发布入口保护（S11g4b）
+
+Decision与Journey接收合法整体授权时，在同一事务把本站物理slot的`bundle_managed`置为true。该slot上的所有单清单HTTP激活/回滚及旧成功回执均返回409 `RELEASE_BUNDLE_SLOT_MANAGED`；新的Coordinator切换也受同一持久门禁保护。Decision原有已验证的旧通知无操作重放仍可确认，但不能当作组合应用回执。
+
+Decision V5/Journey V4会回填历史接收记录：已有active指针保持原generation/sequence/签名/更新时间；没有active指针时只建立零代际的禁用slot。标记不影响安装、读取原配置或紧急停用；接收失败则连同标记回滚。所有旧写版本退出或冻结后才能启用，降级前先冻结发布写入，不能删标记恢复旧入口。迁移仅在隔离库验证，未部署到共享环境；整体APPLIED/新参与准入仍未开放。

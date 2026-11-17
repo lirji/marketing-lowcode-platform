@@ -12,6 +12,7 @@ public class MybatisBundleDirectiveRepository implements BundleDirectiveReposito
     /** 注入真实持久Mapper，重启后仍使用同一权威投影。 */
     public MybatisBundleDirectiveRepository(BundleDirectiveMapper mapper) { this.mapper = mapper; }
     @Override public Long lockHead(Key key, String now) { mapper.ensureHead(key, now); return mapper.lockHead(key); }
+    @Override public void manageSlot(Key key, String now) { mapper.manageSlot(key, now); }
     @Override public Optional<StoredDirective> history(Key key, long sequence) { return Optional.ofNullable(mapper.history(key, sequence)); }
     @Override public Optional<Long> sequenceForId(Key key, String directiveId) { return Optional.ofNullable(mapper.sequenceForId(key, directiveId)); }
     @Override public void save(Key key, StoredDirective value, String recordedBy) {

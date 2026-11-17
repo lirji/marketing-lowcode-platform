@@ -6,6 +6,8 @@ import java.util.Optional;
 public interface BundleDirectiveRepository {
     /** 原子争取head行并锁定，必须是接收事务首个数据库访问。 */
     Long lockHead(Key key, String now);
+    /** 与接收历史同事务标记本站物理slot；不会改变原active指针。 */
+    void manageSlot(Key key, String now);
     /** 精确历史读取有界为一条，不扫描其他活动。 */
     Optional<StoredDirective> history(Key key, long sequence);
     /** 检查指令编号不能跨激活序号复用。 */

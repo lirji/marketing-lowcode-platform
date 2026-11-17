@@ -1143,7 +1143,7 @@ components:
       additionalProperties: false
       required: [state, directive, latestSequence, current, recordedAt]
       properties:
-        state: {type: string, const: RECORDED}
+        state: {type: string, const: RECORDED, description: Durable receipt also fences standalone writes to this local slot; no online bundle activation}
         directive: {$ref: '#/components/schemas/ReleaseBundleActivationDirective'}
         latestSequence: {type: integer, format: int64, minimum: 1}
         current: {type: boolean, description: Whether this receipt is the highest recorded sequence; does not describe online routing}

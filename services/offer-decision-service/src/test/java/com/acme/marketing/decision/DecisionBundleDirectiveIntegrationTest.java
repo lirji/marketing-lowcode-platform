@@ -34,6 +34,9 @@ import tools.jackson.databind.ObjectMapper;
 /** 隔离MySQL验证接收单调性与恢复；RECORDED从不冒充线上已应用。 */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@org.springframework.test.context.TestExecutionListeners(listeners = DecisionBundleDirectiveIntegrationTest.DatabaseCleanup.class,
+        mergeMode = org.springframework.test.context.TestExecutionListeners.MergeMode.MERGE_WITH_DEFAULTS)
 class DecisionBundleDirectiveIntegrationTest {
     private static final KeyPair RELEASE = Ed25519.generateKeyPair();
     private static final KeyPair COMPILER = Ed25519.generateKeyPair();
@@ -50,7 +53,11 @@ class DecisionBundleDirectiveIntegrationTest {
                 .withStartupTimeout(Duration.ofMinutes(5));
         mysql.start(); return mysql;
     }
-    @org.junit.jupiter.api.AfterAll static void stop() { MYSQL.stop(); }
+    /** Spring的afterTestClass按逆序执行；先由DirtiesContext移出并关闭上下文，再释放专属数据库。 */
+    public static final class DatabaseCleanup extends org.springframework.test.context.support.AbstractTestExecutionListener {
+        @Override public int getOrder() { return org.springframework.core.Ordered.HIGHEST_PRECEDENCE; }
+        @Override public void afterTestClass(org.springframework.test.context.TestContext context) { MYSQL.stop(); }
+    }
     @DynamicPropertySource static void keys(DynamicPropertyRegistry r) {
         r.add("spring.datasource.url", MYSQL::getJdbcUrl); r.add("spring.datasource.username", MYSQL::getUsername);
         r.add("spring.datasource.password", MYSQL::getPassword); r.add("spring.flyway.user", MYSQL::getUsername); r.add("spring.flyway.password", MYSQL::getPassword);
@@ -60,6 +67,8 @@ class DecisionBundleDirectiveIntegrationTest {
     @LocalServerPort int port;
     @Autowired ObjectMapper mapper;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.acme.marketing.decision.runtime.RuntimeManifestRegistry runtime;
+    @Autowired org.springframework.transaction.PlatformTransactionManager transactions;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
     private final String tenant = "directive-" + UUID.randomUUID();
     private final Instant now = Instant.now().minusSeconds(1);
@@ -81,7 +90,7 @@ class DecisionBundleDirectiveIntegrationTest {
         var result = send(request(PATH + "/campaign/latest").setHeader("X-Dev-Tenant-Id", restartTenant).GET());
         assertReceipt(result, 1, true);
         var actual = mapper.readValue(mapper.readTree(result.body()).path("directive").toString(), ReleaseBundleActivationDirective.class);
-        assertEquals(restartDirective, actual); assertEquals(1, active(restartTenant));
+        assertEquals(restartDirective, actual); assertEquals(1, active(restartTenant)); assertTrue(managed(restartTenant));
     }
 
     @Test @Order(3)
@@ -98,7 +107,7 @@ class DecisionBundleDirectiveIntegrationTest {
         assertEquals(2, count("mk_runtime_bundle_directive"));
         assertReceipt(send(post(PATH, one)), 2, false);
         assertReceipt(send(request(PATH + "/campaign/latest").GET()), 2, true);
-        assertEquals(0, count("mk_runtime_slot"));
+        assertEquals(1, count("mk_runtime_slot")); assertEquals(0, active(tenant)); assertTrue(managed(tenant));
     }
 
     @Test @Order(4)
@@ -156,7 +165,7 @@ class DecisionBundleDirectiveIntegrationTest {
         jdbc.execute("CREATE TRIGGER " + trigger + " BEFORE UPDATE ON mk_runtime_bundle_head FOR EACH ROW BEGIN IF NEW.tenant_id = '" + tenant + "' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='test head failure'; END IF; END");
         try {
             assertEquals(500, send(post(PATH, directive)).statusCode());
-            assertEquals(0, count("mk_runtime_bundle_head")); assertEquals(0, count("mk_runtime_bundle_directive"));
+            assertEquals(0, count("mk_runtime_bundle_head")); assertEquals(0, count("mk_runtime_bundle_directive")); assertEquals(0, count("mk_runtime_slot"));
         } finally { jdbc.execute("DROP TRIGGER " + trigger); }
         assertReceipt(send(post(PATH, directive)), 1, true);
         assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () -> jdbc.update("update mk_runtime_bundle_head set last_sequence=999 where tenant_id=?", tenant));
@@ -164,6 +173,77 @@ class DecisionBundleDirectiveIntegrationTest {
         assertCode(409, "RELEASE_BUNDLE_ACTIVATION_STORED_INVALID", send(request(PATH + "/campaign/latest").GET()));
         jdbc.update("update mk_runtime_bundle_directive set directive_json=?, recorded_at='invalid-time' where tenant_id=?", mapper.writeValueAsString(directive), tenant);
         assertCode(409, "RELEASE_BUNDLE_ACTIVATION_STORED_INVALID", send(request(PATH + "/campaign/latest").GET()));
+    }
+
+    @Test @Order(10)
+    void managedSlotRejectsOldHttpReceiptAndNewStandaloneCoordinatorWrites() throws Exception {
+        var old = installed(1); activate(old);
+        var newer = installed(2);
+        assertReceipt(send(post(PATH, directive(newer, 1, "campaign"))), 1, true);
+        assertTrue(managed(tenant)); assertEquals(1, active(tenant));
+        var oldSingle = single(old, 1);
+        assertCode(409, "RELEASE_BUNDLE_SLOT_MANAGED", send(request("/api/v1/decisions/runtime/activation")
+                .PUT(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(oldSingle)))));
+        // 接管后仍能安装后续清单，但任何同slot清单都不能绕过组合独立激活。
+        var replacement = installed(3); var newSingle = single(replacement, 2);
+        assertCode(409, "RELEASE_BUNDLE_SLOT_MANAGED", send(request("/api/v1/decisions/runtime/activation")
+                .PUT(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(newSingle)))));
+        assertEquals("RELEASE_BUNDLE_SLOT_MANAGED", assertThrows(com.acme.marketing.platform.error.ConflictException.class,
+                () -> runtime.applyActivationNotification(tenant, newSingle)).code());
+        runtime.applyActivationNotification(tenant, oldSingle);
+        assertEquals(1, active(tenant));
+    }
+
+    @Test @Order(11)
+    void standaloneWriterWithOldRepeatableReadSnapshotSeesCommittedSlotFence() throws Exception {
+        var old = installed(1); activate(old); var next = installed(2); var newSingle = single(next, 2);
+        var snapshotRead = new java.util.concurrent.CountDownLatch(1);
+        var continueWrite = new java.util.concurrent.CountDownLatch(1);
+        var tx = new org.springframework.transaction.support.TransactionTemplate(transactions);
+        tx.setIsolationLevel(org.springframework.transaction.TransactionDefinition.ISOLATION_REPEATABLE_READ); tx.setTimeout(10);
+        try (var executor = java.util.concurrent.Executors.newSingleThreadExecutor()) {
+            var result = executor.submit(() -> tx.execute(status -> {
+                assertFalse(managed(tenant)); snapshotRead.countDown();
+                try { assertTrue(continueWrite.await(5, java.util.concurrent.TimeUnit.SECONDS)); }
+                catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new AssertionError(interrupted); }
+                String code = assertThrows(com.acme.marketing.platform.error.ConflictException.class,
+                        () -> runtime.applyActivationNotification(tenant, newSingle)).code();
+                status.setRollbackOnly(); return code;
+            }));
+            try {
+                assertTrue(snapshotRead.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                assertReceipt(send(post(PATH, directive(next, 1, "campaign"))), 1, true);
+            } finally { continueWrite.countDown(); }
+            assertEquals("RELEASE_BUNDLE_SLOT_MANAGED", result.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        }
+        assertTrue(managed(tenant)); assertEquals(1, active(tenant));
+    }
+
+    @Test @Order(12)
+    void rejectedReceiptDoesNotFenceAnExistingStandaloneSlot() throws Exception {
+        var old = installed(1); activate(old); var next = installed(2);
+        var directive = directive(next, 1, "campaign");
+        String trigger = "bundle_slot_" + UUID.randomUUID().toString().replace("-", "");
+        jdbc.execute("CREATE TRIGGER " + trigger + " BEFORE UPDATE ON mk_runtime_bundle_head FOR EACH ROW BEGIN IF NEW.tenant_id = '" + tenant + "' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='test receipt failure'; END IF; END");
+        try {
+            assertEquals(500, send(post(PATH, directive)).statusCode());
+            assertFalse(managed(tenant)); assertEquals(1, active(tenant));
+            assertEquals(0, count("mk_runtime_bundle_directive"));
+        } finally { jdbc.execute("DROP TRIGGER " + trigger); }
+        var newSingle = single(next, 2);
+        assertEquals(200, send(request("/api/v1/decisions/runtime/activation")
+                .PUT(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(newSingle)))).statusCode());
+        assertEquals(2, active(tenant));
+        assertReceipt(send(post(PATH, directive)), 1, true); assertTrue(managed(tenant));
+    }
+
+    private boolean managed(String tenantId) {
+        return jdbc.queryForObject("select bundle_managed from mk_runtime_slot where tenant_id=?", Boolean.class, tenantId);
+    }
+    private ActivationDirective single(ReleaseManifest member, long sequence) {
+        return ActivationDirectiveSigner.sign(RELEASE.getPrivate(), new ActivationDirective("activation-" + sequence,
+                member.tenantId(), member.manifestId(), "local", "cell-a", "decision", "main", sequence,
+                member.generation(), member.generation(), 0, member.signature(), now, member.expiresAt(), "operator", "release-key", ""));
     }
 
     private ReleaseBundleActivationDirective directive(ReleaseManifest member, long sequence, String campaign) {

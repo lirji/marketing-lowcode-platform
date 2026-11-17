@@ -126,7 +126,8 @@
             desired_generation AS desiredGeneration,
             activation_sequence AS activationSequence,
             directive_signature AS directiveSignature,
-            directive_json AS directiveJson
+            directive_json AS directiveJson,
+            bundle_managed AS bundleManaged
         FROM mk_runtime_slot
         WHERE tenant_id = #{tenantId}
           AND environment_name = #{environmentName}
@@ -142,7 +143,8 @@
             desired_generation AS desiredGeneration,
             activation_sequence AS activationSequence,
             directive_signature AS directiveSignature,
-            directive_json AS directiveJson
+            directive_json AS directiveJson,
+            bundle_managed AS bundleManaged
         FROM mk_runtime_slot
         WHERE tenant_id = #{tenantId}
           AND environment_name = #{environmentName}
