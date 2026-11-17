@@ -113,7 +113,7 @@ class DecisionBundlePreparationIntegrationTest extends MySqlIntegrationTest {
         assertCode(400, "RELEASE_BUNDLE_PREPARE_INVALID", send(raw(PREPARE, "{} {}")));
     }
 
-    
+
 
     private ReleaseManifest installed(long generation) throws Exception {
         byte[] payload = payload(generation); var member = member(generation, payload, "decision", "main");
