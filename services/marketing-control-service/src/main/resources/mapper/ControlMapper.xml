@@ -15,19 +15,21 @@
             resultType="com.acme.marketing.control.application.ControlRepository$CampaignRow">
         SELECT campaign_id AS campaignId, name, objective, status, created_at AS createdAt, updated_at AS updatedAt, campaign_type AS campaignType
         FROM mk_campaign
+        <!-- 范围标识按TenantScope精确匹配，不能被默认不区分大小写排序规则放宽。 -->
         WHERE tenant_id = #{tenantId}
         <if test="campaignType != null">AND campaign_type=#{campaignType}</if>
-        <if test="!organizations.contains('*')">
-            AND organization_id IN
+        <!-- OGNL单字符单引号是Character；权限集合是String，需显式字符串通配。 -->
+        <if test='!organizations.contains("*")'>
+            AND CAST(organization_id AS BINARY) IN
             <foreach collection="organizations" item="organization" open="(" separator="," close=")">
                 #{organization}
             </foreach>
         </if>
-        <if test="!shops.contains('*')">
+        <if test='!shops.contains("*")'>
             <choose>
                 <when test="shops.isEmpty()">AND (shop_id IS NULL OR shop_id = '')</when>
                 <otherwise>
-                    AND (shop_id IS NULL OR shop_id = '' OR shop_id IN
+                    AND (shop_id IS NULL OR shop_id = '' OR CAST(shop_id AS BINARY) IN
                     <foreach collection="shops" item="shop" open="(" separator="," close=")">
                         #{shop}
                     </foreach>)

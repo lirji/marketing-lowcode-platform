@@ -385,3 +385,15 @@
 - 新向导ID读取/错误禁用激活2视口、既有激活确认2视口、回滚未知结果2视口，共6浏览器用例PASS，s12f-browser-verified.log；测试HTTP样例隔离，无真实编译/暂存/ACK/激活写入。已查看桌面ACK就绪与手机失败截图。最终fixture正确回应侧栏状态筛选/批准单读取，未依赖8080外部服务。
 - 根代理复核ID/租户/范围授权、失败不授予激活、完整身份缓存、未遍历完待核实、旧操作回归及差异；不声称独立代理审查。Hygiene最终无finding，唯一限制是仓库无canonical formatter；s12f-hygiene-final.json。源码指纹与产物哈希分别s12f-validated-fingerprint.json、s12f-built-artifacts.json。
 - S12f本地验收PASS，待精确远程CI、正常FF main及本机control/console增量部署后完成运行验收。整体S06–S13仍未全部完成。
+
+
+## S12g 活动列表权限范围（IN_PROGRESS）
+- 从S12f提交2e2263f分出fix/campaign-list-scope，交付顺序S12f再S12g；不是将S12f当成已部署。S12f远程CI44060287931运行中，预构建镜像/备份已就绪，实际运行仍3f22019。
+- 证据：ControlMapper.selectCampaigns使用单字符OGNL `contains('*')`，且组织/门店比较使用数据库默认不区分大小写排序规则，与TenantScope精确匹配不一致。
+- 计划/验收：只修当前活动列表通配与组织/门店精确范围，保留租户、类型过滤及空组织拒绝；先真实MySQL回归复现，再修复并验证全域/部分通配、具体范围、大小写、空范围、其它租户和权限拒绝。无表迁移或业务写语义改变。
+
+### S12g 本地验证
+- 修复前真实MySQL两个用例均失败：全域通配预期7条实际0条；org-a/shop-a预期3条实际5条（混入ORG-A与SHOP-A）。证据s12g-before.log。
+- 修改活动SQL两处通配为字符串OGNL，并将组织/门店比较显式转BINARY，严格沿用TenantScope大小写语义；不改变类型、租户和组织级无店铺记录规则，不新增索引/表或写入行为。
+- 修复后13项真实MySQL PASS：当前范围2、既有控制流程4、审批3、发布读取/分页4，s12g-after.log。根代理复核XML参数绑定与空组织服务层提前返回；Hygiene对此XML变更为NOT_APPLICABLE，git diff --check通过。前端沿用已通过的S12f证据。
+- 待单独提交、精确CI和顺序交付；S12f必须先正常FF main，S12g随后只更新control服务。无本机业务数据修改。
