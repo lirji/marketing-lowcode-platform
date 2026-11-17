@@ -266,11 +266,43 @@
             updated_by = #{updatedBy}, updated_at = #{updatedAt}, directive_json = #{directiveJson}
         WHERE tenant_id = #{tenantId} AND namespace_name = #{namespaceName}
     </update>
-    <select id="selectManifests"
-            resultType="com.acme.marketing.control.application.ControlRepository$ManifestRow">
-        SELECT manifest_json AS manifestJson, state_name AS stateName
-        FROM mk_release_manifest WHERE tenant_id = #{tenantId}
-        ORDER BY created_at DESC LIMIT #{limit}
+    <sql id="manifestVisibleScope">
+        m.tenant_id = #{tenantId}
+        AND EXISTS (
+            SELECT 1 FROM mk_definition_version d
+            JOIN mk_campaign c ON c.tenant_id = d.tenant_id AND c.campaign_id = d.campaign_id
+            WHERE d.tenant_id = m.tenant_id AND d.definition_id = JSON_UNQUOTE(JSON_EXTRACT(m.manifest_json, '$.artifacts[0].definitionId'))
+              AND d.version_no = CAST(JSON_UNQUOTE(JSON_EXTRACT(m.manifest_json, '$.artifacts[0].definitionVersion')) AS UNSIGNED)
+            <if test="!organizations.contains(&quot;*&quot;)">
+                <choose>
+                    <when test="organizations.isEmpty()">AND 1 = 0</when>
+                    <otherwise>AND CAST(c.organization_id AS BINARY) IN
+                        <foreach collection="organizations" item="organization" open="(" separator="," close=")">#{organization}</foreach>
+                    </otherwise>
+                </choose>
+            </if>
+            <if test="!shops.contains(&quot;*&quot;)">
+                <choose>
+                    <when test="shops.isEmpty()">AND (c.shop_id IS NULL OR c.shop_id = '')</when>
+                    <otherwise>AND (c.shop_id IS NULL OR c.shop_id = '' OR CAST(c.shop_id AS BINARY) IN
+                        <foreach collection="shops" item="shop" open="(" separator="," close=")">#{shop}</foreach>)
+                    </otherwise>
+                </choose>
+            </if>
+        )
+    </sql>
+    <select id="selectManifests" resultType="com.acme.marketing.control.application.ControlRepository$ManifestRow">
+        SELECT m.manifest_json AS manifestJson, m.state_name AS stateName FROM mk_release_manifest m
+        WHERE <include refid="manifestVisibleScope"/>
+        <if test="state != null">AND m.state_name = #{state}</if>
+        <if test="cursorCreatedAt != null">
+            AND (m.created_at &lt; #{cursorCreatedAt} OR (m.created_at = #{cursorCreatedAt} AND m.manifest_id &lt; #{cursorManifestId}))
+        </if>
+        ORDER BY m.created_at DESC, m.manifest_id DESC LIMIT #{limit}
+    </select>
+    <select id="selectManifestCursor" resultType="com.acme.marketing.control.application.ControlRepository$ManifestCursorRow">
+        SELECT m.created_at AS createdAt, m.manifest_id AS manifestId FROM mk_release_manifest m
+        WHERE <include refid="manifestVisibleScope"/> AND m.manifest_id = #{cursorManifestId}
     </select>
     <select id="selectReadiness"
             resultType="com.acme.marketing.control.application.ControlRepository$ReadinessRow">

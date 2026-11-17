@@ -20,17 +20,17 @@ test('release actions stay inert in demo mode', async ({ page }) => {
 })
 
 test('live release confirm posts to the control API', async ({ page }) => {
-  await page.route('**/api/v1/releases', async (route) => {
+  await page.route('**/api/v1/releases/page?**', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
+        body: JSON.stringify({ items: [{
           manifest: { manifestId: 'man-1', cell: 'cn-east-a', generation: 12, namespace: 'main', environment: 'prod', runtime: 'decision', artifacts: [{ artifactId: 'offer_policy-v2-fixture', type: 'OFFER_POLICY', checksum: 'sha256:fixture', sourceDigest: 'sha256:source', signatureKeyId: 'compiler-key', signature: 'sig', abi: 'marketing-offer-policy/1', definitionId: 'offer', definitionVersion: 1 }], canaryBasisPoints: 1500, signature: 'sig' },
           state: 'STAGED',
           readyReplicas: 2,
           readyCapacity: 100,
-        }]),
+        }], nextCursor: null, hasMore: false, state: null }),
       })
       return
     }
@@ -236,8 +236,8 @@ test('referral operations reads live participants without marking payouts', asyn
   await page.route('**/api/v1/approvals/page?**', async (route) => {
     await route.fulfill({ json: { items: [], nextCursor: null, hasMore: false, status: new URL(route.request().url()).searchParams.get('status') } })
   })
-  await page.route('**/api/v1/releases', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+  await page.route('**/api/v1/releases/page?**', async (route) => {
+    await route.fulfill({ json: { items: [], nextCursor: null, hasMore: false, state: null } })
   })
   await page.route('**/api/v1/campaigns', async (route) => {
     await route.fulfill({

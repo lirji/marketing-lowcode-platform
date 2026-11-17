@@ -34,6 +34,8 @@ import {
   reconciliationSchema,
   recomputeSchema,
   releaseViewSchema,
+  releasePageSchema,
+  type ReleaseStatus,
   rollbackCandidateSchema,
   journeySimulationSchema,
   type JourneySimulationInput,
@@ -221,6 +223,19 @@ export const api = {
   decideApproval: (caseId: string, role: ApprovalRole, decision: 'APPROVE' | 'REJECT' = 'APPROVE', comment?: string) =>
     request(`/api/v1/approvals/${encodeURIComponent(caseId)}/decisions`, { method: 'POST', headers: commandHeaders(), body: JSON.stringify({ role, decision, comment }) }, (value) => parseWith(approvalViewSchema, value)),
   releases: () => request('/api/v1/releases', undefined, (value) => zArray(releaseViewSchema, value)),
+  releasePage: (query: { state?: ReleaseStatus; limit?: number; cursor?: string } = {}) => {
+    const params = new URLSearchParams()
+    if (query.state) params.set('state', query.state)
+    if (query.limit !== undefined) params.set('limit', String(query.limit))
+    if (query.cursor) params.set('cursor', query.cursor)
+    return request(`/api/v1/releases/page?${params}`, undefined, (value) => {
+      const page = parseWith(releasePageSchema, value)
+      if (page.state !== (query.state ?? null) || page.hasMore && page.nextCursor === query.cursor) {
+        throw new Error('发布服务未确认当前筛选或返回了重复游标，请刷新后重试。')
+      }
+      return page
+    })
+  },
   compile: (payload: CompileRequest, idempotencyKey?: string) =>
     request('/api/v1/compile', { method: 'POST', headers: commandHeaders(idempotencyKey), body: JSON.stringify(payload) }, (value) => parseWith(compileReportSchema, value)),
   analyzeDmn: (table: DmnTable) =>

@@ -78,3 +78,16 @@ describe('automatic decision trace fallback', () => {
     }
   })
 })
+
+describe('release page contract', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  const item = { manifest: { manifestId: 'manifest-old', cell: 'cell-a', generation: 1, artifacts: [] }, state: 'ACTIVE' }
+  it('rejects a mismatched state instead of showing a different result set', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [item], state: null, nextCursor: null, hasMore: false }))))
+    await expect(api.releasePage({ state: 'ACTIVE' })).rejects.toThrow('发布服务未确认当前筛选')
+  })
+  it('rejects a repeated cursor instead of offering an endless load-more loop', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [item], state: null, nextCursor: 'manifest-old', hasMore: true }))))
+    await expect(api.releasePage({ cursor: 'manifest-old' })).rejects.toThrow('重复游标')
+  })
+})

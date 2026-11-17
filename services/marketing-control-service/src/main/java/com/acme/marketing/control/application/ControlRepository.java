@@ -57,7 +57,8 @@ public interface ControlRepository {
     boolean tryCreateKillSwitch(KillSwitchWrite write);
     Optional<Long> findKillSwitchSequenceForUpdate(String tenantId, String namespace);
     void updateKillSwitch(KillSwitchWrite write);
-    List<ManifestRow> findManifests(String tenantId, int limit);
+    List<ManifestRow> findManifests(ManifestListQuery query);
+    Optional<ManifestCursorRow> findManifestCursor(ManifestListQuery query);
     ReadinessRow summarizeReadiness(String tenantId, String manifestId, String statusName, String leaseFloor);
     List<ResourceScopeRow> findDefinitionScopes(String tenantId, String definitionId, long version,
             boolean approvedOnly);
@@ -125,6 +126,10 @@ public interface ControlRepository {
     record KillSwitchWrite(String tenantId, String namespaceName, long switchSequence, boolean enabledValue,
             String reasonText, String updatedBy, String updatedAt, String directiveJson) { }
     record ManifestRow(String manifestJson, String stateName) { }
+    /** 发布范围与状态必须在数据库LIMIT之前过滤，JSON中的首个制品沿用现有单定义发布范围。 */
+    record ManifestListQuery(String tenantId, Set<String> organizations, Set<String> shops, String state,
+            String cursorCreatedAt, String cursorManifestId, int limit) { }
+    record ManifestCursorRow(String createdAt, String manifestId) { }
     record ReadinessRow(int readyCount, long totalCapacity) { }
     record ResourceScopeRow(String organizationId, String shopId) { }
     record ReleaseSlotWrite(String tenantId, String environmentName, String cellId, String runtimeName,

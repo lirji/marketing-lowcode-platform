@@ -347,3 +347,18 @@
 - 按最新仅运行本项目的授权，保存3个真实Flink保存点及备份后恢复Docker管理，停止13个无关运行容器。重新核对实际容器、镜像、环境、端口、内存和卷，再以已验证e9产物构建control/console；配置显式0644，实际镜像隔离预检PASS。
 - 本机18容器检查、11应用健康、3作业恢复路径与检查点推进、V6迁移、审批参数拒绝/状态分页/模板读取PASS；实际8084桌面与Pixel7模板详情、未保存保护、审核状态筛选、发布批准单读取PASS，无业务写请求、页面错误或横向页面溢出，最终截图已查看。
 - 证据根下runtime-recovery-e9f3972/保留artifact-manifest、rollout-state、runtime-smoke、browser-smoke、project-only-containers、flink-restore-state、container-resources；控制库备份、保存点备份和私密env仅存本机0600。无新增worktree，不清理旧证据/停止容器/用户文件。
+
+## S12e 发布清单范围与完整分页（本地验收通过，待交付）
+- 基线main/82dbab4，分支fix/release-scope-pagination。Docker恢复及S12d交付已完成，后续不重复原Flink恢复/发布。
+- 已证实旧GET /releases先取租户50条再逐条检查第一制品定义的组织/门店，导致被不可见记录挤出的可见清单无法读取；发布页共用不含身份范围的缓存键，也没有完整翻页。
+- 本片保留数组API但范围先于LIMIT；新增GET /releases/page，limit默认25、上限100、可选state和manifestId游标；按不可变created_at/manifest_id降序，当前权限验证游标，状态切换服务端筛选，返回items/nextCursor/hasMore/state。延续单定义发布范围规则，不引入组合发布语义。
+- 前端使用完整身份/权限/组织/门店查询键，支持更多、重试和刷新；标注已加载数。保留既有激活/回滚/熔断的逐行目标、权限与未知结果重试保护，不执行真实业务写入验证。
+- 验收计划：真实MySQL超过50不可见清单不遮挡可见数据、多页同时间无漏重、状态变化游标、租户/大小写/组织门店隔离、非法参数；前端分页/失败保留/权限切换与原发布操作回归，真实隔离服务桌面手机浏览器、合同/架构检查。
+
+### S12e 验证检查点
+- 已实现旧数组API范围先于LIMIT、新有界分页与V7索引、完整权限查询键、服务端状态筛选和加载更多/重试/刷新；保留逐行激活/回滚/熔断与幂等保护。首项摘要改为“当前筛选首项”和“清单流量配置”，不把配置称为实时流量或额外宣称校验完成。
+- 真实MySQL 11项PASS（发布分页3、既有发布目标5、审批分页3），覆盖110条同时间跨页、超过50不可见清单、状态游标变化、租户/大小写/组织门店/通配授权、索引候选；s12e-backend-second.log。首轮测试模板替换误改HTTP方法名，已修复并重新验证。
+- 前端40文件198项全量PASS，最终client7项亦PASS，s12e-frontend-final.log、s12e-client-final.log；lint与构建通过。合同20项、10架构及13JSON、实际SnakeYAML OpenAPI解析PASS；s12e-contracts-final.log、s12e-gates.log、s12e-openapi.log。
+- 浏览器8项通过：分页故障/重试2视口、既有回滚未知结果2视口、既有激活确认2视口、真实独占MySQL第55条记录/筛选/较早操作目标2视口；s12e-browser.log保留首轮4成功2环境失败，s12e-browser-live.log保留激活2成功/隔离种子DTO错误2失败，最终真实两项见s12e-browser-verified.log。已查看手机列表与桌面较早目标截图。
+- 隔离服务准备首次DB未完全就绪，后续核对实际状态后重试；自有种子TenantId最初误写字符串，按真实Java记录改为对象并只修复230条自有测试记录。最终浏览器仅GET，没有共享库测试灌数或真实发布/回滚。最终读库230条清单、零命令与Outbox；临时API18889及自有MySQL已停止，数据保留，见s12e-live-db-after.json、s12e-live-cleanup.json。
+- 根代理第二轮复核范围与游标SQL、稳定状态、完整缓存键、角色切换和旧操作目标；未声称独立代理验证。Hygiene无阻断，仅无canonical formatter限制与命名常量数值提示，s12e-hygiene.json。

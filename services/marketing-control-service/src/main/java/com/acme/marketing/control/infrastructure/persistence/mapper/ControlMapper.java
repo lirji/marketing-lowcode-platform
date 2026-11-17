@@ -62,8 +62,8 @@ public interface ControlMapper {
     Long selectKillSwitchSequenceForUpdate(@Param("tenantId") String tenantId,
             @Param("namespace") String namespace);
     int updateKillSwitch(ControlRepository.KillSwitchWrite write);
-    List<ControlRepository.ManifestRow> selectManifests(@Param("tenantId") String tenantId,
-            @Param("limit") int limit);
+    List<ControlRepository.ManifestRow> selectManifests(ControlRepository.ManifestListQuery query);
+    ControlRepository.ManifestCursorRow selectManifestCursor(ControlRepository.ManifestListQuery query);
     ControlRepository.ReadinessRow selectReadiness(@Param("tenantId") String tenantId,
             @Param("manifestId") String manifestId, @Param("statusName") String statusName,
             @Param("leaseFloor") String leaseFloor);

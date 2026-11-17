@@ -354,22 +354,38 @@ public class ReleaseApplicationService {
         return new KillSwitchView(namespace, enabled, reason, scope.actorId(), now, sequence, directive);
     }
 
+    /** 兼容旧数组接口；先限制可见范围，再取最近50条，避免其它组织记录挤占配额。 */
     public List<ReleaseView> manifests() {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("release:read");
-        List<StoredManifest> stored = repository.findManifests(scope.tenantId().value(), 50).stream()
-                .map(this::storedManifest).toList();
-        List<ReleaseView> views = new ArrayList<>();
-        for (StoredManifest item : stored) {
-            try {
-                requireManifestScope(scope, item.manifest());
-                views.add(view(scope.tenantId().value(), item));
-            } catch (RuntimeException ignored) {
-                // Skip manifests whose campaign is outside the caller's org/shop scope.
-            }
-        }
-        return views;
+        var query = new ControlRepository.ManifestListQuery(scope.tenantId().value(), scope.organizations(),
+                scope.shops(), null, null, null, ReleasePaging.LEGACY_PAGE_SIZE);
+        return repository.findManifests(query).stream().map(this::storedManifest)
+                .map(item -> view(scope.tenantId().value(), item)).toList();
     }
+
+    /** 游标重新验证当前范围，按不可变创建时间翻页；状态改变不使已读游标失效。 */
+    public ReleasePage manifestPage(Integer limit, String state, String cursor) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("release:read");
+        var input = ReleasePaging.validate(limit, state, cursor);
+        String createdAt = null;
+        if (input.cursor() != null) {
+            var pointQuery = new ControlRepository.ManifestListQuery(scope.tenantId().value(), scope.organizations(),
+                    scope.shops(), null, null, input.cursor(), 1);
+            createdAt = repository.findManifestCursor(pointQuery).orElseThrow(ReleasePaging::invalidCursor).createdAt();
+        }
+        var query = new ControlRepository.ManifestListQuery(scope.tenantId().value(), scope.organizations(),
+                scope.shops(), input.state(), createdAt, input.cursor(), input.limit() + 1);
+        var rows = repository.findManifests(query);
+        boolean hasMore = rows.size() > input.limit();
+        var items = rows.stream().limit(input.limit()).map(this::storedManifest)
+                .map(item -> view(scope.tenantId().value(), item)).toList();
+        return new ReleasePage(items, hasMore ? items.getLast().manifest().manifestId() : null, hasMore, input.state());
+    }
+
+    /** 状态回显用于客户端核对筛选结果；本协议是实时遍历，不承诺跨页数据库快照。 */
+    public record ReleasePage(List<ReleaseView> items, String nextCursor, boolean hasMore, String state) { }
 
     @Transactional
     public ReleaseView desired(String environment, String cell, String runtime, String namespace) {
@@ -634,7 +650,13 @@ public class ReleaseApplicationService {
         if (resource.shopId() != null && !resource.shopId().isBlank()) scope.requireShop(resource.shopId());
     }
 
-    public enum State { STAGED, ACTIVE, ROLLED_BACK, REVOKED }
+    public enum State {
+        STAGED("STAGED"), ACTIVE("ACTIVE"), ROLLED_BACK("ROLLED_BACK"), REVOKED("REVOKED");
+        private final String code;
+        State(String code) { this.code = code; }
+        /** 稳定对外状态码，不依赖枚举序号或展示文案。 */
+        public String code() { return code; }
+    }
     private record Slot(long stableGeneration, long desiredGeneration, long latestGeneration,
             long activationSequence) { }
     private record StoredManifest(ReleaseManifest manifest, State state) { }

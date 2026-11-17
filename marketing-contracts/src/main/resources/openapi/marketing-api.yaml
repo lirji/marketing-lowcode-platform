@@ -161,10 +161,30 @@ paths:
       responses: *ok
   /api/v1/registries/nodes:
     get: {tags: [Control], operationId: listNodeDefinitions, responses: *list}
+  /api/v1/releases/page:
+    get:
+      tags: [Release]
+      operationId: listReleasePage
+      x-required-permission: release:read
+      description: >-
+        Filters tenant, organization, shop and optional state before limiting results.
+        Uses descending immutable created_at and manifest_id order. nextCursor is the last returned manifestId
+        when hasMore is true. Cursor must remain visible in the current tenant and scope; its state may change.
+        This is a live traversal, not a frozen snapshot; refresh from the first page to observe newer records
+        or state changes. No total-count or daily-count claim is made. Requires release:read.
+      parameters:
+        - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 100, default: 25}}
+        - {in: query, name: state, schema: {type: string, enum: [STAGED, ACTIVE, ROLLED_BACK, REVOKED]}}
+        - {in: query, name: cursor, schema: {type: string, minLength: 1, maxLength: 64}}
+      responses:
+        '200': {description: Visible release page, content: {application/json: {schema: {$ref: '#/components/schemas/ReleasePage'}}}}
+        '400': {description: RELEASE_QUERY_INVALID or RELEASE_CURSOR_INVALID; refresh after cursor invalidation, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '403': {$ref: '#/components/responses/Problem'}
   /api/v1/releases:
     get:
       tags: [Release]
       operationId: listReleases
+      description: Legacy array of at most 50 visible manifests; scope filters run before limiting. Use /releases/page for complete traversal.
       x-required-permission: release:read
       responses: *list
     post:
@@ -757,6 +777,35 @@ components:
     JsonArray: {description: Successful collection, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/JsonObject'}}}}}
     Problem: {description: RFC 9457 problem response, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
   schemas:
+    ReleasePage:
+      type: object
+      required: [items, nextCursor, hasMore, state]
+      properties:
+        items: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/ReleaseView'}}
+        nextCursor: {type: [string, 'null'], description: Last returned manifestId only when hasMore is true}
+        hasMore: {type: boolean}
+        state: {type: [string, 'null'], enum: [STAGED, ACTIVE, ROLLED_BACK, REVOKED, null], description: Echo of requested state; null means all states}
+    ReleaseView:
+      type: object
+      required: [manifest, state, readyReplicas, readyCapacity, activationDirective]
+      properties:
+        manifest:
+          type: object
+          description: Existing signed single-definition release manifest; unchanged by pagination.
+          required: [manifestId, environment, cell, runtime, namespace, generation, artifacts, createdAt]
+          properties:
+            manifestId: {type: string}
+            environment: {type: string}
+            cell: {type: string}
+            runtime: {type: string}
+            namespace: {type: string}
+            generation: {type: integer, format: int64}
+            artifacts: {type: array, items: {$ref: '#/components/schemas/ArtifactReference'}}
+            createdAt: {type: string, format: date-time}
+        state: {type: string, enum: [STAGED, ACTIVE, ROLLED_BACK, REVOKED]}
+        readyReplicas: {type: integer, minimum: 0}
+        readyCapacity: {type: integer, format: int64, minimum: 0}
+        activationDirective: {type: [object, 'null']}
     ApprovalPage:
       type: object
       required: [items, nextCursor, hasMore, status]

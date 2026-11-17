@@ -178,6 +178,20 @@ export const releaseViewSchema = z.object({
   readyCapacity: z.number().optional().default(0),
 })
 export type ReleaseView = z.infer<typeof releaseViewSchema>
+export const RELEASE_PAGE_SIZES = { DEFAULT: 25, MAX: 100 } as const
+export const releaseStateSchema = z.enum([ReleaseState.STAGED, ReleaseState.ACTIVE, ReleaseState.ROLLED_BACK, ReleaseState.REVOKED])
+export type ReleaseStatus = z.infer<typeof releaseStateSchema>
+export const releasePageSchema = z.object({
+  items: z.array(releaseViewSchema).max(RELEASE_PAGE_SIZES.MAX), nextCursor: z.string().min(1).nullable(), hasMore: z.boolean(),
+  state: releaseStateSchema.nullable(),
+}).superRefine((page, context) => {
+  if (page.hasMore !== (page.nextCursor !== null) || page.hasMore && page.items.at(-1)?.manifest.manifestId !== page.nextCursor
+      || page.state !== null && page.items.some((item) => item.state !== page.state)) {
+    context.addIssue({ code: 'custom', message: '发布分页响应的状态或游标不一致' })
+  }
+})
+export type ReleasePage = z.infer<typeof releasePageSchema>
+
 export const rollbackCandidateSchema = z.object({ manifestId: z.string(), generation: z.number().int().positive().safe(),
   expiresAt: z.string(), artifacts: z.array(artifactReferenceSchema) })
 export type RollbackCandidate = z.infer<typeof rollbackCandidateSchema>

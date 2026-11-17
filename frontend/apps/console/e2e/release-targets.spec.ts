@@ -10,10 +10,10 @@ test('release rollback targets and uncertain command recovery stay usable', asyn
   await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
   await page.route('**/api/v1/**', (route) => route.fulfill({ json: [] }))
   await page.route('**/api/client-error', (route) => route.fulfill({ status: 204 }))
-  await page.route('**/api/v1/releases', (route) => route.fulfill({ json: [
+  await page.route('**/api/v1/releases/page?**', (route) => route.fulfill({ json: { items: [
     { manifest: manifest('staged-newer', 10), state: 'STAGED', readyReplicas: 1, readyCapacity: 2 },
     { manifest: manifest(sourceId, 9), state: rollbackCalls ? 'ROLLED_BACK' : 'ACTIVE', readyReplicas: 1, readyCapacity: 2 },
-  ] }))
+  ], nextCursor: null, hasMore: false, state: null } }))
   await page.route(`**/api/v1/releases/${sourceId}/rollback-candidates`, (route) => rollbackCalls
     ? route.fulfill({ status: 409, json: { type: 'about:blank', title: 'Conflict', status: 409, code: 'ROLLBACK_SOURCE_NOT_ACTIVE', detail: '源清单已回滚' } })
     : route.fulfill({ json: [{ manifestId: targetId, generation: 4, expiresAt: '2027-01-01T00:00:00Z', artifacts: [artifact] }] }))

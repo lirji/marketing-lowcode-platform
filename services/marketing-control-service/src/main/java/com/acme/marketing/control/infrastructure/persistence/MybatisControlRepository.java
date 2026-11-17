@@ -97,9 +97,13 @@ public class MybatisControlRepository implements ControlRepository {
         return Optional.ofNullable(mapper.selectKillSwitchSequenceForUpdate(tenantId, namespace));
     }
     @Override public void updateKillSwitch(KillSwitchWrite write) { one(mapper.updateKillSwitch(write), "更新熔断开关"); }
-    @Override public List<ManifestRow> findManifests(String tenantId, int limit) {
-        return mapper.selectManifests(tenantId, limit);
+    @Override public List<ManifestRow> findManifests(ManifestListQuery query) {
+        return mapper.selectManifests(query);
     }
+    @Override public Optional<ManifestCursorRow> findManifestCursor(ManifestListQuery query) {
+        return Optional.ofNullable(mapper.selectManifestCursor(query));
+    }
+
     @Override public ReadinessRow summarizeReadiness(String tenantId, String manifestId, String statusName,
             String leaseFloor) { return mapper.selectReadiness(tenantId, manifestId, statusName, leaseFloor); }
     @Override public List<ResourceScopeRow> findDefinitionScopes(String tenantId, String definitionId, long version,

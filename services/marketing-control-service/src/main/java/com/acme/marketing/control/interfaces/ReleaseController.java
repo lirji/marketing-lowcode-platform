@@ -35,6 +35,13 @@ public class ReleaseController {
         return service.manifests();
     }
 
+    /** 只读分页沿用release:read及现有定义范围授权。 */
+    @GetMapping("/page")
+    public ReleaseApplicationService.ReleasePage page(@RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) String state, @RequestParam(required = false) String cursor) {
+        return service.manifestPage(limit, state, cursor);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ReleaseApplicationService.ReleaseView stage(

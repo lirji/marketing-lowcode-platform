@@ -7,10 +7,10 @@ import { ReleaseCenterPage } from './ReleaseCenterPage'
 import type { ReleaseView, RollbackCandidate } from '../../shared/api/schemas'
 
 const state = vi.hoisted(() => ({ permissions: ['*'], tenant: 'tenant-a', demo: false }))
-vi.mock('../../shared/auth/useAuth', () => ({ useAuth: () => ({ tenantId: state.tenant, subject: 'operator', permissions: state.permissions,
+vi.mock('../../shared/auth/useAuth', () => ({ useAuth: () => ({ authenticated: true, organizations: ['org-a'], shops: ['shop-a'], tenantId: state.tenant, subject: 'operator', permissions: state.permissions,
   hasPermission: (permission: string) => state.permissions.includes('*') || state.permissions.includes(permission) }) }))
 vi.mock('../../shared/api/client', async (original) => ({ ...await original<typeof import('../../shared/api/client')>(), api: {
-  releases: vi.fn(), rollbackCandidates: vi.fn(), rollbackRelease: vi.fn(), activateRelease: vi.fn(), setKillSwitch: vi.fn(), get demoMode() { return state.demo },
+  releasePage: vi.fn(), rollbackCandidates: vi.fn(), rollbackRelease: vi.fn(), activateRelease: vi.fn(), setKillSwitch: vi.fn(), get demoMode() { return state.demo },
 } }))
 vi.mock('./ReleaseWizard', () => ({ ReleaseWizard: () => null }))
 const release = (id: string, generation: number, status: string): ReleaseView => ({ manifest: { manifestId: id, generation, stableGeneration: generation,
@@ -26,7 +26,7 @@ async function openRollback(id = 'active-9') {
 }
 beforeEach(() => {
   vi.resetAllMocks(); state.permissions = ['*']; state.tenant = 'tenant-a'; state.demo = false
-  vi.mocked(api.releases).mockResolvedValue([release('staged-10', 10, 'STAGED'), release('active-9', 9, 'ACTIVE'), release('other-slot', 7, 'ACTIVE')])
+  vi.mocked(api.releasePage).mockResolvedValue({items: [release('staged-10', 10, 'STAGED'), release('active-9', 9, 'ACTIVE'), release('other-slot', 7, 'ACTIVE')],nextCursor:null,hasMore:false,state:null})
   vi.mocked(api.rollbackCandidates).mockResolvedValue([candidate()])
 })
 
@@ -138,5 +138,47 @@ describe('ReleaseCenter explicit targets', () => {
     expect(await screen.findByRole('button', { name: '回滚 active-9' })).toBeDisabled()
     expect(screen.getByRole('button', { name: '激活 staged-10' })).toBeDisabled()
     expect(screen.getByRole('button', { name: '熔断 active-9 的命名空间' })).toBeDisabled()
+  })
+})
+
+
+describe('ReleaseCenter complete scoped pages', () => {
+  it('retains earlier rows after a failed page and filters state on the server', async () => {
+    let fail = true
+    vi.mocked(api.releasePage).mockImplementation(async (query = {}) => {
+      if (query.cursor && fail) throw new Error('page unavailable')
+      const id = query.state ? 'active-only' : query.cursor ? 'older' : 'first'
+      const more = !query.state && !query.cursor
+      return { items: [release(id, 1, query.state ?? 'STAGED')], nextCursor: more ? id : null, hasMore: more, state: query.state ?? null }
+    })
+    renderPage(); const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: '加载更多发布清单' }))
+    expect(await screen.findByText('后续发布清单加载失败')).toBeVisible()
+    expect(screen.getByRole('button', { name: '激活 first' })).toBeVisible()
+    fail = false; await user.click(screen.getByRole('button', { name: '重试加载更多发布清单' }))
+    expect(await screen.findByRole('button', { name: '激活 older' })).toBeVisible()
+    expect(screen.getByText('已加载 2 条发布清单')).toBeVisible()
+    await user.click(screen.getByRole('combobox', { name: '发布状态' })); await user.click(screen.getByRole('option', { name: '已激活' }))
+    expect(await screen.findByRole('button', { name: '回滚 active-only' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: '激活 first' })).not.toBeInTheDocument()
+    expect(api.releasePage).toHaveBeenLastCalledWith({ state: 'ACTIVE', limit: 25, cursor: undefined })
+  })
+  it('does not read releases without permission or in demo mode', () => {
+    state.permissions = ['release:write']; const view = renderPage()
+    expect(screen.getByText('没有发布读取权限')).toBeVisible(); expect(api.releasePage).not.toHaveBeenCalled()
+    view.unmount(); state.permissions = ['*']; state.demo = true; renderPage()
+    expect(api.releasePage).not.toHaveBeenCalled()
+  })
+  it('never reuses old tenant pages or late responses in the new scope', async () => {
+    let finish!: (page: Awaited<ReturnType<typeof api.releasePage>>) => void
+    vi.mocked(api.releasePage).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+      .mockResolvedValue({ items: [release('new-scope', 1, 'ACTIVE')], nextCursor: null, hasMore: false, state: null })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = () => <QueryClientProvider client={client}><ReleaseCenterPage /></QueryClientProvider>
+    const view = render(tree()); await waitFor(() => expect(api.releasePage).toHaveBeenCalledTimes(1))
+    state.tenant = 'tenant-b'; view.rerender(tree())
+    expect(await screen.findByRole('button', { name: '回滚 new-scope' })).toBeVisible()
+    await act(async () => finish({ items: [release('old-scope', 1, 'ACTIVE')], nextCursor: null, hasMore: false, state: null }))
+    expect(screen.queryByRole('button', { name: '回滚 old-scope' })).not.toBeInTheDocument()
   })
 })
