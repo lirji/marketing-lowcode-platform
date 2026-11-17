@@ -1,14 +1,30 @@
 import { expect, test } from '@playwright/test'
 
 test('operator can enter governed campaign creation', async ({ page }) => {
+  let created: Record<string, unknown> | undefined
+  await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
+  await page.route('**/api/v1/**', async route => {
+    const url = new URL(route.request().url()), path = url.pathname
+    if (path.endsWith('/campaigns')) {
+      if (route.request().method() === 'POST') { created = { ...route.request().postDataJSON(), id: 'created-campaign', status: 'DRAFT', createdAt: '2026-11-17T00:00:00Z' }; await route.fulfill({ status: 201, json: created }); return }
+      await route.fulfill({ json: created ? [created] : [] }); return
+    }
+    if (path.endsWith('/measurements/dashboard')) { await route.fulfill({ json: { counts: {}, attributedRevenueMinor: 0, fundingCostMinor: 0 } }); return }
+    if (path.endsWith('/measurements/series')) { await route.fulfill({ json: { points: [] } }); return }
+    if (path.endsWith('/releases/page')) { await route.fulfill({ json: { items: [], hasMore: false, nextCursor: null, state: url.searchParams.get('state') } }); return }
+    if (path.endsWith('/definitions/latest')) { await route.fulfill({ status: 404, json: { status: 404, title: 'No saved definition' } }); return }
+    await route.fulfill({ json: [] })
+  })
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '早上好，今天的增长脉搏稳定。' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '查看当前运营数据' })).toBeVisible()
   await page.getByRole('link', { name: /创建营销活动/ }).click()
   await expect(page.getByRole('dialog', { name: '创建营销活动' })).toBeVisible()
   await page.getByLabel('活动名称').fill('双11冰洗焕新')
   await page.getByLabel('可衡量目标').fill('提升 PLUS 家电用户确认转化率 8%')
   await page.getByRole('button', { name: '创建并进入设计' }).click()
-  await expect(page.getByText('双11冰洗焕新')).toBeVisible()
+  await expect(page).toHaveURL(/designers\/offer\?campaignId=created-campaign$/)
+  await expect(page.getByText('双11冰洗焕新', { exact: true })).toBeVisible()
+  expect(created).toMatchObject({ name: '双11冰洗焕新', campaignType: 'STANDARD' })
 })
 
 test('release actions stay inert in demo mode', async ({ page }) => {

@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test'
+import { campaignFixtures } from '../src/test/fixtures/campaigns'
 
 test('custom selects filter visible records and preserve the containing form on Escape', async ({ page }, testInfo) => {
+  await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
+  await page.route('**/api/v1/**', route => route.fulfill({ json: [] }))
+  await page.route('**/api/v1/campaigns', route => route.fulfill({ json: campaignFixtures }))
+  await page.route('**/api/v1/definitions/latest?**', route => route.fulfill({ status: 404, json: { status: 404, title: 'No saved definition' } }))
   await page.goto('/campaigns')
   const status = page.getByRole('combobox', { name: '状态筛选' })
   await status.click()
