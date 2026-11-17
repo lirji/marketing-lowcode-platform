@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GraphDefinition } from '../../shared/api/schemas'
 import { devAuthState } from '../../shared/auth/auth-context'
 
-const mocks = vi.hoisted(() => ({ latest: vi.fn(), registry: vi.fn(), save: vi.fn(), validate: vi.fn(), simulate: vi.fn(), submit: vi.fn(), benefits: vi.fn() }))
-vi.mock('../../shared/auth/useAuth', () => ({ useAuth: () => devAuthState }))
+const mocks = vi.hoisted(() => ({ latest: vi.fn(), registry: vi.fn(), save: vi.fn(), validate: vi.fn(), simulate: vi.fn(), submit: vi.fn(), benefits: vi.fn(), canWrite: true }))
+vi.mock('../../shared/auth/useAuth', () => ({ useAuth: () => ({ ...devAuthState, hasPermission: (permission: string) => (permission !== 'definition:write' || mocks.canWrite) && devAuthState.hasPermission(permission) }) }))
 vi.mock('../../shared/api/client', async (original) => {
   const actual = await original<typeof import('../../shared/api/client')>()
   return { ...actual, api: { ...actual.api, demoMode: false, latestDefinition: mocks.latest, nodeRegistry: mocks.registry,
@@ -36,7 +36,7 @@ async function validate() {
 
 describe('LowCodeDesigner real contract interactions', () => {
   beforeEach(() => {
-    vi.clearAllMocks(); localStorage.clear()
+    vi.clearAllMocks(); localStorage.clear(); mocks.canWrite = true
     mocks.latest.mockResolvedValue({ graph, version: 1 })
     mocks.registry.mockResolvedValue(['offer.start', 'offer.fixed', 'offer.percentage', 'offer.end', 'offer.condition'].map((stableTypeId) => ({ stableTypeId, semanticVersion: '1.0.0', dialects: ['OFFER_DECISION_DAG'], costWeight: 10 })))
     mocks.benefits.mockResolvedValue([{ benefitId: 'benefit', version: 1, name: '测试权益', status: 'ACTIVE' }])
@@ -103,5 +103,66 @@ describe('LowCodeDesigner real contract interactions', () => {
     const locate = screen.getAllByRole('button', { name: '查看节点' })
     expect(locate[0]).toBeEnabled(); expect(locate[1]).toBeDisabled()
     fireEvent.click(locate[0]); expect(screen.getByLabelText('减免金额（分）')).toHaveValue(500)
+  })
+})
+
+
+describe('historical Journey draft migration', () => {
+  const historical: GraphDefinition = {
+    definitionId: 'frozen-journey', dialect: 'JOURNEY_STATE_MACHINE', dialectVersion: '1.0.0',
+    nodes: [{ id: 'wait', stableTypeId: 'journey.wait_timer', semanticVersion: '1.0.0', config: { delaySeconds: '1800', retained: 'yes' } }],
+    edges: [{ id: 'edge', sourceNodeId: 'wait', sourcePort: 'elapsed', targetNodeId: 'end', targetPort: 'in' }],
+    variables: { stateTtlSeconds: '7200' }, annotations: { terms: '历史条款' },
+  }
+  function mountJourney() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    return render(<QueryClientProvider client={client}><LowCodeDesigner title="历史旅程" version="尚未保存" dialect="JOURNEY_STATE_MACHINE" definitionId="fallback-journey" campaignId="campaign" nodes={[]} edges={[]} problems={[]} /></QueryClientProvider>)
+  }
+  beforeEach(() => {
+    vi.clearAllMocks(); localStorage.clear(); mocks.canWrite = true
+    mocks.latest.mockResolvedValue({ graph: structuredClone(historical), version: 1 })
+    mocks.registry.mockResolvedValue([{ stableTypeId: 'journey.wait-timer', semanticVersion: '1.0.0', dialects: ['JOURNEY_STATE_MACHINE'], costWeight: 10 }])
+    mocks.save.mockResolvedValue({ version: 2 })
+    mocks.validate.mockResolvedValue({ valid: true, issues: [] })
+  })
+  it('requires an explicit reversible edit and saves a new draft without changing the original graph', async () => {
+    mountJourney()
+    const migrate = await screen.findByRole('button', { name: '转换等待节点' })
+    expect(migrate).toBeEnabled()
+    expect(mocks.save).not.toHaveBeenCalled()
+    fireEvent.click(migrate)
+    expect(screen.getByText('有未保存更改')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '提交审核' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '旅程仿真' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '撤销' }))
+    expect(screen.getByRole('button', { name: '转换等待节点' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: '重做' }))
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(1))
+    expect(mocks.save.mock.calls[0][0]).toEqual({ campaignId: 'campaign', graph: { ...historical, nodes: [{ ...historical.nodes[0], stableTypeId: 'journey.wait-timer' }] } })
+    expect(historical.nodes[0].stableTypeId).toBe('journey.wait_timer')
+    expect(mocks.submit).not.toHaveBeenCalled()
+  })
+  it('does not enable conversion when the target registry is unavailable', async () => {
+    mocks.registry.mockRejectedValue(new Error('registry unavailable'))
+    mountJourney()
+    expect(await screen.findByRole('button', { name: '转换等待节点' })).toBeDisabled()
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
+  it('does not allow a read-only operator to convert or save', async () => {
+    mocks.canWrite = false
+    mountJourney()
+    expect(await screen.findByRole('button', { name: '转换等待节点' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '保存' })).toBeDisabled()
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
+  it('leaves an unknown semantic version unchanged', async () => {
+    mocks.latest.mockResolvedValue({ graph: { ...historical, nodes: [{ ...historical.nodes[0], semanticVersion: '2.0.0' }] }, version: 1 })
+    mountJourney()
+    await screen.findByText('已保存')
+    expect(screen.queryByRole('button', { name: '转换等待节点' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(mocks.save).toHaveBeenCalled())
+    expect(mocks.save.mock.calls[0][0].graph.nodes[0]).toEqual({ ...historical.nodes[0], semanticVersion: '2.0.0' })
   })
 })

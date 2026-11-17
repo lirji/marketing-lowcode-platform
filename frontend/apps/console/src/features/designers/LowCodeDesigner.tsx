@@ -21,6 +21,7 @@ import { NodeConfigEditor } from './NodeConfigEditor'
 import { NODE_LABELS, supportedNode } from './nodeConfig'
 import { problemNodeId } from './problemNodeId'
 import { JourneySimulationDialog } from './JourneySimulationDialog'
+import { legacyJourneyTimers, migrateJourneyTimers, supportsJourneyTimer } from './journeyLegacy'
 
 export type { DesignerNode }
 const DESIGNER_STATUS = { SAVED: 'saved', DIRTY: 'dirty', VALIDATED: 'validated', SIMULATED: 'simulated' } as const
@@ -227,11 +228,20 @@ export function LowCodeDesigner({
   const busy = saveMutation.isPending || validateMutation.isPending || simulateMutation.isPending || submitMutation.isPending
   const editable = canWrite && !restoring && !loadError
   const ready = live && validated?.revision === revision.current && !busy && !loadError && !restoring
+  const legacyTimers = legacyJourneyTimers(dialect, nodes)
+  const canMigrateTimers = editable && !busy && !registry.isError && !registry.isPending && supportsJourneyTimer(registry.data)
   const validAmount = /^\d+$/.test(amountMinor) && Number.isSafeInteger(Number(amountMinor))
   const markDirty = () => { revision.current++; setJourneySimulationOpen(false); setValidated(undefined); setStatus(DESIGNER_STATUS.DIRTY); setServerProblems([]); setCheckedRevision(undefined); setNotice(undefined) }
   const remember = () => { history.current.push({ nodes, edges }); if (history.current.length > 30) history.current.shift(); future.current = [] }
   const undo = () => { const snapshot = history.current.pop(); if (!snapshot) return; future.current.push({ nodes, edges }); setNodes(snapshot.nodes); setEdges(snapshot.edges); markDirty() }
   const redo = () => { const snapshot = future.current.pop(); if (!snapshot) return; history.current.push({ nodes, edges }); setNodes(snapshot.nodes); setEdges(snapshot.edges); markDirty() }
+  const migrateTimers = () => {
+    if (!canMigrateTimers || legacyTimers.length === 0) return
+    remember()
+    setNodes(migrateJourneyTimers(dialect, nodes))
+    markDirty()
+    setNotice('等待节点已转换为当前类型。请保存并校验新草稿；历史版本、审批和已发布运行保持不变。')
+  }
   const connect = (connection: Connection) => { if (!editable || connection.source === connection.target) return; remember(); setEdges((current) => addEdge({ ...connection, animated: true }, current)); markDirty() }
   const addNode = (item: (typeof paletteItems)[number]) => { remember(); const id = `${dialect.toLowerCase()}-${crypto.randomUUID()}`; setNodes((current) => [...current, { id, type: 'marketing', position: { x: 40 + (current.length % 4) * 230, y: 80 + Math.floor(current.length / 4) * 140 }, data: { label: item.label, subtitle: item.subtitle, tone: item.tone, config: {}, stableTypeId: item.stableTypeId, semanticVersion: item.semanticVersion } }]); setSelectedId(id); markDirty() }
   const remove = () => { if (!selectedId) return; remember(); setNodes((current) => current.filter((node) => node.id !== selectedId)); setEdges((current) => current.filter((edge) => edge.source !== selectedId && edge.target !== selectedId)); setSelectedId(''); markDirty() }
@@ -272,6 +282,10 @@ export function LowCodeDesigner({
     {restoring && <div className="designer-notice"><StateBanner tone="info" title="正在加载已保存定义" detail="加载完成后可编辑，避免覆盖已有版本。" /></div>}
     <div className="designer-simulation-inputs">{dialect === 'OFFER_DECISION_DAG' ? <><label className="field"><span>试算订单金额（分）</span><input aria-label="试算订单金额（分）" inputMode="numeric" value={amountMinor} onChange={(event) => setAmountMinor(event.target.value)} /></label><label className="field"><span>试算币种</span><input aria-label="试算币种" value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase())} maxLength={3} /></label><p>保存并校验当前内容后可试算和提交；编辑会使原校验失效。金额试算不支持商品、人群、店铺范围或运费优惠。</p></> : <p>保存并校验当前内容后可仿真或提交审核。仿真仅展示输入下的状态和拟生成指令；实际触达与履约仍需运行环境验收。</p>}</div>
     {!campaignId && !api.demoMode && <div className="designer-notice"><StateBanner tone="info" title="未绑定活动" detail="侧栏打开的是空白草稿，保存不会写入控制面。请从「计划与活动」创建或打开活动后再设计。" /></div>}
+    {!api.demoMode && legacyTimers.length > 0 && <div className="designer-notice">
+      <StateBanner tone="info" title="发现历史等待节点" detail={`当前草稿有 ${legacyTimers.length} 个旧版等待节点。转换将保留配置与连线，保存时追加草稿版本；发布仍需重新校验和审核。${!supportsJourneyTimer(registry.data) || registry.isError ? ' 当前节点目录尚未确认支持，请刷新目录后重试。' : ''}`} />
+      <Button onClick={migrateTimers} disabled={!canMigrateTimers}>转换等待节点</Button>
+    </div>}
     {(actionError || loadError) && <div className="designer-notice"><StateBanner tone="error" title="设计器操作失败" detail={loadError ?? problemDetail(actionError)} /></div>}
     {notice && <div className="designer-notice"><StateBanner tone="success" title="操作已受理" detail={notice} /></div>}
     <div className="designer-grid">

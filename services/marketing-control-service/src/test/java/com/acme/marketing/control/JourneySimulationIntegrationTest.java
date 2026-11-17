@@ -53,6 +53,45 @@ class JourneySimulationIntegrationTest extends MySqlIntegrationTest {
         assertEquals(0, jdbc.queryForObject("select count(*) from mk_outbox where tenant_id=?", Integer.class, tenant));
     }
 
+    /** 历史定义通过现有保存入口追加新版本，已审批版本及其发布记录不能被转换覆盖。 */
+    @Test void correctedLegacyTimerCreatesIdempotentDraftWhileFrozenVersionStaysUnchanged() throws Exception {
+        String canonical = jdbc.queryForObject("select graph_json from mk_definition_version where tenant_id=?", String.class, tenant);
+        String legacy = canonical.replace("journey.wait-timer", "journey.wait_timer");
+        jdbc.update("update mk_definition_version set graph_json=?,status='APPROVED' where tenant_id=?", legacy, tenant);
+        String now = Instant.now().toString();
+        jdbc.update("insert into mk_approval_case(tenant_id,case_id,definition_id,definition_version,submitted_by,required_roles,status,created_at,updated_at) values(?,?,?,?,?,?,?,?,?)",
+                tenant, "frozen-approval", "journey-test", 1, "tester", "BUSINESS", "APPROVED", now, now);
+        jdbc.update("insert into mk_release_manifest(tenant_id,manifest_id,environment_name,cell_id,runtime_name,namespace_name,generation_no,state_name,manifest_json,created_at) values(?,?,?,?,?,?,?,?,?,?)",
+                tenant, "frozen-release", "test", "cell", "journey", "namespace", 1, "ACTIVE", "{\"frozenVersion\":1}", now);
+        var originalDefinition = jdbc.queryForMap("select * from mk_definition_version where tenant_id=?", tenant);
+        var originalApproval = jdbc.queryForMap("select * from mk_approval_case where tenant_id=?", tenant);
+        var originalRelease = jdbc.queryForMap("select * from mk_release_manifest where tenant_id=?", tenant);
+        String body = mapper.writeValueAsString(Map.of("campaignId", "campaign", "graph", mapper.readTree(canonical)));
+        String key = UUID.randomUUID().toString();
+        for (String idempotencyKey : List.of(key, key, UUID.randomUUID().toString())) {
+            var saved = send(request("/api/v1/definitions").setHeader("X-Dev-Permissions", "definition:write")
+                    .header("Idempotency-Key", idempotencyKey).POST(HttpRequest.BodyPublishers.ofString(body)));
+            assertEquals(201, saved.statusCode(), saved.body());
+            assertEquals(2, mapper.readTree(saved.body()).path("version").asInt());
+            assertEquals("DRAFT", mapper.readTree(saved.body()).path("status").asString());
+        }
+        assertEquals(2, jdbc.queryForObject("select count(*) from mk_definition_version where tenant_id=?", Integer.class, tenant));
+        var validated = send(request("/api/v1/definitions/journey-test/versions/2:validate")
+                .setHeader("X-Dev-Permissions", "definition:write").header("Idempotency-Key", UUID.randomUUID().toString())
+                .POST(HttpRequest.BodyPublishers.noBody()));
+        assertEquals(200, validated.statusCode(), validated.body());
+        assertTrue(mapper.readTree(validated.body()).path("valid").asBoolean(), validated.body());
+        var simulated = send(request("/api/v1/definitions/journey-test/versions/2:simulate-journey")
+                .POST(HttpRequest.BodyPublishers.ofString(INPUT)));
+        assertEquals(200, simulated.statusCode(), simulated.body());
+        assertEquals("COMPLETED", mapper.readTree(simulated.body()).path("stopReason").asString());
+        assertEquals(10, mapper.readTree(simulated.body()).path("elapsedSeconds").asDouble());
+        assertEquals(originalDefinition, jdbc.queryForMap("select * from mk_definition_version where tenant_id=? and version_no=1", tenant));
+        assertEquals(originalApproval, jdbc.queryForMap("select * from mk_approval_case where tenant_id=?", tenant));
+        assertEquals(originalRelease, jdbc.queryForMap("select * from mk_release_manifest where tenant_id=?", tenant));
+        assertEquals(0, jdbc.queryForObject("select count(*) from mk_outbox where tenant_id=?", Integer.class, tenant));
+    }
+
     @Test void permissionsScopeAndTenantApplyBeforeReadingBody() throws Exception {
         assertEquals(403, send(request().setHeader("X-Dev-Permissions", "definition:read").POST(HttpRequest.BodyPublishers.ofString("not json"))).statusCode());
         assertEquals(400, send(request().setHeader("X-Dev-Organization-Ids", "other").POST(HttpRequest.BodyPublishers.ofString(INPUT))).statusCode());
@@ -75,7 +114,10 @@ class JourneySimulationIntegrationTest extends MySqlIntegrationTest {
     }
 
     private HttpRequest.Builder request() {
-        return HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/v1/definitions/journey-test/versions/1:simulate-journey"))
+        return request("/api/v1/definitions/journey-test/versions/1:simulate-journey");
+    }
+    private HttpRequest.Builder request(String path) {
+        return HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
                 .header("Content-Type", "application/json").header("X-Dev-Tenant-Id", tenant).header("X-Dev-Organization-Ids", "org")
                 .header("X-Dev-Shop-Ids", "shop").header("X-Dev-Actor-Id", "tester").header("X-Dev-Permissions", "definition:simulate");
     }

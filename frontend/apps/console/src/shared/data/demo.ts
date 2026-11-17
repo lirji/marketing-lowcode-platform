@@ -11,6 +11,6 @@ export const demoNodeRegistry: NodeDefinition[] = [
   { stableTypeId: 'offer.scope', displayName: '商品范围', dialect: 'OFFER_DECISION_DAG', inputPorts: ['in'], outputPorts: ['matched', 'unmatched'], configSchema: { category: 'string', shop: 'string' } },
   { stableTypeId: 'offer.condition', displayName: '会员条件', dialect: 'OFFER_DECISION_DAG', inputPorts: ['in'], outputPorts: ['true', 'false'], configSchema: { field: 'string', equals: 'string' } },
   { stableTypeId: 'offer.benefit', displayName: '满减权益', dialect: 'OFFER_DECISION_DAG', inputPorts: ['in'], outputPorts: ['next'], configSchema: { thresholdMinor: 'integer', discountMinor: 'integer' } },
-  { stableTypeId: 'journey.wait_timer', displayName: '等待时间', dialect: 'JOURNEY_STATE_MACHINE', inputPorts: ['in'], outputPorts: ['elapsed'], configSchema: { delaySeconds: 'integer' } },
+  { stableTypeId: 'journey.wait-timer', displayName: '等待时间', dialect: 'JOURNEY_STATE_MACHINE', inputPorts: ['in'], outputPorts: ['elapsed'], configSchema: { delaySeconds: 'integer' } },
   { stableTypeId: 'journey.send', displayName: '渠道触达', dialect: 'JOURNEY_STATE_MACHINE', inputPorts: ['in'], outputPorts: ['next'], configSchema: { templateId: 'string', channel: 'enum' } },
 ]

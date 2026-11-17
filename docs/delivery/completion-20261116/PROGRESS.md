@@ -420,3 +420,16 @@
 - f0ab7cfe7826e211316ef32318e59a2f3c61dec5精确CI44063426678三项PASS，正常FF main；s12h-ci-exact.json与s12h-delivery.json。仅console更新，control保持b3858e6，其它17容器身份/镜像/启动时间不变。
 - runtime-f0ab7cf运行与真实桌面/Pixel7浏览器PASS，18必要容器正常、3个Flink原作业检查点推进；实际首页展示7个已加载活动、4条清单和61天18小时历史延迟，无页面错误、请求失败、业务写请求或横向溢出。已查看真实双视口截图。
 - S12h已完成；下一步核对历史Journey节点及版本迁移，原S06–S13计划继续，外部会员/交易/履约合同仍未解决。
+
+## S12i 历史Journey等待节点修复（IN_PROGRESS）
+- 只读核对当前库：marketing-platform与retail-cn各有mock-journey-cart-recall v1使用journey.wait_timer@1.0.0，其它Journey节点为当前类型；当前种子已为journey.wait-timer，重新灌种子会覆盖历史版本，不能用作迁移。
+- 从d855213建立fix/journey-legacy-definition。修复范围仅已知等待节点旧名：设计器明确展示迁移提示，由编辑动作替换当前草稿类型，保留节点ID、配置、端口、连线、变量及原definitionId；保存沿现有API创建/复用新DRAFT版本，原审批/发布与运行实例不变。不放宽后端注册表，不转换未知语义版本；新注册节点不可用时禁用迁移。
+- 验收：加载不隐式改图/写入、权限/注册表/语义版本保护、撤销/重做、保存新版本与失效校验、真实MySQL原版本/审批/发布保留；双视口按钮与保存/仿真流程、lint/build、精确CI和console增量运行验收。仅已核对的本机演示定义可通过现有保存/校验API追加草稿，不提交审批或发布。
+
+### S12i 实现与验证检查点
+- 显式迁移、当前注册表/权限保护、撤销重做、原定义ID/连线/变量保留已实现。初始回归2项按预期失败，修复后全前端214项PASS；真实MySQL/HTTP4项PASS，证明v1审批版本/审批行/发布行不变，重复保存只产生v2、校验/纯仿真成功、outbox为空。
+- 双视口转换/校验/仿真2项PASS，未发送审批/发布请求。首轮build发现新增Testing Library测试误用了Playwright的exact参数，已删除无效参数，待重新build与受影响测试；lint首轮通过。证据s12i-*。尚未提交或改动真实演示定义。
+
+### S12i 本地验收结果
+- 214项前端PASS；修正测试类型后9项受影响测试与最终build通过，lint通过。真实MySQL4项、桌面/Pixel7浏览器2项通过；已查看手机迁移提示与桌面仿真弹窗截图。s12i-before.log保留修复前2项失败，s12i-build.log保留首轮类型失败，其余对应*-final日志。
+- 根代理复核仅已知旧名/语义版本转换、写权限/当前目录保护、原图内容保留与新版本幂等、原审批发布不变；没有后端产品代码或公开合同变更。Hygiene通过，仓库无canonical formatter是明确限制，非独立代理审查。待精确CI、FF main及console增量部署，之后对两个已核对本机演示定义追加草稿并复核原始记录。
