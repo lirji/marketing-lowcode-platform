@@ -58,15 +58,18 @@ public class MeasurementController {
         return service.advanceWatermark(request);
     }
 
+    /** 活动参数交给应用层严格校验；缺省保持全租户汇总。 */
     @GetMapping("/measurements/dashboard")
-    public MeasurementService.Dashboard dashboard(@RequestParam Instant from, @RequestParam Instant to) {
-        return service.dashboard(from, to);
+    public MeasurementService.Dashboard dashboard(@RequestParam Instant from, @RequestParam Instant to,
+            @RequestParam(required = false) String campaignId) {
+        return service.dashboard(from, to, campaignId);
     }
 
+    /** 时序使用与汇总一致的活动范围并回显，避免客户端误用全量数据。 */
     @GetMapping("/measurements/series")
     public MeasurementService.Series series(@RequestParam Instant from, @RequestParam Instant to,
-            @RequestParam String granularity) {
-        return service.series(from, to, granularity);
+            @RequestParam String granularity, @RequestParam(required = false) String campaignId) {
+        return service.series(from, to, granularity, campaignId);
     }
 
     @PostMapping("/measurements/attribution:recompute")

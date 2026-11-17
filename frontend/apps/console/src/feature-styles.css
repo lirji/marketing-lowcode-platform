@@ -607,3 +607,5 @@ button:focus-visible, a:focus-visible, [tabindex="0"]:focus-visible { outline:2p
 .journey-sim-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 12px; }
 .journey-sim-pair .field { min-width: 0; }
 @media (max-width: 600px) { .journey-sim-pair { grid-template-columns: minmax(0, 1fr); } }
+
+.analytics-campaign-filter { width:min(420px,100%); min-width:0; }

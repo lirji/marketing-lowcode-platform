@@ -265,3 +265,22 @@ S01–S05已交付，S05提交61b471b已正常快进推送main，精确候选CI4
 - 4项桌面/Pixel7浏览器PASS：2合同故障恢复/下载、2本机18080真实测量GET/下载，s12a-browser-final.log、s12a-browser-final/。CSV原始金额及全部序列条数与真实回执一致；无页面错误/溢出，最终桌面合同与手机真实截图已实际查看。
 - 本机真实当前窗口为0，投影水位在2026-09-16，页面因此显示“当前水位尚未覆盖所选窗口”；不把零值当业务没有发生，也未写共享库或重算。静态DEMO已无业务硬编码；新测量种子运行/全部DEMO页面治理仍属S12后续。
 - 根代理第二轮核对异步范围、无额外导出查询、CSV转义与整数精度；独立代理仍不可用。准备独立S12a提交/精确CI，尚未Docker应用发布。下一步S12b接真实campaign_id投影筛选（现有列/SQL可支撑），归因策略选择不能伪造为投影过滤。
+
+## S12b 真实活动投影筛选（设计确定，实施中）
+- 基线dc72a96，分支feat/analytics-campaign-filter；S12a精确CI44030493838运行中，S11d修正精确CI44029947101运行中，两者均尚未交付main。
+- dashboard与series增加可选campaignId，按已存投影campaign_id精确匹配、租户和时间条件共同限制；不筛选属性JSON、不跨库查活动，不改变冲正/水位/归因策略。未传保持原全租户语义，传空白/超128/控制字符拒绝，错误码使用现有DomainException机制。响应回显campaignId；旧服务不确认活动范围时前端拒绝显示/导出，避免静默忽略筛选。
+- 前端活动下拉读取当前有权访问的api.campaigns（需campaign:read），查询键和CSV包含所选活动ID；切换范围使旧数据失效，失败保留选项可重试。measurement:read仍是当前租户统计权限；活动筛选只收窄统计，不授予新数据权限。归因策略筛选仍未实现，不伪造为投影维度。
+- SQL只在现有Mapper XML，以参数绑定增加条件；新增(tenant_id,campaign_id,occurred_at)索引迁移，保留原时间索引服务全租户查询。验证实际MySQL跨活动/跨租户/冲正/边界/旧全量行为和EXPLAIN、合同/组件范围切换及旧服务拒绝、双视口真实新后端过滤/下载。
+
+### 已交付与S12b验证检查点
+- S11d d2c271a精确CI44029947101全部PASS，已正常快进交付main（s11d-delivery.json）。S12a dc72a96精确CI44030493838全部PASS，已正常快进交付main（s12a-delivery.json），S12b未提交改动保留；尚未更新Docker应用。
+- S12b实际后端5测试PASS（3新活动/租户/冲正/边界/输入/权限/索引+2原测量集成），s12b-backend-first.log；Mapper参数绑定无业务拼SQL，V5索引在真实MySQL完成迁移并出现在EXPLAIN possible_keys，不能据此宣称容量压测通过。10架构/合同13JSON通过，s12b-architecture.log、s12b-contracts.log；最终全前端验证运行中。
+- 8浏览器PASS（s12b-browser.log），含两个视口的报告失败恢复、旧服务筛选确认拒绝、真实原测量GET/下载，以及新测量服务18884+真实控制面活动目录。仅自有临时数据库写两条事实；全量300元，活动甲100元/乙200元，CSV活动ID及金额一致。结果截图已实际查看手机和桌面真实筛选；无页面错误/视口溢出。
+- 不改共享数据库、不触发归因重算；本片临时Java18884及自有测试MySQL已停止（s12b-live-cleanup.json，待端口核验）。归因策略筛选仍待正式统计口径；S12其它项继续。
+- 下一步完成S12b最终检查/提交/精确CI；随后仅按已验证不可变版本更新本机Docker必要业务服务，保留共享dev-infra与原3个Flink作业，不重复submit。现有容器来源4e847da、console61b471b，与最新源码差异需要先核对。
+
+- S12b全量前端首轮174/176通过，两个既有路由/设计器用例在高并发下超时；专项13测试与8浏览器仍通过。停止本片临时Java/DB释放资源后，以maxWorkers=2重跑全量（s12b-unit-bounded.log），不增加超时、不削弱断言，结果待核对。18884端口已关闭。
+
+### S12b 最终本地验收
+- 降低测试并发后176/176全量前端PASS，未改测试超时/断言；lint/build、Hygiene通过（无canonical formatter为限制）。证据s12b-unit-bounded.log、s12b-lint-final.log、s12b-build-final.log、s12b-hygiene.json。前述5真实后端/10架构/13JSON合同/8双视口浏览器证据均仍适用。
+- 根代理第二轮确认：筛选参数与租户/时间共同进入全部聚合SQL、未知ID不会退回全量、前端必须收到两个一致的筛选回显、CSV包含实际活动ID。共享服务/数据未修改。当前准备提交与精确CI，Docker必要服务更新仍未执行。

@@ -215,6 +215,7 @@ export const killSwitchViewSchema = z.object({
 })
 
 export const dashboardSchema = z.object({
+  campaignId: z.string().optional(),
   counts: z.record(z.string(), z.number()).default({}),
   attributedRevenueMinor: z.number().default(0),
   fundingCostMinor: z.number().default(0),
@@ -336,6 +337,7 @@ export const seriesPointSchema = z.object({
   conversions: z.number().default(0),
 })
 export const seriesSchema = z.object({
+  campaignId: z.string().optional(),
   points: z.array(seriesPointSchema).default([]),
 })
 export type SeriesPoint = z.infer<typeof seriesPointSchema>

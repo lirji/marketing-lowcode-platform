@@ -81,10 +81,10 @@ public interface MeasurementMapper {
             @Param("partition") int partition, @Param("offset") long offset);
     int insertProjectionDelta(MeasurementProjectionRepository.DeltaWrite write);
     List<MeasurementProjectionRepository.FactCount> selectProjectionCounts(@Param("tenantId") String tenantId,
-            @Param("from") String from, @Param("to") String to);
+            @Param("from") String from, @Param("to") String to, @Param("campaignId") String campaignId);
     MeasurementProjectionRepository.Amounts selectProjectionAmounts(@Param("tenantId") String tenantId,
-            @Param("from") String from, @Param("to") String to);
+            @Param("from") String from, @Param("to") String to, @Param("campaignId") String campaignId);
     List<MeasurementProjectionRepository.SeriesBucket> selectProjectionSeries(
             @Param("tenantId") String tenantId, @Param("from") String from, @Param("to") String to,
-            @Param("hourly") boolean hourly);
+            @Param("hourly") boolean hourly, @Param("campaignId") String campaignId);
 }

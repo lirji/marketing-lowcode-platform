@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Download, RefreshCw } from 'lucide-react'
 import { Badge, Button, EmptyState, PageHeader, Panel, PanelHeader, StateBanner } from '../../components/ui'
+import { Select } from '../../components/Select'
 import { RecordTable } from '../../components/RecordTable'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { api } from '../../shared/api/client'
@@ -19,14 +20,21 @@ export function AnalyticsPage() {
 function AnalyticsWorkspace({ scope }: { scope: string }) {
   const auth = useAuth()
   const [selection, setSelection] = useState(() => ({ period: 'TODAY' as AnalyticsPeriod, range: analyticsRange('TODAY') }))
+  const [campaignId, setCampaignId] = useState('')
   const [downloadError, setDownloadError] = useState<string>()
   const canRead = !api.demoMode && auth.hasPermission('measurement:read')
+  const canListCampaigns = canRead && auth.hasPermission('campaign:read')
+  const campaigns = useQuery({ queryKey: ['analytics-campaign-options', scope], queryFn: api.campaigns, enabled: canListCampaigns })
   const { range, period } = selection
   const report = useQuery({
-    queryKey: ['analytics-report', scope, range.from, range.to, range.granularity],
+    queryKey: ['analytics-report', scope, range.from, range.to, range.granularity, campaignId],
     queryFn: async () => {
-      const [dashboard, series] = await Promise.all([api.dashboard(range.from, range.to), api.series(range.from, range.to, range.granularity)])
-      return validateReport({ tenantId: auth.tenantId, range, dashboard, points: series.points, fetchedAt: new Date().toISOString() })
+      const [dashboard, series] = await Promise.all([api.dashboard(range.from, range.to, campaignId || undefined), api.series(range.from, range.to, range.granularity, campaignId || undefined)])
+      // 旧服务可能忽略未知query参数，必须确认两份回执都采用同一活动范围。
+      if (campaignId && (dashboard.campaignId !== campaignId || series.campaignId !== campaignId)) {
+        throw new Error('后端未确认活动筛选范围，请升级测量服务后重试')
+      }
+      return validateReport({ tenantId: auth.tenantId, campaignId, range, dashboard, points: series.points, fetchedAt: new Date().toISOString() })
     },
     enabled: canRead,
     refetchOnWindowFocus: false,
@@ -50,13 +58,18 @@ function AnalyticsWorkspace({ scope }: { scope: string }) {
       <Button disabled={!canRecompute || recompute.isPending} title="重算当前租户全部归因，不受页面日期窗口限制" onClick={() => recompute.mutate()}>{recompute.isPending ? '正在重算…' : '重算全部归因'}</Button>
     </>} />
     {api.demoMode ? <StateBanner tone="info" title="请连接演示数据源" detail="此页不内置业务示例。将种子数据写入隔离测试数据库并连接测量接口后，即可读取真实报告；静态演示模式不查询或重算。" /> : !canRead && <StateBanner tone="warn" title="没有查看权限" detail="需要 measurement:read 权限才能查询和导出报告。" />}
+    {canListCampaigns && campaigns.isError && <StateBanner tone="error" title="活动选项加载失败" detail={problemDetail(campaigns.error)} />}
+    {canListCampaigns && campaigns.isError && <Button onClick={() => void campaigns.refetch()} disabled={campaigns.isFetching}>重试活动选项</Button>}
     {canRead && report.isFetching && <StateBanner tone="loading" title="正在读取报告" detail="等待汇总和时间序列全部返回后再显示和导出。" />}
     {canRead && report.isError && <StateBanner tone="error" title="报告加载失败" detail={problemDetail(report.error)} />}
     {downloadError && <StateBanner tone="error" title="报告导出失败" detail={downloadError} />}
     {recompute.isError && <StateBanner tone="error" title="归因重算失败" detail={problemDetail(recompute.error)} />}
     {recompute.data && <StateBanner tone="success" title="当前租户归因已重算" detail={`转化 ${recompute.data.conversions} 次，贡献 ${recompute.data.credits} 条；完成时间：${displayTimestamp(recompute.data.completedAt)}`} />}
-    <div className="analytics-filter"><div className="segmented" aria-label="报告时间范围">{Object.entries(ANALYTICS_PERIODS).map(([code, label]) => <button type="button" aria-pressed={period === code} className={period === code ? 'active' : ''} disabled={!canRead} onClick={() => choose(code as AnalyticsPeriod)} key={code}>{label}</button>)}</div><Badge tone="info">{range.granularity === 'hour' ? '小时序列' : '日序列'}</Badge></div>
-    <p className="field-hint">查询范围：{displayTimestamp(range.from)} 至 {displayTimestamp(range.to)}（不含结束时间）。7天和30天为滚动窗口。当前为全租户汇总，尚不支持按活动或归因策略筛选。</p>
+    <div className="analytics-filter"><div className="segmented" aria-label="报告时间范围">{Object.entries(ANALYTICS_PERIODS).map(([code, label]) => <button type="button" aria-pressed={period === code} className={period === code ? 'active' : ''} disabled={!canRead} onClick={() => choose(code as AnalyticsPeriod)} key={code}>{label}</button>)}</div><label className="field analytics-campaign-filter"><span>活动筛选</span><Select aria-label="活动筛选" aria-describedby="analytics-campaign-help" value={campaignId} disabled={!canListCampaigns || campaigns.isPending} onChange={event => { setCampaignId(event.target.value); setDownloadError(undefined) }}>
+      <option value="">全部活动</option>{(campaigns.data ?? []).map(campaign => <option key={campaign.id} value={campaign.id}>{campaign.name} · {campaign.id}</option>)}
+    </Select></label><Badge tone="info">{range.granularity === 'hour' ? '小时序列' : '日序列'}</Badge></div>
+    <p className="field-hint" id="analytics-campaign-help">{canListCampaigns ? '按所选活动ID匹配投影数据；无匹配返回零值。全部活动包含未关联活动的事实。' : '选择活动需要 campaign:read 权限；全租户统计仍由 measurement:read 控制。'}</p>
+    <p className="field-hint">查询范围：{displayTimestamp(range.from)} 至 {displayTimestamp(range.to)}（不含结束时间）。7天和30天为滚动窗口。当前范围：{campaignId || '全部活动'}；尚不支持归因策略筛选。</p>
     <p className="field-hint">{range.granularity === 'day' ? '日序列按后端UTC自然日分桶，显示北京时间；首尾可能是不完整桶。' : '时间序列按小时分桶，显示北京时间。'}汇总与序列采用相同窗口，读取并非数据库原子快照。</p>
     <p className="field-hint">读取完成：{displayTimestamp(current?.fetchedAt)}。重算全部归因会处理当前租户全部转化，不受页面日期范围限制。</p>
     {dashboard?.completeThrough && Date.parse(dashboard.completeThrough) < Date.parse(range.from) && <StateBanner tone="warn" title="当前水位尚未覆盖所选窗口" detail="以下数值是当前已读取的投影结果，不能据此认定整个窗口内没有业务发生；请等待数据推进后刷新。" />}

@@ -242,4 +242,6 @@ Kill Switch 的原因随原签名指令保存，其范围是当前租户的整�
 
 「导出当前报告」下载UTF-8 CSV，包含租户、起止时间、粒度、读取时间、投影水位、汇总原始分值、事实计数和完整返回序列；不会在点击时另查出不同数据。字符串防CSV公式注入，金额保留分值与两位展示，超出JS精确整数范围时明确拒绝。两接口共享窗口不代表数据库原子快照；日序列沿用后端UTC自然日分桶，界面和CSV显示北京时间。若水位早于整个查询窗口，页面会提示结果尚不完整。
 
-当前不支持活动/归因策略筛选；没有可执行后端语义的下拉已移除。分析页不内置营收、实验或归因样本。静态DEMO仅提示连接数据源，演示事实/投影使用 `scripts/seed-data/system-mock.sql` 写入隔离库后通过真实接口读取。浏览器合同验证：`pnpm --filter @marketing/console exec playwright test analytics-report.spec.ts`；设置 `MARKETING_LIVE_ANALYTICS=1` 可对本机18080执行只读GET及下载验收，不触发归因重算。
+活动筛选读取有权访问的真实活动列表（需 `campaign:read`），dashboard与series同时按可选 `campaignId` 精确过滤当前租户投影；未传包含未关联活动的事实。两响应回显实际 `campaignId`，旧服务没有确认所选活动时页面拒绝显示和导出。活动ID与窗口写入CSV；归因策略筛选仍未实现。分析页不内置营收、实验或归因样本。静态DEMO仅提示连接数据源，演示事实/投影使用 `scripts/seed-data/system-mock.sql` 写入隔离库后通过真实接口读取。浏览器合同验证：`pnpm --filter @marketing/console exec playwright test analytics-report.spec.ts`；设置 `MARKETING_LIVE_ANALYTICS=1` 可对本机18080执行只读GET及下载验收，不触发归因重算。
+
+活动筛选新增测量服务Flyway V5索引 `(tenant_id,campaign_id,occurred_at)`，保留原全租户时间索引。未知活动返回零值，不做跨服务活动查找；空白、周围空白、控制字符或超过128字符返回 `MEASUREMENT_CAMPAIGN_FILTER_INVALID`。水位仍表示整个租户的投影进度。后端升级前，旧服务上的全部活动报告继续可读，选择活动会明确失败而非静默显示全量。

@@ -378,6 +378,7 @@
         SELECT fact_type AS factType, SUM(count_delta) AS countValue
         FROM mk_dashboard_projection_delta
         WHERE tenant_id = #{tenantId} AND occurred_at &gt;= #{from} AND occurred_at &lt; #{to}
+        <if test="campaignId != null and campaignId != ''">AND campaign_id = #{campaignId}</if>
         GROUP BY fact_type
         HAVING SUM(count_delta) &lt;&gt; 0
     </select>
@@ -388,6 +389,7 @@
                COALESCE(SUM(CAST(cost_delta_minor AS DECIMAL(65, 0))), 0) AS cost
         FROM mk_dashboard_projection_delta
         WHERE tenant_id = #{tenantId} AND occurred_at &gt;= #{from} AND occurred_at &lt; #{to}
+        <if test="campaignId != null and campaignId != ''">AND campaign_id = #{campaignId}</if>
     </select>
 
     <select id="selectProjectionSeries"
@@ -402,6 +404,7 @@
             COALESCE(SUM(CASE WHEN fact_type = 'CONVERSION' THEN count_delta ELSE 0 END), 0) AS conversions
         FROM mk_dashboard_projection_delta
         WHERE tenant_id = #{tenantId} AND occurred_at &gt;= #{from} AND occurred_at &lt; #{to}
+        <if test="campaignId != null and campaignId != ''">AND campaign_id = #{campaignId}</if>
         GROUP BY bucketValue
         ORDER BY bucketValue
     </select>

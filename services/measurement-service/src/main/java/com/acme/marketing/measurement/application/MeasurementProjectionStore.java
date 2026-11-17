@@ -67,19 +67,19 @@ public class MeasurementProjectionStore {
     }
 
     /** 汇总指定时间范围的看板指标。 */
-    public DashboardTotals totals(String tenantId, Instant from, Instant to) {
+    public DashboardTotals totals(String tenantId, Instant from, Instant to, String campaignId) {
         Map<String, Long> counts = new LinkedHashMap<>();
-        repository.sumCounts(tenantId, format(from), format(to)).forEach(row ->
+        repository.sumCounts(tenantId, format(from), format(to), campaignId).forEach(row ->
                 counts.put(row.factType(), row.countValue().longValueExact()));
         MeasurementProjectionRepository.Amounts amounts = repository.sumAmounts(
-                tenantId, format(from), format(to));
+                tenantId, format(from), format(to), campaignId);
         return new DashboardTotals(counts, amounts.revenue().longValueExact(), amounts.cost().longValueExact());
     }
 
     /** 按小时或自然日汇总看板时序指标。 */
-    public Map<Instant, SeriesAmounts> series(String tenantId, Instant from, Instant to, boolean hourly) {
+    public Map<Instant, SeriesAmounts> series(String tenantId, Instant from, Instant to, boolean hourly, String campaignId) {
         Map<Instant, SeriesAmounts> points = new TreeMap<>();
-        repository.sumSeries(tenantId, format(from), format(to), hourly).forEach(row -> {
+        repository.sumSeries(tenantId, format(from), format(to), hourly, campaignId).forEach(row -> {
             Instant at = Instant.parse(hourly
                     ? row.bucketValue() + ":00:00.000000000Z"
                     : row.bucketValue() + "T00:00:00.000000000Z");

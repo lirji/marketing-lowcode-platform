@@ -228,10 +228,10 @@ export const api = {
     request(`/api/v1/releases/${encodeURIComponent(manifestId)}:rollback`, { method: 'POST', headers: commandHeaders(idempotencyKey), body: JSON.stringify({ targetGeneration }) }, (value) => parseWith(releaseViewSchema, value)),
   setKillSwitch: (namespace: string, enabled: boolean, reason: string, idempotencyKey?: string) =>
     request(`/api/v1/releases/kill-switches/${encodeURIComponent(namespace)}`, { method: 'PUT', headers: commandHeaders(idempotencyKey), body: JSON.stringify({ enabled, reason }) }, (value) => parseWith(killSwitchViewSchema, value)),
-  dashboard: (from: string, to: string) =>
-    request(`/api/v1/measurements/dashboard?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, undefined, (value) => parseWith(dashboardSchema, value)),
-  series: (from: string, to: string, granularity: 'hour' | 'day') =>
-    request(`/api/v1/measurements/series?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&granularity=${granularity}`, undefined, (value) => parseWith(seriesSchema, value)),
+  dashboard: (from: string, to: string, campaignId?: string) =>
+    request(`/api/v1/measurements/dashboard?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${campaignId ? `&campaignId=${encodeURIComponent(campaignId)}` : ''}`, undefined, (value) => parseWith(dashboardSchema, value)),
+  series: (from: string, to: string, granularity: 'hour' | 'day', campaignId?: string) =>
+    request(`/api/v1/measurements/series?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&granularity=${granularity}${campaignId ? `&campaignId=${encodeURIComponent(campaignId)}` : ''}`, undefined, (value) => parseWith(seriesSchema, value)),
   recomputeAttribution: () =>
     request('/api/v1/measurements/attribution:recompute', { method: 'POST', headers: commandHeaders(), body: JSON.stringify({}) }, (value) => parseWith(recomputeSchema, value)),
   audiences: () => request('/api/v1/audiences', undefined, (value) => zArray(audienceViewSchema, value)),

@@ -5,8 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthStateContext, devAuthState, type AuthState } from '../../shared/auth/auth-context'
 import type { DashboardMetrics } from '../../shared/api/schemas'
 
-const mocks = vi.hoisted(() => ({ dashboard: vi.fn(), series: vi.fn(), recompute: vi.fn(), download: vi.fn(), demo: false }))
-vi.mock('../../shared/api/client', () => ({ api: { get demoMode() { return mocks.demo }, dashboard: mocks.dashboard, series: mocks.series, recomputeAttribution: mocks.recompute } }))
+const mocks = vi.hoisted(() => ({ campaigns: vi.fn(), dashboard: vi.fn(), series: vi.fn(), recompute: vi.fn(), download: vi.fn(), demo: false }))
+vi.mock('../../shared/api/client', () => ({ api: { get demoMode() { return mocks.demo }, campaigns: mocks.campaigns, dashboard: mocks.dashboard, series: mocks.series, recomputeAttribution: mocks.recompute } }))
 vi.mock('./analyticsReport', async importOriginal => ({ ...await importOriginal<typeof import('./analyticsReport')>(), downloadReport: mocks.download }))
 import { AnalyticsPage } from './AnalyticsPage'
 
@@ -20,6 +20,7 @@ function fixture() {
 const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done }); return { promise, resolve } }
 
 beforeEach(() => {
+  mocks.campaigns.mockReset().mockResolvedValue([{ id: 'cmp-a', name: '活动甲' }, { id: 'cmp-b', name: '活动乙' }])
   mocks.demo = false
   mocks.dashboard.mockReset().mockResolvedValue(dashboard)
   mocks.series.mockReset().mockResolvedValue({ points: [] })
@@ -37,7 +38,7 @@ describe('AnalyticsPage', () => {
     expect(screen.queryByText('123.45')).not.toBeInTheDocument()
     await act(async () => series.resolve({ points: [] }))
     await expectReady()
-    expect(mocks.dashboard.mock.calls[0]).toEqual(mocks.series.mock.calls[0].slice(0, 2))
+    expect(mocks.dashboard.mock.calls[0].slice(0, 2)).toEqual(mocks.series.mock.calls[0].slice(0, 2))
     await userEvent.click(screen.getByRole('button', { name: '导出当前报告' }))
     expect(mocks.download.mock.calls[0][0].dashboard.attributedRevenueMinor).toBe(12345)
     expect(mocks.dashboard).toHaveBeenCalledTimes(1)
@@ -93,6 +94,36 @@ describe('AnalyticsPage', () => {
     expect(screen.queryByText('SRM PASS')).not.toBeInTheDocument()
     expect(mocks.dashboard).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: '重算全部归因' })).toBeDisabled()
+  })
+  it('filters both requests by the chosen campaign and exports the confirmed scope', async () => {
+    fixture(); await expectReady()
+    mocks.dashboard.mockResolvedValue({ ...dashboard, campaignId: 'cmp-a', attributedRevenueMinor: 100 })
+    mocks.series.mockResolvedValue({ points: [], campaignId: 'cmp-a' })
+    await userEvent.click(screen.getByRole('combobox', { name: '活动筛选' }))
+    await userEvent.click(screen.getByRole('option', { name: '活动甲 · cmp-a' }))
+    expect(await screen.findByText('1.00')).toBeInTheDocument()
+    expect(mocks.dashboard.mock.calls.at(-1)?.[2]).toBe('cmp-a')
+    expect(mocks.series.mock.calls.at(-1)?.[3]).toBe('cmp-a')
+    await userEvent.click(screen.getByRole('button', { name: '导出当前报告' }))
+    expect(mocks.download.mock.calls[0][0].campaignId).toBe('cmp-a')
+  })
+  it('refuses an old server that ignores the filter and recovers by choosing all campaigns', async () => {
+    fixture(); await expectReady()
+    await userEvent.click(screen.getByRole('combobox', { name: '活动筛选' }))
+    await userEvent.click(screen.getByRole('option', { name: '活动甲 · cmp-a' }))
+    expect(await screen.findByText('后端未确认活动筛选范围，请升级测量服务后重试')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '导出当前报告' })).toBeDisabled()
+    expect(screen.queryByText('123.45')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('combobox', { name: '活动筛选' }))
+    await userEvent.click(screen.getByRole('option', { name: '全部活动' }))
+    await expectReady()
+  })
+  it('keeps tenant summary readable without campaign-list permission', async () => {
+    const view = fixture(); await expectReady()
+    view.switchIdentity({ ...devAuthState, permissions: ['measurement:read'], hasPermission: permission => permission === 'measurement:read' })
+    await expectReady()
+    expect(screen.getByRole('combobox', { name: '活动筛选' })).toBeDisabled()
+    expect(mocks.campaigns).toHaveBeenCalledTimes(1)
   })
   it('labels recompute as tenant-wide and refreshes the report after success', async () => {
     fixture(); await expectReady()

@@ -17,13 +17,13 @@ public interface MeasurementProjectionRepository {
     boolean trySaveDelta(DeltaWrite write);
 
     /** 汇总事实类型计数。 */
-    List<FactCount> sumCounts(String tenantId, String from, String to);
+    List<FactCount> sumCounts(String tenantId, String from, String to, String campaignId);
 
     /** 汇总收入和成本。 */
-    Amounts sumAmounts(String tenantId, String from, String to);
+    Amounts sumAmounts(String tenantId, String from, String to, String campaignId);
 
     /** 按小时或自然日汇总时序数据。 */
-    List<SeriesBucket> sumSeries(String tenantId, String from, String to, boolean hourly);
+    List<SeriesBucket> sumSeries(String tenantId, String from, String to, boolean hourly, String campaignId);
 
     record StoredDelta(String payloadHash, String topic, Integer partition, Long offset) {
         /** 是否来自具有完整坐标的 Kafka 记录。 */

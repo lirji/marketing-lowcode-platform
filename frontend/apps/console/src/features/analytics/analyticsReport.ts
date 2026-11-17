@@ -4,7 +4,7 @@ import type { DashboardMetrics, SeriesPoint } from '../../shared/api/schemas'
 export const ANALYTICS_PERIODS = { TODAY: '今天', WEEK: '7 天', MONTH: '30 天' } as const
 export type AnalyticsPeriod = keyof typeof ANALYTICS_PERIODS
 export type AnalyticsRange = { from: string; to: string; granularity: 'hour' | 'day' }
-export type AnalyticsReport = { tenantId: string; range: AnalyticsRange; dashboard: DashboardMetrics; points: SeriesPoint[]; fetchedAt: string }
+export type AnalyticsReport = { tenantId: string; campaignId?: string; range: AnalyticsRange; dashboard: DashboardMetrics; points: SeriesPoint[]; fetchedAt: string }
 const REPORT_VALUE_ERROR = '报告包含超出精确范围的金额或计数，无法可靠显示或导出'
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -43,7 +43,8 @@ export function reportCsv(report: AnalyticsReport) {
   const { range, dashboard, points, fetchedAt } = report
   const rows: (string | number)[][] = [
     ['分类', '字段或时间', '值', '单位', '说明'],
-    ['查询范围', '租户', report.tenantId, '', '当前租户全部活动；无归因策略筛选'],
+    ['查询范围', '租户', report.tenantId, '', '当前认证租户'],
+    ['查询范围', '活动', report.campaignId || '全部活动', '', '精确活动ID；无归因策略筛选'],
     ['查询范围', '开始', displayTimestamp(range.from), '', '包含开始时间'],
     ['查询范围', '结束', displayTimestamp(range.to), '', '不含结束时间'],
     ['查询范围', '时间粒度', range.granularity, '', range.granularity === 'day' ? '后端UTC自然日分桶；首尾可能是不完整桶' : '按小时分桶'],

@@ -29,13 +29,13 @@ public class MybatisMeasurementProjectionRepository implements MeasurementProjec
             return false;
         }
     }
-    @Override public List<FactCount> sumCounts(String tenantId, String from, String to) {
-        return mapper.selectProjectionCounts(tenantId, from, to);
+    @Override public List<FactCount> sumCounts(String tenantId, String from, String to, String campaignId) {
+        return mapper.selectProjectionCounts(tenantId, from, to, campaignId);
     }
-    @Override public Amounts sumAmounts(String tenantId, String from, String to) {
-        return mapper.selectProjectionAmounts(tenantId, from, to);
+    @Override public Amounts sumAmounts(String tenantId, String from, String to, String campaignId) {
+        return mapper.selectProjectionAmounts(tenantId, from, to, campaignId);
     }
-    @Override public List<SeriesBucket> sumSeries(String tenantId, String from, String to, boolean hourly) {
-        return mapper.selectProjectionSeries(tenantId, from, to, hourly);
+    @Override public List<SeriesBucket> sumSeries(String tenantId, String from, String to, boolean hourly, String campaignId) {
+        return mapper.selectProjectionSeries(tenantId, from, to, hourly, campaignId);
     }
 }

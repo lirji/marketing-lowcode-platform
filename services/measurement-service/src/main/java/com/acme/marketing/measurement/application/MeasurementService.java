@@ -223,23 +223,34 @@ public class MeasurementService {
     }
 
     public Dashboard dashboard(Instant from, Instant to) {
+        return dashboard(from, to, null);
+    }
+
+    /** 活动范围只收窄既有租户统计授权，响应明确回显实际采用的筛选。 */
+    public Dashboard dashboard(Instant from, Instant to, String campaignId) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("measurement:read");
         if (from == null || to == null || !from.isBefore(to)) {
             throw new IllegalArgumentException("dashboard time range is invalid");
         }
+        String filter = MeasurementQueryFilter.campaignId(campaignId);
         MeasurementProjectionStore.DashboardTotals totals = projection.totals(
-                scope.tenantId().value(), from, to);
+                scope.tenantId().value(), from, to, filter);
         Instant watermark = projectionWatermark(scope.tenantId().value(), "dashboard").completeThrough();
         BigDecimal roi = totals.costMinor() == 0 ? BigDecimal.ZERO
                 : BigDecimal.valueOf(totals.revenueMinor())
                     .subtract(BigDecimal.valueOf(totals.costMinor()))
                     .divide(BigDecimal.valueOf(totals.costMinor()), 4, RoundingMode.HALF_UP);
         return new Dashboard(totals.counts(), totals.revenueMinor(), totals.costMinor(), roi, watermark,
-                DurationView.of(clock.instant(), watermark));
+                DurationView.of(clock.instant(), watermark), filter);
     }
 
     public Series series(Instant from, Instant to, String granularity) {
+        return series(from, to, granularity, null);
+    }
+
+    /** 聚合与补零共享活动条件，不能将全量时间序列附到已筛选的汇总下。 */
+    public Series series(Instant from, Instant to, String granularity, String campaignId) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("measurement:read");
         if (from == null || to == null || !from.isBefore(to)
@@ -252,9 +263,10 @@ public class MeasurementService {
         } catch (IllegalArgumentException invalid) {
             throw new IllegalArgumentException("granularity must be hour or day", invalid);
         }
+        String filter = MeasurementQueryFilter.campaignId(campaignId);
         boolean hourly = parsed == Granularity.HOUR;
         Map<Instant, MeasurementProjectionStore.SeriesAmounts> totals = projection.series(
-                scope.tenantId().value(), from, to, hourly);
+                scope.tenantId().value(), from, to, hourly, filter);
         Instant cursor = hourly ? from.truncatedTo(ChronoUnit.HOURS)
                 : from.atZone(ZoneOffset.UTC).toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant();
         List<SeriesPoint> points = new ArrayList<>();
@@ -264,7 +276,7 @@ public class MeasurementService {
             points.add(new SeriesPoint(cursor, amounts.revenueMinor(), amounts.costMinor(), amounts.conversions()));
             cursor = hourly ? cursor.plus(1, ChronoUnit.HOURS) : cursor.plus(1, ChronoUnit.DAYS);
         }
-        return new Series(points);
+        return new Series(points, filter);
     }
 
     public AttributionResult attribute(String conversionEventId, AttributionPolicy policy, long windowSeconds) {
@@ -535,7 +547,7 @@ public class MeasurementService {
     public record ProjectionWatermark(String projectionName, int expectedPartitions, int reportedPartitions,
             Instant completeThrough) { }
     public record Dashboard(Map<String, Long> counts, long attributedRevenueMinor, long fundingCostMinor,
-            BigDecimal roi, Instant completeThrough, DurationView lag) { public Dashboard { counts = Map.copyOf(counts); } }
+            BigDecimal roi, Instant completeThrough, DurationView lag, String campaignId) { public Dashboard { counts = Map.copyOf(counts); } }
     public record DurationView(long seconds) {
         static DurationView of(Instant now, Instant watermark) { return new DurationView(Math.max(0, now.getEpochSecond() - watermark.getEpochSecond())); }
     }
@@ -543,7 +555,7 @@ public class MeasurementService {
             Map<String, BigDecimal> touchCredits, long revenueMinor, Instant calculatedAt) {
         public AttributionResult { touchCredits = Map.copyOf(touchCredits); }
     }
-    public record Series(List<SeriesPoint> points) { public Series { points = List.copyOf(points); } }
+    public record Series(List<SeriesPoint> points, String campaignId) { public Series { points = List.copyOf(points); } }
     public record SeriesPoint(Instant at, long revenueMinor, long costMinor, long conversions) { }
     public record AttributionRecomputeResult(int conversions, int credits, Instant completedAt) { }
     public record SrmReport(String experimentId, String version, long sampleSize, Map<String, Long> observed,
