@@ -2,6 +2,7 @@ package com.acme.marketing.decision.infrastructure;
 
 import com.acme.marketing.contracts.artifact.PinnedArtifactVerifier;
 import com.acme.marketing.contracts.release.PinnedReleaseBundleVerifier;
+import com.acme.marketing.contracts.release.PinnedReleaseBundleActivationVerifier;
 import com.acme.marketing.decision.application.DecisionApplicationService;
 import com.acme.marketing.decision.runtime.AudienceMembershipProjection;
 import com.acme.marketing.decision.runtime.AudienceMembershipStore;
@@ -32,6 +33,17 @@ import tools.jackson.databind.ObjectMapper;
 @Configuration
 public class DecisionConfiguration {
     /** 组合与既有发布协议共用信任配置，独立签名用途由合同校验。 */
+    /** 整体授权沿用控制面公钥，不把运行ACK签名当成发布权限。 */
+    @Bean
+    public PinnedReleaseBundleActivationVerifier releaseBundleActivationVerifier(
+            @Value("${marketing.release.trusted-key-id:}") String keyId,
+            @Value("${marketing.release.public-key-base64:}") String encodedKey,
+            @Value("${marketing.release.trusted-public-keys:}") String additionalKeys,
+            @Value("${marketing.security.mode:DEV}") String securityMode) {
+        return new PinnedReleaseBundleActivationVerifier(
+                trustedKeys(securityMode, "release bundle activation verification key", keyId, encodedKey, additionalKeys));
+    }
+
     @Bean
     public PinnedReleaseBundleVerifier releaseBundleVerifier(
             @Value("${marketing.release.trusted-key-id:}") String keyId,

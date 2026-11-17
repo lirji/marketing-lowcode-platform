@@ -92,3 +92,10 @@ S11f 按同一任务内的三个可验证增量实施：f1 控制面导出完整
 - g2范围：marketing-contracts数据类型/签名验证、OpenAPI共享类型与测试；不增加HTTP激活/签发入口、不写指针或Outbox、不部署。验收覆盖内外签名用途混淆、换租户/活动/成员/权限范围/序号/动作/时间、密钥轮换与到期边界。后续先落实执行绑定与运行端防绕过，再接Control命令、回滚和完整应用回执。
 
 S11g2合同模块保持无JSON生产依赖，动作在wire中使用经Action.fromCode校验的稳定字符串；仅增加仓库已管理Jackson版本的test依赖，验证真实JSON往返和缺字段拒绝，不改变运行镜像依赖。
+
+## S11g3a：Decision持久接收整体授权（执行绑定之前）
+- 依赖g2签名合同，增加`POST /api/v1/decisions/runtime/release-bundle-directives`和`GET .../{campaignId}/latest`，均要求runtime:activate。POST先鉴权再严格1MiB解析完整ReleaseBundleActivationDirective，校验本租户/配置environment、cell、namespace对应的唯一decision成员，再重验本站持久清单和制品。只接收控制面可信签名，不提供签发能力。
+- 新V4持久表：不可变directive历史与最新“已接收”序号head，按tenant/environment/cell/namespace/campaign隔离。head使用原子upsert争取既有行锁，随后才验证当前时间/本地成员和读取历史；所有写入一个10秒事务。固定序号相同内容重放；同序号异内容、同directiveId换序号409；已记录旧序号重放返回current=false，未记录的过时序号拒绝；新序号可以跳跃接续可信最新授权，绝不倒退head。
+- 返回`{state:"RECORDED",directive,latestSequence,current,recordedAt}`。RECORDED只证明持久接收，不是READY或APPLIED；该片不修改旧mk_runtime_slot、在线evaluate或Flink，不把接收回执作为激活能力ACK。GET读取持久原文（包括已过期历史的latest），不延长授权；后续使用时必须重新验签/期限/实时停用。
+- 历史与head有完整主键/唯一键、head到历史的复合外键，使用utf8mb4_0900_bin保持签名身份/范围的大小写和尾空格精确性；初始head序号可空且只在同事务内存在，失败整体回滚。保留不可变授权证据，不新增自动清理；生产保留/容量验收仍在S13，不宣称无限容量。
+- 验收：真实MySQL/HTTP并发首次与重复、乱序/同序号冲突、不同活动并发、拒绝越权/租户/slot/缺制品/损坏制品/签名/过期、有界解析、应用上下文重建后读取、旧在线指针不变。范围仅Decision、g2共用错误与机器API、V4及测试。无新中间件、线程池、外部调用或共享库迁移。

@@ -715,3 +715,19 @@
 - S11g1 77c1d38精确CI44110842403全部SUCCESS，待本轮提交后正常FF合入main。当前无测试进程或未知共享操作。
 
 - 完整暂存Hygiene/diff PASS（s11g2-hygiene-final2.json）；初次工具的依赖允许项用了group:artifact，而工具仅匹配artifactId，已按已选定test依赖的准确ID修正，首轮报告保留。1分钟时间偏差已经是命名协议常量，静态工具仍报数字ADVISORY，已人工核对；无formatter限制保持。
+
+## S11g3a Decision授权持久接收（实施中）
+- S11g2提交dde7c6c已推，精确CI44112359075全部SUCCESS；S11g1已正常FF合入并推送main=77c1d38。
+- 当前补签名整体授权的持久接收、单调序号和重启读取，具体API/锁序/验收见增量设计末节；接收状态明确RECORDED，不改变旧线上指针，不声称APPLIED。此片与待答的参与业务粒度无关，可以持续推进。
+
+- g3a首轮编译PASS（s11g3a-compile.log）；两张带完整中文注释/复合外键的V4表、严格1MiB接口、head首个SQL锁定及原文读取已实现。8项真实MySQL/HTTP测试正在运行（session28071，s11g3a-first.log），不连接共享库。暂不声明验证通过。
+
+- g3a首轮8项真实HTTP/MySQL用例PASS（s11g3a-first.log）；根代理复核发现新表必须明确二进制且NO PAD排序规则，避免大小写不同的签名活动键被数据库合并。V4改用utf8mb4_0900_bin，补大小写活动并发/未知大小写404与存储时间损坏拒绝用例，继续最终模块回归。
+
+### S11g3a 最终验证检查点
+- 全量Decision模块28项PASS，包含新增8项接收/重启/并发/回滚/边界以及旧20项回归（s11g3a-module-final.log）；合同34项/13份JSON及架构10项PASS（s11g3a-contracts-final.log、s11g3a-architecture-final.log）。
+- 根代理另行复核首个SQL锁定、不同活动无空索引范围锁、完整复合外键、大小写/NO PAD、双层签名与原制品复验、事务失败原序号不动、RECORDED与线上语义分离；无本片剩余阻断。收敛重复权限/runtime协议常量后仅复跑受影响8项，不重复全部模块；然后完整暂存Hygiene与交付。
+
+- 常量收敛后的8项受影响真实HTTP/MySQL测试再次PASS（s11g3a-final.log）。当前无未结束测试，完整模块28项其余证据有效。Git忽略项为既有构建/测试产物及本机恢复文件，保留不清理；没有新worktree、部署或共享迁移。
+
+- 完整暂存Hygiene/diff PASS（s11g3a-hygiene-final.json）；事务需人工复核项已由上述锁序/回滚/并发证据覆盖，只有无canonical formatter限制。准备提交及精确CI，S11g2精确CI44112359075已全部SUCCESS。

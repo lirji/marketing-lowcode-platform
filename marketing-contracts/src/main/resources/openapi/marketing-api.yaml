@@ -552,6 +552,45 @@ paths:
         required: true
         content: {application/json: {schema: {type: array, minItems: 1, maxItems: 50, items: {$ref: '#/components/schemas/DecisionRequest'}}}}
       responses: *list
+  /api/v1/decisions/runtime/release-bundle-directives:
+    post:
+      operationId: recordDecisionBundleDirective
+      summary: Persist a signed whole-bundle authorization without changing online routing
+      description: Requires runtime:activate. Strict JSON up to 1MiB. Verifies trusted complete signatures and the exact persisted local member. Same sequence and same content replay; conflicts or unknown stale sequences return 409. RECORDED is not READY or APPLIED.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReleaseBundleActivationDirective'}
+      responses:
+        '200':
+          description: Durable receipt only; existing routing pointers are unchanged
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecordedBundleDirective'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+  /api/v1/decisions/runtime/release-bundle-directives/{campaignId}/latest:
+    get:
+      operationId: getLatestRecordedDecisionBundleDirective
+      summary: Recover the latest durable bundle authorization receipt
+      description: Requires runtime:activate for the trusted tenant and configured runtime slot. Expired authorization remains readable as history; reading does not extend validity or apply it.
+      parameters:
+        - name: campaignId
+          in: path
+          required: true
+          schema: {type: string, pattern: '^[A-Za-z0-9_.:-]{1,64}$'}
+      responses:
+        '200':
+          description: Highest recorded sequence, not current online state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecordedBundleDirective'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
   /api/v1/decisions/runtime/release-bundles:prepare:
     post:
       tags: [Decision]
@@ -1059,10 +1098,20 @@ components:
                 capacity: {type: integer, format: int64, minimum: 1}
                 signature: {type: string, minLength: 1}
         signature: {type: string, minLength: 1, description: Independent purpose signature covering all bundle fields and the complete inner READY ACK}
+    RecordedBundleDirective:
+      type: object
+      additionalProperties: false
+      required: [state, directive, latestSequence, current, recordedAt]
+      properties:
+        state: {type: string, const: RECORDED}
+        directive: {$ref: '#/components/schemas/ReleaseBundleActivationDirective'}
+        latestSequence: {type: integer, format: int64, minimum: 1}
+        current: {type: boolean, description: Whether this receipt is the highest recorded sequence; does not describe online routing}
+        recordedAt: {type: string, format: date-time}
     ReleaseBundleActivationDirective:
       type: object
       additionalProperties: false
-      description: Signed whole-bundle authorization. This shared contract has no issuance or apply endpoint yet and is not proof of runtime application. Future receivers must persist sequence arbitration and exact participation bindings.
+      description: Signed whole-bundle authorization. This shared contract has no issuance or online apply endpoint yet and is not proof of runtime application. Future receivers must persist sequence arbitration and exact participation bindings.
       required: [directiveId, bundle, activationSequence, action, organizationId, shopId, authorizedAt, authorizedBy, signatureKeyId, signature]
       properties:
         directiveId: {type: string, pattern: '^[A-Za-z0-9_.:@-]{1,64}$'}

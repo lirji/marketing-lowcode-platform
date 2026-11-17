@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.decision.infrastructure.persistence.mapper.BundleDirectiveMapper">
+    <sql id="keyWhere">
+        tenant_id = #{key.tenantId} AND environment_name = #{key.environment} AND cell_id = #{key.cell}
+        AND namespace_name = #{key.namespace} AND campaign_id = #{key.campaignId}
+    </sql>
+    <insert id="ensureHead">
+        INSERT INTO mk_runtime_bundle_head (tenant_id, environment_name, cell_id, namespace_name, campaign_id, last_sequence, updated_at)
+        VALUES (#{key.tenantId}, #{key.environment}, #{key.cell}, #{key.namespace}, #{key.campaignId}, NULL, #{now})
+        ON DUPLICATE KEY UPDATE campaign_id = mk_runtime_bundle_head.campaign_id
+    </insert>
+    <select id="lockHead" resultType="java.lang.Long">
+        SELECT last_sequence FROM mk_runtime_bundle_head WHERE <include refid="keyWhere"/> FOR UPDATE
+    </select>
+    <select id="history" resultType="com.acme.marketing.decision.application.BundleDirectiveRepository$StoredDirective">
+        SELECT activation_sequence AS activationSequence, directive_id AS directiveId,
+               directive_json AS directiveJson, recorded_at AS recordedAt
+        FROM mk_runtime_bundle_directive WHERE <include refid="keyWhere"/> AND activation_sequence = #{sequence}
+    </select>
+    <select id="sequenceForId" resultType="java.lang.Long">
+        SELECT activation_sequence FROM mk_runtime_bundle_directive WHERE <include refid="keyWhere"/> AND directive_id = #{directiveId}
+    </select>
+    <insert id="save">
+        INSERT INTO mk_runtime_bundle_directive
+            (tenant_id, environment_name, cell_id, namespace_name, campaign_id, activation_sequence, directive_id, directive_json, recorded_by, recorded_at)
+        VALUES (#{key.tenantId}, #{key.environment}, #{key.cell}, #{key.namespace}, #{key.campaignId},
+                #{value.activationSequence}, #{value.directiveId}, #{value.directiveJson}, #{recordedBy}, #{value.recordedAt})
+    </insert>
+    <update id="advance">
+        UPDATE mk_runtime_bundle_head SET last_sequence = #{sequence}, updated_at = #{now}
+        WHERE <include refid="keyWhere"/> AND last_sequence &lt;=> #{expected,jdbcType=BIGINT}
+    </update>
+    <select id="latest" resultType="com.acme.marketing.decision.application.BundleDirectiveRepository$StoredDirective">
+        SELECT d.activation_sequence AS activationSequence, d.directive_id AS directiveId,
+               d.directive_json AS directiveJson, d.recorded_at AS recordedAt
+        FROM mk_runtime_bundle_head h JOIN mk_runtime_bundle_directive d
+          ON d.tenant_id = h.tenant_id AND d.environment_name = h.environment_name AND d.cell_id = h.cell_id
+         AND d.namespace_name = h.namespace_name AND d.campaign_id = h.campaign_id AND d.activation_sequence = h.last_sequence
+        WHERE h.tenant_id = #{key.tenantId} AND h.environment_name = #{key.environment} AND h.cell_id = #{key.cell}
+          AND h.namespace_name = #{key.namespace} AND h.campaign_id = #{key.campaignId}
+    </select>
+</mapper>

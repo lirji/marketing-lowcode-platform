@@ -81,3 +81,9 @@ V10在原slot行增加组合管理标记，并回填历史组合成员；不改�
 共享类型`ReleaseBundleActivationDirective`绑定完整签名组合、活动组织/店铺、单调激活序号、ACTIVATE/ROLLBACK动作与授权时间/人。接收方必须验证外层授权、内层组合及各成员的原签名，并检查租户与有效期；签名准备证明或旧ACK不能充当激活授权。
 
 当前只交付类型和验证器，没有签发/应用HTTP入口，也不写运行指针。签名成功不表示运行面已应用，后续仍需持久化序号仲裁、精确成员选择、参与版本绑定与Flink传播。
+
+### Decision持久接收整体授权（S11g3a）
+
+`POST /api/v1/decisions/runtime/release-bundle-directives`要求`runtime:activate`并接收最多1MiB的严格JSON整体授权。先验证当前可信签名/租户/时间、本地完整slot及已安装制品，再在同一数据库事务记录不可变历史与最高接收序号。相同序号相同内容返回原接收时间；同序号异内容或复用指令编号409，未知旧序号409，已记录旧授权重放成功但`current=false`。
+
+`GET /api/v1/decisions/runtime/release-bundle-directives/{campaignId}/latest`在相同权限下查询最高已接收授权；跨租户和大小写不同的活动键严格隔离。返回`state=RECORDED`，`current`仅指最高接收序号；不改变旧线上指针，不是READY/APPLIED回执。过期历史仍可读，后续使用必须重新验证有效期及实时停用。V4仅在隔离MySQL验证，未部署或迁移共享库。
