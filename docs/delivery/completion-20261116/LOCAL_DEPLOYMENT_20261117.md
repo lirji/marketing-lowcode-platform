@@ -1,8 +1,15 @@
 # 本地 Docker 更新回执（2026-11-17）
 
-以下最新状态优先于文末045dfd9历史交付记录。
+以下最新状态优先于下文历史交付记录。
 
-## 最新恢复与增量交付：e9f3972
+## 最新增量交付：3f22019
+- PASS：control/console运行3f220195a86227e65ddf03e0730ad75f6a06c9bc；精确CI44056163714三项PASS且正常FF main。engagement仍为c14289e，其余8应用仍为045dfd9。
+- 更新前控制库备份、真实镜像预检与来源哈希已记录；V7两项发布分页索引迁移成功。18必要容器健康，其他16个容器身份与启动时间不变，3个Flink作业检查点持续推进。
+- 实际发布全量游标遍历/状态筛选/非法参数、模板/审批接口，以及8084桌面与Pixel7页面PASS，无业务写请求；已查看手机发布筛选与桌面向导截图。
+- 证据：`~/.local/share/marketing-delivery/completion-20261116/runtime-3f22019/`中的artifact-manifest、rollout-state、runtime-smoke与browser-smoke。备份和私密配置只保留本机0600。
+- 剩余旧发布列表消费者在S12f继续处理；本回执不代表整个计划或生产环境完成。
+
+## 历史恢复与增量交付：e9f3972
 - 结果PASS：control/console运行e9f3972不可变镜像，engagement运行c14289e，其余8应用保留045dfd9。三个产品提交精确CI均通过并FF main；control V6索引已成功应用，更新前控制库备份保留。
 - console最初因打包配置0600导致user101不可读；改为0644后实际镜像预检包含/assets、/assets/、SPA、真实静态JS和缺失JS404，全部PASS。旧失败容器及操作结果先核对后处理。
 - Docker管理API卡死时，按用户“只运行该项目组件”的新授权，先对3个Flink作业stop-with-savepoint并备份保存点，再重启Docker。CLI首次超时后通过新Desktop session/恢复的Engine确认完成，没有盲目重复重启。

@@ -9,10 +9,10 @@
 
 ## 当前状态（2026-11-17）
 - S01–S05已完成；S06–S13按下表继续。S12c资产/消息模板 `c14289e`、容器路由修复 `8bb1270`、S12d审批完整分页 `e9f3972d2584fa5e96437a782e50d1b3bb6bb5c8` 均已精确CI三项PASS并正常快进推送main；对应运行编号44041099756、44044235242、44047459413。
-- 本地部署已验证：control与console为e9f3972，engagement为c14289e，其余8应用保留045dfd9；11应用健康。control V6索引已迁移成功，更新前已备份。模板、审批分页、发布选择的真实Docker接口及桌面/手机浏览器PASS，见 [LOCAL_DEPLOYMENT_20261117.md](LOCAL_DEPLOYMENT_20261117.md)。
+- 本地部署已验证：control与console为3f22019，engagement为c14289e，其余8应用保留045dfd9；11应用健康。control V7索引已迁移成功，更新前已备份。模板、审批分页、发布选择的真实Docker接口及桌面/手机浏览器PASS，见 [LOCAL_DEPLOYMENT_20261117.md](LOCAL_DEPLOYMENT_20261117.md)。
 - 用户最新授权“如果当前是docker问题，可以让docker只运行该项目的组件”。Docker管理卡死已通过本机重启恢复；重启前3个Flink作业成功stop-with-savepoint，重启后逐个no_claim恢复并确认新检查点持续推进。保留数据卷；没有空状态启动或生产部署。
 - 当前仅18个必要容器运行：13个marketing-r1常驻容器、现有权益目录适配服务、MySQL/Redis/Kafka/ClickHouse。额外停止13个无关容器，原17个langchain应用仍停止。实际容器内存合计约5.95GiB（单次快照，不代表容量压测）；容器/数据卷保留，可按记录恢复。
-- 下一项：S12e发布列表50条截断与范围过滤补齐；其它资产分页/种子历史定义迁移等仍未完成。真实会员/画像来源、裂变外部合同仍待确认，不改变拒绝保护。
+- S12e发布中心完整分页与范围过滤已交付，3f22019精确CI44056163714三项PASS，正常FF main并完成本地Docker/真实双视口验收。下一项S12f：旧发布列表调用点（向导、活动就绪、首页及壳层）范围缓存和有界查询；其它资产分页/种子历史定义迁移等仍未完成。真实会员/画像来源、裂变外部合同仍待确认，不改变拒绝保护。
 
 ## 执行清单与验收
 
@@ -348,7 +348,7 @@
 - 本机18容器检查、11应用健康、3作业恢复路径与检查点推进、V6迁移、审批参数拒绝/状态分页/模板读取PASS；实际8084桌面与Pixel7模板详情、未保存保护、审核状态筛选、发布批准单读取PASS，无业务写请求、页面错误或横向页面溢出，最终截图已查看。
 - 证据根下runtime-recovery-e9f3972/保留artifact-manifest、rollout-state、runtime-smoke、browser-smoke、project-only-containers、flink-restore-state、container-resources；控制库备份、保存点备份和私密env仅存本机0600。无新增worktree，不清理旧证据/停止容器/用户文件。
 
-## S12e 发布清单范围与完整分页（本地验收通过，待交付）
+## S12e 发布清单范围与完整分页（DONE）
 - 基线main/82dbab4，分支fix/release-scope-pagination。Docker恢复及S12d交付已完成，后续不重复原Flink恢复/发布。
 - 已证实旧GET /releases先取租户50条再逐条检查第一制品定义的组织/门店，导致被不可见记录挤出的可见清单无法读取；发布页共用不含身份范围的缓存键，也没有完整翻页。
 - 本片保留数组API但范围先于LIMIT；新增GET /releases/page，limit默认25、上限100、可选state和manifestId游标；按不可变created_at/manifest_id降序，当前权限验证游标，状态切换服务端筛选，返回items/nextCursor/hasMore/state。延续单定义发布范围规则，不引入组合发布语义。
@@ -362,3 +362,13 @@
 - 浏览器8项通过：分页故障/重试2视口、既有回滚未知结果2视口、既有激活确认2视口、真实独占MySQL第55条记录/筛选/较早操作目标2视口；s12e-browser.log保留首轮4成功2环境失败，s12e-browser-live.log保留激活2成功/隔离种子DTO错误2失败，最终真实两项见s12e-browser-verified.log。已查看手机列表与桌面较早目标截图。
 - 隔离服务准备首次DB未完全就绪，后续核对实际状态后重试；自有种子TenantId最初误写字符串，按真实Java记录改为对象并只修复230条自有测试记录。最终浏览器仅GET，没有共享库测试灌数或真实发布/回滚。最终读库230条清单、零命令与Outbox；临时API18889及自有MySQL已停止，数据保留，见s12e-live-db-after.json、s12e-live-cleanup.json。
 - 根代理第二轮复核范围与游标SQL、稳定状态、完整缓存键、角色切换和旧操作目标；未声称独立代理验证。Hygiene无阻断，仅无canonical formatter限制与命名常量数值提示，s12e-hygiene.json。
+
+### S12e 交付与运行验证
+- 3f220195a86227e65ddf03e0730ad75f6a06c9bc精确CI44056163714三项PASS，正常FF main；s12e-ci-exact.json、s12e-delivery.json。
+- control/console已更新至3f22019，更新前V6备份保留，V7两项索引验证成功；实际镜像预检、18必要容器、其它16容器身份/启动时间不变、3个既有Flink作业保存点与检查点推进、状态/游标/非法参数读取PASS。
+- 实际8084桌面/Pixel7模板、审批、发布状态筛选、向导批准单读取PASS，无业务写请求/API失败/页面错误/横向溢出；已查看手机发布筛选及桌面向导截图。证据runtime-3f22019/{artifact-manifest,rollout-state,runtime-smoke,browser-smoke}.json。
+- 复核仍有旧数组消费者：ReleaseWizard从最新50条找暂存目标，CampaignReadiness据此判断已发布，AppShell/Dashboard把局部数量作为总量；完整身份缓存也需补齐。登记S12f，不把发布中心分页等同于所有消费者整改完成。
+
+## S12f 发布读取调用点（IN_PROGRESS）
+- 计划：增加按清单ID读取的只读授权接口，向导只轮询自身暂存清单；壳层/首页复用完整身份键分页并明确已加载数量；活动就绪可继续分页、未遍历完不宣称未发布。保持发布/回滚写语义，不自动加载无界全集。
+- 验收：真实MySQL验证较早清单、租户/组织门店/权限拒绝；前端ACK目标、失败禁用、身份切换、页尾就绪与局部计数；合同/构建/远程CI以及真实本地Docker双视口回归。
