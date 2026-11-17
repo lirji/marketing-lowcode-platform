@@ -8,9 +8,11 @@
 - 规范：`~/.codex/architecture-standards.md` 业务建模、持久化、接口契约、并发安全；`personal-tech-stack.md` 并发、线程池、日志、状态机；engineering-workflows/backend-implementation/continue-approved-delivery/task-git-delivery。前端、Runtime 专项随切片读取。
 
 ## 当前状态（2026-11-17）
-- S01–S05已完成；S06–S13按下表继续。S11d、S12a、S12b已交付main，最新产品提交 `045dfd933f878562b611c83b7e555cd74e720a82` 的精确CI `44032496693` 三项全部PASS。
-- 本地Docker的11个应用已更新至此提交并通过真实验收；部署回执见 [LOCAL_DEPLOYMENT_20261117.md](LOCAL_DEPLOYMENT_20261117.md)。共享基础设施和原3个Flink作业保留，未部署生产。
-- 下一项：S12c资产管理，优先复用现有资产版本与设计器接口；真实会员/画像来源、裂变外部合同等仍未确认，不改变拒绝保护。旧演示Journey `mock-journey-cart-recall` 的历史节点名 `journey.wait_timer` 与当前注册表不一致，当前仿真明确拒绝；后续种子迁移需保留旧版本和发布语义，不直接覆盖已批准定义。
+- S01–S05已完成；S06–S13按下表继续。S12c资产/消息模板 `c14289e`、容器路由修复 `8bb1270`、S12d审批完整分页 `e9f3972d2584fa5e96437a782e50d1b3bb6bb5c8` 均已精确CI三项PASS并正常快进推送main；对应运行编号44041099756、44044235242、44047459413。
+- 本地部署已验证：control与console为e9f3972，engagement为c14289e，其余8应用保留045dfd9；11应用健康。control V6索引已迁移成功，更新前已备份。模板、审批分页、发布选择的真实Docker接口及桌面/手机浏览器PASS，见 [LOCAL_DEPLOYMENT_20261117.md](LOCAL_DEPLOYMENT_20261117.md)。
+- 用户最新授权“如果当前是docker问题，可以让docker只运行该项目的组件”。Docker管理卡死已通过本机重启恢复；重启前3个Flink作业成功stop-with-savepoint，重启后逐个no_claim恢复并确认新检查点持续推进。保留数据卷；没有空状态启动或生产部署。
+- 当前仅18个必要容器运行：13个marketing-r1常驻容器、现有权益目录适配服务、MySQL/Redis/Kafka/ClickHouse。额外停止13个无关容器，原17个langchain应用仍停止。实际容器内存合计约5.95GiB（单次快照，不代表容量压测）；容器/数据卷保留，可按记录恢复。
+- 下一项：S12e发布列表50条截断与范围过滤补齐；其它资产分页/种子历史定义迁移等仍未完成。真实会员/画像来源、裂变外部合同仍待确认，不改变拒绝保护。
 
 ## 执行清单与验收
 
@@ -309,7 +311,7 @@
 - 自有临时18888服务和MySQL容器已停止，数据保留，见s12c-live-cleanup.json。共享dev-infra、11应用和Flink未改变。当前提交/精确CI待执行，Docker仍为045dfd9。
 - 下一步：本片提交与精确CI通过后正常快进main，更新本机engagement-service与console并验证；随后处理列表完整分页，优先修正审批范围过滤发生在LIMIT之后的问题。
 
-## S12d 审批范围与完整分页（本地验收通过，交付中）
+## S12d 审批范围与完整分页（代码及本地Docker已交付）
 - 分支fix/approval-scope-pagination，基于S12c候选c14289e；S12c精确CI44041099756前端/部署PASS，后端运行中，尚未main/部署。两个切片分别提交。
 - 已证实：旧审批先取租户最近100条后Java过滤组织/门店，造成可见数据遗漏；审核页又在客户端筛OPEN，发布向导只看同一截断列表。侧边栏和“今日治理态势”也误将截断列表当总量/今日。
 - 范围：保留旧数组API但权限范围先于LIMIT；新增有界审批分页API，SQL先按组织/门店/状态筛选，按不可变created_at和case_id降序、limit+1探测后页，cursor需属于当前可见租户范围。返回items/nextCursor/hasMore及状态回显，不承诺数据库快照，刷新重新开始。
@@ -338,3 +340,10 @@
 - 根代理第二轮审查通过：范围/状态先于LIMIT，通配与大小写权限语义一致，游标重新校验当前可见范围，稳定创建时间顺序，状态变化后不依赖更新时间定位；前端完整范围缓存键、失败后保留已读与重试、历史批准单可选择，无伪造总量。Hygiene无阻断（无canonical formatter限制），s12d-hygiene-final.json。
 - 本片准备逻辑提交及精确CI；当前共享库尚未应用V6。本地Docker的S12c控制台补修仍在恢复，先恢复控制台再安排本片control/console更新。
 - 相邻待办：旧campaign列表XML仍有单字符通配OGNL判断，后续范围治理需补覆盖；release列表50条截断与范围后过滤仍待下一片，不冒充已修。
+
+### S12c/S12d 交付与Docker恢复结论
+- c14289e、8bb1270、e9f3972均已正常FF main；回执s12c-delivery.json、s12c-route-delivery.json、s12d-delivery.json。S12d最终本地验证及精确CI已PASS；未声称独立代理审查或完成全部S12。
+- 首次8bb镜像打包将Nginx配置继承为0600，user101无法读取，console进入重启失败；随后Docker管理API持续超时，回滚/停止结果当时未知。恢复后确认该失败容器已停止，未把旧manifest重复部署。
+- 按最新仅运行本项目的授权，保存3个真实Flink保存点及备份后恢复Docker管理，停止13个无关运行容器。重新核对实际容器、镜像、环境、端口、内存和卷，再以已验证e9产物构建control/console；配置显式0644，实际镜像隔离预检PASS。
+- 本机18容器检查、11应用健康、3作业恢复路径与检查点推进、V6迁移、审批参数拒绝/状态分页/模板读取PASS；实际8084桌面与Pixel7模板详情、未保存保护、审核状态筛选、发布批准单读取PASS，无业务写请求、页面错误或横向页面溢出，最终截图已查看。
+- 证据根下runtime-recovery-e9f3972/保留artifact-manifest、rollout-state、runtime-smoke、browser-smoke、project-only-containers、flink-restore-state、container-resources；控制库备份、保存点备份和私密env仅存本机0600。无新增worktree，不清理旧证据/停止容器/用户文件。

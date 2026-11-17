@@ -1,5 +1,21 @@
 # 本地 Docker 更新回执（2026-11-17）
 
+以下最新状态优先于文末045dfd9历史交付记录。
+
+## 最新恢复与增量交付：e9f3972
+- 结果PASS：control/console运行e9f3972不可变镜像，engagement运行c14289e，其余8应用保留045dfd9。三个产品提交精确CI均通过并FF main；control V6索引已成功应用，更新前控制库备份保留。
+- console最初因打包配置0600导致user101不可读；改为0644后实际镜像预检包含/assets、/assets/、SPA、真实静态JS和缺失JS404，全部PASS。旧失败容器及操作结果先核对后处理。
+- Docker管理API卡死时，按用户“只运行该项目组件”的新授权，先对3个Flink作业stop-with-savepoint并备份保存点，再重启Docker。CLI首次超时后通过新Desktop session/恢复的Engine确认完成，没有盲目重复重启。
+- 只保留18个必要容器：13个marketing-r1（11应用+2Flink）、marketing-benefit-catalog-only-v3，以及MySQL、Redis、Kafka、ClickHouse。停止13个无关容器：认证平台7个、LangChain专用基础设施3个、当前DEV配置不依赖的Nacos/MinIO/PostgreSQL3个。原17个langchain应用继续停止；所有容器与卷保留，没有清库。
+- 三作业逐一以no_claim从对应保存点恢复，未启动旧flink-job-submit容器；恢复后的作业ID及检查点在flink-restore-state.json、runtime-smoke.json。实际12子任务RUNNING，保存点路径匹配，新检查点持续推进。
+- 验证：18必要容器运行、11应用healthy、已停止名单核对、e9镜像确认、网关health UP、审批OPEN/APPROVED/REJECTED真实分页、非法limit稳定400、模板读取与V6迁移均PASS。
+- 真实8084桌面与Pixel7浏览器：模板详情、未保存提示、审核已批准筛选、发布向导批准单读取PASS；无API替身、无业务写请求或页面错误，截图已查看。超过100条的分页证据来自独占MySQL测试库，未把这些测试数据灌入共享业务库。
+- 容器内存合计约5.95GiB，属于单次运行快照，未进行容量/故障/灾备验收；其它S06–S13事项仍按主进度处理。
+- 最新证据：`~/.local/share/marketing-delivery/completion-20261116/runtime-recovery-e9f3972/`。保留镜像清单、逐服务部署、真实验收、13容器停止名单、保存点恢复计划和资源快照；`*.private.*`、控制库备份、保存点备份仅存本机0600。
+- 恢复时先查询当前容器和作业；现有3作业已恢复，不能再次运行restore-flink.py或旧submit。需要恢复其它项目时，按project-only-containers.json中的精确容器ID及原策略处理；先评估内存与端口。
+
+## 历史交付：045dfd9
+
 ## 交付与目标
 - 产品提交：`045dfd933f878562b611c83b7e555cd74e720a82`，S12b精确CI `44032496693` 三项PASS，正常快进推送main；S11d/S12a亦已分别通过精确CI。
 - 目标：原目录中的本机 `marketing-r1`，11个已有应用；控制台 `http://127.0.0.1:8084`、网关 `http://127.0.0.1:18080`、Flink `http://127.0.0.1:18081`。不涉及生产、其它项目或Flink作业重新提交。
