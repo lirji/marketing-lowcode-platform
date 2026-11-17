@@ -154,9 +154,10 @@ public class DecisionConfiguration {
     @Bean
     public DecisionApplicationService decisionApplicationService(RuntimeManifestRegistry manifests,
             AudienceMembershipProjection audiences, @Qualifier("offerSigningKeyRing") SigningKeyRing keys,
-            Clock clock, TenantBulkhead bulkhead, DecisionKillSwitchRegistry killSwitch) {
+            Clock clock, TenantBulkhead bulkhead, DecisionKillSwitchRegistry killSwitch,
+            com.acme.marketing.decision.application.DecisionBundlePlanResolver bundlePlans) {
         return new DecisionApplicationService(manifests, audiences, keys, clock, bulkhead,
-                killSwitch::requireEnabled);
+                killSwitch::requireEnabled, bundlePlans);
     }
 
     private static void requireConfiguredInProduction(String securityMode, String name, String... values) {

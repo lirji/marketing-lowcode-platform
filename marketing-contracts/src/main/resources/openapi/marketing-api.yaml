@@ -550,7 +550,25 @@ paths:
       operationId: batchEvaluateDecision
       requestBody:
         required: true
-        content: {application/json: {schema: {type: array, minItems: 1, maxItems: 50, items: {$ref: '#/components/schemas/DecisionRequest'}}}}
+        content: {application/json: {schema: {type: array, minItems: 1, maxItems: 50, items: {$ref: '#/components/schemas/UnboundDecisionRequest'}}}}
+      responses: *list
+  /api/v1/decisions/bundle:evaluate:
+    post:
+      tags: [Decision]
+      operationId: evaluateBundleDecision
+      description: Requires decision:evaluate and current organization/shop scope. The signed participation pins the exact bundle member; no latest fallback. Missing context is 400; untrusted context is 409. Old services return 404 on this dedicated URL; callers must never downgrade to the legacy URL.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/BundleDecisionRequest'}}}
+      responses: *ok
+  /api/v1/decisions/bundle:batch-evaluate:
+    post:
+      tags: [Decision]
+      operationId: batchEvaluateBundleDecision
+      description: Every item requires a signed participation; same validation as the single bundle endpoint. Each item retains independent idempotency, and the batch is not atomic.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: array, minItems: 1, maxItems: 50, items: {$ref: '#/components/schemas/BundleDecisionRequest'}}}}
       responses: *list
   /api/v1/decisions/runtime/release-bundle-directives:
     post:
@@ -1076,7 +1094,7 @@ components:
     SaveDefinition: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SaveDefinition'}}}}
     ApprovalDecision: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalDecision'}}}}
     StageRelease: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/StageReleaseRequest'}}}}
-    Decision: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DecisionRequest'}}}}
+    Decision: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/UnboundDecisionRequest'}}}}
     ReservePromotion: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ReservePromotionRequest'}}}}
     InboundEvent: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/InboundEvent'}}}}
     MarketingFact: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/MeasurementFactRequest'}}}}
@@ -1754,6 +1772,24 @@ components:
         occurredAt: {type: string, format: date-time}
         cart: {$ref: '#/components/schemas/Cart'}
         audienceSnapshotIds: {type: array, uniqueItems: true, items: {type: string}}
+        bundleContext: {$ref: '#/components/schemas/BundleDecisionContext'}
+    UnboundDecisionRequest:
+      allOf:
+        - {$ref: '#/components/schemas/DecisionRequest'}
+        - not: {required: [bundleContext]}
+    BundleDecisionRequest:
+      allOf:
+        - {$ref: '#/components/schemas/DecisionRequest'}
+        - required: [bundleContext]
+    BundleDecisionContext:
+      type: object
+      additionalProperties: false
+      description: 可信业务入口传入的既有参与；必须匹配凭证、主体及当前组织店铺范围。只固定精确组合版本，不代表新准入或延长优惠有效期。完整上下文进入幂等摘要，成功重放仍检查当前停用和信任。缺省保持原路由与JSON摘要，默认未配参与信任时拒绝新路径。
+      required: [campaignId, participationId, participation]
+      properties:
+        campaignId: {type: string, maxLength: 64}
+        participationId: {type: string, maxLength: 128}
+        participation: {$ref: '#/components/schemas/ReleaseBundleParticipation'}
     Cart:
       type: object
       additionalProperties: false

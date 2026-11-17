@@ -15,7 +15,7 @@
 - 用户授权Docker只运行本项目组件；13个额外无关容器及原17个langchain应用保持停止，所有容器与数据卷保留。本轮只更新console，17个其它运行容器ID/镜像/启动时间不变；3个原Flink作业及检查点继续推进，禁止重复恢复或提交空作业。
 - 上一轮部署验证：271项前端测试、98项浏览器用例通过，10项既有独立服务用例跳过；lint/build/Hygiene无阻塞，未配置canonical formatter。真实Docker四类资产页在桌面与Pixel7的分页、搜索、详情及字段/节点读取回归通过，无业务写入、API失败或页面异常。运行回执与截图：私有证据目录 `runtime-dbe268b/`。
 - 上一轮部署可见结果：活动/首页/运营/资产的静态预览不显示假业务数据或旧缓存，资产刷新不能绕过读取门禁；OIDC身份范围变化、退出与过期清理旧请求/缓存/草稿，旧令牌401不退出已更新令牌，远端退出失败能恢复登录页。本机仍为DEV认证，真实IdP联调未验证。
-- 当前HEAD/远程任务分支bca69ce，main/origin=1ad2993。g4a精确CI44120438060、g4b精确CI44123107153均三项SUCCESS；g4b待当前工作树提交后正常交付。g5a有效验证覆盖Journey job21项、EventGateway10项、合同46项/14JSON、架构10项及Flink JAR打包，正在最终Hygiene/提交；无部署或共享库迁移。
+- 当前HEAD/远程任务分支d6c29c2，main/origin=bca69ce。g5a精确CI44127908234全部SUCCESS；g5b本地38模块/47合同/14JSON/10架构/Hygiene通过，准备提交、精确CI并正常交付g5a。继续g6唯一准入和实际应用闭环；无部署或共享库迁移。
 
 ## 未完成项与恢复顺序
 
@@ -806,3 +806,15 @@
 - 最后11项状态/网关守卫复验通过（s11g5a-guards-final.log）；审查发现JSON字面量null可绕过解析catch并阻塞消费，已收回坏消息边界，9项状态测试再次通过（s11g5a-null-input-final.log），最终JAR重打包PASS（s11g5a-package-final3.log）。有效总数为Journey job21、EventGateway10、合同46/14JSON及架构10。
 - 根代理另行复核签名用途/信任角色、租户和成员查询、固定参与派生键、缓存作用域、当前kill、状态故障传播、重复START及墓碑、旧状态类型和事件兼容。当前片无剩余阻断；真实savepoint、混合版本能力门禁、唯一准入绑定和整体切换保持未完成，未把源码支持当上线成功。
 - 最终Hygiene/diff PASS（s11g5a-hygiene-final.json）；两个ADVISORY为已有语义名称的缓存上限与1MiB载荷上限，人工归类为常量，无阻断；仓库无canonical formatter。首次门禁发现重复START裸值比较，已收敛到既有非START分支并3项网关转发复验PASS（s11g5a-routing-final.log）。准备逻辑提交和精确CI，g4b已通过CI可正常FF main。
+
+## S11g5b Decision签名参与消费
+- g5a提交d6c29c2、精确CI44127908234在途；g4b已正常FF main/origin=bca69ce。下一片按设计增加既有Decision请求的可选参与上下文、精确历史读取及成功重放当前校验，不签发新参与、不以最高接收序号作为active。设计完成，产品尚未修改。
+- g5b产品已实现并编译PASS（s11g5b-compile.log）；可选请求上下文、独立信任、精确历史解码和两种存储重放检查已写。6项隔离MySQL/Redis/HTTP用例在运行（session69387，s11g5b-first.log），结果待核对；OpenAPI和操作说明已同步。尚未做全模块/合同/架构/Hygiene，不记为完成。
+- g5b首轮6项中5项通过，1项因测试误写旧系统停用错误码失败（实际MARKETING_KILL_SWITCH_ENABLED，s11g5b-first.log）；已核对原目录修正断言。加强同key换凭证用例，保持requestId等其他字段相同，确保确实验证绑定摘要，而非其他字段冲突。继续复验，不改产品错误契约。
+- 兼容性审查发现旧版Spring/Jackson可能忽略未知字段，因此补上组合专用URL（旧服务404）并让新服务的旧URL拒绝组合上下文，禁止调用者降级。已同步增量设计、OpenAPI和HTTP边界用例；在途第二轮针对改前版本的结果仅作中间证据，需验证最终入口。
+- 第二轮6项真实MySQL/Redis用例通过（s11g5b-second.log）；最终全模块首次被合同路径精确清单拦下，原因是新增两个专用URL尚未登记API_PATHS，已同步且保持精确集合断言（s11g5b-modules-final.log）。网关已有/api/v1/decisions/**覆盖新URL，继续核对限流/权限并重跑最终模块。
+
+### S11g5b 本地验收通过
+- 完整Decision模块38项、合同47项及依赖回归PASS（s11g5b-modules-final2.log），14JSON和10架构PASS（s11g5b-json-final.log、s11g5b-architecture-final.log）。6项新增隔离MySQL/Redis/HTTP测试覆盖并发重放、最新接收不覆盖旧参与、换凭证冲突、停用/信任撤销重放拒绝、历史期限与当前优惠期限分离、持久源/制品损坏不回退、旧JSON摘要及专用入口边界。
+- 根代理另行复核当前权限/来源组织店铺、两种幂等路径、作用域查询、原制品签名、限流/熔断路由、旧服务忽略未知字段风险与专用URL保护；无剩余阻断。Hygiene/diff PASS（s11g5b-hygiene.json，无新增Finding；无canonical formatter限制）。没有改OfferToken、共享库或部署；实际准入/应用/能力门禁仍待后续。
+- g5a d6c29c2精确CI44127908234三项全部SUCCESS，待本片提交后正常FF main。当前g5b准备逻辑提交和精确CI，继续S11g6持久化唯一准入与实际应用闭环，整体仍PARTIAL。

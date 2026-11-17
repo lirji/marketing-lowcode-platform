@@ -76,12 +76,17 @@ public final class RuntimeManifestRegistry {
 
     /** 从持久库核验指定成员；不使用当前路由或缓存代替精确版本，也不切换流量。 */
     public GenerationSnapshot verifyInstalledMember(String expectedTenantId, ReleaseManifest member) {
+        return verifyInstalledMemberAt(expectedTenantId, member, clock.instant());
+    }
+
+    /** 仅供已验签参与的历史执行使用；期限固定到准入时刻，签名/字节仍重新核验。 */
+    public GenerationSnapshot verifyInstalledMemberAt(String expectedTenantId, ReleaseManifest member, Instant admittedAt) {
         if (!expectedTenantId.equals(member.tenantId().value()) || !slot.matches(member)
                 || !"decision".equals(member.runtime())) throw ReleaseBundleProtocolError.MEMBER_MISMATCH.conflict();
         RuntimeStateStore.StoredGeneration stored = stateStore.generation(slot, expectedTenantId, member.generation())
                 .orElseThrow(ReleaseBundleProtocolError.MEMBER_NOT_INSTALLED::conflict);
         if (!member.equals(stored.manifest())) throw ReleaseBundleProtocolError.MEMBER_MISMATCH.conflict();
-        return verifyAndDecode(expectedTenantId, stored.releaseKeyId(), stored.manifest(), stored.artifactPayload());
+        return verifyAndDecode(expectedTenantId, stored.releaseKeyId(), stored.manifest(), stored.artifactPayload(), admittedAt);
     }
 
     /** Compatibility alias whose semantics are deliberately warm-only. */
@@ -131,6 +136,11 @@ public final class RuntimeManifestRegistry {
 
     private GenerationSnapshot verifyAndDecode(String expectedTenantId, String keyId, ReleaseManifest manifest,
             byte[] policyArtifactBytes) {
+        return verifyAndDecode(expectedTenantId, keyId, manifest, policyArtifactBytes, clock.instant());
+    }
+
+    private GenerationSnapshot verifyAndDecode(String expectedTenantId, String keyId, ReleaseManifest manifest,
+            byte[] policyArtifactBytes, Instant validAt) {
         if (!expectedTenantId.equals(manifest.tenantId().value())) {
             throw new ConflictException("MANIFEST_TENANT_MISMATCH", "manifest belongs to another tenant");
         }
@@ -140,7 +150,7 @@ public final class RuntimeManifestRegistry {
         if (!slot.matches(manifest) || !"decision".equals(manifest.runtime())) {
             throw new ConflictException("MANIFEST_SLOT_MISMATCH", "manifest belongs to another runtime slot");
         }
-        if (!manifest.expiresAt().isAfter(clock.instant())) {
+        if (!manifest.expiresAt().isAfter(validAt)) {
             throw new ConflictException("MANIFEST_TIME_INVALID", "manifest has expired");
         }
         if (policyArtifactBytes == null || policyArtifactBytes.length == 0

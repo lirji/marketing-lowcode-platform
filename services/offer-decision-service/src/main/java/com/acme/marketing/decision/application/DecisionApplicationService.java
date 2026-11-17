@@ -31,6 +31,7 @@ public final class DecisionApplicationService {
     private final Clock clock;
     private final TenantBulkhead bulkhead;
     private final KillSwitchGuard killSwitch;
+    private final DecisionBundlePlanResolver bundlePlans;
     private final PricingEngine pricing = new PricingEngine();
 
     public DecisionApplicationService(RuntimeManifestRegistry manifests, AudienceMembershipProjection audiences,
@@ -40,6 +41,14 @@ public final class DecisionApplicationService {
 
     public DecisionApplicationService(RuntimeManifestRegistry manifests, AudienceMembershipProjection audiences,
             SigningKeyRing offerKeys, Clock clock, TenantBulkhead bulkhead, KillSwitchGuard killSwitch) {
+        this(manifests, audiences, offerKeys, clock, bulkhead, killSwitch, null);
+    }
+
+    /** 组合解析独立接入，旧构造路径不能默默忽略新凭证。 */
+    public DecisionApplicationService(RuntimeManifestRegistry manifests, AudienceMembershipProjection audiences,
+            SigningKeyRing offerKeys, Clock clock, TenantBulkhead bulkhead, KillSwitchGuard killSwitch,
+            DecisionBundlePlanResolver bundlePlans) {
+        this.bundlePlans = bundlePlans;
         this.manifests = manifests;
         this.audiences = audiences;
         this.offerKeys = offerKeys;
@@ -63,8 +72,8 @@ public final class DecisionApplicationService {
                 || request.occurredAt().isAfter(now.plusSeconds(300))) {
             throw new IllegalArgumentException("decision occurredAt is outside the accepted clock window");
         }
-        RuntimeManifestRegistry.GenerationSnapshot snapshot = manifests.route(
-                scope.tenantId().value(), request.subjectToken());
+        RuntimeManifestRegistry.GenerationSnapshot snapshot = request.bundleContext() == null
+                ? manifests.route(scope.tenantId().value(), request.subjectToken()) : boundSnapshot(scope, request, now);
         List<OfferCandidate> candidates = new ArrayList<>();
         List<CandidateTrace> trace = new ArrayList<>();
         for (OfferPolicy policy : snapshot.policies()) {
@@ -82,6 +91,18 @@ public final class DecisionApplicationService {
         long durationMicros = (System.nanoTime() - started) / 1_000;
         return new DecisionResponse(request.requestId(), quoteId, snapshot.generation(), result, token,
                 trace, durationMicros, now);
+    }
+
+    /** 成功回放仍校验当前停用及签名信任；不重签报价，不赋予新的参与资格。 */
+    public void validateBundleReplay(TenantScope scope, DecisionRequest request) {
+        if (request.bundleContext() == null) return;
+        killSwitch.check(scope.tenantId().value());
+        boundSnapshot(scope, request, clock.instant());
+    }
+
+    private RuntimeManifestRegistry.GenerationSnapshot boundSnapshot(TenantScope scope, DecisionRequest request, Instant now) {
+        if (bundlePlans == null) throw com.acme.marketing.contracts.release.ReleaseBundleProtocolError.PARTICIPATION_INVALID.conflict();
+        return bundlePlans.resolve(scope, request, now);
     }
 
     private String rejection(String tenantId, DecisionRequest request, OfferPolicy policy, Instant now) {
@@ -116,7 +137,14 @@ public final class DecisionApplicationService {
     }
 
     public record DecisionRequest(String requestId, String idempotencyKey, String organizationId, String orderId,
-            String subjectToken, String channel, Instant occurredAt, Cart cart, Set<String> audienceSnapshotIds) {
+            String subjectToken, String channel, Instant occurredAt, Cart cart, Set<String> audienceSnapshotIds,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            BundleContext bundleContext) {
+        /** 缺省新字段不改变旧调用和JSON摘要，旧幂等记录仍可重放。 */
+        public DecisionRequest(String requestId, String idempotencyKey, String organizationId, String orderId,
+                String subjectToken, String channel, Instant occurredAt, Cart cart, Set<String> audienceSnapshotIds) {
+            this(requestId, idempotencyKey, organizationId, orderId, subjectToken, channel, occurredAt, cart, audienceSnapshotIds, null);
+        }
         public DecisionRequest {
             if (requestId == null || requestId.isBlank() || idempotencyKey == null || idempotencyKey.isBlank()
                     || organizationId == null || organizationId.isBlank() || subjectToken == null || subjectToken.isBlank()
@@ -126,6 +154,15 @@ public final class DecisionApplicationService {
             orderId = orderId == null ? "" : orderId;
             audienceSnapshotIds = Collections.unmodifiableSet(
                     new TreeSet<>(audienceSnapshotIds == null ? Set.of() : audienceSnapshotIds));
+        }
+    }
+    /** 可信业务入口给出活动及参与编号，凭证必须与之相符；主体始终来自原请求。 */
+    public record BundleContext(String campaignId, String participationId,
+            com.acme.marketing.contracts.release.ReleaseBundleParticipation participation) {
+        public BundleContext {
+            if (campaignId == null || participationId == null || participation == null
+                    || !campaignId.equals(participation.campaignId()) || !participationId.equals(participation.participationId()))
+                throw new IllegalArgumentException(com.acme.marketing.contracts.release.ReleaseBundleProtocolError.PARTICIPATION_INVALID.message());
         }
     }
     public record CandidateTrace(String offerId, String outcome) { }

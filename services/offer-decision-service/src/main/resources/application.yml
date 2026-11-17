@@ -47,3 +47,7 @@ management.opentelemetry.tracing.limits.max-attributes: 64
 management.opentelemetry.tracing.limits.max-attribute-value-length: 256
 management.opentelemetry.tracing.export.max-queue-size: 2048
 management.opentelemetry.tracing.export.max-batch-size: 256
+# 参与信任默认关闭；不能复用OfferToken或Control角色的签名配置。
+marketing.participation.trusted-key-id: ${MARKETING_PARTICIPATION_TRUSTED_KEY_ID:}
+marketing.participation.public-key-base64: ${MARKETING_PARTICIPATION_PUBLIC_KEY_BASE64:}
+marketing.participation.trusted-public-keys: ${MARKETING_PARTICIPATION_TRUSTED_PUBLIC_KEYS:}

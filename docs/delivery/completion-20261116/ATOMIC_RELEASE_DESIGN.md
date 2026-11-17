@@ -133,3 +133,10 @@ S11g2合同模块保持无JSON生产依赖，动作在wire中使用经Action.fro
 - 先完成输入/签名/计划校验和纯转换，再更新Flink主状态、凭证状态、定时器与输出；状态写入或输出失败必须使作业失败并从checkpoint重放，不能捕获成坏消息后提交半份状态。旧参与的EVENT/Timer继续使用首次保存凭证，新START不能替换已有绑定。
 - Owner=backend/runtime，依赖g3/g4a/b。范围：共享enrollment派生合同/错误与事件schema、Journey job输入/只读Mapper/解析器/状态处理/配置入口、EventGateway转发与相关测试/操作说明。无数据库迁移或部署，不触及正在运行的3个Flink作业。
 - 验收：可信组合未单清单激活也可执行精确已安装成员；不同活动/主体/派生ID/成员/签名/密钥/源序号拒绝；旧清单到期后恢复及timer、当前停用生效、重复START与状态清除后的墓碑拒绝、状态写/输出故障不推进、旧输入和状态描述符保持兼容。真实DB及当前Flink类型/恢复测试分别记证据，不以纯Mock代替持久查询，真实生产savepoint保留未验证。准入唯一DB绑定、实际应用指针、完整旧入口退出/混合版本能力门禁以及Control整体回执仍是后续必需步骤。
+
+## S11g5b：Decision按既有签名参与求值
+- 完成另一实际消费边界，再实现唯一准入签发与整体应用。共用DecisionRequest增加可选`bundleContext={campaignId,participationId,participation}`，缺省保持旧JSON及旧路由。组合只使用新`/api/v1/decisions/bundle:evaluate`和`/bundle:batch-evaluate`且必填上下文；旧URL在新服务拒绝该字段，新URL在旧服务404，防止旧Jackson忽略字段后静默退回旧路由。有值时必须严格匹配签名凭证、可信租户/subject、服务器environment/cell/namespace和本库已接收精确授权，不能取latest或客户端任意generation。来源组织必须等于请求组织；来源限定店铺时购物车全部属于该店铺，当前调用范围仍检查。
+- 使用独立participation信任配置，默认空使新路径拒绝，不能拿OfferToken/Control签名钥匙替代。按准入时刻核对历史清单期限，按当前信任检查Control/参与/编译签名，读取本库精确不可变generation；不新增缓存或跨服务回源。定价、OfferToken格式、当前策略有效期/渠道/商品/人群与kill检查沿用现有行为。凭证只固定版本，不恢复已撤销资格或延长优惠有效期。
+- 原幂等作用域不变，完整bundleContext自然进入请求摘要；缺省字段不输出null，保持旧请求摘要。相同key换绑定拒绝。JDBC/Redis成功重放在返回旧结果前重新检查当前权限、范围、kill和凭证信任/来源；不重新签发旧报价，不把重放视为新的准入。报价结果仍只证明计算，不代表预占/发奖/到账。
+- Owner=backend；范围：Decision消费解析、Runtime精确历史校验、请求可选上下文/求值/幂等重放、配置、OpenAPI、真实MySQL HTTP及必要Redis重放测试。无需迁移、部署、外部上游或新中间件；复用原JDBC/Redis选择。无凭证旧入口仍待最终切换门禁关闭。
+- 验收：未单slot激活的精确组合可求值；新授权到达不改变旧参与；历史期限与当前风险检查独立；不同主体/活动/参与/组织/店铺/来源/签名拒绝；丢失或损坏制品不回退；同key换绑定冲突、重放撤权/停用拒绝；旧请求wire及旧用例回归。唯一准入DB绑定、实际APPLIED指针、Control整体回执和混合版本能力仍未完成。

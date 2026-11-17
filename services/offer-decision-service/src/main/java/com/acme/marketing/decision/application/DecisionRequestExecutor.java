@@ -124,6 +124,7 @@ public class DecisionRequestExecutor {
             if (!"COMPLETED".equals(stored.state()) || stored.responseJson() == null) {
                 throw new ConflictException("COMMAND_IN_PROGRESS", "original decision is still in progress");
             }
+            decisions.validateBundleReplay(scope, request);
             return read(stored.responseJson());
         }
         DecisionApplicationService.DecisionResponse response = decisions.evaluate(scope, request);
@@ -150,6 +151,7 @@ public class DecisionRequestExecutor {
             if (!(stored instanceof String responseJson) || responseJson.isBlank()) {
                 throw new ConflictException("IDEMPOTENCY_RESPONSE_MISSING", "completed Redis command has no response");
             }
+            decisions.validateBundleReplay(scope, request);
             return read(responseJson);
         }
         try {

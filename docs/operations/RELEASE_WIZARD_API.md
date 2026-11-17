@@ -117,3 +117,10 @@ Decision V5/Journey V4会回填历史接收记录：已有active指针保持原g
 新环境参数`JOURNEY_PARTICIPATION_TRUSTED_KEY_ID`、`JOURNEY_PARTICIPATION_PUBLIC_KEY_BASE64`、`JOURNEY_PARTICIPATION_TRUSTED_PUBLIC_KEYS`为Decision参与信任，默认空只接受旧路径。信任在作业实例初始化时固定；轮换/撤销须按受控配置更新和状态恢复流程生效，未交付热更新或真实KMS验证。
 
 `journey-bundle-participation-v1`以独立字符串受管状态保存凭证，结束/过期后保留为墓碑；不自动清理，容量/归档/保留策略仍待S13。状态写或输出故障使作业恢复checkpoint，不能变成坏消息后提交半次转换。该片测试不等于真实生产savepoint、Kafka外部副作用端到端或混合版本验收；未更新运行中的Flink。现有旧消费者会拒绝新字段，因此生产者只可在新消费能力验收后启用。持久唯一准入、整体应用指针和正式Control发布入口仍未开放。
+
+### Decision固定参与求值（S11g5b，尚未启用准入）
+- 组合专用`POST /api/v1/decisions/bundle:evaluate`和`/bundle:batch-evaluate`的每个请求必须带`bundleContext={campaignId,participationId,participation:ReleaseBundleParticipation}`。主体仍来自可信业务请求，租户来自认证。旧URL在新服务拒绝组合上下文，新URL在旧服务404，禁止调用者失败后降级回旧URL；签名必须与独立活动/参与编号、主体、本地environment/cell/namespace和g3精确历史授权一致。调用者仍需decision:evaluate及当前组织/店铺范围，来源组织必须等于请求组织，来源限定店铺时购物车不能混入其他店铺。
+- 新路径从持久库核对原组合成员/制品，不使用latest或单slot active。历史清单在准入时有效即可恢复；当前策略有效期、商品/渠道/人群和kill检查照常执行。当前签名信任来自进程配置快照，换钥匙/撤销需刷新配置或滚动重启，不宣称已有热轮换。
+- 可选`MARKETING_PARTICIPATION_TRUSTED_KEY_ID/PUBLIC_KEY_BASE64/TRUSTED_PUBLIC_KEYS`仅用于参与签名角色，默认空拒绝新路径；旧OfferToken、Control与compiler配置不能代替。没有新增私钥、签发端或上线开关。
+- 旧请求不输出null新字段，因此原幂等摘要不变。新请求完整上下文计入摘要，同key换绑定409；JDBC和Redis成功重放返回原报价前重验当前权限、范围、kill和来源/签名/制品。报价有效期与原响应一致，不刷新OfferToken；计算结果不代表预占、支付或发奖。
+- 本片没有唯一准入DB绑定、APPLIED指针、Control整体生效回执或完整旧入口封锁；它只补消费者。实际启用仍须完成上述步骤及所有Decision/Flink运行版本能力验证。无部署、共享迁移或运行中作业变更。

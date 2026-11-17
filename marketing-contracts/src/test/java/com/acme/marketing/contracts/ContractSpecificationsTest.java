@@ -52,6 +52,7 @@ class ContractSpecificationsTest {
             "/api/v1/audiences/snapshots/{snapshotId}/memberships",
             "/api/v1/audiences/snapshots/{snapshotId}/memberships/{subjectToken}",
             "/api/v1/decisions:evaluate", "/api/v1/decisions:batch-evaluate",
+            "/api/v1/decisions/bundle:evaluate", "/api/v1/decisions/bundle:batch-evaluate",
             "/api/v1/decisions/traces/requests/{requestId}", "/api/v1/decisions/traces/orders/{orderId}",
             "/api/v1/journey-runtime/release-bundle-directives",
             "/api/v1/journey-runtime/release-bundle-directives/{campaignId}/latest",
@@ -135,6 +136,22 @@ class ContractSpecificationsTest {
         Set<String> required = new HashSet<>(); json.path("required").forEach(value -> required.add(value.asString()));
         assertEquals(names, required);
         assertEquals("object", json.path("properties").path("tenantId").path("type").asString());
+    }
+
+    @Test
+    void bundleDecisionContextIsOptionalAndReferencesTheSameParticipationContract() throws IOException {
+        var schemas = map(map(yaml(RESOURCES.resolve("openapi/marketing-api.yaml")).get("components")).get("schemas"));
+        var request = map(schemas.get("DecisionRequest"));
+        assertFalse(((List<?>) request.get("required")).contains("bundleContext"));
+        assertEquals("#/components/schemas/BundleDecisionContext", map(map(request.get("properties")).get("bundleContext")).get("$ref"));
+        var bound = (List<?>) map(schemas.get("BundleDecisionRequest")).get("allOf");
+        assertEquals(List.of("bundleContext"), map(bound.get(1)).get("required"));
+        var unbound = (List<?>) map(schemas.get("UnboundDecisionRequest")).get("allOf");
+        assertEquals(List.of("bundleContext"), map(map(unbound.get(1)).get("not")).get("required"));
+        var context = map(schemas.get("BundleDecisionContext"));
+        assertEquals(Set.of("campaignId", "participationId", "participation"), new HashSet<>((List<?>) context.get("required")));
+        assertEquals("#/components/schemas/ReleaseBundleParticipation", map(map(context.get("properties")).get("participation")).get("$ref"));
+        assertEquals(false, context.get("additionalProperties"));
     }
 
     @Test

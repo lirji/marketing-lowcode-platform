@@ -43,6 +43,7 @@ public class DecisionController {
     @PostMapping("/decisions:evaluate")
     public DecisionApplicationService.DecisionResponse evaluate(
             @RequestBody DecisionApplicationService.DecisionRequest request) {
+        requireBundleMode(request, false);
         var scope = TenantContextHolder.requireCurrent();
         return idempotency.execute(scope, request);
     }
@@ -51,8 +52,33 @@ public class DecisionController {
     public List<DecisionApplicationService.DecisionResponse> batch(
             @RequestBody List<DecisionApplicationService.DecisionRequest> requests) {
         if (requests.size() > 50) throw new IllegalArgumentException("decision batch exceeds 50 requests");
+        requests.forEach(request -> requireBundleMode(request, false));
         var scope = TenantContextHolder.requireCurrent();
         return requests.stream().map(request -> idempotency.execute(scope, request)).toList();
+    }
+
+    /** 独立URL保证旧运行端返回404，不能忽略新字段后退回各自latest。 */
+    @PostMapping("/decisions/bundle:evaluate")
+    public DecisionApplicationService.DecisionResponse evaluateBundle(
+            @RequestBody DecisionApplicationService.DecisionRequest request) {
+        requireBundleMode(request, true);
+        return idempotency.execute(TenantContextHolder.requireCurrent(), request);
+    }
+
+    /** 批量入口同样不能混入缺少绑定的请求；每条仍有独立幂等结果。 */
+    @PostMapping("/decisions/bundle:batch-evaluate")
+    public List<DecisionApplicationService.DecisionResponse> batchBundle(
+            @RequestBody List<DecisionApplicationService.DecisionRequest> requests) {
+        if (requests.isEmpty() || requests.size() > 50)
+            throw com.acme.marketing.contracts.release.ReleaseBundleProtocolError.PARTICIPATION_INVALID.invalid();
+        requests.forEach(request -> requireBundleMode(request, true));
+        var scope = TenantContextHolder.requireCurrent();
+        return requests.stream().map(request -> idempotency.execute(scope, request)).toList();
+    }
+
+    private static void requireBundleMode(DecisionApplicationService.DecisionRequest request, boolean required) {
+        if (request == null || (request.bundleContext() != null) != required)
+            throw com.acme.marketing.contracts.release.ReleaseBundleProtocolError.PARTICIPATION_INVALID.invalid();
     }
 
     /** 自动轨迹来自完成命令的原子记录，禁止读取他租户结果。 */
