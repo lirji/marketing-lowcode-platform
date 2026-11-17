@@ -16,6 +16,16 @@ public interface JourneyRuntimeMapper {
             @Param("cell") String cell, @Param("namespace") String namespace,
             @Param("generation") long generation, @Param("sequence") long sequence, @Param("artifactId") String artifactId);
 
+    /** 组合使用独立授权接收历史，不能要求或伪造单清单激活记录。 */
+    String bundleDirective(@Param("tenantId") String tenantId, @Param("environment") String environment,
+            @Param("cell") String cell, @Param("namespace") String namespace,
+            @Param("campaignId") String campaignId, @Param("sequence") long sequence);
+
+    /** 仅在源授权已验证并确认reference匹配后读取安装数据。 */
+    RuntimeRow bundled(@Param("tenantId") String tenantId, @Param("environment") String environment,
+            @Param("cell") String cell, @Param("namespace") String namespace, @Param("campaignId") String campaignId,
+            @Param("generation") long generation, @Param("sequence") long sequence, @Param("artifactId") String artifactId);
+
     record KillRow(boolean enabled, String reason) { }
     record CurrentRow(long generation, long activationSequence, String artifactId) { }
     record RuntimeRow(long generation, long activationSequence, String directiveJson,

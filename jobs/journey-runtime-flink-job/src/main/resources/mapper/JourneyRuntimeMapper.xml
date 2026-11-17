@@ -30,4 +30,23 @@
           AND generation.generation_no = #{generation} AND activation.activation_sequence = #{sequence}
           AND generation.artifact_id = #{artifactId}
     </select>
+    <select id="bundleDirective" resultType="java.lang.String">
+        SELECT directive_json FROM mk_runtime_bundle_directive
+        WHERE tenant_id = #{tenantId} AND environment_name = #{environment} AND cell_id = #{cell}
+          AND namespace_name = #{namespace} AND campaign_id = #{campaignId} AND activation_sequence = #{sequence}
+    </select>
+    <select id="bundled" resultType="com.acme.marketing.jobs.journey.persistence.JourneyRuntimeMapper$RuntimeRow">
+        SELECT generation.generation_no AS generation, directive.activation_sequence AS activationSequence,
+               directive.directive_json AS directiveJson, generation.release_key_id AS releaseKeyId,
+               generation.manifest_json AS manifestJson, generation.artifact_payload AS payload,
+               generation.artifact_id AS artifactId
+        FROM mk_runtime_bundle_directive directive
+        JOIN mk_journey_runtime_generation generation ON generation.tenant_id = directive.tenant_id
+          AND generation.environment_name = directive.environment_name AND generation.cell_id = directive.cell_id
+          AND generation.namespace_name = directive.namespace_name
+        WHERE directive.tenant_id = #{tenantId} AND directive.environment_name = #{environment}
+          AND directive.cell_id = #{cell} AND directive.namespace_name = #{namespace}
+          AND directive.campaign_id = #{campaignId} AND directive.activation_sequence = #{sequence}
+          AND generation.generation_no = #{generation} AND generation.artifact_id = #{artifactId}
+    </select>
 </mapper>

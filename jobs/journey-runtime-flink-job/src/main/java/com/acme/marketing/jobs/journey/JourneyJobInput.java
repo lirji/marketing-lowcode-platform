@@ -9,7 +9,13 @@ public record JourneyJobInput(
         String enrollmentId,
         String subjectToken,
         PlanReference planReference,
-        SignalPayload signal) {
+        SignalPayload signal,
+        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+        com.acme.marketing.contracts.release.ReleaseBundleParticipation bundleParticipation) {
+    /** 保留旧调用方构造方式；新凭证只放输入，不改变已持久PlanReference类型。 */
+    public JourneyJobInput(String tenantId, String enrollmentId, String subjectToken, PlanReference planReference,
+            SignalPayload signal) { this(tenantId, enrollmentId, subjectToken, planReference, signal, null); }
+
     public JourneyJobInput {
         if (tenantId == null || tenantId.isBlank() || enrollmentId == null || enrollmentId.isBlank()
                 || signal == null) {
@@ -22,6 +28,8 @@ public record JourneyJobInput(
         if (signal.type() != SignalPayload.Type.START && planReference != null) {
             throw new IllegalArgumentException("only START may carry a journey plan reference");
         }
+        if (signal.type() != SignalPayload.Type.START && bundleParticipation != null)
+            throw new IllegalArgumentException(com.acme.marketing.contracts.release.ReleaseBundleProtocolError.PARTICIPATION_INVALID.message());
     }
 
     public String partitionKey() {

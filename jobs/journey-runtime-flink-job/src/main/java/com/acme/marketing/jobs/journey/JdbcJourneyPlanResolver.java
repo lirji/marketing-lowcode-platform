@@ -32,6 +32,10 @@ final class JdbcJourneyPlanResolver implements JourneyPlanResolver {
     private final String environment;
     private final String cell;
     private final String namespace;
+    private final String participationKeyId;
+    private final String participationPublicKeyBase64;
+    private final String additionalParticipationKeys;
+    private transient JdbcBundleJourneyPlanResolver bundleResolver;
     private transient JourneyRuntimeReader reader;
     private transient Map<String, CachedPlan> cache;
     private transient Map<String, KillStatus> killSwitchCache;
@@ -40,6 +44,20 @@ final class JdbcJourneyPlanResolver implements JourneyPlanResolver {
             String releaseKeyId, String releasePublicKeyBase64, String additionalReleaseKeys,
             String compilerKeyId, String compilerPublicKeyBase64, String additionalCompilerKeys,
             String environment, String cell, String namespace) {
+        this(databaseUrl, databaseUser, databasePassword, releaseKeyId, releasePublicKeyBase64, additionalReleaseKeys,
+                compilerKeyId, compilerPublicKeyBase64, additionalCompilerKeys, environment, cell, namespace, "", "", "");
+    }
+
+    /** 新参与信任可空以保持旧部署；空集合只允许原单清单路径。 */
+    JdbcJourneyPlanResolver(String databaseUrl, String databaseUser, String databasePassword,
+            String releaseKeyId, String releasePublicKeyBase64, String additionalReleaseKeys,
+            String compilerKeyId, String compilerPublicKeyBase64, String additionalCompilerKeys,
+            String environment, String cell, String namespace,
+            String participationKeyId, String participationPublicKeyBase64, String additionalParticipationKeys) {
+        this.participationKeyId = normalized(participationKeyId);
+        this.participationPublicKeyBase64 = normalized(participationPublicKeyBase64);
+        this.additionalParticipationKeys = normalized(additionalParticipationKeys);
+        TrustedPublicKeys.parse(this.participationKeyId, this.participationPublicKeyBase64, this.additionalParticipationKeys);
         this.databaseUrl = required(databaseUrl, "journey runtime database URL");
         this.databaseUser = required(databaseUser, "journey runtime database user");
         this.databasePassword = databasePassword == null ? "" : databasePassword;
@@ -89,6 +107,31 @@ final class JdbcJourneyPlanResolver implements JourneyPlanResolver {
         JourneyReleaseVerifier.VerifiedArtifact artifact = verifier.verifyInstallation(tenantId, row.releaseKeyId(),
                 manifest, row.payload(), verificationTime);
         verifier.verifyActivation(tenantId, activation, manifest, verificationTime);
+        JourneyPlan plan = verifiedPlan(reference, artifact);
+        Instant expiresAt = manifest.expiresAt().isBefore(activation.expiresAt())
+                ? manifest.expiresAt() : activation.expiresAt();
+        cache().put(cacheKey, new CachedPlan(reference, plan, expiresAt));
+        return plan;
+    }
+
+    /** 组合参与独立查授权，不要求生成虚假的单清单激活；旧输入沿原路径执行。 */
+    @Override
+    public JourneyPlan resolveBound(String tenantId, String enrollmentId, String subjectToken,
+            JourneyJobInput.PlanReference reference,
+            com.acme.marketing.contracts.release.ReleaseBundleParticipation participation,
+            Instant now, boolean requireCurrentActivation) {
+        if (participation == null) return resolve(tenantId, reference, now, requireCurrentActivation);
+        if (now == null) throw com.acme.marketing.contracts.release.ReleaseBundleProtocolError.PARTICIPATION_INVALID.conflict();
+        assertNotKilled(tenantId, now);
+        if (bundleResolver == null) bundleResolver = new JdbcBundleJourneyPlanResolver(reader(),
+                TrustedPublicKeys.parse(releaseKeyId, releasePublicKeyBase64, additionalReleaseKeys),
+                TrustedPublicKeys.parse(compilerKeyId, compilerPublicKeyBase64, additionalCompilerKeys),
+                TrustedPublicKeys.parse(participationKeyId, participationPublicKeyBase64, additionalParticipationKeys), environment, cell, namespace);
+        return bundleResolver.resolve(tenantId, enrollmentId, subjectToken, reference, participation, now);
+    }
+
+    /** 两条解析路径共用原计划身份和运行上限，不因组合模式放宽编译边界。 */
+    static JourneyPlan verifiedPlan(JourneyJobInput.PlanReference reference, JourneyReleaseVerifier.VerifiedArtifact artifact) {
         JourneyPlan plan = JsonCodec.read(new String(artifact.payload(), StandardCharsets.UTF_8), JourneyPlan.class);
         if (!reference.journeyId().equals(plan.journeyId()) || reference.journeyVersion() != plan.version()
                 || !plan.journeyId().equals(artifact.reference().definitionId())
@@ -97,9 +140,6 @@ final class JdbcJourneyPlanResolver implements JourneyPlanResolver {
                 || plan.stateTtl().compareTo(Duration.ofDays(365)) > 0) {
             throw new IllegalArgumentException("journey plan reference, identity or limits are invalid");
         }
-        Instant expiresAt = manifest.expiresAt().isBefore(activation.expiresAt())
-                ? manifest.expiresAt() : activation.expiresAt();
-        cache().put(cacheKey, new CachedPlan(reference, plan, expiresAt));
         return plan;
     }
 

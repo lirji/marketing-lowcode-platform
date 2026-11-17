@@ -18,6 +18,7 @@ public final class JourneyRuntimeProcessFunction
     private final JourneyJobReducer reducer;
     private static final int MAX_TIMER_RETRIES = 5;
     private transient ValueState<JourneyJobState> valueState;
+    private transient ValueState<String> bundleParticipationState;
 
     public JourneyRuntimeProcessFunction(JourneyPlanResolver plans) {
         this.reducer = new JourneyJobReducer(plans);
@@ -27,32 +28,51 @@ public final class JourneyRuntimeProcessFunction
     public void open(OpenContext openContext) {
         valueState = getRuntimeContext().getState(
                 new ValueStateDescriptor<>("journey-enrollment-v2", JourneyJobState.class));
+        // 原状态的名称/类型保持不变；字符串凭证使用独立描述符，旧savepoint中此状态为空。
+        bundleParticipationState = getRuntimeContext().getState(
+                new ValueStateDescriptor<>("journey-bundle-participation-v1", String.class));
     }
 
     @Override
     public void processElement(String input, Context context, Collector<KafkaJobOutput> output) throws Exception {
-        String key = "invalid";
-        try {
-            JourneyJobInput message = JsonCodec.read(input, JourneyJobInput.class);
-            key = message.partitionKey();
-            JourneyJobState before = valueState.value();
-            long now = context.timerService().currentProcessingTime();
-            if (before != null && now >= before.expiresAtEpochMillis()) {
-                expire(before, valueState, output, context);
-                return;
-            }
-            JourneyJobReducer.Result result = reducer.apply(before, message, now);
-            valueState.update(result.state());
-            synchronizeTimers(before, result.state(), context);
-            emit(key, message.signal().signalId(), result, output);
-        } catch (JourneyInfrastructureException unavailable) {
-            // 基础设施故障必须中断 checkpoint 推进，恢复后重放输入/定时器，不能作为坏消息跳过。
-            throw unavailable;
-        } catch (JourneyExecutionPausedException paused) {
-            throw paused;
-        } catch (RuntimeException failure) {
-            output.collect(KafkaJobOutput.deadLetter(key, input, failure));
+        JourneyJobInput message;
+        try { message = Objects.requireNonNull(JsonCodec.read(input, JourneyJobInput.class)); }
+        catch (RuntimeException malformed) {
+            output.collect(KafkaJobOutput.deadLetter("invalid", input, malformed)); return;
         }
+        String key = message.partitionKey();
+        JourneyJobState before = valueState.value();
+        var storedParticipation = storedParticipation();
+        long now = context.timerService().currentProcessingTime();
+        if (before != null && now >= before.expiresAtEpochMillis()) {
+            expire(before, valueState, output, context); return;
+        }
+        var participation = before == null ? message.bundleParticipation() : storedParticipation;
+        JourneyJobReducer.Result result;
+        try {
+            if (before == null && storedParticipation != null)
+                throw com.acme.marketing.contracts.release.ReleaseBundleProtocolError.PARTICIPATION_CONSUMED.conflict();
+            result = reducer.apply(before, message, now, participation);
+        } catch (JourneyInfrastructureException | JourneyExecutionPausedException unavailable) {
+            throw unavailable;
+        } catch (RuntimeException invalid) {
+            output.collect(KafkaJobOutput.deadLetter(key, input, invalid)); return;
+        }
+        // 校验与纯转换之后才写状态；此后的任意写入/输出失败必须恢复checkpoint，不能提交半份状态。
+        if (before == null && participation != null) bundleParticipationState.update(JsonCodec.write(participation));
+        valueState.update(result.state());
+        synchronizeTimers(before, result.state(), context);
+        emit(key, message.signal().signalId(), result, output);
+    }
+
+    private com.acme.marketing.contracts.release.ReleaseBundleParticipation storedParticipation() throws Exception {
+        String content = bundleParticipationState.value();
+        if (content == null) return null;
+        try {
+            var value = JsonCodec.read(content, com.acme.marketing.contracts.release.ReleaseBundleParticipation.class);
+            if (value == null || value.signature().isEmpty()) throw new IllegalArgumentException(com.acme.marketing.contracts.release.ReleaseBundleProtocolError.PARTICIPATION_INVALID.message());
+            return value;
+        } catch (RuntimeException corrupt) { throw new JourneyInfrastructureException(corrupt); }
     }
 
     @Override
@@ -65,11 +85,10 @@ public final class JourneyRuntimeProcessFunction
             return;
         }
         if (timestamp != before.activeTimerAtEpochMillis()) return;
+        var participation = storedParticipation();
+        JourneyJobReducer.Result result;
         try {
-            JourneyJobReducer.Result result = reducer.fireTimer(before, timestamp);
-            valueState.update(result.state());
-            synchronizeTimers(before, result.state(), context);
-            emit(key, "timer:" + before.activeTimerKey() + ':' + timestamp, result, output);
+            result = reducer.fireTimer(before, timestamp, participation);
         } catch (JourneyInfrastructureException unavailable) {
             // 基础设施故障必须中断 checkpoint 推进，恢复后重放输入/定时器，不能作为坏消息跳过。
             throw unavailable;
@@ -86,6 +105,7 @@ public final class JourneyRuntimeProcessFunction
             context.timerService().registerProcessingTimeTimer(resumeAt);
             output.collect(KafkaJobOutput.data(key, new ExecutionPaused("JOURNEY_EXECUTION_PAUSED",
                     before.snapshot().tenantId(), before.snapshot().enrollmentId(), resumeAt)));
+            return;
         } catch (RuntimeException failure) {
             output.collect(KafkaJobOutput.deadLetter(key, "timer:" + timestamp, failure));
             long now = context.timerService().currentProcessingTime();
@@ -106,7 +126,11 @@ public final class JourneyRuntimeProcessFunction
             valueState.update(exhausted);
             output.collect(KafkaJobOutput.data(key, new TimerRetriesExhausted("JOURNEY_TIMER_RETRIES_EXHAUSTED",
                     before.snapshot().tenantId(), before.snapshot().enrollmentId(), before.activeTimerKey(), retry)));
+            return;
         }
+        valueState.update(result.state());
+        synchronizeTimers(before, result.state(), context);
+        emit(key, "timer:" + before.activeTimerKey() + ':' + timestamp, result, output);
     }
 
     private static void emit(String key, String sourceSignalId,
@@ -129,6 +153,7 @@ public final class JourneyRuntimeProcessFunction
             ValueState<JourneyJobState> valueState,
             Collector<KafkaJobOutput> output,
             Context context) {
+        // 只清理旧旅程状态，独立参与凭证留作墓碑，禁止迟到START重开同一组合参与。
         valueState.clear();
         if (!state.activeTimerKey().isBlank()) {
             context.timerService().deleteProcessingTimeTimer(state.activeTimerAtEpochMillis());

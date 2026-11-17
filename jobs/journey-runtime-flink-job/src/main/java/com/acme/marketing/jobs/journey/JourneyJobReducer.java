@@ -18,6 +18,17 @@ public final class JourneyJobReducer implements java.io.Serializable {
     }
 
     public Result apply(JourneyJobState current, JourneyJobInput input, long processingTimeMillis) {
+        if (input.bundleParticipation() != null)
+            throw com.acme.marketing.contracts.release.ReleaseBundleProtocolError.PARTICIPATION_INVALID.conflict();
+        return apply(current, input, processingTimeMillis, null);
+    }
+
+    /** 凭证独立存储并显式传入，避免改变旧checkpoint中的嵌套状态类型。 */
+    public Result apply(JourneyJobState current, JourneyJobInput input, long processingTimeMillis,
+            com.acme.marketing.contracts.release.ReleaseBundleParticipation participation) {
+        if (input.signal().type() == JourneyJobInput.SignalPayload.Type.START
+                && !java.util.Objects.equals(input.bundleParticipation(), participation))
+            throw com.acme.marketing.contracts.release.ReleaseBundleProtocolError.PARTICIPATION_INVALID.conflict();
         JourneyPlan plan;
         EnrollmentSnapshot snapshot;
         if (current == null) {
@@ -25,14 +36,14 @@ public final class JourneyJobReducer implements java.io.Serializable {
                     || input.subjectToken().isBlank()) {
                 throw new IllegalArgumentException("new enrollment requires subject, signed release and START signal");
             }
-            plan = plans.resolve(input.tenantId(), input.planReference(), Instant.ofEpochMilli(processingTimeMillis),
-                    true);
+            plan = plans.resolveBound(input.tenantId(), input.enrollmentId(), input.subjectToken(), input.planReference(),
+                    participation, Instant.ofEpochMilli(processingTimeMillis), true);
             snapshot = EnrollmentSnapshot.start(input.tenantId(), input.enrollmentId(),
                     input.subjectToken(), plan, Instant.ofEpochMilli(input.signal().occurredAtEpochMillis()));
         } else {
             verifyIdentity(current, input);
-            plan = plans.resolve(input.tenantId(), current.planReference(),
-                    Instant.ofEpochMilli(processingTimeMillis), false);
+            plan = plans.resolveBound(input.tenantId(), input.enrollmentId(), input.subjectToken(), current.planReference(),
+                    participation, Instant.ofEpochMilli(processingTimeMillis), false);
             snapshot = current.snapshot();
             if (input.planReference() != null) {
                 if (!input.planReference().equals(current.planReference())) {
@@ -51,14 +62,20 @@ public final class JourneyJobReducer implements java.io.Serializable {
     }
 
     public Result fireTimer(JourneyJobState current, long timestamp) {
+        return fireTimer(current, timestamp, null);
+    }
+
+    /** 定时恢复使用首次已保存凭证，不从新事件或latest重建绑定。 */
+    public Result fireTimer(JourneyJobState current, long timestamp,
+            com.acme.marketing.contracts.release.ReleaseBundleParticipation participation) {
         if (current == null || current.activeTimerAtEpochMillis() != timestamp) {
             throw new IllegalArgumentException("timer is no longer active");
         }
         JourneySignal.Timer timer = new JourneySignal.Timer(
                 "timer:" + current.activeTimerKey() + ':' + timestamp,
                 current.activeTimerKey(), Instant.ofEpochMilli(timestamp));
-        JourneyPlan plan = plans.resolve(current.snapshot().tenantId(), current.planReference(),
-                Instant.ofEpochMilli(timestamp), false);
+        JourneyPlan plan = plans.resolveBound(current.snapshot().tenantId(), current.snapshot().enrollmentId(),
+                current.snapshot().subjectToken(), current.planReference(), participation, Instant.ofEpochMilli(timestamp), false);
         JourneyTransition transition = RUNTIME.advance(plan, current.snapshot(), timer);
         Timer nextTimer = timerFromTransition(transition, timestamp);
         long expiry = Math.addExact(timestamp, plan.stateTtl().toMillis());

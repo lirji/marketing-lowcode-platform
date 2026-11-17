@@ -69,8 +69,14 @@ public final class EventPayloadRouter {
         payload.put("subjectToken", event.subjectToken());
         if ("START".equals(type)) {
             payload.put("planReference", canonical(objectMap(event.data().get("planReference"), "planReference")));
-        } else if (event.data().containsKey("planReference")) {
-            throw new IllegalArgumentException("planReference is only valid for START");
+            // 只转发来源凭证，不能让事件内的tenant/subject覆盖上面已验证的入口身份；Flink再核验完整绑定。
+            if (event.data().containsKey("bundleParticipation"))
+                payload.put("bundleParticipation", canonical(objectMap(event.data().get("bundleParticipation"), "bundleParticipation")));
+        } else {
+            if (event.data().containsKey("planReference"))
+                throw new IllegalArgumentException("planReference is only valid for START");
+            if (event.data().containsKey("bundleParticipation"))
+                throw new IllegalArgumentException(com.acme.marketing.contracts.release.ReleaseBundleProtocolError.PARTICIPATION_INVALID.message());
         }
         payload.put("signal", signal);
         return new OutboundEvent(JOURNEY_TOPIC, tenantId + ':' + event.businessKey(), json(payload));

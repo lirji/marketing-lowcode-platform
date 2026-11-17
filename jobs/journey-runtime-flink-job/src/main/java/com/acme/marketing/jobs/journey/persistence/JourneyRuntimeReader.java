@@ -53,6 +53,18 @@ public final class JourneyRuntimeReader {
         return read(mapper -> mapper.activated(tenantId, environment, cell, namespace, generation, sequence, artifactId));
     }
 
+    /** 按精确活动授权和generation读取，后续仍须验证完整签名和主体绑定。 */
+    public String bundleDirective(String tenantId, String environment, String cell, String namespace,
+            String campaignId, long sequence) {
+        return read(mapper -> mapper.bundleDirective(tenantId, environment, cell, namespace, campaignId, sequence));
+    }
+
+    /** 源授权验证后再取制品，避免把伪造reference造成的缺数据当作基础设施故障。 */
+    public JourneyRuntimeMapper.RuntimeRow bundled(String tenantId, String environment, String cell, String namespace,
+            String campaignId, long generation, long sequence, String artifactId) {
+        return read(mapper -> mapper.bundled(tenantId, environment, cell, namespace, campaignId, generation, sequence, artifactId));
+    }
+
     private <T> T read(Function<JourneyRuntimeMapper, T> query) {
         try (var session = sessions.openSession()) {
             return query.apply(session.getMapper(JourneyRuntimeMapper.class));

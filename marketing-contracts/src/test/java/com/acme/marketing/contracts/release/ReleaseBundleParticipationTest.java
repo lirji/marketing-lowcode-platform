@@ -165,6 +165,21 @@ class ReleaseBundleParticipationTest {
         assertDoesNotThrow(() -> ReleaseBundleParticipation.subjectHash(tenant, "用户😀"));
     }
 
+    @Test void enrollmentKeyPinsTenantBindingAndMemberIndependentlyOfSignatureRotation() {
+        var proof = signed(directive(), now);
+        String key = proof.enrollmentId("member"); assertTrue(key.matches("[a-f0-9]{64}"));
+        assertNotEquals(key, proof.enrollmentId("other-member"));
+        for (String field : List.of("campaignId", "environment", "cell", "participationId")) {
+            var moved = tree(proof); moved.put(field, "other"); assertNotEquals(key, read(moved).enrollmentId("member"), field);
+        }
+        var changed = tree(proof); changed.put("bindingId", "other"); assertNotEquals(key, read(changed).enrollmentId("member"));
+        changed = tree(proof); ((ObjectNode) changed.path("tenantId")).put("value", "other");
+        assertNotEquals(key, read(changed).enrollmentId("member"));
+        changed = tree(proof); changed.put("signatureKeyId", "rotated");
+        assertEquals(key, ReleaseBundleParticipationSigner.sign(controlKey.getPrivate(), read(changed)).enrollmentId("member"));
+        assertThrows(IllegalArgumentException.class, () -> proof.enrollmentId(""));
+    }
+
     private PinnedReleaseBundleParticipationVerifier.ExpectedContext context() {
         return new PinnedReleaseBundleParticipationVerifier.ExpectedContext(tenant, "campaign", "local", "cell", "order/1", "subject-secret");
     }

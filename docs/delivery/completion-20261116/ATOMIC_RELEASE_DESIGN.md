@@ -123,3 +123,13 @@ S11g2合同模块保持无JSON生产依赖，动作在wire中使用经Action.fro
 - 锁序：接收head→本站持久制品读取→slot；单清单slot→generation只读。不存在反向取得活动head的路径；不同活动共享slot会串行标记。接收历史和标记一个事务，无额外远程调用。原slot的数据库主键比较语义保持兼容；不得用不同排序规则的旁路锁造成大小写别名绕过同一物理slot。
 - 验收：两个服务的真实MySQL/HTTP及Coordinator新序号拒绝、同slot其他清单、旧HTTP回执、并发/已建立RR快照后标记仍生效、接收失败回滚标记、重启保留、不同tenant/完整slot隔离、升级回填保留现指针且补空slot；旧非组合模块回归。部署/共享迁移不在本片范围；含忽略标记的旧运行端写实例必须退出或冻结后才能启用组合，镜像降级必须先冻结发布写入，不能删除标记恢复旧发布。
 - Owner=backend；允许两个服务应用/持久/迁移/测试及共享错误说明；无前端、Flink或真正APPLIED指针变化。接续实际准入与唯一参与绑定，S11整体状态仍PARTIAL。
+
+## S11g5a：Flink按签名参与执行精确Journey成员
+- 先实现实际消费边界，再开放准入签发和Control整体激活。增加可选START字段`bundleParticipation`；旧JourneyJobInput五参数调用继续有效，非START不得携带凭证。EventGateway继续覆盖tenant/subject/enrollment/signalId/time为可信事件入口值，仅将START凭证原样转发。无凭证旧事件路径维持原规则，最终旧入口退出门禁仍在后续，不能在本片宣称已切换。
+- 每个Journey成员的enrollmentId按独立用途、tenant/campaign/environment/cell/participationId完整参与键、bindingId及memberManifestId规范长度编码SHA256派生（64位小写hex）。同一个参与可以驱动组合内不同Journey成员，但同一成员不能换enrollmentId重放；不依赖主体粒度选择，也不把orderId当作身份映射。参与编号仍由未来可信准入方提供。
+- Flink通过现有Journey只读MyBatis读端按tenant/environment/cell/namespace/campaign/activationSequence取g3持久完整授权，再取精确generation制品；不读Control库或latest、不调用线上Control。分别验证当前Decision参与信任、Control/原成员/编译签名、主体、派生enrollmentId、源授权签名和PlanReference各字段，准入时刻核验历史期限；实时kill-switch仍按原1秒缓存上限执行。缺信任/来源/制品或任一不匹配拒绝；数据库故障沿现有基础设施异常使作业恢复重试，不丢作坏消息。
+- 新可选环境配置`JOURNEY_PARTICIPATION_TRUSTED_KEY_ID/PUBLIC_KEY_BASE64/TRUSTED_PUBLIC_KEYS`只用于参与签名角色，默认空表示不接受组合凭证，既有release/compiler信任不可代替；不修改实际运行部署。重用已选定Ed25519/Jackson/MyBatis和当前DB，不增依赖或服务。解析/制品与缓存继续有界，组合缓存独立于旧generation/seq缓存，不能混用不同活动的同序号。
+- 保留`journey-enrollment-v2`描述符、JourneyJobState及其嵌套PlanReference五字段类型；凭证采用新`ValueState<String>`描述符`journey-bundle-participation-v1`存规范JSON，避免修改已持久嵌套类型。已结束/过期的组合参与保留该键作为墓碑；旧主状态清除后不得因重放创建新实例。暂无自动清理，生产保留/归档/容量和真实savepoint恢复仍属S13；不将新状态存在等同于生产恢复已验证。依据：[Flink 2.2状态演进限制](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/dev/datastream/fault-tolerance/serialization/schema_evolution/)，普通Kryo嵌套类型不能假定可演进。
+- 先完成输入/签名/计划校验和纯转换，再更新Flink主状态、凭证状态、定时器与输出；状态写入或输出失败必须使作业失败并从checkpoint重放，不能捕获成坏消息后提交半份状态。旧参与的EVENT/Timer继续使用首次保存凭证，新START不能替换已有绑定。
+- Owner=backend/runtime，依赖g3/g4a/b。范围：共享enrollment派生合同/错误与事件schema、Journey job输入/只读Mapper/解析器/状态处理/配置入口、EventGateway转发与相关测试/操作说明。无数据库迁移或部署，不触及正在运行的3个Flink作业。
+- 验收：可信组合未单清单激活也可执行精确已安装成员；不同活动/主体/派生ID/成员/签名/密钥/源序号拒绝；旧清单到期后恢复及timer、当前停用生效、重复START与状态清除后的墓碑拒绝、状态写/输出故障不推进、旧输入和状态描述符保持兼容。真实DB及当前Flink类型/恢复测试分别记证据，不以纯Mock代替持久查询，真实生产savepoint保留未验证。准入唯一DB绑定、实际应用指针、完整旧入口退出/混合版本能力门禁以及Control整体回执仍是后续必需步骤。

@@ -129,6 +129,12 @@ class ContractSpecificationsTest {
         assertEquals(128, map(fields.get("participationId")).get("maxLength"));
         assertEquals(1, map(fields.get("activationSequence")).get("minimum"));
         assertEquals(1, map(fields.get("bundleVersion")).get("minimum"));
+        var json = new tools.jackson.databind.ObjectMapper().readTree(Files.readString(
+                RESOURCES.resolve("schema/events/release-bundle-participation.schema.json")));
+        assertEquals(names, json.path("properties").propertyNames());
+        Set<String> required = new HashSet<>(); json.path("required").forEach(value -> required.add(value.asString()));
+        assertEquals(names, required);
+        assertEquals("object", json.path("properties").path("tenantId").path("type").asString());
     }
 
     @Test

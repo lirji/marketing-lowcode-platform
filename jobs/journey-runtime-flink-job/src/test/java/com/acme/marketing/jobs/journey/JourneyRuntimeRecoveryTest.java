@@ -43,7 +43,10 @@ class JourneyRuntimeRecoveryTest {
         });
         ValueState<JourneyJobState> state = mock(ValueState.class);
         RuntimeContext runtime = mock(RuntimeContext.class);
-        when(runtime.<JourneyJobState>getState(any(org.apache.flink.api.common.state.ValueStateDescriptor.class))).thenReturn(state);
+        ValueState<String> participationState = mock(ValueState.class);
+        when(runtime.getState(any(org.apache.flink.api.common.state.ValueStateDescriptor.class))).thenAnswer(call ->
+                "journey-enrollment-v2".equals(((org.apache.flink.api.common.state.ValueStateDescriptor<?>) call.getArgument(0)).getName())
+                        ? state : participationState);
         function.setRuntimeContext(runtime);
         function.open(null);
         var context = mock(JourneyRuntimeProcessFunction.Context.class);
@@ -75,7 +78,10 @@ class JourneyRuntimeRecoveryTest {
         ValueState<JourneyJobState> state = mock(ValueState.class);
         when(state.value()).thenReturn(waiting);
         RuntimeContext runtime = mock(RuntimeContext.class);
-        when(runtime.<JourneyJobState>getState(any(org.apache.flink.api.common.state.ValueStateDescriptor.class))).thenReturn(state);
+        ValueState<String> participationState = mock(ValueState.class);
+        when(runtime.getState(any(org.apache.flink.api.common.state.ValueStateDescriptor.class))).thenAnswer(call ->
+                "journey-enrollment-v2".equals(((org.apache.flink.api.common.state.ValueStateDescriptor<?>) call.getArgument(0)).getName())
+                        ? state : participationState);
         function.setRuntimeContext(runtime);
         function.open(null);
         Collector<KafkaJobOutput> output = mock(Collector.class);

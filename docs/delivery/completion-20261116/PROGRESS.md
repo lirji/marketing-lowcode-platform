@@ -8,14 +8,14 @@
 - 规范：`~/.codex/architecture-standards.md` 业务建模、持久化、接口契约、并发安全；`personal-tech-stack.md` 并发、线程池、日志、状态机；engineering-workflows/backend-implementation/continue-approved-delivery/task-git-delivery。前端、Runtime 专项随切片读取。
 
 ## 当前状态（2026-11-18，持续执行）
-- 用户已确认同一活动组合整体生效/回滚，并要求继续流程；会员/画像优先Commerce、交易证据优先交易中心、认证Auth的方向进入增量接入设计。具体技术合同和机器凭据仍按真实系统核对，不再重复询问来源选型。当前分支 `feat/activity-release-bundles` 基于 `d57a572`，S11e/f/g1/g2已交付，S11g3a Decision持久接收已交付，S11g3b Journey接收本地验证通过并推送，继续S11g4参与绑定；设计与切片见 [活动组合增量设计](ATOMIC_RELEASE_DESIGN.md)。
+- 用户已确认同一活动组合整体生效/回滚，并要求继续流程；会员/画像优先Commerce、交易证据优先交易中心、认证Auth的方向进入增量接入设计。具体技术合同和机器凭据仍按真实系统核对，不再重复询问来源选型。当前分支 `feat/activity-release-bundles` 基于 `d57a572`，S11e/f/g1–g4a已交付，g4b运行端slot保护精确CI通过，g5a Flink固定参与执行本地验证通过，继续真实准入与整体应用闭环；设计与切片见 [活动组合增量设计](ATOMIC_RELEASE_DESIGN.md)。
 - 先执行依赖齐备的S11e不可变组合准备与成员发布保护，再推进运行端和整体切换；上游缺少机器快照/主体映射的部分保留依赖状态。当前未修改其他仓库、未部署或迁移共享库。文档提交 `d57a572` 的CI `44095478630` 已核实三项SUCCESS，原pending记录失效。
 - S01–S05已完成；S06–S13仍按下表保留未完成范围。S12c–S12q已交付；上一轮已部署产品提交 `dbe268b5ed25004c5ee35af171ceb147e2509e55` 已正常快进合入并推送main，精确CI `44092826351` 的Java/合同/架构、前端、Compose/Helm三项全部通过。该阶段分支为 `fix/asset-preview-reads`，其后交付回执仅改文档，运行制品仍固定该产品提交。
 - 本机仅18个必要容器运行：13个marketing-r1、权益目录适配服务、MySQL/Redis/Kafka/ClickHouse；15个配置了健康检查且全部healthy，另3个未配置健康检查，全部运行且无OOM。console=dbe268b、edge-gateway=7764526、engagement=166dc43、benefit-funding=607542e、audience=a260865、control=b3858e6，其余应用045dfd9。control V7已迁移；UI8084、网关18080、Flink18081。详见 [本机部署回执](LOCAL_DEPLOYMENT_20261117.md)。
 - 用户授权Docker只运行本项目组件；13个额外无关容器及原17个langchain应用保持停止，所有容器与数据卷保留。本轮只更新console，17个其它运行容器ID/镜像/启动时间不变；3个原Flink作业及检查点继续推进，禁止重复恢复或提交空作业。
 - 上一轮部署验证：271项前端测试、98项浏览器用例通过，10项既有独立服务用例跳过；lint/build/Hygiene无阻塞，未配置canonical formatter。真实Docker四类资产页在桌面与Pixel7的分页、搜索、详情及字段/节点读取回归通过，无业务写入、API失败或页面异常。运行回执与截图：私有证据目录 `runtime-dbe268b/`。
 - 上一轮部署可见结果：活动/首页/运营/资产的静态预览不显示假业务数据或旧缓存，资产刷新不能绕过读取门禁；OIDC身份范围变化、退出与过期清理旧请求/缓存/草稿，旧令牌401不退出已更新令牌，远端退出失败能恢复登录页。本机仍为DEV认证，真实IdP联调未验证。
-- 当前HEAD/远程任务分支1ad2993，main/origin=420d84d。g3b与租户wire修正128e768的精确CI均PASS，g4a参与凭证1ad2993本地45合同/13JSON/10架构/Hygiene PASS，精确CI44120438060运行中。g4b运行端slot保护本地53模块用例、45合同/13JSON、10架构通过；清理顺序修正后23项相关用例重新通过且无退出超时，准备完整暂存Hygiene和交付。无部署或共享库迁移。
+- 当前HEAD/远程任务分支bca69ce，main/origin=1ad2993。g4a精确CI44120438060、g4b精确CI44123107153均三项SUCCESS；g4b待当前工作树提交后正常交付。g5a有效验证覆盖Journey job21项、EventGateway10项、合同46项/14JSON、架构10项及Flink JAR打包，正在最终Hygiene/提交；无部署或共享库迁移。
 
 ## 未完成项与恢复顺序
 
@@ -783,3 +783,26 @@
 - 最终45合同/13JSON、10架构PASS（s11g4b-contracts-final.log、s11g4b-architecture-final.log）。根代理另行复核接收head→slot与旧激活slot锁序、原子upsert保留旧指针、旧快照防绕过、回填零代际语义、事务回滚、HTTP/Coordinator覆盖及旧版本退出要求；当前片无剩余阻断。Flink与实际绑定路由仍属后续，未宣称部署或线上原子生效。
 
 - g4b完整暂存Hygiene/diff PASS（s11g4b-hygiene.json，无新增Finding，仅无formatter工具限制）。没有新worktree；忽略项为原构建/测试产物与本机恢复文件，保留不清理。准备逻辑提交；128e768精确CI已PASS可正常合并，g4a精确CI44120438060后端仍运行。
+
+## S11g5a Flink签名参与执行（设计后实施）
+- g4b提交bca69ce已推送；g4a 1ad2993精确CI44120438060三项全部SUCCESS。g4b精确CI已dispatch（运行ID待读取session96830），同一命令正在正常交付g4a，先查结果不重试。
+- 下一片先落实Flink真实执行边界和EventGateway传播，保留旧持久状态类型，新增独立字符串凭证状态及终态/过期墓碑；具体方案、兼容风险与验收见增量设计。尚未改产品代码，真实savepoint恢复、唯一准入绑定和整体激活仍未完成。
+
+- g4b精确CI44123107153已启动；g4a已按成功CI正常FF合入并推送main=1ad2993。当前HEAD=bca69ce。g5a输入/派生键/只读精确授权解析、独立Flink凭证状态和状态写失败传播正在实现，尚未编译/验证；原JourneyJobState及PlanReference未修改。首个编辑脚本因Python缩进错误未执行，已改用明确补丁，不存在未知迁移或业务写结果。
+
+- g5a当前产品编译PASS（s11g5a-compile.log），测试和事件schema尚未完成；新增源授权单独读取，先检查输入reference是否属于该授权，再查精确制品，避免把伪造reference误判为可重试数据库缺数据。新凭证不进入旧持久PlanReference，旧JSON不输出null新字段；实际兼容/恢复证据待测试。
+
+- g5a首轮真实DB测试5项均在测试seed阶段失败：夹具误用installed_at，真实Journey列为warmed_at（s11g5a-first.log）；已按实际迁移修正，生产查询未改。旧Reducer/Recovery用例已通过，新增独立状态/墓碑及故障传播测试待首次运行，不能将编译PASS当功能通过。
+
+- g5a第二轮在Flink测试Context泛型Mockito替身触发unchecked/Werror，已仅对两个测试helper按既有RecoveryTest方式标注受控转换；未放宽全局编译门禁（s11g5a-second.log）。第三轮执行完整Journey job及EventGateway模块，包含新增真实DB、状态失败/墓碑和转发用例。
+
+- g5a完整模块首轮PASS：Journey job19项（5真实MySQL、7独立状态行为、7旧回归）+EventGateway10项（3转发、7原真实集成），合同46项依赖测试也通过（s11g5a-modules-third.log）。复核补齐源/清单原文为null时按存储损坏恢复，以及真实Flink serializer snapshot往返验收，需重跑受影响12+1项，不复跑未变网关。g4b精确CI44123107153三项全部SUCCESS，待当前切片提交后正常交付。
+
+### S11g5a 验证检查点
+- 新增真实Flink serializer snapshot写入/读取/compatible-as-is/反序列化用例PASS，13项受影响真实DB与状态测试再次通过；合同46项、14份JSON、架构10项及Flink shaded JAR打包均PASS（s11g5a-final2.log、s11g5a-contracts-final.log、s11g5a-architecture-final.log、s11g5a-package-final.log）。这只证明当前保留类型的真实序列化往返，不冒充运行中生产savepoint恢复。
+- 根代理复核补充：派生enrollment键包含完整参与作用域防跨活动/环境碰撞；空签名的已保存状态按存储损坏恢复，非START凭证错误复用统一目录。后两项是最后受影响代码收敛，继续窄验证后再交付，未重跑无关全仓检查。g5a总有效范围为Journey job20项、EventGateway10项，外加合同/架构。
+
+### S11g5a 最终复核
+- 最后11项状态/网关守卫复验通过（s11g5a-guards-final.log）；审查发现JSON字面量null可绕过解析catch并阻塞消费，已收回坏消息边界，9项状态测试再次通过（s11g5a-null-input-final.log），最终JAR重打包PASS（s11g5a-package-final3.log）。有效总数为Journey job21、EventGateway10、合同46/14JSON及架构10。
+- 根代理另行复核签名用途/信任角色、租户和成员查询、固定参与派生键、缓存作用域、当前kill、状态故障传播、重复START及墓碑、旧状态类型和事件兼容。当前片无剩余阻断；真实savepoint、混合版本能力门禁、唯一准入绑定和整体切换保持未完成，未把源码支持当上线成功。
+- 最终Hygiene/diff PASS（s11g5a-hygiene-final.json）；两个ADVISORY为已有语义名称的缓存上限与1MiB载荷上限，人工归类为常量，无阻断；仓库无canonical formatter。首次门禁发现重复START裸值比较，已收敛到既有非START分支并3项网关转发复验PASS（s11g5a-routing-final.log）。准备逻辑提交和精确CI，g4b已通过CI可正常FF main。

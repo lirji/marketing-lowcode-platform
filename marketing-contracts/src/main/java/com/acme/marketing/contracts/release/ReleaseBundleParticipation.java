@@ -18,6 +18,7 @@ public record ReleaseBundleParticipation(String bindingId, TenantId tenantId, St
     private static final int MAX_SUBJECT_LENGTH = 512;
     private static final int ED25519_SIGNATURE_BYTES = 64;
     private static final int ED25519_SIGNATURE_TEXT_LENGTH = 86;
+    private static final String ENROLLMENT_PURPOSE = "marketing.activity-bundle-enrollment/v1";
     private static final String SUBJECT_PURPOSE = "marketing.activity-bundle-subject/v1";
 
     public ReleaseBundleParticipation {
@@ -36,6 +37,14 @@ public record ReleaseBundleParticipation(String bindingId, TenantId tenantId, St
         if (tenant == null || !bounded(subjectToken, MAX_SUBJECT_LENGTH)) throw invalid();
         return Digests.sha256Hex(CanonicalMapCodec.encode(Map.of("purpose", SUBJECT_PURPOSE,
                 "tenant", tenant.value(), "subjectToken", subjectToken)));
+    }
+
+    /** 每个成员只有一个稳定执行键；不依赖可轮换的签名，防止换事件编号重开同一参与。 */
+    public String enrollmentId(String memberManifestId) {
+        if (!identifier(memberManifestId)) throw invalid();
+        return Digests.sha256Hex(CanonicalMapCodec.encode(Map.of("purpose", ENROLLMENT_PURPOSE,
+                "tenant", tenantId.value(), "campaign", campaignId, "environment", environment, "cell", cell,
+                "participationId", participationId, "bindingId", bindingId, "memberManifestId", memberManifestId)));
     }
 
     private static boolean digest(String value) { return value != null && value.matches("[a-f0-9]{64}"); }

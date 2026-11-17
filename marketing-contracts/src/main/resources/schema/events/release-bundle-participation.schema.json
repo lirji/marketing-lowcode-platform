@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/marketing/release-bundle-participation/1-0-0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "bindingId",
+    "campaignId",
+    "cell",
+    "bundleId",
+    "tenantId",
+    "environment",
+    "participationId",
+    "subjectHash",
+    "contentHash",
+    "directiveId",
+    "signatureKeyId",
+    "activationSequence",
+    "bundleVersion",
+    "activationSignature",
+    "signature",
+    "admittedAt"
+  ],
+  "properties": {
+    "bindingId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:-]{1,64}$"
+    },
+    "campaignId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:-]{1,64}$"
+    },
+    "cell": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:-]{1,64}$"
+    },
+    "bundleId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:-]{1,64}$"
+    },
+    "tenantId": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "value": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        }
+      }
+    },
+    "environment": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32
+    },
+    "participationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "subjectHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "contentHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "directiveId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:@-]{1,64}$"
+    },
+    "signatureKeyId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:@-]{1,64}$"
+    },
+    "activationSequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "bundleVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "activationSignature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{85}[AQgw]$"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{85}[AQgw]$"
+    },
+    "admittedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

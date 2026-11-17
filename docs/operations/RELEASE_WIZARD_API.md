@@ -100,10 +100,20 @@ Journey提供对应的`POST /api/v1/journey-runtime/release-bundle-directives`�
 
 共享`ReleaseBundleParticipation`记录参与编号/主体摘要、完整作用域、原授权签名与组合版本/摘要、准入时间，独立签名覆盖全部字段。校验方须从可信入口提供预期主体、参与编号和tenant/campaign/environment/cell，并取原完整授权逐项核对；Control签名与参与签名使用分开的信任集合。
 
-老参与按准入时刻验证原清单期限，因此可以在过期后恢复；当前密钥撤销仍立即影响验证。该事实不替代实时身份/停用/风控/同意/配额或终态幂等，也不允许换参与后重用。当前交付合同与验证器，没有签发/绑定HTTP入口；持久唯一绑定、实际APPLIED准入指针及Flink执行仍待后续。
+老参与按准入时刻验证原清单期限，因此可以在过期后恢复；验证使用当前进程的可信密钥集合；密钥更新需通过运行配置刷新/受控重启生效，尚未验证生产动态轮换。该事实不替代实时身份/停用/风控/同意/配额或终态幂等，也不允许换参与后重用。当前交付合同与验证器，没有签发/绑定HTTP入口；持久唯一绑定、实际APPLIED准入指针及Flink执行仍待后续。
 
 ### 运行端旧发布入口保护（S11g4b）
 
 Decision与Journey接收合法整体授权时，在同一事务把本站物理slot的`bundle_managed`置为true。该slot上的所有单清单HTTP激活/回滚及旧成功回执均返回409 `RELEASE_BUNDLE_SLOT_MANAGED`；新的Coordinator切换也受同一持久门禁保护。Decision原有已验证的旧通知无操作重放仍可确认，但不能当作组合应用回执。
 
 Decision V5/Journey V4会回填历史接收记录：已有active指针保持原generation/sequence/签名/更新时间；没有active指针时只建立零代际的禁用slot。标记不影响安装、读取原配置或紧急停用；接收失败则连同标记回滚。所有旧写版本退出或冻结后才能启用，降级前先冻结发布写入，不能删标记恢复旧入口。迁移仅在隔离库验证，未部署到共享环境；整体APPLIED/新参与准入仍未开放。
+
+### Flink固定参与执行（S11g5a）
+
+`JOURNEY_SIGNAL`的START可携带`data.bundleParticipation`。事件网关保持可信tenant、subjectToken、businessKey（enrollmentId）和signalId/time，并透传凭证供Flink核验；EVENT不得改绑。enrollmentId用共享`ReleaseBundleParticipation.enrollmentId(memberManifestId)`派生，不能另选任意执行ID重放同一成员。旧事件无此字段，旧JourneyJobState及PlanReference类型保持不变。
+
+新作业读取Journey自己的授权历史和精确安装制品，验证参与/Control/成员/编译信任、主体、派生键及引用字段，老参与在原期限后仍按admittedAt验证。当前kill-switch继续生效；可信凭证缺持久投影或已安装数据损坏会等待恢复，不当坏消息推进消费位点。不同活动/授权的缓存独立且最多128条、5分钟，命中仍校验参与和停用。
+
+新环境参数`JOURNEY_PARTICIPATION_TRUSTED_KEY_ID`、`JOURNEY_PARTICIPATION_PUBLIC_KEY_BASE64`、`JOURNEY_PARTICIPATION_TRUSTED_PUBLIC_KEYS`为Decision参与信任，默认空只接受旧路径。信任在作业实例初始化时固定；轮换/撤销须按受控配置更新和状态恢复流程生效，未交付热更新或真实KMS验证。
+
+`journey-bundle-participation-v1`以独立字符串受管状态保存凭证，结束/过期后保留为墓碑；不自动清理，容量/归档/保留策略仍待S13。状态写或输出故障使作业恢复checkpoint，不能变成坏消息后提交半次转换。该片测试不等于真实生产savepoint、Kafka外部副作用端到端或混合版本验收；未更新运行中的Flink。现有旧消费者会拒绝新字段，因此生产者只可在新消费能力验收后启用。持久唯一准入、整体应用指针和正式Control发布入口仍未开放。

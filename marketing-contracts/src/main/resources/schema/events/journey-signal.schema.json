@@ -8,6 +8,7 @@
     "tenantId": {"type": "string", "minLength": 1},
     "enrollmentId": {"type": "string", "minLength": 1},
     "subjectToken": {"type": "string"},
+    "bundleParticipation": {"$ref": "https://schemas.example.invalid/marketing/release-bundle-participation/1-0-0"},
     "planReference": {
       "type": "object",
       "additionalProperties": false,
@@ -36,6 +37,6 @@
   },
   "allOf": [
     {"if": {"properties": {"signal": {"properties": {"type": {"const": "START"}}}}}, "then": {"required": ["planReference"]}},
-    {"if": {"properties": {"signal": {"properties": {"type": {"enum": ["EVENT", "TIMER"]}}}}}, "then": {"not": {"required": ["planReference"]}}}
+    {"if": {"properties": {"signal": {"properties": {"type": {"enum": ["EVENT", "TIMER"]}}}}}, "then": {"not": {"anyOf": [{"required": ["planReference"]}, {"required": ["bundleParticipation"]}]}}}
   ]
 }

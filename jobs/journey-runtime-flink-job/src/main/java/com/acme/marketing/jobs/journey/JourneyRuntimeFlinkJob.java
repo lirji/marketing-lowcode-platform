@@ -29,7 +29,10 @@ public final class JourneyRuntimeFlinkJob {
                 JobEnvironment.value("JOURNEY_COMPILER_TRUSTED_PUBLIC_KEYS", ""),
                 JobEnvironment.value("JOURNEY_RUNTIME_ENVIRONMENT", "local"),
                 JobEnvironment.value("JOURNEY_RUNTIME_CELL", "cell-a"),
-                JobEnvironment.value("JOURNEY_RUNTIME_NAMESPACE", "main"));
+                JobEnvironment.value("JOURNEY_RUNTIME_NAMESPACE", "main"),
+                JobEnvironment.value("JOURNEY_PARTICIPATION_TRUSTED_KEY_ID", ""),
+                JobEnvironment.value("JOURNEY_PARTICIPATION_PUBLIC_KEY_BASE64", ""),
+                JobEnvironment.value("JOURNEY_PARTICIPATION_TRUSTED_PUBLIC_KEYS", ""));
         FlinkKafkaJobRunner.run(definition, new EnrollmentKeySelector(), new JourneyRuntimeProcessFunction(plans));
     }
 
