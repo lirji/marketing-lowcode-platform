@@ -307,7 +307,7 @@ paths:
       description: >-
         Freeze 2-8 signed staged manifests from the same campaign, environment and cell.
         Only PREPARING is supported; this operation does not activate runtimes or emit activation events.
-        Exact member manifests are then protected from standalone activation and rollback (409 RELEASE_BUNDLE_REQUIRED).
+        Every member slot is persistently managed as a bundle. All manifests in those complete tenant/environment/cell/runtime/namespace slots are protected from standalone activation, rollback and rollback-candidate lookup (409 RELEASE_BUNDLE_REQUIRED), including old command receipt replay. Existing active pointers are unchanged.
         Current campaign scope is checked before replay. Sorted member IDs, campaign and actor enter the command fingerprint.
         Body limit is 16 KiB before parsing. Partial canaries are not supported.
       parameters:

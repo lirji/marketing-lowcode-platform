@@ -349,12 +349,18 @@
     <select id="selectReleaseSlot"
             resultType="com.acme.marketing.control.application.ControlRepository$ReleaseSlotRow">
         SELECT stable_generation AS stableGeneration, desired_generation AS desiredGeneration,
-               latest_generation AS latestGeneration, activation_sequence AS activationSequence
+               latest_generation AS latestGeneration, activation_sequence AS activationSequence,
+               bundle_managed AS bundleManaged
         FROM mk_release_slot
         WHERE tenant_id = #{tenantId} AND environment_name = #{environment} AND cell_id = #{cell}
           AND runtime_name = #{runtime} AND namespace_name = #{namespace}
         <if test="lock">FOR UPDATE</if>
     </select>
+    <update id="markReleaseSlotBundleManaged">
+        UPDATE mk_release_slot SET bundle_managed = TRUE
+        WHERE tenant_id = #{tenantId} AND environment_name = #{environment} AND cell_id = #{cell}
+          AND runtime_name = #{runtime} AND namespace_name = #{namespace}
+    </update>
     <select id="selectRetainedGenerations" resultType="java.lang.Long">
         SELECT generation_no FROM mk_release_manifest
         WHERE tenant_id = #{tenantId} AND environment_name = #{environment} AND cell_id = #{cell}

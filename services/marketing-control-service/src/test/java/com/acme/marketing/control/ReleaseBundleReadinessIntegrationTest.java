@@ -239,6 +239,7 @@ class ReleaseBundleReadinessIntegrationTest {
         var signed = new ReleaseManifestSigner().sign(new ReleaseManifest(id, new TenantId(tenant), "local", "cell-a", "journey", namespace + "-" + campaign,
                 1, 0, List.of(), List.of(), List.of(artifact), Map.of(), 0, NOW.minusSeconds(10), NOW.plusSeconds(3600), "author", List.of(approval), NOW.minusSeconds(10), ""), releaseKeys.activePrivateKey());
         repository.saveManifest(new ControlRepository.ManifestWrite(tenant, id, "local", "cell-a", "journey", signed.namespace(), 1, "STAGED", mapper.writeValueAsString(signed), NOW.toString()));
+        repository.tryCreateReleaseSlot(new ControlRepository.ReleaseSlotWrite(tenant, "local", "cell-a", "journey", signed.namespace(), 0, 0, 1, 0, NOW.toString()));
         return id;
     }
     private ReleaseBundleAck ack(ReleaseBundleService.BundleView bundle, ReleaseManifest member, String runtime, Instant at, long capacity) {

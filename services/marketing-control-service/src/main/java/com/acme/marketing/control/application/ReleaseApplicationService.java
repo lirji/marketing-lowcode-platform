@@ -201,6 +201,7 @@ public class ReleaseApplicationService {
         }
         Slot slot = lockSlot(scope.tenantId().value(), stored.manifest().environment(), stored.manifest().cell(),
                 stored.manifest().runtime(), stored.manifest().namespace());
+        requireStandaloneSlot(slot);
         if (stored.manifest().generation() != slot.latestGeneration()
                 || stored.manifest().generation() <= slot.desiredGeneration()) {
             throw new ConflictException("ACTIVATION_GENERATION_NOT_FORWARD",
@@ -230,7 +231,9 @@ public class ReleaseApplicationService {
     public void authorizeActivation(String manifestId) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("release:activate");
-        requireManifestScope(scope, stored(scope.tenantId().value(), manifestId, false).manifest());
+        var manifest = stored(scope.tenantId().value(), manifestId, false).manifest();
+        requireManifestScope(scope, manifest);
+        requireStandaloneSlot(scope.tenantId().value(), manifest);
         requireStandaloneManifest(scope.tenantId().value(), manifestId, false);
     }
 
@@ -240,6 +243,7 @@ public class ReleaseApplicationService {
         scope.requirePermission("release:rollback");
         StoredManifest source = stored(scope.tenantId().value(), manifestId, false);
         requireManifestScope(scope, source.manifest());
+        requireStandaloneSlot(scope.tenantId().value(), source.manifest());
         requireStandaloneManifest(scope.tenantId().value(), manifestId, false);
         var target = byGeneration(scope.tenantId().value(), source.manifest(), targetGeneration).manifest();
         requireManifestScope(scope, target);
@@ -252,6 +256,7 @@ public class ReleaseApplicationService {
         scope.requirePermission("release:read");
         StoredManifest source = stored(scope.tenantId().value(), manifestId, false);
         requireManifestScope(scope, source.manifest());
+        requireStandaloneSlot(scope.tenantId().value(), source.manifest());
         requireActiveRollbackSource(source);
         requireReferralReleaseUnavailable(source.manifest());
         List<Slot> slots = slotQuery(scope.tenantId().value(), source.manifest().environment(), source.manifest().cell(),
@@ -324,6 +329,7 @@ public class ReleaseApplicationService {
         }
         Slot slot = lockSlot(scope.tenantId().value(), current.manifest().environment(), current.manifest().cell(),
                 current.manifest().runtime(), current.manifest().namespace());
+        requireStandaloneSlot(slot);
         requireDesiredRollbackSource(slot, current.manifest());
         long activationSequence = slot.activationSequence() + 1;
         ActivationDirective directive = directive(target.manifest(), activationSequence, targetGeneration,
@@ -551,7 +557,7 @@ public class ReleaseApplicationService {
             String namespace, boolean lock) {
         return repository.findReleaseSlot(tenantId, environment, cell, runtime, namespace, lock)
                 .map(row -> List.of(new Slot(row.stableGeneration(), row.desiredGeneration(),
-                        row.latestGeneration(), row.activationSequence())))
+                        row.latestGeneration(), row.activationSequence(), row.bundleManaged())))
                 .orElseGet(List::of);
     }
 
@@ -657,6 +663,16 @@ public class ReleaseApplicationService {
         requireScope(scope, resourceScope(rows.getFirst()));
     }
 
+    /** 旧回执与候选读取也检查整个slot；真正写入必须在slot行锁内再次检查。 */
+    private void requireStandaloneSlot(String tenantId, ReleaseManifest manifest) {
+        slotQuery(tenantId, manifest.environment(), manifest.cell(), manifest.runtime(), manifest.namespace(), false)
+                .forEach(ReleaseApplicationService::requireStandaloneSlot);
+    }
+
+    private static void requireStandaloneSlot(Slot slot) {
+        if (slot.bundleManaged()) throw ReleaseBundleError.REQUIRED.conflict();
+    }
+
     /** 具体组合成员不能从兼容的单清单入口拆开发布；新执行与旧回执都需要此门禁。 */
     private void requireStandaloneManifest(String tenantId, String manifestId, boolean lock) {
         if (repository.findReleaseBundleOwner(tenantId, manifestId, lock).isPresent())
@@ -680,7 +696,7 @@ public class ReleaseApplicationService {
         public String code() { return code; }
     }
     private record Slot(long stableGeneration, long desiredGeneration, long latestGeneration,
-            long activationSequence) { }
+            long activationSequence, boolean bundleManaged) { }
     private record StoredManifest(ReleaseManifest manifest, State state) { }
     private record Readiness(int readyReplicas, long capacity) { }
     private record ResourceScope(String organizationId, String shopId) { }

@@ -73,6 +73,16 @@ public class ReleaseBundleService {
                 throw ReleaseBundleError.DUPLICATE_SLOT.conflict();
             members.add(manifest);
         }
+        // 成员锁全部取得后再按完整slot排序，避免多个组合以不同成员ID顺序争用slot而死锁。
+        for (ReleaseManifest member : members.stream().sorted(java.util.Comparator
+                .comparing(ReleaseManifest::environment).thenComparing(ReleaseManifest::cell)
+                .thenComparing(ReleaseManifest::runtime).thenComparing(ReleaseManifest::namespace)).toList()) {
+            var slot = repository.findReleaseSlot(scope.tenantId().value(), member.environment(), member.cell(),
+                    member.runtime(), member.namespace(), true).orElseThrow(ReleaseBundleError.MEMBER_UNAVAILABLE::conflict);
+            if (!slot.bundleManaged() && repository.markReleaseSlotBundleManaged(scope.tenantId().value(),
+                    member.environment(), member.cell(), member.runtime(), member.namespace()) != 1)
+                throw ReleaseBundleError.MEMBER_UNAVAILABLE.conflict();
+        }
         var view = new BundleView(UUID.randomUUID().toString(), campaignId, previous + 1,
                 members.getFirst().environment(), members.getFirst().cell(), State.PREPARING,
                 ReleaseBundleManifest.contentHash(scope.tenantId().value(), campaignId, members), members, scope.actorId(), now);

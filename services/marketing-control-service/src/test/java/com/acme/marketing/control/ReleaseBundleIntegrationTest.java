@@ -60,6 +60,8 @@ class ReleaseBundleIntegrationTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired ObjectMapper mapper;
     @Autowired SigningKeyRing keys;
+    @Autowired org.springframework.transaction.PlatformTransactionManager transactions;
+    @Autowired com.acme.marketing.control.application.ReleaseApplicationService releases;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
     private final String tenant = "bundle-" + UUID.randomUUID();
     private final Instant now = Instant.now();
@@ -213,6 +215,7 @@ class ReleaseBundleIntegrationTest {
             assertEquals(500, save(campaign, 0, members, "audit-rollback-key").statusCode());
             assertEquals(0, count("mk_release_bundle")); assertEquals(0, memberCount());
             assertEquals(0, count("mk_control_command"));
+            assertEquals(0, managedSlotCount());
             assertEquals(0L, jdbc.queryForObject("select release_bundle_version from mk_campaign where tenant_id=? and campaign_id=?", Long.class, tenant, campaign));
         } finally { jdbc.execute("DROP TRIGGER " + trigger); }
         assertEquals(201, save(campaign, 0, members, "audit-rollback-key").statusCode());
@@ -255,6 +258,97 @@ class ReleaseBundleIntegrationTest {
         }
     }
 
+    @Test void otherManifestInManagedSlotCannotActivateRollbackOrReplayOldReceipt() throws Exception {
+        String campaign = campaign(); var members = members(campaign);
+        var original = manifest(members.getFirst());
+        String replacement = member(campaign(), original.namespace(), original.environment(), now.plusSeconds(3600));
+        assertEquals(201, save(campaign, 0, members, "manage-whole-slot-key").statusCode());
+        assertTrue(repository.findReleaseBundleOwner(tenant, replacement, false).isEmpty());
+        assertEquals(2, managedSlotCount());
+        assertCode(409, "RELEASE_BUNDLE_REQUIRED", send(activation(replacement, "replacement-activate-key")));
+        assertCode(409, "RELEASE_BUNDLE_REQUIRED", send(write("/api/v1/releases/" + replacement + ":rollback", "{\"targetGeneration\":1}", "replacement-rollback-key")));
+        assertCode(409, "RELEASE_BUNDLE_REQUIRED", send(request("/api/v1/releases/" + replacement + "/rollback-candidates").GET()));
+        repository.tryBeginCommand(new ControlRepository.CommandWrite(tenant, "release.activate", "old-replacement-key",
+                com.acme.marketing.platform.crypto.Digests.sha256Hex(mapper.writeValueAsString(replacement)), "PROCESSING", null,
+                now.toString(), now.plusSeconds(3600).toString()));
+        repository.completeCommand(tenant, "release.activate", "old-replacement-key", "{}");
+        assertCode(409, "RELEASE_BUNDLE_REQUIRED", send(activation(replacement, "old-replacement-key")));
+        // 允许继续准备同slot的新完整组合，但不能因此解除单清单保护。
+        var next = List.of(member(campaign, original.namespace(), original.environment(), now.plusSeconds(3600)),
+                member(campaign, manifest(members.getLast()).namespace(), original.environment(), now.plusSeconds(3600)));
+        assertEquals(201, save(campaign, 1, next, "next-managed-bundle-key").statusCode());
+        assertEquals(2, managedSlotCount()); assertEquals(0, count("mk_outbox"));
+    }
+
+    @Test void scopeMarkerDoesNotBlockAnotherNamespaceOrEnvironment() throws Exception {
+        String campaign = campaign(); var members = members(campaign); var original = manifest(members.getFirst());
+        assertEquals(201, save(campaign, 0, members, "scope-marker-key").statusCode());
+        for (String id : List.of(member(campaign, original.namespace(), "other-env", now.plusSeconds(3600)),
+                member(campaign, "other-namespace", original.environment(), now.plusSeconds(3600)))) {
+            ready(id);
+            assertEquals(200, send(activation(id, "independent-" + id)).statusCode());
+        }
+        assertEquals(2, count("mk_outbox"));
+    }
+
+    @Test void staleReadSnapshotCannotBypassCurrentSlotMarker() throws Exception {
+        String campaign = campaign(); var members = members(campaign); var original = manifest(members.getFirst());
+        String replacement = member(campaign, original.namespace(), original.environment(), now.plusSeconds(3600));
+        ready(replacement);
+        var snapshotRead = new CountDownLatch(1); var prepared = new CountDownLatch(1);
+        try (var pool = Executors.newSingleThreadExecutor()) {
+            var pending = pool.submit(() -> com.acme.marketing.platform.web.ReleaseTestScope.run(tenant, () -> {
+                    return assertThrows(com.acme.marketing.platform.error.ConflictException.class, () ->
+                            new org.springframework.transaction.support.TransactionTemplate(transactions).execute(status -> {
+                                assertFalse(repository.findReleaseSlot(tenant, original.environment(), original.cell(), original.runtime(), original.namespace(), false).orElseThrow().bundleManaged());
+                                snapshotRead.countDown();
+                                try { assertTrue(prepared.await(10, java.util.concurrent.TimeUnit.SECONDS)); }
+                                catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new AssertionError(interrupted); }
+                                // 普通读取仍是旧快照；实际发布必须从锁定slot读到已提交的门禁。
+                                assertFalse(repository.findReleaseSlot(tenant, original.environment(), original.cell(), original.runtime(), original.namespace(), false).orElseThrow().bundleManaged());
+                                return releases.activate(replacement);
+                            }));
+            }));
+            assertTrue(snapshotRead.await(10, java.util.concurrent.TimeUnit.SECONDS));
+            try { assertEquals(201, save(campaign, 0, members, "stale-snapshot-key").statusCode()); }
+            finally { prepared.countDown(); }
+            assertEquals("RELEASE_BUNDLE_REQUIRED", pending.get(15, java.util.concurrent.TimeUnit.SECONDS).code());
+        }
+        assertEquals(0, count("mk_outbox"));
+    }
+
+    @Test void concurrentBundlesSharingSlotsUseConsistentLockOrder() throws Exception {
+        String first = campaign(), second = campaign();
+        var left = List.of(member(first, "shared-left", "test", now.plusSeconds(3600)), member(first, "shared-right", "test", now.plusSeconds(3600)));
+        var right = List.of(member(second, "shared-right", "test", now.plusSeconds(3600)), member(second, "shared-left", "test", now.plusSeconds(3600)));
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var start = new CountDownLatch(1);
+            var a = pool.submit(() -> { start.await(); return save(first, 0, left, "shared-slots-left"); });
+            var b = pool.submit(() -> { start.await(); return save(second, 0, right, "shared-slots-right"); });
+            start.countDown(); var ar = a.get(); var br = b.get();
+            assertEquals(201, ar.statusCode(), ar.body()); assertEquals(201, br.statusCode(), br.body());
+        }
+        assertEquals(2, managedSlotCount()); assertEquals(0, count("mk_outbox"));
+    }
+
+    @Test void missingSlotRejectsPreparationAndRollsBackOtherMarkers() throws Exception {
+        String campaign = campaign(); var members = members(campaign); var last = manifest(members.getLast());
+        jdbc.update("delete from mk_release_slot where tenant_id=? and namespace_name=?", tenant, last.namespace());
+        assertCode(409, "RELEASE_BUNDLE_MEMBER_UNAVAILABLE", save(campaign, 0, members, "missing-slot-key"));
+        assertEquals(0, managedSlotCount()); assertEquals(0, count("mk_release_bundle")); assertEquals(0, memberCount());
+    }
+
+    private ReleaseManifest manifest(String id) {
+        return mapper.readValue(repository.findManifest(tenant, id, false).orElseThrow().manifestJson(), ReleaseManifest.class);
+    }
+    private void ready(String id) {
+        repository.saveRuntimeAck(new ControlRepository.RuntimeAckWrite(tenant, id, "runtime-test", "READY",
+                "runtime-digest", "[]", "[]", 1, now.toString(), "test-key", "test-signature"));
+    }
+    private int managedSlotCount() {
+        return jdbc.queryForObject("select count(*) from mk_release_slot where tenant_id=? and bundle_managed=true", Integer.class, tenant);
+    }
+
     private String campaign() {
         String id = UUID.randomUUID().toString();
         repository.saveCampaign(new ControlRepository.CampaignWrite(tenant, id, "组合测试", "隔离验收", "DRAFT",
@@ -281,6 +375,9 @@ class ReleaseBundleIntegrationTest {
         var signed = new ReleaseManifestSigner().sign(unsigned, keys.activePrivateKey());
         repository.saveManifest(new ControlRepository.ManifestWrite(tenant, id, environment, "cell-a", "journey",
                 namespace, generation, "STAGED", mapper.writeValueAsString(signed), now.toString()));
+        repository.tryCreateReleaseSlot(new ControlRepository.ReleaseSlotWrite(tenant, environment, "cell-a", "journey",
+                namespace, 0, 0, generation, 0, now.toString()));
+        repository.updateSlotLatestGeneration(new ControlRepository.SlotLatestWrite(tenant, environment, "cell-a", "journey", namespace, generation, now.toString()));
         return id;
     }
     private HttpResponse<String> save(String campaign, long version, List<String> members, String key) throws Exception {

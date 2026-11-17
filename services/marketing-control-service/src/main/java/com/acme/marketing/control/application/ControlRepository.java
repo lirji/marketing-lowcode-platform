@@ -88,6 +88,8 @@ public interface ControlRepository {
     boolean tryCreateReleaseSlot(ReleaseSlotWrite write);
     Optional<ReleaseSlotRow> findReleaseSlot(String tenantId, String environment, String cell, String runtime,
             String namespace, boolean lock);
+    /** 在原slot行上设置不可逆的组合管理门禁，与单清单发布竞争同一行锁。 */
+    int markReleaseSlotBundleManaged(String tenantId, String environment, String cell, String runtime, String namespace);
     List<Long> findRetainedGenerations(String tenantId, String environment, String cell, String runtime,
             String namespace, int limit);
     Optional<ManifestRow> findManifest(String tenantId, String manifestId, boolean lock);
@@ -156,7 +158,7 @@ public interface ControlRepository {
             String namespaceName, long stableGeneration, long desiredGeneration, long latestGeneration,
             long activationSequence, String updatedAt) { }
     record ReleaseSlotRow(long stableGeneration, long desiredGeneration, long latestGeneration,
-            long activationSequence) { }
+            long activationSequence, boolean bundleManaged) { }
     record DirectiveWrite(String tenantId, String directiveId, String environmentName, String cellId,
             String runtimeName, String namespaceName, long activationSequence, long generationNo,
             String directiveJson, String createdAt) { }

@@ -157,6 +157,10 @@ public class MybatisControlRepository implements ControlRepository {
             String runtime, String namespace, boolean lock) {
         return Optional.ofNullable(mapper.selectReleaseSlot(tenantId, environment, cell, runtime, namespace, lock));
     }
+    @Override public int markReleaseSlotBundleManaged(String tenantId, String environment, String cell,
+            String runtime, String namespace) {
+        return mapper.markReleaseSlotBundleManaged(tenantId, environment, cell, runtime, namespace);
+    }
     @Override public List<Long> findRetainedGenerations(String tenantId, String environment, String cell,
             String runtime, String namespace, int limit) {
         return mapper.selectRetainedGenerations(tenantId, environment, cell, runtime, namespace, limit);

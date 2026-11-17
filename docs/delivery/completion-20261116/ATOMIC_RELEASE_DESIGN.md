@@ -34,7 +34,7 @@
 | ID | 可观察结果 | 依赖 | 关键验收 | 当前状态 |
 |---|---|---|---|---|
 | S11e | API可创建/恢复不可变组合准备版本，具体成员不能单独激活 | 当前审批、清单、控制库 | 真实MySQL并发版本/成员归属、幂等异载荷、跨租户/范围、审计回滚、无发布副作用、旧单清单兼容 | DELIVERED 0b332bf |
-| S11f | 签名组合及运行端按组合准备、精确版本读取 | S11e | 伪造/过期/乱序/缺成员拒绝，旧新版本共存；实际运行端能力证明 | VERIFIED_LOCAL，待最终CI |
+| S11f | 签名组合及运行端按组合准备、精确版本读取 | S11e | 伪造/过期/乱序/缺成员拒绝，旧新版本共存；实际运行端能力证明 | DELIVERABLE，CI44108641742 PASS |
 | S11g | 业务入口绑定组合，整体激活/回滚及全入口防绕过 | S11f | 进程故障/并发发布时无新旧混用，旧参与固定版本，风险停用即时生效 | TODO |
 | S11h | 控制台完成组合创建、就绪、整体操作及恢复反馈 | S11g | 真实API、桌面/手机、错误保留和乱序回执保护 | TODO |
 | S11i | 持久定时激活及暂停/恢复 | S11g | 到期重验、重启接管、超时查询原结果、过期不自动发布 | TODO |
@@ -73,3 +73,11 @@ S11f 按同一任务内的三个可验证增量实施：f1 控制面导出完整
 - 返回`BundleReadinessView {bundleId,version,contentHash,runtimeReady,checkedAt,expiresAt,members:[{manifestId,runtime,namespace,readyReplicas,readyCapacity,ignoredEvidence,runtimeReady}]}`。每次读取按当前时间与信任重新核验，过期/不匹配/损坏证据不计入，ignoredEvidence可观察。只有每一个成员各自满足副本与容量要求时runtimeReady=true；不能把成员之间的数量或容量合并凑门槛。
 - 准备历史的PREPARING不因此被改成ACTIVE。runtimeReady仅代表运行准备条件，正式激活仍在S11g重新核对审批、有效期、当前指针与实时停用；旧单清单ACK不会计入此接口。
 - 验收：真实MySQL并发同身份/不同身份、乱序/同时间冲突、审计失败回滚、撤权/跨租户、每成员门槛、过期降级、旧ACK拒绝与零激活副作用。范围为控制面/Mapper/V9、PinnedRuntimeAckVerifier扩展、API与测试；不改运行端、不启用调度。
+
+## S11g1：控制面同slot防绕过
+- 作为S11g首个增量，在组合准备事务内把完整slot（tenant/environment/cell/runtime/namespace）持久标记为`bundle_managed`；只从false变true。该标记约束后续发布写入，不切换现有线上配置、不分配活动独占权；多个活动共享slot的运行路由仍须由后续组合上下文解决。
+- 任何该slot清单的旧单清单activate/rollback均返回既有409 `RELEASE_BUNDLE_REQUIRED`，包括历史幂等回放和未属于任何组合的新清单。候选读取同样拒绝，避免展示无法执行的回滚。暂存/准备下一组合及紧急KillSwitch保持可用。准备前已经提交的旧激活仍有效，准备提交后不得再产生新的单清单激活。
+- V10向既有`mk_release_slot`增加非空默认false字段及中文注释，并由已登记组合成员回填true。正常stage已保证slot存在；准备遇到缺slot视为持久数据不完整，返回现有MEMBER_UNAVAILABLE，不能虚构线上指针。
+- 先按manifest ID锁定全部成员，再按environment/cell/runtime/namespace固定顺序更新对应slot；单清单写入在持有manifest行后锁slot并检查当前标记。不能依靠事务早期普通查询的旧快照。所有变更与原组合/成员/审计同事务，失败回滚。只读授权检查用于旧回执前提前拒绝，实际写入另有锁内门禁。
+- 扩展迁移不删除数据。启用组合管理前必须让不识别该标记的旧控制面写实例退出；回退先冻结发布写入口。该片未部署，不声称混合版本可安全写入，也不能替代运行端防绕过或真正整体激活。
+- 范围：Control应用/Mapper/V10、机器API说明、相关数据库与迁移测试；无新服务/中间件。依赖S11e/f已有合同。验收见PROGRESS的S11g1；接续S11g2再定义可信执行上下文、请求传播和运行端精确版本选择。

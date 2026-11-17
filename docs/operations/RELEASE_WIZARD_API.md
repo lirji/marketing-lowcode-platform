@@ -24,7 +24,7 @@
 
 完整字段以 [`marketing-api.yaml`](../../marketing-contracts/src/main/resources/openapi/marketing-api.yaml) 为准。
 
-一次向导只处理一个 runtime：`OFFER_DECISION_DAG` 对应 `decision`，`JOURNEY_STATE_MACHINE` 对应 `journey`。同一活动要发布两类 runtime 时分别运行两次向导；当前契约没有 `ReleaseBundle` HTTP，也不应由控制台拼装一个虚构的 bundle。
+旧单清单向导一次只处理一个 runtime：`OFFER_DECISION_DAG` 对应 `decision`，`JOURNEY_STATE_MACHINE` 对应 `journey`。组合准备、签名导出与就绪接口见下文；整体激活入口尚未交付，控制台不能把依次调用单清单激活显示为整体发布成功。
 
 ## 控制台必须区分的 problem
 
@@ -48,7 +48,7 @@
 
 `POST /api/v1/campaigns/{campaignId}/release-bundles` 接收 `expectedVersion` 和 2–8 个 `manifestIds`，使用 `Idempotency-Key`、`release:write` 及当前活动组织/店铺范围。仅接受同活动、同环境/cell、不同 slot、已审批且未过期的 STAGED 签名清单，不支持部分灰度。服务端冻结完整成员，返回版本、contentHash和PREPARING状态；同键相同集合换序重试返回原结果，异载荷或版本竞争返回409。
 
-使用同路径的 `GET /latest` 或 `/versions/{version}` 读取，要求 `release:read` 和当前活动范围。具体成员登记后，原单清单激活和回滚入口返回 `RELEASE_BUNDLE_REQUIRED`，包括旧幂等回执。准备不会生成激活指令，现阶段不能从该接口整体上线。
+使用同路径的 `GET /latest` 或 `/versions/{version}` 读取，要求 `release:read` 和当前活动范围。组合准备成功后，成员所在完整slot的所有清单均受保护，原单清单激活、回滚和回滚候选入口返回 `RELEASE_BUNDLE_REQUIRED`，包括未加入组合的新清单和旧幂等回执。准备不会生成激活指令，现阶段不能从该接口整体上线。
 
 V8 新增组合历史及成员归属，以现有活动行上的版本游标和清单行锁保证事务；审计失败全部回滚。迁移后的旧服务不能保护新成员归属，回退前须冻结发布写入口并保留数据。完整合同、后续运行端准备和整体切换验收见 [增量设计](../delivery/completion-20261116/ATOMIC_RELEASE_DESIGN.md)。本机共享库尚未执行此迁移。
 
@@ -62,10 +62,16 @@ V8 新增组合历史及成员归属，以现有活动行上的版本游标和�
 
 `POST /api/v1/decisions/runtime/release-bundles:prepare` 与 `POST /api/v1/journey-runtime/release-bundles:prepare` 接收 `{bundle,memberManifestId}`，要求 `runtime:warm`，原始JSON最大1MiB。先验证完整组合签名/租户/有效期，再核对本站持久化的精确清单、制品签名/校验和及可执行结构；Journey还核对已安装定义。
 
-成功返回内外两层签名的 `ReleaseBundleAck`，绑定组合摘要和成员签名。准备和重复调用不安装制品、不激活流量；缺版本时应先通过原manifest入口预热，不能回退到latest。当前ACK容量仍来自既有运行预算配置，不代表生产容量实测结果。控制面证据收集及整体激活仍待后续切片。
+成功返回内外两层签名的 `ReleaseBundleAck`，绑定组合摘要和成员签名。准备和重复调用不安装制品、不激活流量；缺版本时应先通过原manifest入口预热，不能回退到latest。当前ACK容量仍来自既有运行预算配置，不代表生产容量实测结果。控制面证据收集见下节，整体激活仍待后续切片。
 
 ### 控制面组合证据与就绪查询（S11f3）
 
 向 `POST /api/v1/campaigns/{campaignId}/release-bundles/versions/{version}/acks` 提交原始双层签名ACK，要求 `runtime:ack` 和当前活动范围，原始JSON最大16KiB。精确重复及仍有效的乱序证据不会重复审计或覆盖更新证据；同身份同时间的不同签名返回409。每个成员最多64个运行身份，数据库外键同时限定组合及成员归属。
 
 `GET` 同级 `/readiness` 要求 `release:read`，每次重验当前信任、五分钟新鲜度、成员有效期、制品闭包、build及原发布策略的副本/容量条件。每个成员独立达标才返回 `runtimeReady=true`；失效或损坏证据计入 `ignoredEvidence`。该结果会随时间失效，不是激活授权，准备历史仍为PREPARING，接口不生成激活指令。V9迁移仅在隔离MySQL验证，当前共享库尚未更新。
+
+### 同slot保护（S11g1）
+
+V10在原slot行增加组合管理标记，并回填历史组合成员；不改变已有desired/stable指针。标记与准备/成员/审计同事务提交，审计或其他准备步骤失败时一起回滚。单清单执行在锁定slot后检查最新标记，不能靠旧事务快照绕过；可以继续暂存和准备新组合，也可以使用原紧急停用。
+
+组合管理开始后，不能把控制面回退到不识别该标记的可写版本；应先冻结发布写入。该保护尚未部署到共享环境，运行端防绕过和完整版本传递仍在后续S11g范围。

@@ -97,6 +97,9 @@ public interface ControlMapper {
             @Param("environment") String environment, @Param("cell") String cell,
             @Param("runtime") String runtime, @Param("namespace") String namespace,
             @Param("lock") boolean lock);
+    int markReleaseSlotBundleManaged(@Param("tenantId") String tenantId,
+            @Param("environment") String environment, @Param("cell") String cell,
+            @Param("runtime") String runtime, @Param("namespace") String namespace);
     List<Long> selectRetainedGenerations(@Param("tenantId") String tenantId,
             @Param("environment") String environment, @Param("cell") String cell,
             @Param("runtime") String runtime, @Param("namespace") String namespace,
