@@ -1,6 +1,6 @@
 # 文档同步地图
 
-最新增量同步：2026-11-17，`completion-20261116/S11e–f2`，基线 `d57a5722bcef30e2cb603a39caa9201a4b921bf5`。控制面组合准备、成员归属、V8迁移、完整签名导出与运行端精确准备对应 [组合设计](delivery/completion-20261116/ATOMIC_RELEASE_DESIGN.md)、[发布接口](operations/RELEASE_WIZARD_API.md) 和 [机器合同](../marketing-contracts/src/main/resources/openapi/marketing-api.yaml)。本片只支持准备，尚不支持整体激活；未迁移共享库或部署。
+最新增量同步：2026-11-17，`completion-20261116/S11e–f3`，基线 `d57a5722bcef30e2cb603a39caa9201a4b921bf5`。控制面组合准备、成员归属、V8迁移、完整签名导出、运行端精确准备和V9组合证据/当前就绪计算对应 [组合设计](delivery/completion-20261116/ATOMIC_RELEASE_DESIGN.md)、[发布接口](operations/RELEASE_WIZARD_API.md) 和 [机器合同](../marketing-contracts/src/main/resources/openapi/marketing-api.yaml)。本片只支持准备，尚不支持整体激活；未迁移共享库或部署。
 
 上次阶段同步：2026-11-16，`completion-20261116/S04`，源码基线 `94d133442733587e3aa0acb37fd27194f7d5195a`。本次同步 CI 基础设施/目录合同样例与验收边界；S03 真实本地 R1 已通过，当前本机多数业务镜像仍为历史版本，不能视为新镜像或空环境全链路已通过。
 

@@ -63,3 +63,9 @@ V8 新增组合历史及成员归属，以现有活动行上的版本游标和�
 `POST /api/v1/decisions/runtime/release-bundles:prepare` 与 `POST /api/v1/journey-runtime/release-bundles:prepare` 接收 `{bundle,memberManifestId}`，要求 `runtime:warm`，原始JSON最大1MiB。先验证完整组合签名/租户/有效期，再核对本站持久化的精确清单、制品签名/校验和及可执行结构；Journey还核对已安装定义。
 
 成功返回内外两层签名的 `ReleaseBundleAck`，绑定组合摘要和成员签名。准备和重复调用不安装制品、不激活流量；缺版本时应先通过原manifest入口预热，不能回退到latest。当前ACK容量仍来自既有运行预算配置，不代表生产容量实测结果。控制面证据收集及整体激活仍待后续切片。
+
+### 控制面组合证据与就绪查询（S11f3）
+
+向 `POST /api/v1/campaigns/{campaignId}/release-bundles/versions/{version}/acks` 提交原始双层签名ACK，要求 `runtime:ack` 和当前活动范围，原始JSON最大16KiB。精确重复及仍有效的乱序证据不会重复审计或覆盖更新证据；同身份同时间的不同签名返回409。每个成员最多64个运行身份，数据库外键同时限定组合及成员归属。
+
+`GET` 同级 `/readiness` 要求 `release:read`，每次重验当前信任、五分钟新鲜度、成员有效期、制品闭包、build及原发布策略的副本/容量条件。每个成员独立达标才返回 `runtimeReady=true`；失效或损坏证据计入 `ignoredEvidence`。该结果会随时间失效，不是激活授权，准备历史仍为PREPARING，接口不生成激活指令。V9迁移仅在隔离MySQL验证，当前共享库尚未更新。

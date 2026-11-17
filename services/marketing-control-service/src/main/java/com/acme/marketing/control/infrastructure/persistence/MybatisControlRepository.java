@@ -29,6 +29,17 @@ public class MybatisControlRepository implements ControlRepository {
     @Override public Optional<ReleaseBundleRow> findReleaseBundle(String tenantId, String campaignId, long version) {
         return Optional.ofNullable(mapper.selectReleaseBundle(tenantId, campaignId, version));
     }
+    @Override public Optional<ReleaseBundleRow> lockReleaseBundle(String tenantId, String campaignId, long version) {
+        return Optional.ofNullable(mapper.lockReleaseBundle(tenantId, campaignId, version));
+    }
+    @Override public List<ReleaseBundleAckRow> findReleaseBundleAcks(String tenantId, String bundleId, int limit) {
+        return mapper.selectReleaseBundleAcks(tenantId, bundleId, limit);
+    }
+    @Override public void saveReleaseBundleAck(ReleaseBundleAckRow row) {
+        // 调用方持有组合头锁；MySQL首次插入返回1，替换已有证据可返回2。
+        int changed = mapper.upsertReleaseBundleAck(row);
+        if (changed < 1 || changed > 2) throw new IllegalStateException("保存组合就绪证据的受影响行数不正确");
+    }
     @Override public void saveReleaseBundle(ReleaseBundleRow row) { one(mapper.insertReleaseBundle(row), "保存活动组合"); }
     @Override public void saveReleaseBundleMember(ReleaseBundleMemberWrite write) {
         one(mapper.insertReleaseBundleMember(write), "保存活动组合成员");

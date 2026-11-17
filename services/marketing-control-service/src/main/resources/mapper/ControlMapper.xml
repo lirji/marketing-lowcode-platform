@@ -519,4 +519,25 @@
         WHERE tenant_id = #{tenantId} AND manifest_id = #{manifestId}
         <if test="lock">FOR UPDATE</if>
     </select>
+    <select id="lockReleaseBundle" resultType="com.acme.marketing.control.application.ControlRepository$ReleaseBundleRow">
+        SELECT tenant_id AS tenantId, bundle_id AS bundleId, campaign_id AS campaignId, version_no AS versionNo,
+            environment_name AS environmentName, cell_id AS cellId, state_name AS stateName,
+            content_json AS contentJson, content_hash AS contentHash, command_id AS commandId,
+            created_by AS createdBy, created_at AS createdAt FROM mk_release_bundle
+        WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId} AND version_no = #{version} FOR UPDATE
+    </select>
+    <select id="selectReleaseBundleAcks" resultType="com.acme.marketing.control.application.ControlRepository$ReleaseBundleAckRow">
+        SELECT tenant_id AS tenantId, bundle_id AS bundleId, manifest_id AS manifestId, runtime_id AS runtimeId,
+            ack_json AS ackJson, acknowledged_at AS acknowledgedAt, signature_value AS signatureValue
+        FROM mk_release_bundle_ack WHERE tenant_id = #{tenantId} AND bundle_id = #{bundleId}
+        ORDER BY manifest_id, runtime_id LIMIT #{limit}
+    </select>
+    <!-- 组合头锁内仅允许更晚证据到达此处；重复和乱序由应用层返回当前结果。 -->
+    <insert id="upsertReleaseBundleAck">
+        INSERT INTO mk_release_bundle_ack
+            (tenant_id, bundle_id, manifest_id, runtime_id, ack_json, acknowledged_at, signature_value)
+        VALUES (#{tenantId}, #{bundleId}, #{manifestId}, #{runtimeId}, #{ackJson}, #{acknowledgedAt}, #{signatureValue})
+        ON DUPLICATE KEY UPDATE ack_json = VALUES(ack_json), acknowledged_at = VALUES(acknowledged_at),
+            signature_value = VALUES(signature_value)
+    </insert>
 </mapper>

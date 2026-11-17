@@ -14,12 +14,15 @@ public interface ControlRepository {
     List<CampaignRow> findCampaigns(String tenantId, Set<String> organizations, Set<String> shops, String campaignType);
     Optional<CampaignOwnershipRow> findCampaignOwnership(String tenantId, String campaignId, boolean lock);
 
-    /** 组合版本查询按租户及活动限定，写路径在活动行锁内使用当前读。 */
     /** 以始终存在的活动行分配版本，避免在空历史范围上获取间隙锁。 */
     long lockReleaseBundleVersion(String tenantId, String campaignId);
     int advanceReleaseBundleVersion(String tenantId, String campaignId, long expectedVersion);
     Optional<ReleaseBundleRow> findLatestReleaseBundle(String tenantId, String campaignId, boolean lock);
     Optional<ReleaseBundleRow> findReleaseBundle(String tenantId, String campaignId, long version);
+    /** 已存在的组合头串行化证据更新，避免在空ACK索引上竞争间隙锁。 */
+    Optional<ReleaseBundleRow> lockReleaseBundle(String tenantId, String campaignId, long version);
+    List<ReleaseBundleAckRow> findReleaseBundleAcks(String tenantId, String bundleId, int limit);
+    void saveReleaseBundleAck(ReleaseBundleAckRow row);
     void saveReleaseBundle(ReleaseBundleRow row);
     void saveReleaseBundleMember(ReleaseBundleMemberWrite write);
     /** 归属只在清单锁内建立；激活时使用当前读，防止RR旧快照绕过保护。 */
@@ -28,6 +31,8 @@ public interface ControlRepository {
             String environmentName, String cellId, String stateName, String contentJson, String contentHash,
             String commandId, String createdBy, String createdAt) { }
     record ReleaseBundleMemberWrite(String tenantId, String manifestId, String bundleId) { }
+    record ReleaseBundleAckRow(String tenantId, String bundleId, String manifestId, String runtimeId,
+            String ackJson, String acknowledgedAt, String signatureValue) { }
 
     /** 保存时使用锁定读，确保并发等待结束后读取到最新提交版本。 */
     Optional<DmnDraftRow> findLatestDmnDraft(String tenantId, String campaignId, boolean lock);

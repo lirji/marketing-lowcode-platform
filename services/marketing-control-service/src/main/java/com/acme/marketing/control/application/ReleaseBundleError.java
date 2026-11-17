@@ -15,7 +15,11 @@ public enum ReleaseBundleError {
     MEMBER_SCOPE_MISMATCH("RELEASE_BUNDLE_SCOPE_MISMATCH", "组合成员必须属于同一环境和运行区域"),
     DUPLICATE_SLOT("RELEASE_BUNDLE_DUPLICATE_SLOT", "同一组合不能包含同一发布位置的多个版本"),
     MEMBER_ALREADY_BOUND("RELEASE_BUNDLE_MEMBER_ALREADY_BOUND", "发布清单已归属其他不可变组合，请重新暂存清单"),
-    REQUIRED("RELEASE_BUNDLE_REQUIRED", "该清单属于活动组合，必须通过完整组合执行发布或回滚");
+    REQUIRED("RELEASE_BUNDLE_REQUIRED", "该清单属于活动组合，必须通过完整组合执行发布或回滚"),
+    ACK_INVALID("RELEASE_BUNDLE_ACK_INVALID", "组合就绪证据的签名、成员、时间或容量不符合发布策略"),
+    ACK_CONFLICT("RELEASE_BUNDLE_ACK_CONFLICT", "同一运行身份在相同时间提供了不同的就绪证据"),
+    ACK_LIMIT("RELEASE_BUNDLE_ACK_LIMIT", "当前组合成员的运行身份数量已达到允许上限"),
+    CONTENT_INVALID("RELEASE_BUNDLE_CONTENT_INVALID", "持久化组合内容与版本记录不一致");
 
     private final String code;
     private final String message;

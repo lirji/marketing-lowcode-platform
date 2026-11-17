@@ -17,6 +17,11 @@ public interface ControlMapper {
             @Param("campaignId") String campaignId, @Param("lock") boolean lock);
     ControlRepository.ReleaseBundleRow selectReleaseBundle(@Param("tenantId") String tenantId,
             @Param("campaignId") String campaignId, @Param("version") long version);
+    ControlRepository.ReleaseBundleRow lockReleaseBundle(@Param("tenantId") String tenantId,
+            @Param("campaignId") String campaignId, @Param("version") long version);
+    List<ControlRepository.ReleaseBundleAckRow> selectReleaseBundleAcks(@Param("tenantId") String tenantId,
+            @Param("bundleId") String bundleId, @Param("limit") int limit);
+    int upsertReleaseBundleAck(ControlRepository.ReleaseBundleAckRow row);
     int insertReleaseBundle(ControlRepository.ReleaseBundleRow row);
     int insertReleaseBundleMember(ControlRepository.ReleaseBundleMemberWrite write);
     String selectReleaseBundleOwner(@Param("tenantId") String tenantId,

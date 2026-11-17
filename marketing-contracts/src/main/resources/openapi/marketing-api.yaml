@@ -353,6 +353,39 @@ paths:
       responses:
         '200': {description: Immutable historical preparation version, content: {application/json: {schema: {$ref: '#/components/schemas/ReleaseBundleView'}}}}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/campaigns/{campaignId}/release-bundles/versions/{version}/acks:
+    post:
+      tags: [Release]
+      operationId: acknowledgeReleaseBundle
+      x-required-permission: runtime:ack
+      description: >-
+        Records complete doubly signed bundle evidence within the current campaign scope.
+        Maximum body size is 16 KiB, with authorization before parsing. Legacy single-manifest ACKs are rejected.
+        Each member allows up to 64 runtime identities. Exact duplicates and older valid evidence return current readiness;
+        same identity and timestamp with different signed content returns 409. Evidence and audit commit together.
+        Does not activate a bundle or change immutable preparation history.
+      parameters:
+        - {in: path, name: campaignId, required: true, schema: {type: string, maxLength: 64}}
+        - {in: path, name: version, required: true, schema: {type: integer, format: int64, minimum: 1}}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ReleaseBundleAck'}}}}
+      responses:
+        '200': {description: Current per-member readiness after accepting or ignoring duplicate/older evidence, content: {application/json: {schema: {$ref: '#/components/schemas/BundleReadinessView'}}}}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/campaigns/{campaignId}/release-bundles/versions/{version}/readiness:
+    get:
+      tags: [Release]
+      operationId: getReleaseBundleReadiness
+      x-required-permission: release:read
+      description: >-
+        Rechecks current campaign scope, trust, five-minute ACK freshness, artifact closure, allowed build and
+        each member's replica/capacity quorum. Invalid or stale evidence is visible as ignoredEvidence.
+        runtimeReady can expire and is never an activation authorization. No state is changed by this read.
+      parameters:
+        - {in: path, name: campaignId, required: true, schema: {type: string, maxLength: 64}}
+        - {in: path, name: version, required: true, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Current runtime preparation conditions only, content: {application/json: {schema: {$ref: '#/components/schemas/BundleReadinessView'}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/campaigns/{campaignId}/release-bundles/versions/{version}/manifest:
     get:
       tags: [Release]
@@ -973,6 +1006,33 @@ components:
     JsonArray: {description: Successful collection, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/JsonObject'}}}}}
     Problem: {description: RFC 9457 problem response, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
   schemas:
+    BundleReadinessView:
+      type: object
+      additionalProperties: false
+      required: [bundleId, version, contentHash, runtimeReady, checkedAt, expiresAt, members]
+      properties:
+        bundleId: {type: string}
+        version: {type: integer, format: int64, minimum: 1}
+        contentHash: {type: string, pattern: '^[a-f0-9]{64}$'}
+        runtimeReady: {type: boolean}
+        checkedAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        members:
+          type: array
+          minItems: 2
+          maxItems: 8
+          items:
+            type: object
+            additionalProperties: false
+            required: [manifestId, runtime, namespace, readyReplicas, readyCapacity, ignoredEvidence, runtimeReady]
+            properties:
+              manifestId: {type: string}
+              runtime: {type: string}
+              namespace: {type: string}
+              readyReplicas: {type: integer, minimum: 0, maximum: 64}
+              readyCapacity: {type: integer, format: int64, minimum: 0}
+              ignoredEvidence: {type: integer, minimum: 0, maximum: 64}
+              runtimeReady: {type: boolean}
     ReleaseBundlePrepareRequest:
       type: object
       additionalProperties: false
@@ -990,7 +1050,14 @@ components:
         version: {type: integer, format: int64, minimum: 1}
         contentHash: {type: string, pattern: '^[a-f0-9]{64}$'}
         memberSignature: {type: string, minLength: 1}
-        runtimeAck: {$ref: '#/components/schemas/RuntimeAck'}
+        runtimeAck:
+          allOf:
+            - {$ref: '#/components/schemas/RuntimeAck'}
+            - type: object
+              properties:
+                status: {type: string, const: READY}
+                capacity: {type: integer, format: int64, minimum: 1}
+                signature: {type: string, minLength: 1}
         signature: {type: string, minLength: 1, description: Independent purpose signature covering all bundle fields and the complete inner READY ACK}
     ReleaseBundleManifest:
       type: object

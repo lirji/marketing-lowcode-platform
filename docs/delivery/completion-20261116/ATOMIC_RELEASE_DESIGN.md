@@ -33,8 +33,8 @@
 ## 实施顺序与验收
 | ID | 可观察结果 | 依赖 | 关键验收 | 当前状态 |
 |---|---|---|---|---|
-| S11e | API可创建/恢复不可变组合准备版本，具体成员不能单独激活 | 当前审批、清单、控制库 | 真实MySQL并发版本/成员归属、幂等异载荷、跨租户/范围、审计回滚、无发布副作用、旧单清单兼容 | VERIFIED_LOCAL |
-| S11f | 签名组合及运行端按组合准备、精确版本读取 | S11e | 伪造/过期/乱序/缺成员拒绝，旧新版本共存；实际运行端能力证明 | TODO |
+| S11e | API可创建/恢复不可变组合准备版本，具体成员不能单独激活 | 当前审批、清单、控制库 | 真实MySQL并发版本/成员归属、幂等异载荷、跨租户/范围、审计回滚、无发布副作用、旧单清单兼容 | DELIVERED 0b332bf |
+| S11f | 签名组合及运行端按组合准备、精确版本读取 | S11e | 伪造/过期/乱序/缺成员拒绝，旧新版本共存；实际运行端能力证明 | VERIFIED_LOCAL，待最终CI |
 | S11g | 业务入口绑定组合，整体激活/回滚及全入口防绕过 | S11f | 进程故障/并发发布时无新旧混用，旧参与固定版本，风险停用即时生效 | TODO |
 | S11h | 控制台完成组合创建、就绪、整体操作及恢复反馈 | S11g | 真实API、桌面/手机、错误保留和乱序回执保护 | TODO |
 | S11i | 持久定时激活及暂停/恢复 | S11g | 到期重验、重启接管、超时查询原结果、过期不自动发布 | TODO |
@@ -68,7 +68,7 @@ S11f 按同一任务内的三个可验证增量实施：f1 控制面导出完整
 ### S11f3 控制面组合就绪合同（下一片）
 - POST `/api/v1/campaigns/{campaignId}/release-bundles/versions/{version}/acks` 接受完整ReleaseBundleAck，要求runtime:ack与当前活动范围；GET同级`/readiness`要求release:read与当前活动范围。写入口先鉴权再最多16KiB严格JSON解析。只持久化证据，不产生激活事件。
 - 证据必须内外签名都通过现有runtime-ack信任配置，并绑定该活动组合的bundleId/version/contentHash及确切成员签名、manifestId/generation/cell、完整制品集合和ABI。沿用既有release-policy副本/总容量/单副本容量及build digest配置。签发时间在既有5分钟新鲜度及1分钟时钟偏差内；成员或组合过期拒绝。
-- V9只增加组合ACK表，主键为tenant/bundle/member/runtime；组合头行锁串行化同组合证据写入，避免空ACK索引锁升级。每成员最多64个运行身份，整体最多512；固定9位UTC时间保序。原文JSON、签发时间和签名随当前证据保存，audit与更新同事务。
+- V9只增加组合ACK表，主键为tenant/bundle/member/runtime；组合头行锁串行化同组合证据写入，避免空ACK索引锁升级；写事务首个SQL必须为此锁定读，范围/证据的普通读取在其后建立快照，保持原REPEATABLE_READ。每成员最多64个运行身份，整体最多512；固定9位UTC时间保序。原文JSON、签发时间和签名随当前证据保存，audit与更新同事务。成员归属增加组合/成员唯一索引及三列外键，数据库也拒绝把其他组合的清单挂入证据。
 - 相同时间与同签名重复成功且不重复审计；相同时间不同内容409；较旧但仍有效的证据不覆盖较新记录。只替换同一身份的更晚证据；到达身份上限拒绝新增，不能无界扩张或悄悄删除审计历史。
 - 返回`BundleReadinessView {bundleId,version,contentHash,runtimeReady,checkedAt,expiresAt,members:[{manifestId,runtime,namespace,readyReplicas,readyCapacity,ignoredEvidence,runtimeReady}]}`。每次读取按当前时间与信任重新核验，过期/不匹配/损坏证据不计入，ignoredEvidence可观察。只有每一个成员各自满足副本与容量要求时runtimeReady=true；不能把成员之间的数量或容量合并凑门槛。
 - 准备历史的PREPARING不因此被改成ACTIVE。runtimeReady仅代表运行准备条件，正式激活仍在S11g重新核对审批、有效期、当前指针与实时停用；旧单清单ACK不会计入此接口。
