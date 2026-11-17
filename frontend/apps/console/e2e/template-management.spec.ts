@@ -7,6 +7,7 @@ test('template versions retain inputs on conflict and protect unsaved edits', as
   await page.route('**/api/v1/**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/audiences/page') ? { items: [], nextCursor: null, hasMore: false, query: '' } : [] }))
   await page.route('**/api/client-error', route => route.fulfill({ status: 204 }))
   let value = existing, attempts = 0
+  await page.route('**/api/v1/templates/catalog/page?**', async route => { await route.fulfill({ json: { items: [value], nextCursor: null, hasMore: false, query: new URL(route.request().url()).searchParams.get('q') ?? '' } }) })
   await page.route('**/api/v1/templates', async route => {
     if (route.request().method() === 'GET') { await route.fulfill({ json: [value] }); return }
     const body = route.request().postDataJSON(); attempts++
@@ -40,7 +41,7 @@ test('template creation and editing persist to the actual isolated MySQL service
   const receipts: { method: string; status: number; body: unknown }[] = [], errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.route('**/api/v1/**', async route => {
-    const url = new URL(route.request().url()), template = url.pathname === '/api/v1/templates'
+    const url = new URL(route.request().url()), template = url.pathname === '/api/v1/templates' || url.pathname === '/api/v1/templates/catalog/page'
     expect(template || route.request().method() === 'GET').toBeTruthy()
     const response = await route.fetch({ url: (template ? endpoint : 'http://127.0.0.1:18080') + url.pathname + url.search, maxRetries: 0 })
     if (template) receipts.push({ method: route.request().method(), status: response.status(), body: await response.json() })
@@ -51,6 +52,7 @@ test('template creation and editing persist to the actual isolated MySQL service
   await page.getByRole('button', { name: '新建消息模板' }).click()
   await page.getByLabel('模板 ID').fill(id); await page.getByLabel('渠道标识').fill('SMS'); await page.getByLabel('模板正文').fill('隔离版本一 {{name}}'); await page.getByLabel('必需变量').fill('name')
   await page.getByRole('button', { name: '保存新版本' }).click(); await expect(page.getByText('模板版本已保存', { exact: true })).toBeVisible()
+  await page.getByRole('searchbox', { name: '搜索消息模板' }).fill(id)
   await page.getByRole('button', { name: `编辑模板 ${id} 新版本` }).click(); await expect(page.getByLabel('目标版本')).toHaveValue('2'); await expect(page.getByLabel('模板正文')).toHaveValue('隔离版本一 {{name}}')
   await page.getByLabel('模板正文').fill('隔离版本二 {{name}}')
   await page.screenshot({ path: info.outputPath('template-live-editor.png') })

@@ -79,6 +79,18 @@ public class MybatisEngagementRepository implements EngagementRepository {
         return mapper.selectLatestTemplates(tenantId).stream().map(MybatisEngagementRepository::template).toList();
     }
 
+    /** 搜索和最新版本约束在数据库中先于LIMIT执行。 */
+    @Override
+    public List<TemplateView> findLatestTemplatePage(String tenantId, String query, String cursor, int fetchSize) {
+        return mapper.selectLatestTemplatePage(tenantId, query, cursor, fetchSize).stream()
+                .map(MybatisEngagementRepository::template).toList();
+    }
+
+    @Override
+    public boolean templateExists(String tenantId, String templateId) {
+        return mapper.selectTemplateExists(tenantId, templateId) != null;
+    }
+
     @Override
     public List<ContactView> findContacts(String tenantId, String state, int limit) {
         return mapper.selectContacts(tenantId, state, limit).stream()
@@ -285,7 +297,7 @@ public class MybatisEngagementRepository implements EngagementRepository {
 
     private static TemplateView template(EngagementMapper.TemplateRow row) {
         return new TemplateView(row.templateId(), row.versionNo(), row.channelName(), row.contentText(),
-                csv(row.requiredVariables()), row.stateName(), Instant.parse(row.createdAt()));
+                templateVariables(row.requiredVariables()), row.stateName(), Instant.parse(row.createdAt()));
     }
 
     private static Optional<ContactView> optionalContact(EngagementMapper.ContactRow row) {
@@ -295,6 +307,12 @@ public class MybatisEngagementRepository implements EngagementRepository {
     private static ContactView contact(EngagementMapper.ContactRow row) {
         return new ContactView(row.contactId(), row.contactKey(), ContactState.valueOf(row.stateName()),
                 value(row.providerRequestId()), value(row.providerCode()), Instant.parse(row.updatedAt()));
+    }
+
+    /** 保留持久化CSV顺序，让界面变量展示和服务端搜索保持同一文本顺序。 */
+    private static Set<String> templateVariables(String encoded) {
+        return encoded == null || encoded.isBlank() ? Set.of()
+                : java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(Arrays.asList(encoded.split(","))));
     }
 
     private static Set<String> csv(String encoded) {

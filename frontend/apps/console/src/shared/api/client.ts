@@ -47,6 +47,7 @@ import {
   referralRelationPageSchema,
   referralRewardPageSchema,
   templateViewSchema,
+  templatePageSchema,
   traceViewSchema,
   validationResultSchema,
   type ApprovalRole,
@@ -293,6 +294,20 @@ export const api = {
   snapshotAudience: (segmentId: string, version: number, payload: { subjectTokens: string[]; asOf: string; watermark: string; expiresAt: string }) =>
     request(`/api/v1/audiences/${encodeURIComponent(segmentId)}/versions/${version}/snapshots`, { method: 'POST', headers: commandHeaders(), body: JSON.stringify(payload) }, (value) => parseWith(audienceSnapshotSchema, value)),
   fields: () => request('/api/v1/fields', undefined, (value) => zArray(fieldDefinitionSchema, value)),
+  templatePage: (query: { q?: string; limit?: number; cursor?: string } = {}) => {
+    const params = new URLSearchParams()
+    const search = query.q?.trim() ?? ''
+    if (search) params.set('q', search)
+    if (query.limit !== undefined) params.set('limit', String(query.limit))
+    if (query.cursor !== undefined) params.set('cursor', query.cursor)
+    return request(`/api/v1/templates/catalog/page?${params}`, undefined, (value) => {
+      const page = parseWith(templatePageSchema, value)
+      if (page.query !== search || page.hasMore && page.nextCursor === query.cursor) {
+        throw new Error('模板服务未确认当前搜索或返回了重复游标，请刷新后重试。')
+      }
+      return page
+    })
+  },
   templates: () => request('/api/v1/templates', undefined, (value) => zArray(templateViewSchema, value)),
   createTemplate: (payload: { templateId: string; version: number; channel: string; content: string; requiredVariables: string[] }, idempotencyKey: string) =>
     request('/api/v1/templates', { method: 'POST', headers: commandHeaders(idempotencyKey), body: JSON.stringify(payload) }, (value) => parseWith(templateViewSchema, value)),

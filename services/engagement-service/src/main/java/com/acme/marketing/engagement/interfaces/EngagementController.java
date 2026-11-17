@@ -54,6 +54,13 @@ public class EngagementController {
                 key, request, EngagementService.TemplateView.class, () -> service.createTemplate(request));
     }
 
+    /** 资产列表采用服务端搜索与有界分页，保持模板写入协议不变。 */
+    @GetMapping("/templates/catalog/page")
+    public EngagementService.TemplatePage templatePage(@RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) String q, @RequestParam(required = false) String cursor) {
+        return service.templatePage(limit, q, cursor);
+    }
+
     @GetMapping("/templates")
     public List<EngagementService.TemplateView> templates() {
         return service.templates();

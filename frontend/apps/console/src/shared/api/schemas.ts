@@ -435,6 +435,17 @@ export const templateViewSchema = z.object({
   createdAt: z.string().optional(),
 })
 export type TemplateView = z.infer<typeof templateViewSchema>
+export const TEMPLATE_PAGE_SIZES = { DEFAULT: 25, MAX: 100 } as const
+export const templatePageSchema = z.object({
+  items: z.array(templateViewSchema).max(TEMPLATE_PAGE_SIZES.MAX),
+  nextCursor: z.string().min(1).nullable(), hasMore: z.boolean(), query: z.string().max(128),
+}).superRefine((page, context) => {
+  if (page.hasMore !== (page.nextCursor !== null) || page.hasMore && page.items.at(-1)?.templateId !== page.nextCursor
+      || new Set(page.items.map(item => item.templateId)).size !== page.items.length) {
+    context.addIssue({ code: 'custom', message: '模板分页响应的记录或游标不一致' })
+  }
+})
+export type TemplatePage = z.infer<typeof templatePageSchema>
 
 export const benefitSkuStatusSchema = z.enum(['DRAFT', 'PENDING_APPROVAL', 'ACTIVE', 'PAUSED', 'RETIRED'])
 export const benefitSkuSchema = z.object({

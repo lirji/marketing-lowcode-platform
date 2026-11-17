@@ -43,6 +43,12 @@ public interface EngagementRepository {
     /** 查询各模板的最新版本。 */
     List<TemplateView> findLatestTemplates(String tenantId);
 
+    /** 当前租户最新模板的有界搜索；旧数组读取保持兼容。 */
+    List<TemplateView> findLatestTemplatePage(String tenantId, String query, String cursor, int fetchSize);
+
+    /** 游标的存在性始终按当前租户验证，不受当前搜索词影响。 */
+    boolean templateExists(String tenantId, String templateId);
+
     /** 按可选状态分页查询触达记录。 */
     List<ContactView> findContacts(String tenantId, String state, int limit);
 

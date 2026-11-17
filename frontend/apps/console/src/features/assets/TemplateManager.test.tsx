@@ -7,7 +7,7 @@ import type { TemplateView } from '../../shared/api/schemas'
 import { templateForm, templatePayload, templateValidation } from './templateForm'
 
 const mocks = vi.hoisted(() => ({ list: vi.fn(), save: vi.fn(), demo: false }))
-vi.mock('../../shared/api/client', () => ({ api: { get demoMode() { return mocks.demo }, templates: mocks.list, createTemplate: mocks.save } }))
+vi.mock('../../shared/api/client', () => ({ api: { get demoMode() { return mocks.demo }, templatePage: async ({ q = '' }: { q?: string }) => ({ items: await mocks.list(), nextCursor: null, hasMore: false, query: q }), createTemplate: mocks.save } }))
 import { TemplateManager } from './TemplateManager'
 
 const template: TemplateView = { templateId: 'welcome-message', version: 1, channel: 'SMS', content: '你好 {{name}}\n原始正文 <script> 保持纯文本', requiredVariables: ['name'], state: 'APPROVED', createdAt: '2026-11-17T00:00:00Z' }

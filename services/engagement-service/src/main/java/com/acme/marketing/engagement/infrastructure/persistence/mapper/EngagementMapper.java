@@ -39,6 +39,10 @@ public interface EngagementMapper {
 
     /** 查询各模板最新版本。 */
     List<TemplateRow> selectLatestTemplates(@Param("tenantId") String tenantId);
+    /** 参数绑定、租户隔离与稳定ID游标查询。 */
+    List<TemplateRow> selectLatestTemplatePage(@Param("tenantId") String tenantId, @Param("query") String query,
+            @Param("cursor") String cursor, @Param("fetchSize") int fetchSize);
+    Integer selectTemplateExists(@Param("tenantId") String tenantId, @Param("templateId") String templateId);
 
     /** 按可选状态查询触达记录。 */
     List<ContactRow> selectContacts(@Param("tenantId") String tenantId,

@@ -25,7 +25,7 @@ vi.mock('../../shared/api/client', async (importOriginal) => {
       },
       audiencePage: async ({ q = '' }: { q?: string }) => ({ items: await mocks.audiences(), nextCursor: null, hasMore: false, query: q }),
       benefitPage: async ({ q = '' }: { q?: string }) => ({ items: await mocks.benefits(q), nextCursor: null, hasMore: false, query: q }),
-      templates: () => mocks.templates(),
+      templatePage: async ({ q = '' }: { q?: string }) => ({ items: await mocks.templates(), nextCursor: null, hasMore: false, query: q }),
       fields: () => mocks.fields(),
       nodeRegistry: () => mocks.nodeRegistry(),
     },

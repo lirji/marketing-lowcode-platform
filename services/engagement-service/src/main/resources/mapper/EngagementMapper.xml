@@ -107,6 +107,45 @@
           )
         ORDER BY current.template_id
     </select>
+    <select id="selectLatestTemplatePage"
+            resultType="com.acme.marketing.engagement.infrastructure.persistence.mapper.EngagementMapper$TemplateRow">
+        SELECT
+            current.template_id AS templateId,
+            current.version_no AS versionNo,
+            current.channel_name AS channelName,
+            current.content_text AS contentText,
+            current.required_variables AS requiredVariables,
+            current.state_name AS stateName,
+            current.created_at AS createdAt
+        FROM mk_template_version current
+        WHERE current.tenant_id = #{tenantId}
+          AND current.version_no = (
+              SELECT MAX(latest.version_no)
+              FROM mk_template_version latest
+              WHERE latest.tenant_id = current.tenant_id
+                AND latest.template_id = current.template_id
+          )
+        <if test="cursor != null">AND current.template_id &gt; #{cursor}</if>
+        <if test="query.length() > 0">
+          AND (
+            LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(current.template_id) AS BINARY)) &gt; 0
+            OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(CONCAT('v',current.version_no)) AS BINARY)) &gt; 0
+            OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(current.channel_name) AS BINARY)) &gt; 0
+            OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(CASE WHEN TRIM(current.required_variables)='' THEN '无' ELSE REPLACE(current.required_variables, ',', ', ') END) AS BINARY)) &gt; 0
+            OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(current.state_name) AS BINARY)) &gt; 0
+            OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(CASE current.state_name WHEN 'APPROVED' THEN '已批准' ELSE current.state_name END) AS BINARY)) &gt; 0
+            OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(DATE_FORMAT(DATE_ADD(STR_TO_DATE(SUBSTRING(current.created_at, 1, 19), '%Y-%m-%dT%H:%i:%s'), INTERVAL 8 HOUR), '%Y/%m/%d %H:%i:%s')) AS BINARY)) &gt; 0
+          )
+        </if>
+        ORDER BY current.template_id
+        LIMIT #{fetchSize}
+    </select>
+    <select id="selectTemplateExists" resultType="java.lang.Integer">
+        SELECT 1 FROM mk_template_version
+        WHERE tenant_id = #{tenantId} AND template_id = #{templateId}
+        LIMIT 1
+    </select>
+
 
     <select id="selectContacts"
             resultType="com.acme.marketing.engagement.infrastructure.persistence.mapper.EngagementMapper$ContactRow">

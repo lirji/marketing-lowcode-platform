@@ -73,3 +73,7 @@
 ## S12j 人群资产分页
 - 2026-11-17：精确CI44072001325通过后FF main a260865；audience-service和console更新为该不可变构建，control保持b3858e6、engagement保持c14289e、其余应用保持原版本。只运行18必要容器，其余16容器未变，Flink原作业持续推进。
 - runtime-a260865/{artifact-manifest,rollout-state,runtime-smoke,audience-api,audience-browser}.json PASS。真实两条人群limit1读取完整，搜索/参数/权限/租户验证通过；桌面/Pixel7实际列表详情/搜索/清除通过，无业务写入、无API失败。无数据库迁移、无演示数据重灌。
+
+## S12k 权益资产分页
+- 精确CI44075059624三项通过后FF main 607542e；benefit-funding-service与console更新，audience a260865、control b3858e6、engagement c14289e保留。runtime-607542e/{artifact-manifest,rollout-state,runtime-smoke,benefit-api,benefit-browser}.json PASS。
+- 实际4条权益limit1遍历完整、ID搜索/参数/权限/跨租户验证通过；桌面/Pixel7详情搜索清除通过，零业务写入/API失败。18必要容器正常、16其它容器未变、3个Flink原作业检查点推进。已停测试数据库/服务，保留隔离测试数据，不删除卷。

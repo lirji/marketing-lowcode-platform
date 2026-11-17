@@ -65,7 +65,7 @@ class ContractSpecificationsTest {
             "/api/v1/enrollments", "/api/v1/enrollments/{enrollmentId}/signals",
             "/api/v1/enrollments/{enrollmentId}", "/api/v1/journeys/{journeyId}:migrate",
             "/api/v1/consents", "/api/v1/consents/suppressions", "/api/v1/contacts/frequency-policies",
-            "/api/v1/templates", "/api/v1/contacts", "/api/v1/contacts/{contactKey}",
+            "/api/v1/templates", "/api/v1/templates/catalog/page", "/api/v1/contacts", "/api/v1/contacts/{contactKey}",
             "/api/v1/providers/callbacks",
             "/api/v1/experiments", "/api/v1/experiments/{experimentId}/versions/{version}:assign",
             "/api/v1/experiments/{experimentId}/versions/{version}:check-srm",

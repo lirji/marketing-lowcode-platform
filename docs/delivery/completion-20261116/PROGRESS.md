@@ -462,7 +462,7 @@
 - 待打包/Hygiene、精确远程CI、正常FF main及audience-service与console本机增量更新。无数据库迁移、不重启Flink、不重灌演示数据。
 - 人群可执行JAR打包成功，Hygiene无阻断；仓库无canonical formatter，记录为工具不可用限制。语义化分页常量触发的魔法值建议经复核无需改动。最终源文件指纹保留s12j-validation-fingerprint.json。
 
-## S12k 权益资产分页与全字段搜索（IN_PROGRESS）
+## S12k 权益资产分页与全字段搜索（DONE）
 - 分支feat/benefit-asset-pagination基于S12j a260865，依赖其资产表格提取；先合并部署S12j，再交付本片。S12j精确CI44072001325前端与部署PASS，Java下载Maven遇429、未执行测试，已仅重试失败job；两镜像和Nginx预检通过，尚未部署。
 - 新增GET /api/v1/benefits/catalog/page，benefit:read、身份租户、limit默认25/最大100、cursor上一页末权益ID、q最长128且trim回显，按权益ID升序只读每ID最新版本，limit+1判定后续。旧数组/单条读取和写入、库存、发放、外部SKU校验不变；本查询不调用外部中台。
 - 服务端字面包含搜索名称/ID/版本/绑定SKU（含未绑定提示）/状态原码及中文/北京时间创建时间；SQL先过滤再LIMIT，复用租户主键，无迁移。分页非冻结快照，较早新ID需刷新。
@@ -480,3 +480,28 @@
 - a260865ceb215140851ad5933cd799436448256c精确CI44072001325三项PASS；Java首次下载Maven遇HTTP429，尚未运行代码，失败job重试成功。正常FF main，仅更新audience-service与console。runtime-a260865/回执PASS。
 - 18必要容器正常，16其它容器身份/镜像/启动时间不变；3个原Flink作业保存点来源和检查点推进PASS。实际人群2条按limit1遍历与旧集合一致，搜索/非法参数/权限/租户拒绝PASS；真实8084桌面/Pixel7详情、搜索、空结果、清除搜索PASS，零写请求/API失败/页面错误，手机详情截图已查看。
 - S12k可执行JAR打包和Hygiene完成，无阻断；无canonical formatter限制保留。只读包含搜索有租户内扫描成本，本地测试不代替容量基准。最终指纹s12k-validation-fingerprint.json，待精确CI和增量本机部署。
+
+## S12l 消息模板分页与服务端搜索（IN_PROGRESS）
+- 分支feat/template-asset-pagination基于S12k 53e151f，先交付S12k再本片；S12k精确CI44073965831运行中，两镜像与环境保留/真实Nginx预检通过，尚未部署。
+- GET /api/v1/templates/catalog/page：template:read、身份租户、limit默认25最大100、cursor模板ID、q最长128回显，ID升序每ID最新版本，limit+1；旧数组和POST版本追加语义不变。搜索覆盖模板ID、可见v版本、渠道、必需变量（含无）、状态原码/中文和北京时间创建时间，正文仍只在详情查看。最新版本筛选与搜索在LIMIT前执行，非冻结快照，无迁移。
+- 模板变量按持久化CSV顺序稳定回显，使显示值/服务端匹配一致（原Set.copyOf不保证迭代序）。UI完整身份键/防抖/更多/错误恢复/刷新/详情编辑，保存后失效原数组与新分页缓存，保持筛选和版本成功回执，不改变历史版本/旅程引用/触达。
+- 验证多页/搜索/版本/权限/租户/输入边界/变量顺序与旧版本保留；前端分页恢复/跨身份/保存后最新版本刷新/冲突与草稿保护；双视口、合同/构建、精确CI及engagement+console本机运行。
+
+### S12k CI夹具修复
+- 53e151f的CI44073965831浏览器发现form-controls仍拦截旧权益数组，导致两视口搜索用例失败（其它82通过、10条件专项未启用）。已仅修正该fixture为新分页合同并保留原断言，双视口专项PASS；607542e测试修复提交已正常推进权益分支，新精确CI44075059624运行中。
+- 607542e与53e151f产品源/依赖/构建配置无差异（git diff仅该e2e文件）；runtime-607542e以已校验53e151f镜像制品只更新revision标签，原JAR/dist散列和来源记于manifest。重新通过环境保留和真实Nginx预检，尚未部署，不使用当前未提交模板源构建权益版本。
+
+### S12l 实现检查点
+- 模板SQL分页/变量稳定顺序/显示字段搜索、合同与前端分页及保存后失效缓存已实现；31项MySQL（3分页+28原触达/模板流）、7合同、10架构检查PASS，s12l-backend.log。修复前3项404按预期失败；前端/浏览器仍在验证，不宣称本片交付。
+
+### S12l 真实写入验收
+- 232前端/45文件、lint/build/package/Hygiene通过。首轮浏览器误用TestingLibrary的toHaveTextContent，按Playwright改为toContainText后6项双视口通过，其中2项直连隔离MySQL/实际engagement服务创建v1、编辑v2、按ID搜索并刷新详情；库验收2模板各v1/v2、原正文保留、触达/发件箱均0，s12l-live-db.json PASS。
+- 隔离库template_page_live_20261117保留；首次MySQL刚启动未就绪导致建库失败，读回确认未创建后再执行成功；已停止本次测试Java和测试MySQL恢复必要容器集合，不删除数据。新页面手机详情和桌面62条末页截图已查看，发现时区表头与单元格重复，改为表头注明北京时间、值仅显示日期时分秒，使搜索与显示完全一致。此展示修正需重跑受影响前端/浏览器，真实写入逻辑未改。
+
+### S12l 最终本地验收
+- 展示时间修正后232前端、lint/build、4浏览器再通过（此轮2个真实写入专项未再启用，复用之前成功数据库证据，写入逻辑未改）；手机详情最终截图已查看，时间与表头清晰，变量顺序和正文完整。最终前端日志s12l-frontend-final、lint-final、build-final、browser-display；数据库/真实浏览器证据s12l-backend、browser-final、live-db。
+- 31真实MySQL/7合同/10架构和JAR仍对应当前后端；复核范围仅最新模板分页、读取顺序与UI缓存。无接触消息、出站调用或生产数据；含搜索有租户扫描成本，未宣称容量验证。准备指纹、提交、精确CI及engagement-service+console本机更新。
+
+### S12k 真实运行交付
+- 精确607542e7353793a22b413b960b688b6a5dcd359f的CI44075059624三项PASS，正常FF main；仅benefit-funding-service与console更新，audience保持a260865。runtime-607542e回执PASS，18必要容器正常、16受保护容器不变、3个原Flink作业继续推进。
+- 真实4条权益limit1完整遍历与旧数组集合一致、后页ID搜索/非法参数/权限/租户拒绝通过；8084桌面/Pixel7详情、搜索、空结果、清除通过，无业务写入/API失败/页面错误，手机完整详情截图已查看。无数据库迁移/种子改动/外部SKU调用。S12l当前改动尚未部署。

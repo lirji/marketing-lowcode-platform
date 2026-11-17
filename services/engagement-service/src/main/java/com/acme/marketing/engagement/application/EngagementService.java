@@ -125,6 +125,26 @@ public final class EngagementService {
         return repository.findLatestTemplates(scope.tenantId().value());
     }
 
+    /** 最新版本与全字段搜索在SQL中先于LIMIT执行，禁止先取一页再过滤。 */
+    public TemplatePage templatePage(Integer limit, String query, String cursor) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("template:read");
+        var page = TemplatePaging.validate(limit, query, cursor);
+        String tenant = scope.tenantId().value();
+        if (page.cursor() != null && !repository.templateExists(tenant, page.cursor())) {
+            throw TemplatePaging.invalidCursor();
+        }
+        List<TemplateView> fetched = repository.findLatestTemplatePage(tenant, page.query(), page.cursor(), page.limit() + 1);
+        boolean hasMore = fetched.size() > page.limit();
+        List<TemplateView> items = hasMore ? fetched.subList(0, page.limit()) : fetched;
+        return new TemplatePage(items, hasMore ? items.getLast().templateId() : null, hasMore, page.query());
+    }
+
+    /** nextCursor仅在仍有下一页时提供；query回显规范化搜索，不能由客户端猜测结果范围。 */
+    public record TemplatePage(List<TemplateView> items, String nextCursor, boolean hasMore, String query) {
+        public TemplatePage { items = List.copyOf(items); }
+    }
+
     public ContactView send(SendRequest request) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("contact:send");
