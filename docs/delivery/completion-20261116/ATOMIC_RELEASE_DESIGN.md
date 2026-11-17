@@ -81,3 +81,14 @@ S11f 按同一任务内的三个可验证增量实施：f1 控制面导出完整
 - 先按manifest ID锁定全部成员，再按environment/cell/runtime/namespace固定顺序更新对应slot；单清单写入在持有manifest行后锁slot并检查当前标记。不能依靠事务早期普通查询的旧快照。所有变更与原组合/成员/审计同事务，失败回滚。只读授权检查用于旧回执前提前拒绝，实际写入另有锁内门禁。
 - 扩展迁移不删除数据。启用组合管理前必须让不识别该标记的旧控制面写实例退出；回退先冻结发布写入口。该片未部署，不声称混合版本可安全写入，也不能替代运行端防绕过或真正整体激活。
 - 范围：Control应用/Mapper/V10、机器API说明、相关数据库与迁移测试；无新服务/中间件。依赖S11e/f已有合同。验收见PROGRESS的S11g1；接续S11g2再定义可信执行上下文、请求传播和运行端精确版本选择。
+
+## S11g后续边界与S11g2激活授权合同
+- 已核对生产Journey通过事件入口和Flink单写者执行，DIRECT HTTP在OIDC下被禁止；因此后续必须同时覆盖Decision、事件路由、Journey持久读和Flink状态，不能只给HTTP请求加字段。同步Decision继续不回源控制面。
+- 版本绑定先沿用既有orderId/enrollmentId所代表的一次业务过程，持久键包含tenant/campaign/participationId并绑定subject；是否按会员在活动内的首次参与永久固定已作为可选业务口径询问。未回答前不实现依赖该口径的C端绑定入口，也不猜测真实会员映射。该问题不影响下面的整体激活授权合同。
+- Control仍拥有整体发布意图与单调激活序号；签名授权、运行面应用、参与绑定是不同结果。控制台只有取得运行面实际应用证据才能显示整体生效，通信超时须查询原命令，不能当作失败重新创建。
+- S11g2只定义并验证独立签名的`ReleaseBundleActivationDirective {directiveId,bundle,activationSequence,action,organizationId,shopId,authorizedAt,authorizedBy,signatureKeyId,signature}`。bundle是原完整ReleaseBundleManifest；action显式稳定ACTIVATE/ROLLBACK。序号在tenant/campaign/environment/cell内递增，回滚也递增但可指向较早组合版本；“曾生效”由后续控制事务检查，不能只凭action字符串认定。
+- organizationId来自Control活动归属且非空，shopId为空表示组织级范围；两者随完整bundle、序号、动作和作者/时间进入独立用途`marketing.activity-release-activation/v1`签名。所有成员activationAt<=authorizedAt<最早成员expiresAt，authorizedAt>=bundle.createdAt。运行端同时核验外层授权、内层组合及各原始成员签名，支持信任集合中不同新旧密钥，但外层重新签名不能复活已撤销的原成员签名钥匙，不信任客户端自行声明的scope。
+- 只验证授权的租户、信任、未来1分钟偏差与有效期，不能凭密码学验证宣称已经应用。运行持久层还须用单调CAS处理重复/乱序/同序号冲突，验证真实已安装成员、版本绑定与实时停用。这些在后续片完成；旧f2 ACK没有这些能力，不能用它直接开放正式组合激活。
+- g2范围：marketing-contracts数据类型/签名验证、OpenAPI共享类型与测试；不增加HTTP激活/签发入口、不写指针或Outbox、不部署。验收覆盖内外签名用途混淆、换租户/活动/成员/权限范围/序号/动作/时间、密钥轮换与到期边界。后续先落实执行绑定与运行端防绕过，再接Control命令、回滚和完整应用回执。
+
+S11g2合同模块保持无JSON生产依赖，动作在wire中使用经Action.fromCode校验的稳定字符串；仅增加仓库已管理Jackson版本的test依赖，验证真实JSON往返和缺字段拒绝，不改变运行镜像依赖。

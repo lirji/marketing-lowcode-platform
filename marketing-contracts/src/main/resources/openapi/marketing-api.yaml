@@ -1059,6 +1059,22 @@ components:
                 capacity: {type: integer, format: int64, minimum: 1}
                 signature: {type: string, minLength: 1}
         signature: {type: string, minLength: 1, description: Independent purpose signature covering all bundle fields and the complete inner READY ACK}
+    ReleaseBundleActivationDirective:
+      type: object
+      additionalProperties: false
+      description: Signed whole-bundle authorization. This shared contract has no issuance or apply endpoint yet and is not proof of runtime application. Future receivers must persist sequence arbitration and exact participation bindings.
+      required: [directiveId, bundle, activationSequence, action, organizationId, shopId, authorizedAt, authorizedBy, signatureKeyId, signature]
+      properties:
+        directiveId: {type: string, pattern: '^[A-Za-z0-9_.:@-]{1,64}$'}
+        bundle: {$ref: '#/components/schemas/ReleaseBundleManifest'}
+        activationSequence: {type: integer, format: int64, minimum: 1, description: Monotonic per tenant/campaign/environment/cell including rollback}
+        action: {type: string, enum: [ACTIVATE, ROLLBACK]}
+        organizationId: {type: string, minLength: 1, maxLength: 64, description: Exact campaign organization from Control; wildcard forbidden}
+        shopId: {type: string, maxLength: 64, description: Exact campaign shop or empty for organization scope; wildcard forbidden}
+        authorizedAt: {type: string, format: date-time, description: At or after bundle creation and every member activationAt, strictly before bundle expiry}
+        authorizedBy: {type: string, minLength: 1, maxLength: 128}
+        signatureKeyId: {type: string, pattern: '^[A-Za-z0-9_.:@-]{1,64}$'}
+        signature: {type: string, minLength: 1, description: Independent activation purpose signature covers full nested bundle content and signature}
     ReleaseBundleManifest:
       type: object
       additionalProperties: false

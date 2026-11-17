@@ -11,6 +11,8 @@
   <dependencies>
     <dependency><groupId>com.acme.marketing</groupId><artifactId>platform-common</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+    <!-- 仅测试契约JSON往返；生产合同模块仍不依赖具体JSON实现。 -->
+    <dependency><groupId>tools.jackson.core</groupId><artifactId>jackson-databind</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.yaml</groupId><artifactId>snakeyaml</artifactId><scope>test</scope></dependency>
   </dependencies>
 </project>

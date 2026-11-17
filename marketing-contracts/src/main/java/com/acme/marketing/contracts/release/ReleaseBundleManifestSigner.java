@@ -29,7 +29,7 @@ public final class ReleaseBundleManifestSigner {
         } catch (IllegalArgumentException malformed) { return false; }
     }
 
-    private static byte[] canonical(ReleaseBundleManifest manifest) {
+    static byte[] canonical(ReleaseBundleManifest manifest) {
         Map<String, String> values = new LinkedHashMap<>();
         values.put("purpose", PURPOSE);
         values.put("bundleId", manifest.bundleId()); values.put("tenantId", manifest.tenantId().value());

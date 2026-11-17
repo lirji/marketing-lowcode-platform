@@ -699,3 +699,19 @@
 ### S11g1 最终复核
 - 合同全套27项与13份JSON PASS（s11g1-contracts.log），架构10项PASS（s11g1-architecture-final.log）。最初架构命令误写测试类名，没有执行用例；不将其BUILD SUCCESS当架构证据，已按实际ArchitectureRulesTest纠正执行。
 - 根代理在编码之外复核了manifest→slot锁序、REPEATABLE_READ旧快照、单清单旧回执、完整slot五维隔离、已有组合回填与不可逆标记的回退要求；当前片无剩余阻断。完整暂存Hygiene/diff PASS（s11g1-hygiene-final.json，仅无canonical formatter限制）；准备逻辑提交及精确CI。真实运行端/Flink原子激活仍未完成，无部署或共享库迁移。
+
+## S11g2 整体激活授权协议（实施中）
+- S11g1提交77c1d38已推，精确CI44110842403运行中；S11f3 a8664e2已正常FF合入并推送main。本机无部署、共享迁移或Flink操作。
+- 下一片只补独立签名的整体激活/回滚授权合同，绑定完整组合与真实活动范围；与实际运行应用/参与版本绑定分开。具体字段和安全约束见增量设计末节。生产Journey的Flink单写者必须一起接线，尚不开放Control激活。
+- 已异步询问版本绑定的业务粒度，推荐沿用订单/参与编号；暂无答复，该信息不阻止g2协议实现。真实会员映射和外部机器合同仍未具备。
+
+### S11g2 实施检查点
+- 已实现完整激活授权类型/独立用途签名/内外及原成员信任复验；首轮因合同模块无Jackson生产依赖编译失败（s11g2-contracts-first.log）。改为显式稳定动作字符串+枚举校验，生产合同仍无JSON框架依赖；仅测试使用仓库已管理Jackson版本验证JSON边界。
+- 第二轮34项合同用例PASS，其中新增7项签名/范围/用途/租户/时间/轮换与成员密钥撤销场景（s11g2-contracts-second.log）。补充缺shopId与未来成员激活时间拒绝后，待最终合同/架构/Hygiene验证；仍无应用/签发入口。
+
+### S11g2 最终本地验证
+- 最终34项合同测试（新增激活签名7项）和13份JSON PASS，架构10项PASS：s11g2-contracts-final.log、s11g2-architecture-final.log。中文/URL形式的真实归属和主体ID可保留，通配组织/店铺与缺字段拒绝；不引入生产JSON依赖。
+- 根代理单独复核独立签名用途、完整嵌套规范字节、所有范围字段、原成员密钥撤销、授权时间/成员activationAt、序号与动作code；无本片剩余阻断。应用序号CAS、旧参与保留和实时停用仍属后续，不拿验签通过当发布完成。
+- S11g1 77c1d38精确CI44110842403全部SUCCESS，待本轮提交后正常FF合入main。当前无测试进程或未知共享操作。
+
+- 完整暂存Hygiene/diff PASS（s11g2-hygiene-final2.json）；初次工具的依赖允许项用了group:artifact，而工具仅匹配artifactId，已按已选定test依赖的准确ID修正，首轮报告保留。1分钟时间偏差已经是命名协议常量，静态工具仍报数字ADVISORY，已人工核对；无formatter限制保持。
