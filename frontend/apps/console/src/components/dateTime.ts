@@ -48,3 +48,19 @@ export function displayTimeTick(value: string, granularity: 'hour' | 'day') {
 export function displayDiagnosticJson(value: unknown) {
   return JSON.stringify(value, (_key, item: unknown) => typeof item === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(item) ? displayTimestamp(item) : item, 2)
 }
+
+
+const SECONDS_PER_MINUTE = 60
+const MINUTES_PER_HOUR = 60
+const HOURS_PER_DAY = 24
+const SECONDS_PER_HOUR = SECONDS_PER_MINUTE * MINUTES_PER_HOUR
+const SECONDS_PER_DAY = SECONDS_PER_HOUR * HOURS_PER_DAY
+
+/** 延迟不等同于实时健康判断；缺失/非法值保留未知，长时长取两个最大单位便于阅读。 */
+export function displayElapsedSeconds(seconds?: number): string {
+  if (seconds === undefined || !Number.isFinite(seconds) || seconds < 0) return '未知'
+  if (seconds >= SECONDS_PER_DAY) return `${Math.floor(seconds / SECONDS_PER_DAY)} 天 ${Math.floor(seconds % SECONDS_PER_DAY / SECONDS_PER_HOUR)} 小时`
+  if (seconds >= SECONDS_PER_HOUR) return `${Math.floor(seconds / SECONDS_PER_HOUR)} 小时 ${Math.floor(seconds % SECONDS_PER_HOUR / SECONDS_PER_MINUTE)} 分`
+  if (seconds >= SECONDS_PER_MINUTE) return `${Math.floor(seconds / SECONDS_PER_MINUTE)} 分 ${Math.floor(seconds % SECONDS_PER_MINUTE)} 秒`
+  return `${seconds} 秒`
+}

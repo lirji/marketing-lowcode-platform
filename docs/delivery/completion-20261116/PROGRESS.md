@@ -9,10 +9,10 @@
 
 ## 当前状态（2026-11-17）
 - S01–S05已完成；S06–S13按下表继续。S12c资产/消息模板 `c14289e`、容器路由修复 `8bb1270`、S12d审批完整分页 `e9f3972d2584fa5e96437a782e50d1b3bb6bb5c8` 均已精确CI三项PASS并正常快进推送main；对应运行编号44041099756、44044235242、44047459413。
-- 本地部署已验证：control与console为3f22019，engagement为c14289e，其余8应用保留045dfd9；11应用健康。control V7索引已迁移成功，更新前已备份。模板、审批分页、发布选择的真实Docker接口及桌面/手机浏览器PASS，见 [LOCAL_DEPLOYMENT_20261117.md](LOCAL_DEPLOYMENT_20261117.md)。
+- 本地部署已验证：control为b3858e6、console为2e2263f，engagement为c14289e，其余8应用保留045dfd9；11应用健康。control V7索引已迁移成功，更新前已备份。模板、审批分页、发布选择的真实Docker接口及桌面/手机浏览器PASS，见 [LOCAL_DEPLOYMENT_20261117.md](LOCAL_DEPLOYMENT_20261117.md)。
 - 用户最新授权“如果当前是docker问题，可以让docker只运行该项目的组件”。Docker管理卡死已通过本机重启恢复；重启前3个Flink作业成功stop-with-savepoint，重启后逐个no_claim恢复并确认新检查点持续推进。保留数据卷；没有空状态启动或生产部署。
 - 当前仅18个必要容器运行：13个marketing-r1常驻容器、现有权益目录适配服务、MySQL/Redis/Kafka/ClickHouse。额外停止13个无关容器，原17个langchain应用仍停止。实际容器内存合计约5.95GiB（单次快照，不代表容量压测）；容器/数据卷保留，可按记录恢复。
-- S12e发布中心完整分页与范围过滤已交付，3f22019精确CI44056163714三项PASS，正常FF main并完成本地Docker/真实双视口验收。下一项S12f：旧发布列表调用点（向导、活动就绪、首页及壳层）范围缓存和有界查询；其它资产分页/种子历史定义迁移等仍未完成。真实会员/画像来源、裂变外部合同仍待确认，不改变拒绝保护。
+- S12e发布中心完整分页与范围过滤已交付，3f22019精确CI44056163714三项PASS，正常FF main并完成本地Docker/真实双视口验收。S12f发布读取调用点2e2263f与S12g活动范围b3858e6也已精确CI并FF main、本地运行验收；当前S12h首页数据表述验证中；其它资产分页/种子历史定义迁移等仍未完成。真实会员/画像来源、裂变外部合同仍待确认，不改变拒绝保护。
 
 ## 执行清单与验收
 
@@ -369,7 +369,7 @@
 - 实际8084桌面/Pixel7模板、审批、发布状态筛选、向导批准单读取PASS，无业务写请求/API失败/页面错误/横向溢出；已查看手机发布筛选及桌面向导截图。证据runtime-3f22019/{artifact-manifest,rollout-state,runtime-smoke,browser-smoke}.json。
 - 复核仍有旧数组消费者：ReleaseWizard从最新50条找暂存目标，CampaignReadiness据此判断已发布，AppShell/Dashboard把局部数量作为总量；完整身份缓存也需补齐。登记S12f，不把发布中心分页等同于所有消费者整改完成。
 
-## S12f 发布读取调用点（IN_PROGRESS）
+## S12f 发布读取调用点（DONE）
 - 计划：增加按清单ID读取的只读授权接口，向导只轮询自身暂存清单；壳层/首页复用完整身份键分页并明确已加载数量；活动就绪可继续分页、未遍历完不宣称未发布。保持发布/回滚写语义，不自动加载无界全集。
 - 验收：真实MySQL验证较早清单、租户/组织门店/权限拒绝；前端ACK目标、失败禁用、身份切换、页尾就绪与局部计数；合同/构建/远程CI以及真实本地Docker双视口回归。
 
@@ -387,7 +387,7 @@
 - S12f本地验收PASS，待精确远程CI、正常FF main及本机control/console增量部署后完成运行验收。整体S06–S13仍未全部完成。
 
 
-## S12g 活动列表权限范围（IN_PROGRESS）
+## S12g 活动列表权限范围（DONE）
 - 从S12f提交2e2263f分出fix/campaign-list-scope，交付顺序S12f再S12g；不是将S12f当成已部署。S12f远程CI44060287931运行中，预构建镜像/备份已就绪，实际运行仍3f22019。
 - 证据：ControlMapper.selectCampaigns使用单字符OGNL `contains('*')`，且组织/门店比较使用数据库默认不区分大小写排序规则，与TenantScope精确匹配不一致。
 - 计划/验收：只修当前活动列表通配与组织/门店精确范围，保留租户、类型过滤及空组织拒绝；先真实MySQL回归复现，再修复并验证全域/部分通配、具体范围、大小写、空范围、其它租户和权限拒绝。无表迁移或业务写语义改变。
@@ -397,3 +397,21 @@
 - 修改活动SQL两处通配为字符串OGNL，并将组织/门店比较显式转BINARY，严格沿用TenantScope大小写语义；不改变类型、租户和组织级无店铺记录规则，不新增索引/表或写入行为。
 - 修复后13项真实MySQL PASS：当前范围2、既有控制流程4、审批3、发布读取/分页4，s12g-after.log。根代理复核XML参数绑定与空组织服务层提前返回；Hygiene对此XML变更为NOT_APPLICABLE，git diff --check通过。前端沿用已通过的S12f证据。
 - 待单独提交、精确CI和顺序交付；S12f必须先正常FF main，S12g随后只更新control服务。无本机业务数据修改。
+
+### S12f 远程与运行交付
+- 2e2263f3d750cb37f4c4df29fb24bc03c43e6fa5精确CI44060287931三项PASS，正常FF main；s12f-ci-exact.json与s12f-delivery.json。control/console已更新至此版本，18必要容器健康，其它16容器不变，Flink原恢复作业检查点持续推进。
+- 实际单清单读取、权限拒绝/跨租户404、完整列表/状态筛选、模板/审批与桌面/手机首页、发布中心、向导读取PASS，无业务写请求；runtime-2e2263f/{rollout-state,runtime-smoke,browser-smoke}.json。已查看真实手机首页截图。S12g只读范围修复b3858e6已提交，精确CI44061394760进行中，单独control镜像与配置/备份已就绪。
+
+## S12h 首页数据表述（IN_PROGRESS）
+- 真实Docker截图runtime-2e2263f/mobile-release-overview.png暴露：固定标题“增长脉搏稳定”，把全部已读活动数当在线活动；数据水位停留2026-09-16而当前为2026-11-17，延迟仅显示数百万秒。零收入点也被最小柱高抬成正值。
+- 从b3858e6建立fix/dashboard-data-status；先交付S12g，再交付本片。修正首页为中性标题、已加载活动计数、缺失延迟保留未知、按单位展示实际延迟和零值图形；不定义未经确认的实时SLA、不变更测量API或生产数据。
+- 验收：真实API数据/延迟缺失/零值单位测试，保留DEMO隔离、lint/build与双视口页面；精确CI及仅console增量部署。
+
+### S12g 远程与运行交付
+- b3858e6e01b54a4f0812b92c4d12906ddca92822精确CI44061394760三项PASS，正常FF main；s12g-ci-exact.json与s12g-delivery.json。仅control更新，console保持2e2263f，其它17容器身份/镜像/启动时间不变。
+- 实际全域活动查询与控制库只读集合核对一致，REFERRAL类型筛选、发布单清单权限拒绝、18必要容器健康及3个Flink原作业检查点推进PASS；runtime-b3858e6/。前端没有变更，复用runtime-2e2263f双视口证据，不把未重跑的浏览器描述为新增验收。
+
+### S12h 本地验收
+- 210项全前端测试PASS（42文件），含新增旧水位、缺失/非法延迟、活动请求失败、分金额、零柱和负值明细场景；lint/build通过。s12h-frontend.log、s12h-lint.log、s12h-build.log。
+- 桌面与Pixel7两个浏览器合同样例PASS，实际截图已查看；长延迟/金额/卡片不横向溢出，零值柱高度为0，非DEMO无“在线活动/稳定/实时经营”断言。s12h-browser.log与s12h-browser/。
+- 根代理核对数据来源、未知值和负值语义、DEMO隔离、保留ROI与金额分；Hygiene无阻断，仅命名单位常量数值提示与仓库无canonical formatter限制。无新增依赖/后端改动，尚未精确远程CI和console运行部署。

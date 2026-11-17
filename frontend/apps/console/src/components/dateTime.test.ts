@@ -1,3 +1,4 @@
+import { displayElapsedSeconds } from './dateTime'
 import { describe, expect, it } from 'vitest'
 import { businessDayStart, displayDiagnosticJson, displayTimeTick, displayTimestamp } from './dateTime'
 
@@ -33,5 +34,19 @@ describe('Beijing time presentation', () => {
     expect(displayDiagnosticJson(source)).toContain('2027/01/01 04:15:20（北京时间）')
     expect(displayDiagnosticJson(source)).toContain('rule-2026-12-31')
     expect(JSON.stringify(source)).toBe(before)
+  })
+})
+
+
+describe('displayElapsedSeconds', () => {
+  it('preserves unknown and zero instead of asserting healthy data', () => {
+    for (const value of [undefined, NaN, Infinity, -1]) expect(displayElapsedSeconds(value)).toBe('未知')
+    expect(displayElapsedSeconds(0)).toBe('0 秒')
+    expect(displayElapsedSeconds(0.5)).toBe('0.5 秒')
+  })
+  it('uses readable units for large lag without changing the underlying value', () => {
+    expect(displayElapsedSeconds(61)).toBe('1 分 1 秒')
+    expect(displayElapsedSeconds(3661)).toBe('1 小时 1 分')
+    expect(displayElapsedSeconds(5337477)).toBe('61 天 18 小时')
   })
 })

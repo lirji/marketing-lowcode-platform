@@ -1,4 +1,4 @@
-import { businessDayStart, displayTimestamp } from '../../components/dateTime'
+import { businessDayStart, displayElapsedSeconds, displayTimestamp } from '../../components/dateTime'
 import { RecordTable } from '../../components/RecordTable'
 import { CircleDollarSign, Megaphone, Sparkles, UsersRound } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -18,13 +18,13 @@ const demoMetrics = [
 
 const emptyMetrics = [
   { label: '今日归因成交', value: '—', delta: '', icon: CircleDollarSign },
-  { label: '在线活动', value: '—', delta: '', icon: Megaphone },
+  { label: '已加载活动', value: '—', delta: '', icon: Megaphone },
   { label: '营销成本', value: '—', delta: '', icon: Sparkles },
   { label: '水位延迟', value: '—', delta: '', icon: UsersRound },
 ] as const
 
 function formatMinor(value: number) {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY', maximumFractionDigits: 0 }).format(value / 100)
+  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value / 100)
 }
 
 export function DashboardPage() {
@@ -42,6 +42,7 @@ export function DashboardPage() {
   })
   const campaigns = useQuery({ queryKey: ['campaigns'], queryFn: api.campaigns, enabled: !api.demoMode })
   const releases = useReleasePages()
+  const campaignSummary = campaigns.isError ? '活动读取失败' : campaigns.isPending ? '活动加载中' : `当前已加载 ${campaigns.data?.length ?? 0} 个活动`
   const releaseSummary = !releases.canRead ? '无发布读取权限'
     : releases.isError ? '发布清单读取失败'
       : releases.isPending ? '发布清单加载中'
@@ -51,17 +52,18 @@ export function DashboardPage() {
     : dashboard.data
       ? [
           { label: '今日归因成交', value: formatMinor(dashboard.data.attributedRevenueMinor), delta: `数据截至：${displayTimestamp(dashboard.data.completeThrough)}`, icon: CircleDollarSign },
-          { label: '在线活动', value: String(campaigns.data?.length ?? 0), delta: '', icon: Megaphone },
+          { label: '已加载活动', value: campaigns.isSuccess ? String(campaigns.data?.length ?? 0) : '—', delta: '包含当前可见范围内的各类活动状态', icon: Megaphone },
           { label: '营销成本', value: formatMinor(dashboard.data.fundingCostMinor), delta: '', icon: Sparkles },
-          { label: '水位延迟', value: `${dashboard.data.lag?.seconds ?? 0}s`, delta: dashboard.data.roi != null ? `ROI ${dashboard.data.roi}` : '', icon: UsersRound },
+          { label: '水位延迟', value: displayElapsedSeconds(dashboard.data.lag?.seconds), delta: `${dashboard.data.lag ? `接口读取时延迟：${dashboard.data.lag.seconds.toLocaleString('zh-CN')} 秒` : '接口未返回延迟'}${dashboard.data.roi != null ? `；ROI ${dashboard.data.roi}` : ''}`, icon: UsersRound },
         ]
       : emptyMetrics
   const points = series.data?.points ?? []
   const peak = Math.max(1, ...points.map((point) => point.revenueMinor))
 
   return <div className="workspace">
-    <PageHeader eyebrow={api.demoMode ? '运营总览 · 2026 双十一' : '运营总览'} title="早上好，今天的增长脉搏稳定。" description={api.demoMode ? '126 个活动正在 3 个 Cell 中运行，暂无资金不变量告警。' : `当前已加载 ${campaigns.data?.length ?? 0} 个活动；${releaseSummary}。`} actions={<><Link className="button secondary" to="/releases">查看发布态势</Link><Link className="button primary" to="/campaigns?create=true"><Sparkles size={16} />创建营销活动</Link></>} />
+    <PageHeader eyebrow={api.demoMode ? '运营总览 · 2026 双十一' : '运营总览'} title={api.demoMode ? '早上好，今天的增长脉搏稳定。' : '查看当前运营数据'} description={api.demoMode ? '126 个活动正在 3 个 Cell 中运行，暂无资金不变量告警。' : `${campaignSummary}；${releaseSummary}。`} actions={<><Link className="button secondary" to="/releases">查看发布态势</Link><Link className="button primary" to="/campaigns?create=true"><Sparkles size={16} />创建营销活动</Link></>} />
     <DemoBanner />
+    {campaigns.isError && <StateBanner tone="error" title="活动加载失败" detail={problemDetail(campaigns.error)} />}
     {dashboard.isError && <StateBanner tone="error" title="指标加载失败" detail={problemDetail(dashboard.error)} />}
     {releases.isError && <StateBanner tone="error" title="发布清单加载失败" detail={problemDetail(releases.error)} />}
     {series.isError && <StateBanner tone="error" title="序列加载失败" detail={problemDetail(series.error)} />}
@@ -69,12 +71,16 @@ export function DashboardPage() {
       {metrics.map(({ label, value, delta, icon: Icon }) => <article className="metric-card" key={label}><div className="metric-icon"><Icon size={18} /></div><p>{label}</p><strong>{value}</strong><span>{delta}</span></article>)}
     </section>
     <section className="dashboard-grid">
-      <Panel className="pulse-panel"><PanelHeader eyebrow="实时经营" title="营销转化脉搏" aside={<Badge tone={api.demoMode ? 'warn' : points.length ? 'good' : 'info'}>{api.demoMode ? '演示' : points.length ? 'API' : '暂无序列'}</Badge>} />
+      <Panel className="pulse-panel"><PanelHeader eyebrow={api.demoMode ? '演示经营' : '经营数据'} title="小时归因收入" aside={<Badge tone={api.demoMode ? 'warn' : points.length ? 'good' : 'info'}>{api.demoMode ? '演示' : points.length ? 'API' : '暂无序列'}</Badge>} />
         {api.demoMode
           ? <div className="pulse-chart" aria-label="最近十二小时转化趋势图">{[32,39,36,48,52,49,67,61,75,70,84,91].map((height,index) => <span key={index} style={{ '--height': `${height}%` } as React.CSSProperties} />)}</div>
           : points.length === 0
             ? <EmptyState title="暂无小时序列" detail="GET /api/v1/measurements/series 尚未返回数据点。" />
-            : <div className="pulse-chart" aria-label="今日小时归因收入">{points.slice(-12).map((point) => <span key={point.at} style={{ '--height': `${Math.max(8, Math.round((point.revenueMinor / peak) * 100))}%` } as React.CSSProperties} title={`${displayTimestamp(point.at)} · ${formatMinor(point.revenueMinor)}`} />)}</div>}
+            : points.some((point) => point.revenueMinor < 0)
+              ? <RecordTable label="小时归因收入明细" columns={['时间（北京时间）', '归因收入']}>
+                {points.slice(-12).map((point) => <tr key={point.at}><td>{displayTimestamp(point.at)}</td><td>{formatMinor(point.revenueMinor)}</td></tr>)}
+              </RecordTable>
+            : <div className="pulse-chart" aria-label="今日小时归因收入">{points.slice(-12).map((point) => <span key={point.at} style={{ '--height': `${Math.round((point.revenueMinor / peak) * 100)}%` } as React.CSSProperties} title={`${displayTimestamp(point.at)} · ${formatMinor(point.revenueMinor)}`} />)}</div>}
       </Panel>
       <Panel className="readiness-panel"><PanelHeader eyebrow={api.demoMode ? '发布代际 #1842' : '发布就绪'} title={api.demoMode ? 'Cell 就绪度' : '最近发布清单'} aside={<Link className="text-button" to="/releases">打开控制台 →</Link>} />{api.demoMode ? <RecordTable label="Cell 就绪度" columns={['区域', '部署单元', '就绪比例', '状态', '就绪副本']}>{[['华东', 'A', '100%', '已激活', '—'], ['华北', 'B', '100%', '已激活', '—'], ['华南', 'C', '67%', '预热中', '2/3']].map(([region, cell, ratio, state, replicas]) => <tr key={cell}><td>{region}</td><td>{cell}</td><td>{ratio}</td><td><Badge tone={state === '已激活' ? 'good' : 'warn'}>{state}</Badge></td><td>{replicas}</td></tr>)}</RecordTable> : <RecordTable label="Cell 就绪度" columns={['发布清单 ID', '部署单元', '状态', '就绪副本', '声明容量']}>{releases.items.slice(0, 3).map((item) => <tr key={item.manifest.manifestId}><td>{item.manifest.manifestId}</td><td>{item.manifest.cell}</td><td><Badge tone={item.state === ReleaseState.ACTIVE ? 'good' : 'warn'}>{item.state}</Badge></td><td>{item.readyReplicas}</td><td>{item.readyCapacity}</td></tr>)}</RecordTable>}</Panel>
     </section>
