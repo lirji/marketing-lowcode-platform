@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.journeyservice.infrastructure.persistence.mapper.JourneyExecutionProbeMapper">
+    <insert id="ensure">
+        INSERT INTO mk_journey_execution_probe (tenant_id, environment_name, cell_id, namespace_name, campaign_id, probe_id, activation_sequence, probe_json, deployment_fingerprint, expires_at, created_by, created_at)
+        VALUES (#{key.tenantId}, #{key.environment}, #{key.cell}, #{key.namespace}, #{key.campaignId}, #{key.probeId}, #{value.activationSequence}, #{value.probeJson}, #{value.deploymentFingerprint}, #{value.expiresAt}, #{value.createdBy}, #{value.createdAt})
+        ON DUPLICATE KEY UPDATE probe_id = mk_journey_execution_probe.probe_id
+    </insert>
+    <select id="lock" resultType="com.acme.marketing.journeyservice.application.JourneyExecutionProbeRepository$StoredProbe">
+        SELECT activation_sequence AS activationSequence, probe_json AS probeJson, deployment_fingerprint AS deploymentFingerprint,
+               expires_at AS expiresAt, created_by AS createdBy, created_at AS createdAt
+        FROM mk_journey_execution_probe WHERE tenant_id = #{key.tenantId} AND environment_name = #{key.environment} AND cell_id = #{key.cell}
+          AND namespace_name = #{key.namespace} AND campaign_id = #{key.campaignId} AND probe_id = #{key.probeId} FOR UPDATE
+    </select>
+    <select id="acknowledgements" resultType="com.acme.marketing.journeyservice.application.JourneyExecutionProbeRepository$StoredAck">
+        SELECT subtask_index AS subtaskIndex, ack_json AS ackJson, accepted_at AS acceptedAt
+        FROM mk_journey_execution_probe_ack WHERE tenant_id = #{key.tenantId} AND environment_name = #{key.environment} AND cell_id = #{key.cell}
+          AND namespace_name = #{key.namespace} AND campaign_id = #{key.campaignId} AND probe_id = #{key.probeId} ORDER BY subtask_index LIMIT 129
+    </select>
+    <insert id="saveAck">
+        INSERT INTO mk_journey_execution_probe_ack (tenant_id, environment_name, cell_id, namespace_name, campaign_id, probe_id, subtask_index, ack_json, accepted_at)
+        VALUES (#{key.tenantId}, #{key.environment}, #{key.cell}, #{key.namespace}, #{key.campaignId}, #{key.probeId}, #{value.subtaskIndex}, #{value.ackJson}, #{value.acceptedAt})
+    </insert>
+</mapper>

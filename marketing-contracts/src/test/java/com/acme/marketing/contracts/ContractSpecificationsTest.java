@@ -54,6 +54,7 @@ class ContractSpecificationsTest {
             "/api/v1/decisions:evaluate", "/api/v1/decisions:batch-evaluate",
             "/api/v1/decisions/bundle:evaluate", "/api/v1/decisions/bundle:batch-evaluate", "/api/v1/decisions/bundle-participations",
             "/api/v1/decisions/traces/requests/{requestId}", "/api/v1/decisions/traces/orders/{orderId}",
+            "/api/v1/journey-runtime/execution-probes", "/api/v1/journey-runtime/execution-probes/{campaignId}/{probeId}",
             "/api/v1/journey-runtime/release-bundle-directives",
             "/api/v1/journey-runtime/release-bundle-directives/{campaignId}/latest",
             "/api/v1/decisions/runtime/release-bundle-directives",
@@ -165,6 +166,19 @@ class ContractSpecificationsTest {
         assertEquals(names, map(schema.get("properties")).keySet());
         assertEquals(names, new HashSet<>((List<?>) schema.get("required")));
         assertEquals(false, schema.get("additionalProperties"));
+    }
+
+    @Test
+    void executionProbeApiExposesOnlyBoundedCoverageAndWarmPermission() throws IOException {
+        var document = yaml(RESOURCES.resolve("openapi/marketing-api.yaml")); var paths = map(document.get("paths"));
+        assertEquals("runtime:warm", permission(paths, "/api/v1/journey-runtime/execution-probes", "post"));
+        assertEquals("runtime:warm", permission(paths, "/api/v1/journey-runtime/execution-probes/{campaignId}/{probeId}", "get"));
+        var schemas = map(map(document.get("components")).get("schemas"));
+        var receipt = map(schemas.get("JourneyExecutionProbeReceipt")); var properties = map(receipt.get("properties"));
+        assertEquals(Set.of("state", "probe", "acknowledgements", "observedAt"), properties.keySet());
+        assertEquals(properties.keySet(), new HashSet<>((List<?>) receipt.get("required")));
+        assertEquals(List.of("PENDING", "READY", "EXPIRED"), map(properties.get("state")).get("enum"));
+        assertEquals(com.acme.marketing.contracts.release.JourneyBundleExecutionProbe.MAX_PARALLELISM, map(properties.get("acknowledgements")).get("maxItems"));
     }
 
     @Test

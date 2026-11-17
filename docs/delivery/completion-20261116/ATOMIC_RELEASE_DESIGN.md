@@ -167,3 +167,12 @@ S11g2合同模块保持无JSON生产依赖，动作在wire中使用经Action.fro
 - 探针本身只读，失败不生成就绪ACK，输出统一失败码的DLT；Control后续持久流程负责有界重试，不能让一次探测失败误改旅程或冒充成功。输出collect异常不捕获，必须随checkpoint重放。验证成功只按完整探针JSON摘要缓存至expiresAt，最多128个小摘要；每次仍检查当前kill和时间，不缓存业务许可，不抑制重复ACK。
 - 专用`JOURNEY_EXECUTION_ACK_KEY_ID/PRIVATE_KEY_BASE64/PUBLIC_KEY_BASE64`全部空时新路径关闭；部分配置或钥匙不匹配启动失败。main从实际加载的已打包JAR计算SHA256并把摘要随不可变job graph传给operator，不接受环境变量或请求自报digest；只在启用ACK时要求真实JAR。实际jobId/parallelism/subtaskIndex/attemptNumber取Flink RuntimeContext。
 - 验收覆盖真实MySQL源/制品/当前kill及拒绝路径，实际处理函数无状态写/无业务效果/重复ACK/输出失败传播，真实Flink接口及序列化图、旧输入/状态兼容；对最终shaded JAR单独核对实际摘要。暂不生产probe，不把签名成功或单个operator替身当运行集群/完整Kafka checkpoint/生产savepoint验证。g6b3接可靠投递收集和Decision证据，再g6b4应用门禁。
+
+## S11g6b3a：Journey持久探针登记与回执收集
+- Owner=backend；依赖g6b1/b2。先建立可信部署目标、持久挑战/子任务证据和查询，再g6b3b接有界可恢复投递；不使用内存列表或Web安装ACK冒充实际消费者覆盖。范围为Journey V5/Mapper/Service/机器API/既有输出consumer分支、配置、合同及真实DB测试。没有APPLIED/准入指针写入、真实探针发送或部署。
+- 可信部署来源为受控运行配置中的实际Flink jobId、parallelism、JAR SHA256、参与keyId和专用执行公钥集合；默认全空关闭，部分配置启动失败。不得从入参/ACK复制预期身份。每个探针保存当时部署预期的规范摘要；查询/收集重验当前部署与所有当前信任，配置变化或撤钥不能沿用旧READY。生产目标配置仍需部署证据，测试配置不代表真实登记。
+- `POST /api/v1/journey-runtime/execution-probes`以runtime:warm权限接收8KiB内的严格签名probe；按可信租户及原g3源组织/店铺授权，重验当前源/本站已安装制品。V5唯一键包含tenant/environment/cell/namespace/campaign/probeId，保存完整不可变挑战、部署摘要、原来源序号及创建者时间；同键同挑战幂等，同键不同内容拒绝。登记只表示可收集，当前片不投递消息。
+- `GET /api/v1/journey-runtime/execution-probes/{campaignId}/{probeId}`返回PENDING/READY/EXPIRED、完整原probe、有序已接受ACK及观察时间。最多128个子任务；仅当0..parallelism-1全部有效且未过期才READY。READY只是此Journey目标覆盖证明，不等于整个组合生效。过期查询保留历史并在签发时刻验证原链和当前信任，不能恢复发布资格；无自动清理，生产保留/归档/容量待S13。
+- `mk.journey.output.v1`既有消费者先分流独立ACK封套，普通业务投影不变。ACK最多16KiB，租户/完整挑战/目标/源码及所有签名均重验；只接受已登记挑战。按探针行锁序列化并以完整作用域+subtaskIndex为数据库主键，重复或不同attempt的同子任务有效回执不增加覆盖；无效/未知/过期输入走原有失败/DLT机制。不得把Kafka位点或收到消息数当不同子任务数。
+- 登记/收集使用本地READ_COMMITTED短事务与数据库唯一约束/行锁；查询同样锁定该探针以取得一致集合。不在事务内调用Kafka/外部服务。先校验后保存，保存或后续投影失败全部回滚；多进程从持久库重建结果。g6b3b须提供可靠投递/失败重试并完成隔离Kafka端到端后，才可接g6b4应用门禁。
+- 验收：同键并发登记唯一事实、不同挑战冲突、跨租户/组织/店铺拒绝、重复ACK不虚增覆盖、两个不同下标才READY、签名/任务/制品/源/过期/撤钥/部署变化拒绝、失败回滚和重建读取；旧输出投影回归，迁移注释/合同/架构门禁。

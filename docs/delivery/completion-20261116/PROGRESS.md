@@ -15,7 +15,7 @@
 - 用户授权Docker只运行本项目组件；13个额外无关容器及原17个langchain应用保持停止，所有容器与数据卷保留。本轮只更新console，17个其它运行容器ID/镜像/启动时间不变；3个原Flink作业及检查点继续推进，禁止重复恢复或提交空作业。
 - 上一轮部署验证：271项前端测试、98项浏览器用例通过，10项既有独立服务用例跳过；lint/build/Hygiene无阻塞，未配置canonical formatter。真实Docker四类资产页在桌面与Pixel7的分页、搜索、详情及字段/节点读取回归通过，无业务写入、API失败或页面异常。运行回执与截图：私有证据目录 `runtime-dbe268b/`。
 - 上一轮部署可见结果：活动/首页/运营/资产的静态预览不显示假业务数据或旧缓存，资产刷新不能绕过读取门禁；OIDC身份范围变化、退出与过期清理旧请求/缓存/草稿，旧令牌401不退出已更新令牌，远端退出失败能恢复登录页。本机仍为DEV认证，真实IdP联调未验证。
-- 当前HEAD/远程任务分支f1cf177，main/origin=ad48a2a。g6a已正常交付；g6b1精确CI44135347731在途。继续g6b2真实Flink探针处理，设计已细化；实际可靠收集/应用门禁和Control闭环未完成。无部署或共享库迁移。
+- 当前HEAD/远程任务分支86ffe42，main/origin=f1cf177。g6b1已正常交付；g6b2精确CI44137055316在途。继续g6b3a持久探针登记与回执收集，设计已细化；可靠投递/Decision证据/应用门禁/Control闭环均未完成。无部署或共享库迁移。
 
 ## 未完成项与恢复顺序
 
@@ -847,3 +847,15 @@
 - 完整Journey job31项、合同58项及依赖回归PASS（s11g6b2-modules-final.log），18JSON和10架构PASS；shaded JAR打包与从该真实归档加载入口计算摘要PASS（s11g6b2-package-final.log、s11g6b2-jar-identity.log）。没有连接或改变运行中Flink。
 - 根代理另行复核完整探针摘要缓存、时间/当前kill、严格类型路由、missing/浮点nonce拒绝、专用密钥与job graph序列化、源/制品/编译签名、状态零副作用、成功与失败输出故障传播，以及旧生产者/消费者启用门禁。Hygiene提示两处制品启动检查catch过宽，已缩窄到IO/URI/算法/权限异常；继续受影响7项验证并重打最终JAR，不重复未受影响DB回归。g6b1 f1cf177精确CI44135347731三项SUCCESS，待本片清洁提交后正常FF main。
 - 最终7项处理函数/制品测试、重打JAR与真实归档摘要核对PASS（s11g6b2-artifact-final.log、s11g6b2-jar-identity-final.log），其余31项模块范围/58合同/10架构证据保持适用。最终Hygiene/diff PASS（s11g6b2-hygiene-final.json），仅已命名路由容量常量ADVISORY及无formatter限制。无剩余当前片阻断；准备逻辑提交/精确CI，继续g6b3可靠探测与收集。未新增worktree，原忽略构建/测试/恢复文件保留，无清理。
+
+## S11g6b3a 持久探针与回执收集
+- g6b2 86ffe42已提交推送/dispatch 44137055316；g6b1已正常FF main并推送f1cf177。下一片设计见增量文档：可信部署配置、持久挑战和唯一子任务集合、严格机器入口与原输出consumer分流。暂不投递probe、不写APPLIED，当前未实现。
+- g6b3a V5两表/完整作用域外键/注释、可信部署配置、登记/查询/子任务去重收集与既有consumer分流已写，首轮编译结果待核对（s11g6b3a-compile.log）。复核将普通业务消息类型分流移出收集事务，避免给每条旧输出额外增加数据库事务；尚未功能验证，继续真实DB/HTTP/并发和合同。
+- g6b3a产品编译PASS；首轮8项集成测试均在BeforeEach失败：测试直接访问Spring代理对象上的故障字段，实际字段位于目标对象。已改为代理可调用的故障控制方法（s11g6b3a-first.log），不修改产品事务或放宽断言；继续二轮验证。
+- 二轮真实DB/HTTP 8项中7项PASS，唯一失败是未知探针预期写成409，实际正式合同为404 NotFound；已修正断言保留拒绝行为（s11g6b3a-second.log）。补充真实consumer分流（旧输出转原projector、新ACK入真实库）及启用目标缺Control信任时启动拒绝，继续完整模块验证。
+
+### S11g6b3a 本地验证检查点
+- 完整Journey服务29项、合同59项及依赖回归PASS（s11g6b3a-modules-final.log），包含新8项真实MySQL/HTTP并发/回滚、原授权/安装/状态投影和迁移保护。补充真实TenantContextFilter作用域下重建实例查询、当前撤钥/部署变化时拒绝旧READY，窄8项复验在执行（session50481，s11g6b3a-reconstruction-final.log）。18份JSON已校验。
+- 复核确认父行锁+READ_COMMITTED/唯一子键、无网络事务、完整租户与运行位置、当前身份与原组织/店铺、原挑战等价校验、第一份子任务ACK不被重复消息覆盖、历史EXPIRED不恢复资格、普通旧输出不新增数据库事务。尚待架构/Hygiene最终门禁及精确CI，不把注册/API可用当可靠投递或实际发布。
+- 最终重建查询/撤钥/换部署8项复验PASS（s11g6b3a-reconstruction-final.log），架构10项PASS（s11g6b3a-architecture-final.log）。Hygiene/diff PASS（s11g6b3a-hygiene.json）；事务ADVISORY已以真实并发、回滚及无远程副作用复核，16KiB为已命名协议容量常量，ProbeState与裂变State同名值分别属于执行证据和业务资格，不能跨域合并。无canonical formatter为现有工具限制。
+- g6b2 86ffe42精确CI44137055316三项SUCCESS，待本片清洁提交后正常FF main；g6b3a准备提交/精确CI。无运行测试进程，无新增worktree，忽略构建/测试/本机恢复文件保留不清理；未部署、发送probe、迁移共享库或触动原3个Flink作业。继续g6b3b有界可靠投递及恢复。

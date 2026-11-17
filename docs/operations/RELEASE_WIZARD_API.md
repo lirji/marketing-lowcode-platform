@@ -135,7 +135,7 @@ Decision V5/Journey V4会回填历史接收记录：已有active指针保持原g
 ### 实际Flink执行证据合同（S11g6b1，运行环境尚未启用）
 - JourneyBundleExecutionProbe由Control独立用途签名，固定租户/活动/运行位置、精确成员、整体授权序号及签名、目标jobId/parallelism、准入公钥ID与最多5分钟有效期。消费者必须读取并重验本地完整g3来源，不能仅靠探针索引或Web安装ACK发回成功。
 - JourneyBundleExecutionAck覆盖完整原探针及其签名，包含固定协议code、实际jobId/parallelism/subtaskIndex/attemptNumber、实际提交JAR的SHA256和时间；使用专门执行钥匙，不能用Control/普通READY签名替换。校验期望jobId、并行度和JAR摘要来自可信部署登记，禁止从待验回执复制。
-- 当前并行度合同上限128；越界拒绝。单份ACK不表示整个作业齐备，后续必须按同probeId收齐全部不同subtaskIndex，并检查当前部署、回执期限及真实应用门禁。合同模型/签名/JSON schema已具备，实际operator接线、可靠投递/收集、部署登记和应用写入仍未完成，本节不代表已探测运行中作业。
+- 当前并行度合同上限128；越界拒绝。单份ACK不表示整个作业齐备，后续必须按同probeId收齐全部不同subtaskIndex，并检查当前部署、回执期限及真实应用门禁。合同模型/签名/JSON schema、g6b2 operator接线及g6b3a持久收集已具备；可靠投递、实际部署目标验收和应用写入仍未完成，本节不代表已探测运行中作业。
 
 ### Flink探针处理（S11g6b2，投递/收集及部署仍待门禁）
 - `mk.journey.signal.v1`新增独立`JourneyBundleExecutionProbeMessage`封套：`eventType=JOURNEY_BUNDLE_EXECUTION_PROBE, probe, routingNonce`（0–2047）。路由键按共享合同从tenant/probeId/nonce生成，只用于覆盖不同实际子任务；不能用发送条数证明覆盖率。旧业务信号JSON及全部operator UID不变。
@@ -143,3 +143,10 @@ Decision V5/Journey V4会回填历史接收记录：已有active指针保持原g
 - 只读探针失败输出统一失败DLT，由后续持久发布流程有界重试；不会返回成功ACK。旧真实参与缺数据的checkpoint恢复规则不变。ACK/DLT的collect失败继续抛出，防止吞掉未提交输出。校验结果只按完整探针JSON摘要缓存至原expiresAt，最多128个摘要，仍逐次检查当前停用与时限。
 - `JOURNEY_EXECUTION_ACK_KEY_ID/PRIVATE_KEY_BASE64/PUBLIC_KEY_BASE64`三项全空时新路径关闭；部分配置或密钥不匹配启动失败。主入口只从实际加载的可执行shaded JAR流式计算SHA256（上限512MiB），不支持请求/环境变量指定摘要。jobId、parallelism、subtaskIndex、attemptNumber取实际Flink RuntimeContext，恢复后重读；专用钥匙不能由Web安装ACK代签。
 - 本片没有真实投递者或可靠ACK收集器，不向现有3个Flink作业发探针、不重启部署。旧消费者会拒绝新封套；只有g6b3收集/投递、g6b4实际应用、可信部署登记以及旧消费者退出/恢复验收齐备后才允许启用。隔离函数/DB测试和最终JAR摘要核对不替代生产savepoint、混合版本或完整Kafka checkpoint验收。
+
+### 持久探针登记/覆盖查询（S11g6b3a，尚未连接投递）
+- `POST /api/v1/journey-runtime/execution-probes`需要`runtime:warm`，8KiB严格probe对象；租户取认证范围，原g3组织/店铺权限及本站真实制品每次复核。完整作用域+probeId不可换挑战，重复登记返回持久事实；只登记，不自动向Kafka发探针。
+- `GET /api/v1/journey-runtime/execution-probes/{campaignId}/{probeId}`返回`state/probe/acknowledgements/observedAt`。只有当前有效、所有0..parallelism-1下标齐全才READY；重复输入或同下标不同attempt都只算一次。返回原签名供下游再验；READY不是APPLIED。到期返回EXPIRED历史；部署目标变化、撤钥或未到期制品损坏拒绝，不返回旧READY。
+- 目标配置为`JOURNEY_EXECUTION_TARGET_JOB_ID/PARALLELISM/BUILD_DIGEST/PARTICIPATION_KEY_ID`，只能填写经部署证据核验的实际值；默认全空/0关闭，部分配置拒绝。专用ACK信任为`JOURNEY_EXECUTION_ACK_TRUSTED_KEY_ID/TRUSTED_PUBLIC_KEY_BASE64/TRUSTED_PUBLIC_KEYS`，与Flink私钥配置和Web安装ACK信任分离；不能从收到的ACK生成配置。
+- Journey V5保存不可变挑战和每个子任务第一份有效回执，父行锁/数据库唯一下标/本地短事务保证并发幂等。输出consumer仅对独立ACK封套启动收集事务，普通业务输出沿旧投影；16KiB回执严格重验，未知/过期/无效消息沿原重试和DLT路径。登记/收集事务均不包含网络发送。
+- 本片未发送真实探针，也没有可恢复投递worker或整体应用入口；必须完成g6b3b及后续发布门禁才能启用。新表暂不自动清理，S13仍需生产保留、归档、容量与恢复策略。当前本地/生产数据库未迁移，运行作业不变。

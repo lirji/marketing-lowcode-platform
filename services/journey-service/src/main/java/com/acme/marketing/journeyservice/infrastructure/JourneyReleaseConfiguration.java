@@ -43,6 +43,24 @@ public class JourneyReleaseConfiguration {
         return new PinnedReleaseBundleActivationVerifier(keys);
     }
 
+    /** 专用执行公钥只验证Flink回执，不能由Web ACK或Control角色替代。 */
+    @Bean
+    public com.acme.marketing.contracts.release.PinnedJourneyBundleExecutionVerifier executionProbeVerifier(
+            @Value("${marketing.release.trusted-key-id:}") String controlId,
+            @Value("${marketing.release.public-key-base64:}") String controlKey,
+            @Value("${marketing.release.trusted-public-keys:}") String controlAdditional,
+            @Value("${marketing.journey.execution-ack.trusted-key-id:}") String executionId,
+            @Value("${marketing.journey.execution-ack.public-key-base64:}") String executionKey,
+            @Value("${marketing.journey.execution-ack.trusted-public-keys:}") String executionAdditional,
+            @Value("${marketing.journey.execution-target.job-id:}") String jobId) {
+        var execution = trustedKeys(executionId, executionKey, executionAdditional);
+        var control = trustedKeys(controlId, controlKey, controlAdditional);
+        if (jobId.isBlank() != execution.isEmpty() || (!jobId.isBlank() && control.isEmpty())) throw new IllegalStateException(
+                com.acme.marketing.contracts.release.ReleaseBundleProtocolError.EXECUTION_DEPLOYMENT_UNAVAILABLE.message());
+        return new com.acme.marketing.contracts.release.PinnedJourneyBundleExecutionVerifier(
+                control, execution);
+    }
+
     @Bean
     public JourneyReleaseVerifier journeyReleaseVerifier(
             @Value("${marketing.release.trusted-key-id:}") String releaseKeyId,

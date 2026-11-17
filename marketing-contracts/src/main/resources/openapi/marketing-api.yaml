@@ -814,6 +814,30 @@ paths:
     get: {tags: [Event], operationId: listQuarantine, responses: *list}
   /api/v1/quarantine/{quarantineId}:replay:
     post: {tags: [Event], operationId: replayQuarantinedEvent, parameters: [{$ref: '#/components/parameters/QuarantineId'}], responses: *ok}
+  /api/v1/journey-runtime/execution-probes:
+    post:
+      tags: [Journey]
+      operationId: registerJourneyExecutionProbe
+      description: Internal signed challenge registration only; does not send Kafka messages or apply a bundle. Requires current tenant, source organization/shop scope and trusted deployment configuration. Strict body limit 8KiB; same scope/probeId is immutable and idempotent.
+      x-internal: true
+      x-required-permission: runtime:warm
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/JourneyBundleExecutionProbe'}}}}
+      responses:
+        '200': {description: Persisted challenge and current bounded subtask evidence, content: {application/json: {schema: {$ref: '#/components/schemas/JourneyExecutionProbeReceipt'}}}}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/journey-runtime/execution-probes/{campaignId}/{probeId}:
+    get:
+      tags: [Journey]
+      operationId: getJourneyExecutionProbe
+      description: Revalidates current trust and deployment. READY proves all expected distinct Journey subtasks only; it is not APPLIED. Expired history returns EXPIRED and cannot authorize activation. No automatic retention cleanup.
+      x-internal: true
+      x-required-permission: runtime:warm
+      parameters:
+        - {in: path, name: campaignId, required: true, schema: {type: string, pattern: '^[A-Za-z0-9_.:@-]{1,64}$'}}
+        - {in: path, name: probeId, required: true, schema: {type: string, pattern: '^[A-Za-z0-9_.:@-]{1,64}$'}}
+      responses:
+        '200': {description: Consistent current or expired evidence, content: {application/json: {schema: {$ref: '#/components/schemas/JourneyExecutionProbeReceipt'}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/journey-runtime/release-bundle-directives:
     post:
       operationId: recordJourneyBundleDirective
@@ -1183,6 +1207,19 @@ components:
         latestSequence: {type: integer, format: int64, minimum: 1}
         current: {type: boolean, description: Whether this receipt is the highest recorded sequence; does not describe online routing}
         recordedAt: {type: string, format: date-time}
+    JourneyBundleExecutionProbe:
+      $ref: '../schema/events/journey-bundle-execution-probe.schema.json'
+    JourneyBundleExecutionAck:
+      $ref: '../schema/events/journey-bundle-execution-ack.schema.json'
+    JourneyExecutionProbeReceipt:
+      type: object
+      additionalProperties: false
+      required: [state, probe, acknowledgements, observedAt]
+      properties:
+        state: {type: string, enum: [PENDING, READY, EXPIRED]}
+        probe: {$ref: '#/components/schemas/JourneyBundleExecutionProbe'}
+        acknowledgements: {type: array, maxItems: 128, items: {$ref: '#/components/schemas/JourneyBundleExecutionAck'}, description: Ordered unique actual subtask indices; duplicate messages and later attempts never increase coverage}
+        observedAt: {type: string, format: date-time}
     ReleaseBundleAdmissionRequest:
       type: object
       additionalProperties: false
