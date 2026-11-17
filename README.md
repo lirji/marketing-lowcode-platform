@@ -99,7 +99,9 @@ pnpm frontend:dev
 - 创建活动时实际保存 `STANDARD` / `REFERRAL` 类型；类型尚未确认时关闭编辑入口，避免把标准规则写入裂变活动。
 - Offer / Journey 支持按节点配置金额、比例、日期、权益版本、条件、等待和触达参数。通过「出口连接」或画布连线连接显式节点；不会自动补入隐藏结束节点。Offer 当前仅支持定额/比例与完整单链，不开放尚不可执行的条件分支。
 - 保存、校验、试算与审核绑定同一修订；继续编辑会使原校验失效。保存成功但校验失败时保留版本和输入，可重试校验。
-- Offer 金额试算使用实际输入的金额/币种，不验证库存、时间或领取资格；有商品/人群等范围时由后端拒绝缺上下文的试算。Journey 完整仿真尚待补齐，界面不再显示伪价格结果。资源发放台账不等于外部权益到账。
+- Offer 金额试算使用实际输入的金额/币种，不验证库存、时间或领取资格；有商品/人群等范围时由后端拒绝缺上下文的试算。资源发放台账不等于外部权益到账。
+- Journey 保存校验后可使用「旅程仿真」：输入初始变量、按时间排序的事件和模拟窗口，复用实际 JourneyCompiler/JourneyRuntime 推进条件、事件等待和计时器，展示每次信号的状态及拟生成动作。POST `/api/v1/definitions/{definitionId}/versions/{version}:simulate-journey` 要求 `definition:simulate` 和原定义数据范围；不会落库、写 Outbox 或发送/发奖。输入变化会隐藏旧结果，旧通用金额仿真入口拒绝 Journey。
+- Journey 仿真正文最多64KiB、32事件、每字典32项，窗口最多7天；最多64次信号、总配置步数10000，达到预算返回 `TRUNCATED`。同刻先计时器后事件；保留现有图校验和运行时限制，生产调度延迟、处理时间TTL、外部资格与完整循环发布不在模拟范围。
 - 浏览器合同验收：`pnpm --filter @marketing/console exec playwright test lowcode-authoring.spec.ts`。可选真实本地验收：设置 `MARKETING_LIVE_UI=1`，使用 `--project=chromium --grep 'complete explicit Offer|Journey timer' --workers=1`；需要本机18080网关、DEV身份及真实权益目录，会在dev-tenant创建隔离活动和定义，不执行审核/发布/发奖。
 
 ### 人群数据边界

@@ -226,3 +226,24 @@ S01–S05已交付，S05提交61b471b已正常快进推送main，精确候选CI4
 - 真实浏览器桌面/Pixel7通过：隔离MySQL中种子历史清单，真实control执行9→4回滚，故意丢弃已成功响应，重连真实候选409，原参数/幂等键重放200，SQL确认desired=4且仅1条激活指令。s11c-live-result.json、s11c-live-browser-second.log；截图已实际查看，无页面错误/视口溢出。历史清单为隔离fixture，Relay关闭，不代表完整编译/审批/运行时资格或生产回滚演练。
 - 首次Java在临时MySQL就绪前失败，核对后启动成功；首次浏览器种子TenantId JSON结构错误导致500，修正隔离fixture后通过，没有修改产品反序列化或放宽测试。旧日志保留。
 - 本片临时Java60637/Vite59860及自有测试MySQL已停止，端口关闭已确认（s11c-live-cleanup.json），准备提交；尚未远程CI/主干交付/本机应用部署。S11其他子项及S12/13继续，外部会员/履约合同仍待确认。
+
+## S11d Journey 同源仿真（设计确定，实施中）
+- 基于S11c 1b66e34建立feat/journey-simulation；S11c精确CI43825793504运行，尚未合主干。S11跨slot原子发布/聚合状态需要业务原子边界，外部发奖依赖会员/资格合同；先执行独立纯仿真，不新增调度器或基础设施。
+- 复用JourneyCompiler/JourneyRuntime，新增定义版本专属POST :simulate-journey，当前definition:simulate和组织/店铺范围，校验真实已保存图。输入initialVariables及按时间有序events（offsetSeconds/eventType/attributes），horizonSeconds限定模拟窗口；START后按事件和计时器推进，同一时刻timer先于event、同刻event按输入顺序，结果记录真实信号边界状态/指令摘要/未触发计时器。无落库/Outbox/真实发送/发奖，不能冒充整个Journey生产能力完成。
+- 资源有界：正文64KiB、最多32输入事件、每字典32项、key64/value256、窗口7天、最多64次信号推进、每信号最多1000步、迭代最多100（超过拒绝，不改写定义运行预算）；达到64次停止并明确TRUNCATED。初始条件和事件属性仅为本次试算输入，不作为业务数据库Mock。
+- 页面复用原设计器，需已保存校验版本及权限；独立弹层编辑键值变量和事件序列，时间为相对开始秒数，结果按字段分列，不显示价格。修改输入使旧结果失效；版本/身份切换清理弹层和迟到回执，错误保留输入，DEMO禁止真实调用。
+- 验收：条件双分支、等待事件/计时器、重复/步数限制、动作仅摘要、同引擎结果、无副作用和权限范围、输入边界；组件迟到/失败恢复、真实HTTP双视口与构建/合同/CI。旧通用Journey价格假结果改明确拒绝并指向专属入口，Offer/Referral响应保持。
+
+### S11d 首轮实现检查点
+- S11c精确CI43825793504全部PASS，1b66e34已正常快进推送main并核对本地远程一致；s11c-delivery.json，S11d工作树保留。
+- S11d后端同源编译/状态机、严格64KiB输入、版本范围鉴权及专属接口已写；前端变量/事件表单与结果已写。首轮20后端（6纯仿真+3真实HTTP/MySQL+3原runtime+4Offer+4原control）PASS，s11d-backend-first.log；前端正在全量验证。合同/浏览器尚待最终结果。
+- 两次组件测试fixture问题已修：输入标签含帮助文字需要显式可访问名称，异步mutation需等待实际启动后再交回回执。零等待环路测试改为交替两个等待节点，以真实触发多次计时器；同一计时器键循环在既有runtime可能消耗单信号预算，仿真忠实返回FAILED，不因此修改生产语义。
+- 进一步明确：总配置节点步数预算10000；虚拟时间同刻优先timer不代表生产调度顺序，生产处理时间TTL/外部资格未模拟。既有GraphValidator禁止循环的规则保留，不冒充完整循环发布支持。
+- 独立frontend代理尝试失败，环境报模型不受支持，未得到本片独立结论；根代理承担第二轮对抗复核，不能引用S11c审查作为S11d证据。无S11d业务副作用或应用部署。
+
+### S11d 最终本地验证（2026-11-17）
+- 21项相关后端验证有效：7纯仿真、3真实HTTP/MySQL、3原Journey runtime、4Offer、4ControlFlow；最后非法/溢出计时器回归及exec JAR打包通过（s11d-package.log），授权/严格解析在s11d-backend-enums.log。10架构、163全量前端、lint/build、合同13JSON通过，合同浏览器2新+6原流程通过。最后前端markDirty同步关闭仿真弹层，避免后续校验误重开。
+- 真实浏览器桌面/Pixel7均通过：真实API创建活动与保存校验，PAID事件10秒→计时器15秒→仅拟生成SEND；无事件返回WAITING。SQL逐次核对仿真前后定义版本/状态与ControlCommand/Outbox数量不变，无页面错误和外部溢出；s11d-live-result.json、s11d-live-browser-second.log，结果截图已实际查看。
+- 首次真实浏览器末尾fixture断言把“相同图保存”错当新版本；实际服务按hash复用v1且校验后VALIDATED，改为对比前后实际版本/状态后通过。保留失败日志；未修改产品版本/校验语义。测试仅隔离MySQL，Relay关闭，共享infra/Flink无改动。
+- 根代理第二轮复核权限先行、64KiB流式上限、严格JSON、虚拟时间边界和总步数限制、输入/版本失效以及无副作用；未得到独立代理审查结果（模型不可用）。Hygiene允许既有journey-runtime-spi内部依赖，仓库无canonical formatter为明确限制。
+- 尚未S11d提交/远程CI/main交付；S11其它子项不能据此标DONE。下一片先处理S12已有测量接口可支撑的窗口一致性、刷新与报告导出，活动/归因过滤必须先补真实后端协议，不启用虚假筛选。

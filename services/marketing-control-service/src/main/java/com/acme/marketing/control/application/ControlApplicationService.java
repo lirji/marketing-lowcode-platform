@@ -247,6 +247,25 @@ public class ControlApplicationService {
         return simulationService.preview(stored.graph(), typedFacts);
     }
 
+    /** 读取请求正文前检查当前定义范围，禁止无权请求消耗仿真计算预算。 */
+    public void authorizeJourneySimulation(String definitionId, long version) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("definition:simulate");
+        definition(scope, definitionId, version);
+    }
+
+    /** 对真实保存的版本执行同源状态机，纯计算不写定义状态或业务命令。 */
+    public JourneySimulationService.Result simulateJourney(String definitionId, long version, JourneySimulationRequest request) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("definition:simulate");
+        StoredDefinition stored = definition(scope, definitionId, version);
+        if (stored.graph().dialect() != Dialect.JOURNEY_STATE_MACHINE) throw JourneySimulationErrorCode.DIALECT_REQUIRED.invalid();
+        var issues = new GraphValidator(registry.all(), GraphValidator.Limits.productionDefaults()).validate(stored.graph());
+        if (issues.stream().anyMatch(issue -> issue.severity() == ValidationIssue.Severity.ERROR))
+            throw new ConflictException("DEFINITION_INVALID", "definition must pass validation before simulation");
+        return new JourneySimulationService().simulate(stored.graph(), version, request);
+    }
+
     @Transactional
     public ApprovalView submit(String definitionId, long version) {
         var scope = TenantContextHolder.requireCurrent();

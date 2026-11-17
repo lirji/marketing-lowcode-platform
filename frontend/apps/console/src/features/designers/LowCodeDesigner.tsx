@@ -1,6 +1,6 @@
 import { RecordTable } from '../../components/RecordTable'
 import { Select } from '../../components/Select'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   addEdge, Background, Controls, Handle, MiniMap, Position, ReactFlow,
   useEdgesState, useNodesState, type Connection, type Edge, type NodeProps, type ReactFlowInstance,
@@ -20,6 +20,7 @@ import { nodePorts } from './nodePorts'
 import { NodeConfigEditor } from './NodeConfigEditor'
 import { NODE_LABELS, supportedNode } from './nodeConfig'
 import { problemNodeId } from './problemNodeId'
+import { JourneySimulationDialog } from './JourneySimulationDialog'
 
 export type { DesignerNode }
 const DESIGNER_STATUS = { SAVED: 'saved', DIRTY: 'dirty', VALIDATED: 'validated', SIMULATED: 'simulated' } as const
@@ -67,6 +68,8 @@ export function LowCodeDesigner({
   const flow = useRef<ReactFlowInstance<DesignerNode, Edge> | undefined>(undefined)
   const [checkedRevision, setCheckedRevision] = useState<number>()
   const [validated, setValidated] = useState<{ version: number; definitionId: string; revision: number }>()
+  const [journeySimulationOpen, setJourneySimulationOpen] = useState(false)
+  const closeJourneySimulation = useCallback(() => setJourneySimulationOpen(false), [])
   const [search, setSearch] = useState('')
   const [amountMinor, setAmountMinor] = useState('')
   const [currency, setCurrency] = useState('CNY')
@@ -225,7 +228,7 @@ export function LowCodeDesigner({
   const editable = canWrite && !restoring && !loadError
   const ready = live && validated?.revision === revision.current && !busy && !loadError && !restoring
   const validAmount = /^\d+$/.test(amountMinor) && Number.isSafeInteger(Number(amountMinor))
-  const markDirty = () => { revision.current++; setValidated(undefined); setStatus(DESIGNER_STATUS.DIRTY); setServerProblems([]); setCheckedRevision(undefined); setNotice(undefined) }
+  const markDirty = () => { revision.current++; setJourneySimulationOpen(false); setValidated(undefined); setStatus(DESIGNER_STATUS.DIRTY); setServerProblems([]); setCheckedRevision(undefined); setNotice(undefined) }
   const remember = () => { history.current.push({ nodes, edges }); if (history.current.length > 30) history.current.shift(); future.current = [] }
   const undo = () => { const snapshot = history.current.pop(); if (!snapshot) return; future.current.push({ nodes, edges }); setNodes(snapshot.nodes); setEdges(snapshot.edges); markDirty() }
   const redo = () => { const snapshot = future.current.pop(); if (!snapshot) return; history.current.push({ nodes, edges }); setNodes(snapshot.nodes); setEdges(snapshot.edges); markDirty() }
@@ -264,10 +267,10 @@ export function LowCodeDesigner({
   }
 
   return <div className="designer-page">
-    <header className="designer-header"><div><p className="eyebrow">{dialect}{campaignId ? ` · ${campaignId}` : ''}</p><h1>{title}</h1><span>{savedVersion ? `v${savedVersion}` : version} · <i className={`save-state ${status}`}>{status === DESIGNER_STATUS.SAVED ? '已保存' : status === DESIGNER_STATUS.DIRTY ? '有未保存更改' : status === DESIGNER_STATUS.VALIDATED ? '校验通过' : '仿真完成'}</i></span></div><div className="designer-actions"><Button onClick={() => startAction(() => saveMutation.mutate(capture()))} disabled={!editable || busy}><Save size={15} />保存</Button><Button onClick={() => startAction(() => validateMutation.mutate(capture()))} disabled={!editable || !live || busy}><CheckCircle2 size={15} />校验</Button>{dialect === 'OFFER_DECISION_DAG' && <Button onClick={() => { if (validated) startAction(() => simulateMutation.mutate({ target: validated, amountMinor, currency })) }} disabled={!ready || !validAmount || !/^[A-Z]{3}$/.test(currency)}><FlaskConical size={15} />金额试算</Button>}<Button tone="primary" onClick={() => { if (validated) startAction(() => submitMutation.mutate(validated)) }} disabled={!ready || !auth.hasPermission('definition:submit')}><Send size={15} />提交审核</Button></div></header>
+    <header className="designer-header"><div><p className="eyebrow">{dialect}{campaignId ? ` · ${campaignId}` : ''}</p><h1>{title}</h1><span>{savedVersion ? `v${savedVersion}` : version} · <i className={`save-state ${status}`}>{status === DESIGNER_STATUS.SAVED ? '已保存' : status === DESIGNER_STATUS.DIRTY ? '有未保存更改' : status === DESIGNER_STATUS.VALIDATED ? '校验通过' : '仿真完成'}</i></span></div><div className="designer-actions"><Button onClick={() => startAction(() => saveMutation.mutate(capture()))} disabled={!editable || busy}><Save size={15} />保存</Button><Button onClick={() => startAction(() => validateMutation.mutate(capture()))} disabled={!editable || !live || busy}><CheckCircle2 size={15} />校验</Button>{dialect === 'OFFER_DECISION_DAG' && <Button onClick={() => { if (validated) startAction(() => simulateMutation.mutate({ target: validated, amountMinor, currency })) }} disabled={!ready || !validAmount || !/^[A-Z]{3}$/.test(currency)}><FlaskConical size={15} />金额试算</Button>}{dialect === 'JOURNEY_STATE_MACHINE' && <Button disabled={!ready || api.demoMode || !auth.hasPermission('definition:simulate')} onClick={() => setJourneySimulationOpen(true)}><FlaskConical size={15} />旅程仿真</Button>}<Button tone="primary" onClick={() => { if (validated) startAction(() => submitMutation.mutate(validated)) }} disabled={!ready || !auth.hasPermission('definition:submit')}><Send size={15} />提交审核</Button></div></header>
     <DemoBanner />
     {restoring && <div className="designer-notice"><StateBanner tone="info" title="正在加载已保存定义" detail="加载完成后可编辑，避免覆盖已有版本。" /></div>}
-    <div className="designer-simulation-inputs">{dialect === 'OFFER_DECISION_DAG' ? <><label className="field"><span>试算订单金额（分）</span><input aria-label="试算订单金额（分）" inputMode="numeric" value={amountMinor} onChange={(event) => setAmountMinor(event.target.value)} /></label><label className="field"><span>试算币种</span><input aria-label="试算币种" value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase())} maxLength={3} /></label><p>保存并校验当前内容后可试算和提交；编辑会使原校验失效。金额试算不支持商品、人群、店铺范围或运费优惠。</p></> : <p>保存并校验当前内容后可提交。当前不提供完整旅程仿真；实际等待、触达和履约需在运行环境验收。</p>}</div>
+    <div className="designer-simulation-inputs">{dialect === 'OFFER_DECISION_DAG' ? <><label className="field"><span>试算订单金额（分）</span><input aria-label="试算订单金额（分）" inputMode="numeric" value={amountMinor} onChange={(event) => setAmountMinor(event.target.value)} /></label><label className="field"><span>试算币种</span><input aria-label="试算币种" value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase())} maxLength={3} /></label><p>保存并校验当前内容后可试算和提交；编辑会使原校验失效。金额试算不支持商品、人群、店铺范围或运费优惠。</p></> : <p>保存并校验当前内容后可仿真或提交审核。仿真仅展示输入下的状态和拟生成指令；实际触达与履约仍需运行环境验收。</p>}</div>
     {!campaignId && !api.demoMode && <div className="designer-notice"><StateBanner tone="info" title="未绑定活动" detail="侧栏打开的是空白草稿，保存不会写入控制面。请从「计划与活动」创建或打开活动后再设计。" /></div>}
     {(actionError || loadError) && <div className="designer-notice"><StateBanner tone="error" title="设计器操作失败" detail={loadError ?? problemDetail(actionError)} /></div>}
     {notice && <div className="designer-notice"><StateBanner tone="success" title="操作已受理" detail={notice} /></div>}
@@ -279,6 +282,7 @@ export function LowCodeDesigner({
       </section>
       <aside className="inspector"><div className="designer-section-title"><span>属性与治理</span><Badge tone="info">节点配置</Badge></div>{selected ? <><div className="selected-node"><i className={selected.data.tone}>{selected.data.label.slice(0,1)}</i><div><strong>{selected.data.label}</strong><small>{selected.id}</small></div></div><NodeConfigEditor key={selected.id} node={selected} onChange={updateConfig} disabled={!editable} benefits={benefitCatalog.data} benefitError={benefitCatalog.error ? problemDetail(benefitCatalog.error) : undefined} /><div className="node-routes"><strong>出口连接</strong>{portsFor(selected).outputs.length === 0 && <p className="field-hint">结束节点没有出口。</p>}{portsFor(selected).outputs.map((port) => <label className="field" key={port}><span>出口 {port}</span><Select aria-label={`出口 ${port}`} disabled={!editable} value={edges.find((edge) => edge.source === selectedId && (edge.sourceHandle ?? 'next') === port)?.target ?? ''} onChange={(event) => routeTo(port, event.target.value)}><option value="">未连接</option>{nodes.filter((node) => node.id !== selectedId && portsFor(node).inputs.includes('in')).map((node) => <option key={node.id} value={node.id}>{node.data.label} · {node.id}</option>)}</Select></label>)}</div></> : <div className="empty-inspector">选择节点查看属性</div>}</aside>
     </div>
+    {journeySimulationOpen && validated && validated.revision === revision.current && <JourneySimulationDialog key={JSON.stringify([scope, auth.permissions, validated])} definitionId={validated.definitionId} version={validated.version} onClose={closeJourneySimulation} />}
     <section className={`problems-drawer ${showProblems ? 'open' : ''}`}><button className="problems-title" type="button" onClick={() => setShowProblems(!showProblems)}><AlertTriangle size={15} /><strong>Problems {displayedProblems.length}</strong><span>{checkedRevision === revision.current ? '来自控制面校验' : '尚未校验当前内容'}</span></button>{showProblems && <div className="problem-list">{displayedProblems.length === 0 ? <p className="muted">{checkedRevision === revision.current ? '没有校验问题。' : '请校验当前内容，尚无校验结果。'}</p> : <RecordTable label="校验问题" columns={['严重程度', '问题码', '问题说明', '字段路径', '操作']} actions>{displayedProblems.map((problem, index) => <tr key={`${problem.code}-${problem.pointer}-${index}`}><td><Badge tone={problem.severity === 'ERROR' ? 'danger' : 'warn'}>{problem.severity}</Badge></td><td>{problem.code}</td><td>{problem.message}</td><td>{problem.pointer}</td><td><Button disabled={!problemNodeId(problem, nodes)} onClick={() => { setSelectedId(problemNodeId(problem, nodes) ?? ''); setOutline(false) }}>查看节点</Button></td></tr>)}</RecordTable>}</div>}</section>
   </div>
 }

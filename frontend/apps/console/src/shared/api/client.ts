@@ -33,6 +33,8 @@ import {
   recomputeSchema,
   releaseViewSchema,
   rollbackCandidateSchema,
+  journeySimulationSchema,
+  type JourneySimulationInput,
   seriesSchema,
   parseSimulationResult,
   referralParticipantPageSchema,
@@ -194,6 +196,8 @@ export const api = {
   nodeRegistry: () => request('/api/v1/registries/nodes', undefined, (value) => zArray(nodeRegistrySchema, value)),
   validate: (definitionId: string, version: number) =>
     request(`/api/v1/definitions/${encodeURIComponent(definitionId)}/versions/${version}:validate`, { method: 'POST', headers: commandHeaders() }, (value) => parseWith(validationResultSchema, value)),
+  simulateJourney: (definitionId: string, version: number, input: JourneySimulationInput) =>
+    request(`/api/v1/definitions/${encodeURIComponent(definitionId)}/versions/${version}:simulate-journey`, { method: 'POST', body: JSON.stringify(input) }, (value) => parseWith(journeySimulationSchema, value)),
   simulate: (definitionId: string, version: number, facts: Record<string, string>) =>
     request(`/api/v1/definitions/${encodeURIComponent(definitionId)}/versions/${version}:simulate`, { method: 'POST', headers: commandHeaders(), body: JSON.stringify(facts) }, parseSimulationResult),
   submit: (definitionId: string, version: number) =>

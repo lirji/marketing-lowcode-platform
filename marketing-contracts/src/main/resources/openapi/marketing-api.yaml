@@ -88,6 +88,34 @@ paths:
       parameters: [{$ref: '#/components/parameters/DefinitionId'}, {$ref: '#/components/parameters/Version'}]
       requestBody: {$ref: '#/components/requestBodies/JsonObject'}
       responses: *ok
+  /api/v1/definitions/{definitionId}/versions/{version}:simulate-journey:
+    post:
+      tags: [Control]
+      operationId: simulateJourneyDefinition
+      x-required-permission: definition:simulate
+      description: |
+        Pure simulation of the saved Journey version using the same compiler and state machine.
+        No persistence, delivery, grant or webhook effects. Maximum body 64 KiB.
+        Events must be ordered by offset; at equal time timers run before events, then input order.
+        Does not model production processing-time TTL, scheduler delay or external eligibility.
+        Maximum 64 signal advances and 10000 configured node steps; TRUNCATED is not completion.
+        Existing graph validation remains required. The general :simulate endpoint rejects Journey.
+      parameters: [{$ref: '#/components/parameters/DefinitionId'}, {$ref: '#/components/parameters/Version'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JourneySimulationRequest'}
+      responses:
+        '200':
+          description: Actual simulated state and proposed command summaries; no effects executed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JourneySimulationResult'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
   /api/v1/definitions/{definitionId}/versions/{version}:submit:
     post:
       tags: [Control]
@@ -1112,6 +1140,76 @@ components:
         schemaVersion: {type: string}
         attributes: {type: object, additionalProperties: {type: string}}
         correctionOf: {type: string}
+    JourneySimulationFields:
+      type: object
+      maxProperties: 32
+      propertyNames: {type: string, minLength: 1, maxLength: 64, pattern: '.*\S.*'}
+      additionalProperties: {type: string, maxLength: 256}
+    JourneySimulationRequest:
+      type: object
+      additionalProperties: false
+      required: [initialVariables, events, horizonSeconds]
+      properties:
+        initialVariables: {$ref: '#/components/schemas/JourneySimulationFields'}
+        horizonSeconds: {type: integer, minimum: 0, maximum: 604800}
+        events:
+          type: array
+          maxItems: 32
+          items:
+            type: object
+            additionalProperties: false
+            required: [offsetSeconds, eventType, attributes]
+            properties:
+              offsetSeconds: {type: integer, minimum: 0, maximum: 604800}
+              eventType: {type: string, minLength: 1, maxLength: 64, pattern: '.*\S.*'}
+              attributes: {$ref: '#/components/schemas/JourneySimulationFields'}
+    JourneySimulationResult:
+      type: object
+      additionalProperties: false
+      required: [kind, definitionId, version, stopReason, status, currentNodeId, elapsedSeconds, remainingEvents, steps, pendingTimers, failureCode]
+      properties:
+        kind: {type: string, const: JOURNEY_SIMULATION}
+        definitionId: {type: string}
+        version: {type: integer, minimum: 1}
+        stopReason: {type: string, enum: [COMPLETED, WAITING, FAILED, TRUNCATED]}
+        status: {type: string, enum: [RUNNING, WAITING, COMPLETED, FAILED]}
+        currentNodeId: {type: string}
+        elapsedSeconds: {type: number, minimum: 0}
+        remainingEvents: {type: integer, minimum: 0, maximum: 32}
+        failureCode: {type: string}
+        pendingTimers:
+          type: array
+          maxItems: 1
+          items:
+            type: object
+            required: [nodeId, dueOffsetSeconds]
+            properties:
+              nodeId: {type: string}
+              dueOffsetSeconds: {type: number, minimum: 0}
+        steps:
+          type: array
+          maxItems: 64
+          items:
+            type: object
+            required: [sequence, signal, eventType, offsetSeconds, fromNodeId, toNodeId, status, commands]
+            properties:
+              sequence: {type: integer, minimum: 1, maximum: 64}
+              signal: {type: string, enum: [START, EVENT, TIMER]}
+              eventType: {type: string}
+              offsetSeconds: {type: number, minimum: 0}
+              fromNodeId: {type: string}
+              toNodeId: {type: string}
+              status: {type: string, enum: [RUNNING, WAITING, COMPLETED, FAILED]}
+              commands:
+                type: array
+                maxItems: 1000
+                items:
+                  type: object
+                  required: [type, nodeId, commandId]
+                  properties:
+                    type: {type: string, enum: [SEND, GRANT, WEBHOOK]}
+                    nodeId: {type: string}
+                    commandId: {type: string, description: Deterministic preview-only identity; never dispatched.}
     Problem:
       type: object
       required: [type, title, status, code, traceId, retryable]

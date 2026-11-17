@@ -31,6 +31,7 @@ class ContractSpecificationsTest {
             "/api/v1/definitions/latest", "/api/v1/definitions/{definitionId}/versions/{version}",
             "/api/v1/definitions/{definitionId}/versions/{version}:validate",
             "/api/v1/definitions/{definitionId}/versions/{version}:simulate",
+            "/api/v1/definitions/{definitionId}/versions/{version}:simulate-journey",
             "/api/v1/definitions/{definitionId}/versions/{version}:submit",
             "/api/v1/definitions/{definitionId}/versions/{version}/terms",
             "/api/v1/approvals", "/api/v1/approvals/{caseId}/decisions", "/api/v1/registries/nodes",

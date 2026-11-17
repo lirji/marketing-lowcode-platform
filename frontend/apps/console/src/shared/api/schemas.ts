@@ -169,6 +169,19 @@ export const rollbackCandidateSchema = z.object({ manifestId: z.string(), genera
   expiresAt: z.string(), artifacts: z.array(artifactReferenceSchema) })
 export type RollbackCandidate = z.infer<typeof rollbackCandidateSchema>
 
+export type JourneySimulationInput = { initialVariables: Record<string, string>; horizonSeconds: number;
+  events: { offsetSeconds: number; eventType: string; attributes: Record<string, string> }[] }
+export const journeySimulationSchema = z.object({
+  kind: z.literal('JOURNEY_SIMULATION'), definitionId: z.string(), version: z.number().int(),
+  stopReason: z.enum(['COMPLETED', 'WAITING', 'FAILED', 'TRUNCATED']), status: z.string(), currentNodeId: z.string(),
+  elapsedSeconds: z.number(), remainingEvents: z.number().int(), failureCode: z.string(),
+  pendingTimers: z.array(z.object({ nodeId: z.string(), dueOffsetSeconds: z.number() })),
+  steps: z.array(z.object({ sequence: z.number().int(), signal: z.enum(['START', 'EVENT', 'TIMER']), eventType: z.string(),
+    offsetSeconds: z.number(), fromNodeId: z.string(), toNodeId: z.string(), status: z.string(),
+    commands: z.array(z.object({ type: z.enum(['SEND', 'GRANT', 'WEBHOOK']), nodeId: z.string(), commandId: z.string() })) })),
+})
+export type JourneySimulation = z.infer<typeof journeySimulationSchema>
+
 export type CompileRequest = {
   definitionId: string
   definitionVersion: number
