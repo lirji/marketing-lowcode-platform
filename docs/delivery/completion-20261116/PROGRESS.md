@@ -9,10 +9,10 @@
 
 ## 当前状态（2026-11-17）
 - S01–S05已完成；S06–S13按下表继续。S12c资产/消息模板 `c14289e`、容器路由修复 `8bb1270`、S12d审批完整分页 `e9f3972d2584fa5e96437a782e50d1b3bb6bb5c8` 均已精确CI三项PASS并正常快进推送main；对应运行编号44041099756、44044235242、44047459413。
-- 本地部署已验证：control为b3858e6、console为2e2263f，engagement为c14289e，其余8应用保留045dfd9；11应用健康。control V7索引已迁移成功，更新前已备份。模板、审批分页、发布选择的真实Docker接口及桌面/手机浏览器PASS，见 [LOCAL_DEPLOYMENT_20261117.md](LOCAL_DEPLOYMENT_20261117.md)。
+- 本地部署已验证：control为b3858e6、console为f0ab7cf，engagement为c14289e，其余8应用保留045dfd9；11应用健康。control V7索引已迁移成功，更新前已备份。模板、审批分页、发布选择的真实Docker接口及桌面/手机浏览器PASS，见 [LOCAL_DEPLOYMENT_20261117.md](LOCAL_DEPLOYMENT_20261117.md)。
 - 用户最新授权“如果当前是docker问题，可以让docker只运行该项目的组件”。Docker管理卡死已通过本机重启恢复；重启前3个Flink作业成功stop-with-savepoint，重启后逐个no_claim恢复并确认新检查点持续推进。保留数据卷；没有空状态启动或生产部署。
-- 当前仅18个必要容器运行：13个marketing-r1常驻容器、现有权益目录适配服务、MySQL/Redis/Kafka/ClickHouse。额外停止13个无关容器，原17个langchain应用仍停止。实际容器内存合计约5.95GiB（单次快照，不代表容量压测）；容器/数据卷保留，可按记录恢复。
-- S12e发布中心完整分页与范围过滤已交付，3f22019精确CI44056163714三项PASS，正常FF main并完成本地Docker/真实双视口验收。S12f发布读取调用点2e2263f与S12g活动范围b3858e6也已精确CI并FF main、本地运行验收；当前S12h首页数据表述验证中；其它资产分页/种子历史定义迁移等仍未完成。真实会员/画像来源、裂变外部合同仍待确认，不改变拒绝保护。
+- 当前仅18个必要容器运行：13个marketing-r1常驻容器、现有权益目录适配服务、MySQL/Redis/Kafka/ClickHouse。额外停止13个无关容器，原17个langchain应用仍停止。实际容器内存合计约6.32GiB（单次快照，不代表容量压测）；容器/数据卷保留，可按记录恢复。
+- S12e发布中心完整分页与范围过滤已交付，3f22019精确CI44056163714三项PASS，正常FF main并完成本地Docker/真实双视口验收。S12f发布读取调用点2e2263f与S12g活动范围b3858e6也已精确CI并FF main、本地运行验收；S12h首页数据表述f0ab7cf已精确CI44063426678三项PASS、FF main并完成console增量运行/真实双视口验收；下一步核对历史Journey定义迁移，资产分页等仍未完成。真实会员/画像来源、裂变外部合同仍待确认，不改变拒绝保护。
 
 ## 执行清单与验收
 
@@ -402,7 +402,7 @@
 - 2e2263f3d750cb37f4c4df29fb24bc03c43e6fa5精确CI44060287931三项PASS，正常FF main；s12f-ci-exact.json与s12f-delivery.json。control/console已更新至此版本，18必要容器健康，其它16容器不变，Flink原恢复作业检查点持续推进。
 - 实际单清单读取、权限拒绝/跨租户404、完整列表/状态筛选、模板/审批与桌面/手机首页、发布中心、向导读取PASS，无业务写请求；runtime-2e2263f/{rollout-state,runtime-smoke,browser-smoke}.json。已查看真实手机首页截图。S12g只读范围修复b3858e6已提交，精确CI44061394760进行中，单独control镜像与配置/备份已就绪。
 
-## S12h 首页数据表述（IN_PROGRESS）
+## S12h 首页数据表述（DONE）
 - 真实Docker截图runtime-2e2263f/mobile-release-overview.png暴露：固定标题“增长脉搏稳定”，把全部已读活动数当在线活动；数据水位停留2026-09-16而当前为2026-11-17，延迟仅显示数百万秒。零收入点也被最小柱高抬成正值。
 - 从b3858e6建立fix/dashboard-data-status；先交付S12g，再交付本片。修正首页为中性标题、已加载活动计数、缺失延迟保留未知、按单位展示实际延迟和零值图形；不定义未经确认的实时SLA、不变更测量API或生产数据。
 - 验收：真实API数据/延迟缺失/零值单位测试，保留DEMO隔离、lint/build与双视口页面；精确CI及仅console增量部署。
@@ -415,3 +415,8 @@
 - 210项全前端测试PASS（42文件），含新增旧水位、缺失/非法延迟、活动请求失败、分金额、零柱和负值明细场景；lint/build通过。s12h-frontend.log、s12h-lint.log、s12h-build.log。
 - 桌面与Pixel7两个浏览器合同样例PASS，实际截图已查看；长延迟/金额/卡片不横向溢出，零值柱高度为0，非DEMO无“在线活动/稳定/实时经营”断言。s12h-browser.log与s12h-browser/。
 - 根代理核对数据来源、未知值和负值语义、DEMO隔离、保留ROI与金额分；Hygiene无阻断，仅命名单位常量数值提示与仓库无canonical formatter限制。无新增依赖/后端改动，尚未精确远程CI和console运行部署。
+
+### S12h 远程与运行交付
+- f0ab7cfe7826e211316ef32318e59a2f3c61dec5精确CI44063426678三项PASS，正常FF main；s12h-ci-exact.json与s12h-delivery.json。仅console更新，control保持b3858e6，其它17容器身份/镜像/启动时间不变。
+- runtime-f0ab7cf运行与真实桌面/Pixel7浏览器PASS，18必要容器正常、3个Flink原作业检查点推进；实际首页展示7个已加载活动、4条清单和61天18小时历史延迟，无页面错误、请求失败、业务写请求或横向溢出。已查看真实双视口截图。
+- S12h已完成；下一步核对历史Journey节点及版本迁移，原S06–S13计划继续，外部会员/交易/履约合同仍未解决。
