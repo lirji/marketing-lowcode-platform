@@ -5,7 +5,7 @@ import { Select } from '../../components/Select'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, DatabaseZap, RefreshCw, Search, ShieldCheck, TriangleAlert } from 'lucide-react'
+import { Copy, RefreshCw, Search, ShieldCheck, TriangleAlert } from 'lucide-react'
 import { api } from '../../shared/api/client'
 import { Badge, Button, DemoBanner, EmptyState, Modal, PageHeader, Panel, PanelHeader, StateBanner } from '../../components/ui'
 import { problemDetail } from '../../shared/api/problem'
@@ -13,6 +13,12 @@ import { useAuth } from '../../shared/auth/useAuth'
 import type { TraceView } from '../../shared/api/schemas'
 import { PageTabs } from '../../components/PageTabs'
 import { AwardIntentsPanel } from './AwardIntentsPanel'
+
+const PREVIEW_DETAIL = '当前为静态预览。连接营销服务后可查询已保存的记录及其实际结果。'
+
+function PreviewPanel({ title }: { title: string }) {
+  return <Panel><EmptyState title={`${title}需要连接服务`} detail={PREVIEW_DETAIL} /></Panel>
+}
 
 const tabs = ['全链路查询', 'Journey 实例', '触达记录', '发放', 'DLQ / 隔离区', '资金对账'] as const
 
@@ -58,19 +64,18 @@ type TraceQueryKind = keyof typeof traceQueries
 
 export function TraceSearch() {
   const [kind, setKind] = useState<TraceQueryKind>('request')
-  const [searchId, setSearchId] = useState(api.demoMode ? 'req-20260902-8F2A' : '')
-  const [demoRequestId, setDemoRequestId] = useState(searchId)
+  const [searchId, setSearchId] = useState('')
   const trace = useMutation({
     mutationFn: ({ id, kind: queryKind }: { id: string; kind: TraceQueryKind }) => traceQueries[queryKind].lookup(id),
   })
   const runSearch = () => {
     const id = searchId.trim()
-    if (!id) return
-    if (api.demoMode) setDemoRequestId(id)
-    else trace.mutate({ id, kind })
+    if (!id || api.demoMode) return
+    trace.mutate({ id, kind })
   }
+  if (api.demoMode) return <PreviewPanel title="营销轨迹" />
   return <div id="tab-全链路查询" role="tabpanel">
-    <StateBanner tone="info" title="这是营销 Request ID 业务轨迹" detail="不是 Grafana Tempo。跨服务 span 请到 http://127.0.0.1:3001 的 Explore / Tempo 查看。" />
+    <StateBanner tone="info" title="营销业务轨迹查询" detail="按完整请求或订单 ID 查询营销处理记录；跨服务链路追踪请使用已部署的观测平台。" />
     <Panel className="ops-search"><div className="lookup">
       <label><span className="sr-only">查询类型</span><Select value={kind} onChange={(event) => {
         setKind(event.target.value as TraceQueryKind)
@@ -81,35 +86,26 @@ export function TraceSearch() {
     </div><FieldHint id="trace-search-hint">{traceQueries[kind].hint} 按完整 ID 精确查询。</FieldHint></Panel>
     {trace.isPending && <StateBanner tone="info" title="正在查询轨迹" detail={`正在查询 ${trace.variables.id}，请稍候。`} />}
     {trace.isError && <StateBanner tone="error" title="轨迹查询失败" detail={problemDetail(trace.error)} />}
-    {api.demoMode ? <TraceResult requestId={demoRequestId} /> : trace.isSuccess && (
+    {trace.isSuccess && (
       trace.data ? <TraceResult requestId={trace.variables.id} live={trace.data} />
         : <EmptyState title="未找到轨迹" detail="该 ID 暂无可用轨迹，请核对完整 ID 后重试。" />
     )}
   </div>
 }
 
-function TraceResult({ requestId, live }: { requestId: string; live?: TraceView }) {
-  const demoEvents = [
-    ['10:31:08.041', 'Decision', '规则命中：家电类目 + PLUS 会员', 'generation #1842 · 14.2ms', 'good'],
-    ['10:31:08.049', 'Offer', '满 500 减 80；平台 48 / 商家 32', 'OfferToken verified · terms v3', 'good'],
-    ['10:31:08.112', 'Reserve', '预算与库存原子预占成功', 'application pa-91AC · fencing 42', 'good'],
-    ['10:31:09.826', 'Confirm', '订单确认，预占转为已耗', 'order JD-8842****129 · ledger balanced', 'good'],
-    ['10:31:10.014', 'Exposure', '实际优惠生效曝光已记录', 'experiment exp-ha-7 / B', 'info'],
-  ]
-  const events = live?.events?.length
-    ? live.events.map((event) => [event.at ?? live.createdAt ?? '', event.type, event.title ?? event.type, event.detail ?? '', 'good'])
-    : api.demoMode ? demoEvents : []
-  return <div className="trace-layout"><Panel><PanelHeader eyebrow="TRACE" title="营销轨迹" aside={<Badge tone={live ? 'good' : 'warn'}>{live ? 'API' : api.demoMode ? '演示' : '无数据'}</Badge>} /><div className="trace-id"><span>Request</span><code>{live?.requestId ?? requestId}</code><button type="button" aria-label="复制 Request ID" onClick={() => void navigator.clipboard.writeText(live?.requestId ?? requestId)}><Copy size={13} /></button><span>Subject</span><code>{live?.maskedSubject ?? (api.demoMode ? 'f84a6d11c29e…' : '—')}</code></div>
-    {live && <dl className="trace-summary"><div><dt>Trace</dt><dd>{live.traceId ?? '—'}</dd></div><div><dt>Generation</dt><dd>{live.generation ?? '—'}</dd></div><div><dt>耗时</dt><dd>{live.durationMicros != null ? `${(live.durationMicros / 1000).toFixed(1)}ms` : '—'}</dd></div><div><dt>Terms</dt><dd>{live.termsVersion || '未提供'}</dd></div></dl>}
-    {events.length === 0 ? <EmptyState title="没有逐步事件" detail="当前轨迹只有摘要字段，events 为空。" /> : <RecordTable label="轨迹事件" columns={['事件时间（北京时间）', '事件类型', '事件标题', '事件详情']}>{events.map(([time, type, title, detail], index) => <tr key={`${index}-${type}`}><td>{live ? <RecordTime value={time} /> : time}</td><td>{type}</td><td>{title}</td><td>{detail || '—'}</td></tr>)}</RecordTable>}
-  </Panel><aside><Panel><PanelHeader eyebrow="DECISION EXPLAIN" title="候选与裁决" />{live ? <pre className="trace-json">{displayDiagnosticJson({ candidates: live.candidates ?? {}, pricing: live.pricing ?? {} })}</pre> : api.demoMode ? <><dl className="trace-summary"><div><dt>候选</dt><dd>7</dd></div><div><dt>资格通过</dt><dd>3</dd></div><div><dt>互斥后</dt><dd>2</dd></div><div><dt>最终采用</dt><dd>1</dd></div></dl><div className="reason-codes"><Badge tone="good">CATEGORY_MATCH</Badge><Badge tone="good">PLUS_ELIGIBLE</Badge></div></> : <EmptyState title="没有裁决数据" detail="当前查询未返回候选与裁决记录。" />}</Panel></aside></div>
+function TraceResult({ requestId, live }: { requestId: string; live: TraceView }) {
+  const events = (live.events ?? []).map((event) => [event.at ?? live.createdAt ?? '', event.type, event.title ?? event.type, event.detail ?? ''])
+  return <div className="trace-layout"><Panel><PanelHeader eyebrow="TRACE" title="营销轨迹" aside={<Badge tone="good">API</Badge>} /><div className="trace-id"><span>Request</span><code>{live.requestId ?? requestId}</code><button type="button" aria-label="复制 Request ID" onClick={() => void navigator.clipboard.writeText(live.requestId ?? requestId)}><Copy size={13} /></button><span>Subject</span><code>{live.maskedSubject ?? '—'}</code></div>
+    <dl className="trace-summary"><div><dt>Trace</dt><dd>{live.traceId ?? '—'}</dd></div><div><dt>Generation</dt><dd>{live.generation ?? '—'}</dd></div><div><dt>耗时</dt><dd>{live.durationMicros != null ? `${(live.durationMicros / 1000).toFixed(1)}ms` : '—'}</dd></div><div><dt>Terms</dt><dd>{live.termsVersion || '未提供'}</dd></div></dl>
+    {events.length === 0 ? <EmptyState title="没有逐步事件" detail="当前轨迹只有摘要字段，events 为空。" /> : <RecordTable label="轨迹事件" columns={['事件时间（北京时间）', '事件类型', '事件标题', '事件详情']}>{events.map(([time, type, title, detail], index) => <tr key={`${index}-${type}`}><td><RecordTime value={time} /></td><td>{type}</td><td>{title}</td><td>{detail || '—'}</td></tr>)}</RecordTable>}
+  </Panel><aside><Panel><PanelHeader eyebrow="DECISION EXPLAIN" title="候选与裁决" /><pre className="trace-json">{displayDiagnosticJson({ candidates: live.candidates ?? {}, pricing: live.pricing ?? {} })}</pre></Panel></aside></div>
 }
 
 function JourneyInstances() {
   const [enrollmentId, setEnrollmentId] = useState('')
   const list = useQuery({ queryKey: ['enrollments'], queryFn: () => api.enrollments(), enabled: !api.demoMode })
   const lookup = useMutation({ mutationFn: api.enrollment })
-  if (api.demoMode) return <Panel><PanelHeader eyebrow="ENROLLMENTS" title="运行中 Journey 实例" aside={<Badge tone="info">82,491 waiting</Badge>} /><RecordTable label="Journey 实例" columns={['旅程名称', '旅程实例 ID', '状态', '等待条件', '版本', '健康状态']}>{[['enr-81FA', '加购未支付召回', 'WAIT_TIMER', '18m12s', 'v3', '正常'], ['enr-922C', '新客七日培育', 'WAIT_EVENT', 'OrderPaid', 'v7', '正常']].map(([id, name, state, condition, version, health]) => <tr key={id}><td>{name}</td><td>{id}</td><td>{state}</td><td>{condition}</td><td>{version}</td><td><Badge tone="good">{health}</Badge></td></tr>)}</RecordTable></Panel>
+  if (api.demoMode) return <PreviewPanel title="Journey 实例" />
   const items = lookup.data ? [lookup.data] : (list.data ?? [])
   return <Panel><PanelHeader eyebrow="ENROLLMENTS" title="Journey 实例" aside={<Button onClick={() => void list.refetch()} disabled={list.isFetching}><RefreshCw size={14} />刷新</Button>} />
     <div className="lookup"><label><Search size={16} /><span className="sr-only">旅程实例 ID（Enrollment ID）</span><input value={enrollmentId} onChange={(event) => setEnrollmentId(event.target.value)} aria-describedby="enrollment-search-hint" placeholder="填写完整旅程实例 ID" /></label><Button tone="primary" onClick={() => lookup.mutate(enrollmentId.trim())} disabled={!enrollmentId.trim() || lookup.isPending}>查询</Button></div><FieldHint id="enrollment-search-hint">对应下方列表的旅程实例 ID，填写完整值可精确查询该条记录。</FieldHint>
@@ -125,7 +121,7 @@ function ContactAttempts() {
   const [contactKey, setContactKey] = useState('')
   const list = useQuery({ queryKey: ['contacts'], queryFn: () => api.contacts(), enabled: !api.demoMode })
   const lookup = useMutation({ mutationFn: api.contact })
-  if (api.demoMode) return <Panel><PanelHeader eyebrow="CONTACT ATTEMPTS" title="触达投递记录" /><RecordTable label="触达记录" columns={['触达 ID', '渠道', '用途', '状态', '服务商请求 ID', '耗时']}>{[['ct-8101', 'PUSH', '加购召回', 'DELIVERED', 'provider-1192', '34ms']].map(([id, channel, purpose, state, detail, time]) => <tr key={id}><td>{id}</td><td>{channel}</td><td>{purpose}</td><td><Badge tone="good">{state}</Badge></td><td>{detail}</td><td>{time}</td></tr>)}</RecordTable></Panel>
+  if (api.demoMode) return <PreviewPanel title="触达记录" />
   const items = lookup.data ? [lookup.data] : (list.data ?? [])
   return <Panel><PanelHeader eyebrow="CONTACT ATTEMPTS" title="触达投递记录" aside={<Button onClick={() => void list.refetch()} disabled={list.isFetching}><RefreshCw size={14} />刷新</Button>} />
     <div className="lookup"><label><Search size={16} /><span className="sr-only">触达标识（Contact key）</span><input value={contactKey} onChange={(event) => setContactKey(event.target.value)} aria-describedby="contact-search-hint" placeholder="填写完整触达标识" /></label><Button tone="primary" onClick={() => lookup.mutate(contactKey.trim())} disabled={!contactKey.trim() || lookup.isPending}>查询</Button></div><FieldHint id="contact-search-hint">对应下方列表的触达标识，填写完整值可精确查询该条记录。</FieldHint>
@@ -146,7 +142,7 @@ function DeadLetters() {
     mutationFn: api.replayQuarantine,
     onSuccess: () => { setConfirmId(undefined); void queryClient.invalidateQueries({ queryKey: ['quarantine'] }) },
   })
-  if (api.demoMode) return <><StateBanner tone="warn" title="3 个分区存在待处理消息" detail="演示数据不会重放。" /><Panel><PanelHeader eyebrow="DLQ & QUARANTINE" title="隔离消息" /><RecordTable label="隔离消息" columns={['隔离消息 ID', '主题', '原因码', '状态', '操作']} actions>{[['q-192', 'commerce.event.v1', 'AGGREGATE_VERSION_GAP', '可重放']].map(([id, topic, reason, state]) => <tr key={id}><td>{id}</td><td>{topic}</td><td>{reason}</td><td><Badge tone="good">{state}</Badge></td><td><Button disabled title="演示模式不可重放">重放</Button></td></tr>)}</RecordTable></Panel></>
+  if (api.demoMode) return <PreviewPanel title="隔离消息" />
   return <>
     {items.isError && <StateBanner tone="error" title="隔离区加载失败" detail={problemDetail(items.error)} />}
     <Panel><PanelHeader eyebrow="DLQ & QUARANTINE" title="隔离消息" aside={<Button onClick={() => void items.refetch()} disabled={items.isFetching}><RefreshCw size={14} />刷新</Button>} />
@@ -169,7 +165,7 @@ function DeadLetters() {
 
 export function ReconciliationPanel() {
   const reconcile = useQuery({ queryKey: ['reconciliation'], queryFn: api.reconciliation, enabled: !api.demoMode })
-  if (api.demoMode) return <ReconciliationDemo />
+  if (api.demoMode) return <PreviewPanel title="资金对账" />
   if (reconcile.isError) return <StateBanner tone="error" title="对账失败" detail={problemDetail(reconcile.error)} />
   if (!reconcile.data) return <EmptyState title="正在核对资金守恒" detail="读取 /api/v1/funding/reconciliation。" />
   return <Panel className="reconciliation-report">
@@ -183,10 +179,6 @@ export function ReconciliationPanel() {
       : <StateBanner tone="success" title="未发现差异" detail="本次校验返回 violations=[]。" />}
     <p className="reconciliation-footnote">有差异请按业务键到权益账本或流程实例继续排查；对账只报告差异，不执行补发。</p>
   </Panel>
-}
-
-function ReconciliationDemo() {
-  return <div className="reconcile-grid"><Panel><PanelHeader eyebrow="LEDGER RECONCILIATION" title="资金守恒报告" aside={<Badge tone="good">PASS</Badge>} /><div className="reconcile-hero"><DatabaseZap size={32} /><div><strong>0</strong><span>不变量差异</span></div></div></Panel></div>
 }
 
 function mask(value?: string) {

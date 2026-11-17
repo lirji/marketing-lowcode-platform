@@ -28,7 +28,7 @@ export function StateBanner({ tone, title, detail }: { tone: 'loading' | 'error'
 
 export function DemoBanner() {
   if (!runtimeConfig.demoMode) return null
-  return <StateBanner tone="warn" title="演示数据" detail="当前 DEMO_MODE 开启：列表可浏览，发布、审核、Kill switch、校验与仿真不会写入运行时。" />
+  return <StateBanner tone="warn" title="静态预览模式" detail="业务数据以连接营销服务后的结果为准；当前模式不执行业务写入。" />
 }
 
 export function Modal({ title, description, children, onClose }: { title: string; description?: string; children: ReactNode; onClose: () => void }) {

@@ -30,7 +30,7 @@ test('operator can enter governed campaign creation', async ({ page }) => {
 test('release actions stay inert in demo mode', async ({ page }) => {
   await page.goto('/releases')
   await expect(page.getByRole('heading', { name: '发布中心' })).toBeVisible()
-  await expect(page.getByText('演示数据')).toBeVisible()
+  await expect(page.getByText('静态预览模式')).toBeVisible()
   await expect(page.getByRole('button', { name: '编译并暂存' })).toBeDisabled()
   await expect(page.getByRole('button', { name: /^激活 / })).toHaveCount(0)
 })
@@ -154,7 +154,7 @@ test('live awards tab shows risk-blocked reason without a submit form', async ({
 test('benefit editor shows the SKU binding region', async ({ page }) => {
   await page.goto('/designers/benefit')
   await expect(page.getByRole('heading', { name: '绑定权益模板' })).toBeVisible()
-  await expect(page.getByText('演示数据')).toBeVisible()
+  await expect(page.getByText('静态预览模式')).toBeVisible()
   await expect(page.getByRole('button', { name: '保存策略' })).toBeDisabled()
   const actions = page.locator('.heading-actions')
   await expect(actions.getByRole('button', { name: '保存策略' })).toBeVisible()

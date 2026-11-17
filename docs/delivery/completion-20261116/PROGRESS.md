@@ -8,11 +8,11 @@
 - 规范：`~/.codex/architecture-standards.md` 业务建模、持久化、接口契约、并发安全；`personal-tech-stack.md` 并发、线程池、日志、状态机；engineering-workflows/backend-implementation/continue-approved-delivery/task-git-delivery。前端、Runtime 专项随切片读取。
 
 ## 当前状态（2026-11-17）
-- S01–S05已完成；S06–S13按下表继续。S12c资产/消息模板 `c14289e`、容器路由修复 `8bb1270`、S12d审批完整分页 `e9f3972d2584fa5e96437a782e50d1b3bb6bb5c8` 均已精确CI三项PASS并正常快进推送main；对应运行编号44041099756、44044235242、44047459413。
-- 本地部署已验证：control为b3858e6、console为0c8aff8，engagement为c14289e，其余8应用保留045dfd9；11应用健康。control V7索引已迁移成功，更新前已备份。模板、审批分页、发布选择的真实Docker接口及桌面/手机浏览器PASS，见 [LOCAL_DEPLOYMENT_20261117.md](LOCAL_DEPLOYMENT_20261117.md)。
-- 用户最新授权“如果当前是docker问题，可以让docker只运行该项目的组件”。Docker管理卡死已通过本机重启恢复；重启前3个Flink作业成功stop-with-savepoint，重启后逐个no_claim恢复并确认新检查点持续推进。保留数据卷；没有空状态启动或生产部署。
-- 当前仅18个必要容器运行：13个marketing-r1常驻容器、现有权益目录适配服务、MySQL/Redis/Kafka/ClickHouse。额外停止13个无关容器，原17个langchain应用仍停止。实际容器内存合计约6.32GiB（单次快照，不代表容量压测）；容器/数据卷保留，可按记录恢复。
-- S12e发布中心完整分页与范围过滤已交付，3f22019精确CI44056163714三项PASS，正常FF main并完成本地Docker/真实双视口验收。S12f发布读取调用点2e2263f与S12g活动范围b3858e6也已精确CI并FF main、本地运行验收；S12h首页数据表述f0ab7cf已精确CI44063426678三项PASS、FF main并完成console增量运行/真实双视口验收；S12i历史Journey转换0c8aff8亦已精确CI/主干/console部署与两条本机演示定义v2追加校验验收；S12j/k/l三类资产分页已交付，S12m错误采集正在验证。真实会员/画像来源、裂变外部合同仍待确认，不改变拒绝保护。
+- S01–S05完成；S06–S13按下表推进。S12c–S12n已交付，包括资产、审批/发布分页、活动范围、首页真实表述、历史Journey转换、人群/权益/模板分页、真实错误采集及活动数据源清理。最新主干db30029，精确CI44085089985三项PASS。
+- 本机仅18个必要容器运行：13个marketing-r1、权益目录适配服务、MySQL/Redis/Kafka/ClickHouse。console=db30029、edge-gateway=7764526、engagement=166dc43、benefit-funding=607542e、audience=a260865、control=b3858e6，其余应用045dfd9；全部健康。control V7已迁移；UI8084、网关18080、Flink18081。证据见 [LOCAL_DEPLOYMENT_20261117.md](LOCAL_DEPLOYMENT_20261117.md)。
+- 用户授权Docker只运行本项目组件，已恢复Docker并保留所有容器/数据卷；13个额外无关容器及原17个langchain应用保持停止。3个Flink作业从保存点no_claim恢复，原作业ID与检查点持续推进；禁止重提空作业或重复恢复。
+- 当前fix/static-preview-truth推进S12o：首页/运营静态预览不显示假数据与旧缓存。初始构建与8浏览器定向通过，暖缓存测试识别发放页仍会展示旧记录，正补齐早返回隔离；完整验证尚未完成。
+- 真实会员/画像来源、裂变身份/交易/SKU/履约终态合同与生产环境仍有待确认项；保持默认拒绝保护，不将当前切片完成等同整个项目完成。
 
 ## 执行清单与验收
 
@@ -527,7 +527,7 @@
 - Gateway 7项采集HTTP（含JWT验证器受控边界）和4项原有限流/超时、6租户上下文、8合同、架构规则通过；固定无HTTP状态常量在Hygiene复核后提取，需以s12m-gateway-final/package-final为最后后端证据。Hygiene无阻塞，项目未提供canonical formatter；已命名常量与不同业务模块的错误码短名提示经人工核对无需合并。
 - Compose模型校验通过；只调整本机网关日志容量，不改变共享依赖、业务表、权限规则或生产目标。当前待提交/精确CI及本机gateway+console部署；不把本地通过视为全部交付。
 
-## S12n DEMO活动数据真实性（IN_PROGRESS）
+## S12n DEMO活动数据真实性（DONE）
 - 基于S12m 7764526建立fix/demo-campaign-truth；M的精确CI44081527926运行中，runtime-7764526镜像/环境保留/Nginx预检PASS，尚未部署；后续只能使用其固定制品。
 - 已定位唯一生产demo数据导入为CampaignsPage→shared/data/demo.ts。它还在浏览器构造CMP ID并将本地添加当成成功；已有system-mock.sql包含真实数据库演示活动，runtime API可读，不需要重灌共享库。
 - 本片将旧样本移到测试fixture，正式页面只显示真实API活动；DEMO模式保持不调用真实接口、说明如何连接后端、禁用创建/URL直开创建/手动刷新，不显示假活动或假成功。真实模式保存/导航及权限保持，测试覆盖模式切换缓存、错误、创建和浏览器，校对全前端其余DEMO分支。
@@ -552,3 +552,23 @@
 - N完整浏览器首轮86通过/10跳过，4失败来自collections与form-controls两用例的桌面/手机仍使用旧DEMO列表/弹窗；已切到真实模式，并复用迁移后的测试fixture经API返回，原键盘、筛选、焦点、菜单和表单断言不变。console首项服务端ID创建改造已通过；待完整最终回归。
 
 - N最终完整浏览器90通过/10既有独立服务项跳过，3处旧DEMO依赖全部改成接口fixture，保留原行为断言；最终lint/build再通过（s12n-fixture-*）。产品源码与453d6e5相同，测试修正提交后需新的精确CI。
+
+## S12o 首页与运营静态预览真实性（IN_PROGRESS）
+- 基于N最终db30029新分支fix/static-preview-truth。N最终精确CI44085089985运行中；runtime-db30029固定console镜像/预检PASS，sourceArtifact453d6e5与最终dist散列一致，仅测试/进度变更。等CI后正常FF main，再deploy→verify-runtime→campaign-browser，不重复453候选部署。
+- 清理首页硬编码经营指标、12小时柱图与Cell就绪，运营中心硬编码营销轨迹/候选、Journey/触达/隔离消息及资金PASS。DEMO只显示静态预览/连接提示，不请求或展示缓存中的业务数据，不显示伪造零值或成功。统一DemoBanner文案与真实能力一致；真实接口读取、时间、负数、失败恢复与写入门禁保持。
+- 既有system-mock.sql/retail-cn-extra.sql已覆盖活动/事实/发布/实例/触达/隔离/账本；这次只检查数据来源，不重灌共享库、不造真实运行结果。验证DEMO所有相关页无API请求/假业务数据、缓存隔离，真实模式既有回归、桌面手机、lint/build/完整前端、精确CI及console增量Docker。
+
+### S12n 真实运行交付
+- db3002953da9d698c62583838582a0b15e607b74精确CI44085089985三项PASS，正常FF main并推送。runtime-db30029仅更新console，18必要容器healthy、17保护容器不变、3个Flink检查点继续推进；13无关容器保持停止。
+- 8084桌面/Pixel7实际API活动完整显示、搜索/空结果/恢复、创建表单打开取消通过，无业务写入/API失败/页面异常。手机真实列表截图已查看；没有数据库迁移、重灌数据或Flink重提。
+
+### S12o 实现检查点
+- 首页DEMO指标改为未知占位、图表/发布连接提示；运营DEMO轨迹/实例/触达/隔离/资金统一连接提示，移除伪造PASS与旧Grafana死链接。DemoBanner改为静态预览说明，真实API分支保持。初始类型构建通过。
+- 新增暖缓存隔离及六运营Tab零请求验证、桌面手机静态预览浏览器用例；定向验证正在执行，尚未提交/部署。
+
+- S12o定向首轮11通过/1失败，暖缓存用例发现发放Tab虽禁用请求仍渲染旧缓存，已增加整页静态预览早返回阻断记录/详情/加载更多；保留失败证据，需重跑。8项桌面手机静态预览及既有真实轨迹/登出回归通过。
+
+### S12o 最终本地验证
+- 246前端测试/48文件、lint/build通过；完整浏览器92通过/10既有独立服务项跳过。初轮2失败因发放静态早返回省略原页标题，恢复标题后完整通过；暖缓存用例确保首页及六运营Tab不读API、不显示旧数据或假PASS，手机长图已查看。
+- Hygiene无阻塞；仓库无canonical formatter，格式化自动检查不可用，git diff --check通过。后端未变，复用既有真实服务证据；未写共享数据库、未发外部消息。准备独立提交/精确CI与console本机部署。
+- 相邻审查发现OIDC登录/令牌更新路径未像DEV路径一样清缓存和失效旧请求；后续S12p按真实身份范围切换补会话边界，避免旧租户/权限数据和草稿带入新会话。

@@ -31,10 +31,11 @@ function renderApp(path = '/') {
 describe('marketing console routing and core interactions', () => {
   it('renders the operational dashboard and its governed release state', async () => {
     renderApp()
-    expect(await screen.findByRole('heading', { name: '早上好，今天的增长脉搏稳定。' })).toBeInTheDocument()
-    expect(screen.getByText('发布代际 #1842')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '查看当前运营数据' })).toBeInTheDocument()
+    expect(screen.getByText('发布状态需要连接服务')).toBeInTheDocument()
+    expect(screen.queryByText('发布代际 #1842')).not.toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: '主导航' })).toBeInTheDocument()
-    expect(screen.getByText('演示数据')).toBeInTheDocument()
+    expect(screen.getByText('静态预览模式')).toBeInTheDocument()
   })
 
   it('opens campaign creation from a deep link and enforces schema validation', async () => {

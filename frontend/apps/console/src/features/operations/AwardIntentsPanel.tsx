@@ -71,11 +71,13 @@ export function AwardIntentsPanel() {
     setParams(copy, { replace: true })
   }
 
+  // 禁用查询不会清除历史缓存；静态预览必须同时隔离旧记录及其详情/刷新入口。
+  if (api.demoMode) return <Panel><PanelHeader eyebrow="AWARD INTENTS" title="发放指令" aside={<Badge tone="info">只读</Badge>} /><StateBanner tone="info" title="演示模式不查询真实发放指令" detail="连接营销服务后可按活动读取实际发放指令。" /></Panel>
+
   return (
     <div id="tab-发放" role="tabpanel" className="award-intents-panels">
       <Panel>
         <PanelHeader eyebrow="AWARD INTENTS" title="发放指令" aside={<Badge tone="info">只读</Badge>} />
-        {api.demoMode && <StateBanner tone="info" title="演示模式不查询真实发放指令" detail="关闭 DEMO_MODE 后按活动读取 GET /api/v1/award-intents。" />}
         {!api.demoMode && (
           <label className="field award-campaign-field">
             <span>活动</span>
