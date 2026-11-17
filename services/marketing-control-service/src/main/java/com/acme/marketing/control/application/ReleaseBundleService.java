@@ -4,12 +4,12 @@ import static com.acme.marketing.platform.time.SqlTime.format;
 
 import com.acme.marketing.contracts.release.ReleaseManifest;
 import com.acme.marketing.contracts.release.ReleaseManifestSigner;
+import com.acme.marketing.contracts.release.ReleaseBundleManifest;
+import com.acme.marketing.contracts.release.ReleaseBundleManifestSigner;
 import com.acme.marketing.platform.crypto.SigningKeyRing;
 import com.acme.marketing.control.domain.DefinitionVersion;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
-import com.acme.marketing.platform.crypto.CanonicalMapCodec;
-import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.identity.TenantScope;
 import com.acme.marketing.platform.web.TenantContextHolder;
 import java.nio.charset.StandardCharsets;
@@ -17,9 +17,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,7 +28,6 @@ import tools.jackson.databind.ObjectMapper;
 public class ReleaseBundleService {
     public static final String SAVE_OPERATION = "release.bundle.prepare";
     private static final String PREPARED_ACTION = "RELEASE_BUNDLE_PREPARED";
-    private static final int MAX_MEMBERS = 8;
     private static final java.util.Set<String> SUPPORTED_RUNTIMES = java.util.Set.of("decision", "journey");
     private static final int MAX_CONTENT_BYTES = 512 * 1024;
     private final ControlRepository repository;
@@ -78,7 +75,7 @@ public class ReleaseBundleService {
         }
         var view = new BundleView(UUID.randomUUID().toString(), campaignId, previous + 1,
                 members.getFirst().environment(), members.getFirst().cell(), State.PREPARING,
-                contentHash(scope.tenantId().value(), campaignId, members), members, scope.actorId(), now);
+                ReleaseBundleManifest.contentHash(scope.tenantId().value(), campaignId, members), members, scope.actorId(), now);
         String content = mapper.writeValueAsString(view);
         if (content.getBytes(StandardCharsets.UTF_8).length > MAX_CONTENT_BYTES)
             throw ReleaseBundleError.REQUEST_TOO_LARGE.invalid();
@@ -113,6 +110,20 @@ public class ReleaseBundleService {
                 .orElseThrow(ReleaseBundleError.NOT_FOUND::notFound));
     }
 
+    /** 重新鉴权后导出冻结内容；签名不修改准备版本，也不提供运行端激活授权。 */
+    public ReleaseBundleManifest manifest(String campaignId, long version) {
+        BundleView stored = version(campaignId, version);
+        Instant expiresAt = stored.members().stream().map(ReleaseManifest::expiresAt).min(Instant::compareTo).orElseThrow();
+        // 重新核验成员，避免存储损坏或已退出信任集合的旧密钥被外层新签名重新背书。
+        if (!expiresAt.isAfter(clock.instant()) || stored.members().stream().anyMatch(member ->
+                keys.publicKeys().values().stream().noneMatch(key -> signer.verify(member, key))))
+            throw ReleaseBundleError.MEMBER_UNAVAILABLE.conflict();
+        var unsigned = new ReleaseBundleManifest(stored.bundleId(), TenantContextHolder.requireCurrent().tenantId(),
+                stored.campaignId(), stored.version(), stored.environment(), stored.cell(), stored.contentHash(),
+                stored.members(), stored.createdAt(), expiresAt, keys.activeKeyId(), "");
+        return ReleaseBundleManifestSigner.sign(keys.activePrivateKey(), unsigned);
+    }
+
     private BundleView read(ControlRepository.ReleaseBundleRow row) {
         return mapper.readValue(row.contentJson(), BundleView.class);
     }
@@ -143,17 +154,6 @@ public class ReleaseBundleService {
         }
     }
 
-    private static String contentHash(String tenant, String campaign, List<ReleaseManifest> members) {
-        // 签名已承诺成员完整内容；长度编码避免不同ID组合因分隔符产生摘要歧义。
-        Map<String, String> values = new LinkedHashMap<>();
-        values.put("tenant", tenant); values.put("campaign", campaign);
-        for (int i = 0; i < members.size(); i++) {
-            values.put("member." + i + ".id", members.get(i).manifestId());
-            values.put("member." + i + ".signature", members.get(i).signature());
-        }
-        return Digests.sha256Hex(CanonicalMapCodec.encode(values));
-    }
-
     private static boolean identifier(String value) {
         return value != null && value.matches("[A-Za-z0-9_.:-]{1,64}");
     }
@@ -162,7 +162,7 @@ public class ReleaseBundleService {
     public record PrepareRequest(long expectedVersion, List<String> manifestIds) {
         public PrepareRequest {
             if (expectedVersion < 0 || expectedVersion == Long.MAX_VALUE || manifestIds == null
-                    || manifestIds.size() < 2 || manifestIds.size() > MAX_MEMBERS
+                    || manifestIds.size() < 2 || manifestIds.size() > ReleaseBundleManifest.MAX_MEMBERS
                     || manifestIds.stream().anyMatch(id -> !identifier(id))
                     || new HashSet<>(manifestIds).size() != manifestIds.size())
                 throw ReleaseBundleError.INPUT_INVALID.invalid();

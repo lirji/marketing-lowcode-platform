@@ -353,6 +353,21 @@ paths:
       responses:
         '200': {description: Immutable historical preparation version, content: {application/json: {schema: {$ref: '#/components/schemas/ReleaseBundleView'}}}}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/campaigns/{campaignId}/release-bundles/versions/{version}/manifest:
+    get:
+      tags: [Release]
+      operationId: getReleaseBundleManifest
+      x-required-permission: release:read
+      description: >-
+        Signs the frozen complete bundle with an explicit protocol purpose. Current campaign scope is required.
+        This proves content provenance only and never authorizes activation. Expired members return 409.
+        Signing-key rotation may change the outer signature; bundle version, content hash and history remain unchanged.
+      parameters:
+        - {in: path, name: campaignId, required: true, schema: {type: string, maxLength: 64}}
+        - {in: path, name: version, required: true, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Signed complete preparation manifest, content: {application/json: {schema: {$ref: '#/components/schemas/ReleaseBundleManifest'}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/campaigns/{campaignId}/dmn-drafts:
     post:
       tags: [Control]
@@ -930,6 +945,27 @@ components:
     JsonArray: {description: Successful collection, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/JsonObject'}}}}}
     Problem: {description: RFC 9457 problem response, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
   schemas:
+    ReleaseBundleManifest:
+      type: object
+      additionalProperties: false
+      required: [bundleId, tenantId, campaignId, version, environment, cell, contentHash, members, createdAt, expiresAt, signatureKeyId, signature]
+      properties:
+        bundleId: {type: string, maxLength: 64}
+        tenantId: {type: string}
+        campaignId: {type: string, maxLength: 64}
+        version: {type: integer, format: int64, minimum: 1}
+        environment: {type: string, maxLength: 32}
+        cell: {type: string, maxLength: 64}
+        contentHash: {type: string, pattern: '^[a-f0-9]{64}$'}
+        members:
+          type: array
+          minItems: 2
+          maxItems: 8
+          items: {type: object, description: Full existing signed ReleaseManifest; every member field is included in the outer signature}
+        createdAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time, description: Earliest expiry among all members}
+        signatureKeyId: {type: string, maxLength: 64}
+        signature: {type: string, minLength: 1}
     ReleaseBundleView:
       type: object
       additionalProperties: false

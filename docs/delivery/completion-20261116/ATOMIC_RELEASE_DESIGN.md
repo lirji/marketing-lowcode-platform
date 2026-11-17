@@ -46,3 +46,14 @@ S11e 允许变更：control应用/接口/Mapper/迁移及测试、marketing-api�
 - 首片使用 Testcontainers 独占 MySQL；不连接或修改共享业务数据。回归已有发布/审批、合同和架构检查；测试不能以单纯Mock替代并发与事务验证。
 - V8为扩展迁移，既有API/签名载荷保持兼容。新组合登记后必须保留新版本控制服务的防绕过能力；不能回退到不识别组合归属的旧控制服务并恢复写入。运行回退应先冻结发布写入口，保留新增数据。
 - 首片不宣称跨运行端原子发布已交付；最终业务完成以S11g/h和相关真实链路验收为准。
+
+## S11f 细化：签名准备证据
+
+S11f 按同一任务内的三个可验证增量实施：f1 控制面导出完整签名组合；f2 Decision/Journey核对已持久化的精确成员后返回组合专属签名ACK；f3 控制面收集ACK并按每成员当前有效的副本/容量门禁计算就绪。全部完成前保持PREPARING，任何一个阶段都不激活流量。
+
+- f1：`GET /api/v1/campaigns/{campaignId}/release-bundles/versions/{version}/manifest`，要求当前release:read和活动范围，返回`ReleaseBundleManifest`。包含tenantId、bundleId、campaignId、version、environment、cell、原contentHash、完整members、createdAt、expiresAt、signatureKeyId、signature。expiresAt为最早成员过期时间；已过期拒绝。签名有独立协议用途前缀，并覆盖所有成员完整规范字段及其签名，不能仅签成员ID。原准备版本/摘要不变；换签名钥匙只改变外层签名，不创建业务新版本。该证据证明冻结内容来源，不代表就绪或激活。
+- f2：新增runtime:warm保护的两个组合准备入口。先验证可信租户、控制面签名、时间和本站slot，再从本服务持久库读取该成员的精确generation，核对原清单签名及制品字节，并复用现有编译签名/ABI/结构校验。仅返回组合绑定ACK，不改变active slot，也不依赖旧ACK或进程内缓存证明持久化。
+- 现有generation表已持久保存不可变清单和制品，无自动删除；本片复用它们作为准备恢复来源，不新增第二份制品副本或临时组合数据库。后续请求固定版本读取使用相同精确寻址；将来新增清理任务必须引用参与生命周期，不能直接删除保留成员。
+- 组合ACK封装现有RuntimeAck并额外绑定bundleId、campaignId、version、contentHash和精确成员签名，外层签名有独立用途前缀。验证须同时通过内外层签名，旧单清单ACK不能补字段冒充新协议。ACK只证明签发时已安装，需要在激活时重新校验新鲜度和每个成员的容量。
+- f1允许变更：marketing-contracts签名合同/测试，control组合导出入口/测试，机器API及本设计。f2再扩展Decision/Journey各自运行端及测试；f3涉及控制面ACK持久化和迁移。无新服务、中间件、后台线程或在线控制面回源。
+- 验收：改任意成员或外层字段、换租户、过期、未知密钥、混用旧ACK均拒绝；换序规范化稳定；历史准备读不变；权限撤销后导出拒绝。运行端需证明重启后从持久库核验、未安装/字节不符拒绝、旧新generation同时存在、active指针未变。

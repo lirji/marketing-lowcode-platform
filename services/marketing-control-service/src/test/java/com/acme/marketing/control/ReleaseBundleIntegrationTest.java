@@ -4,6 +4,9 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.acme.marketing.contracts.release.ArtifactReference;
 import com.acme.marketing.contracts.release.ReleaseManifest;
+import com.acme.marketing.contracts.release.ReleaseBundleManifest;
+import com.acme.marketing.contracts.release.ReleaseBundleManifestSigner;
+import com.acme.marketing.control.application.ReleaseBundleService;
 import com.acme.marketing.contracts.release.ReleaseManifestSigner;
 import com.acme.marketing.control.application.ControlRepository;
 import com.acme.marketing.platform.crypto.SigningKeyRing;
@@ -83,6 +86,41 @@ class ReleaseBundleIntegrationTest {
         assertEquals(2, jdbc.queryForObject("select count(*) from mk_audit where tenant_id=? and action_name='RELEASE_BUNDLE_PREPARED'", Integer.class, tenant));
     }
 
+    @Test void exportsWholeSignedContentWithoutChangingPreparationOrActivation() throws Exception {
+        String campaign = campaign();
+        var original = save(campaign, 0, members(campaign), "proof-bundle-key");
+        assertEquals(201, original.statusCode(), original.body());
+        var response = send(request(path(campaign) + "/versions/1/manifest").GET());
+        assertEquals(200, response.statusCode(), response.body());
+        var proof = mapper.readValue(response.body(), ReleaseBundleManifest.class);
+        assertTrue(ReleaseBundleManifestSigner.verify(keys.publicKeys().get(proof.signatureKeyId()), proof));
+        assertEquals(tenant, proof.tenantId().value()); assertEquals(campaign, proof.campaignId());
+        assertEquals(mapper.readTree(original.body()).path("contentHash").asString(), proof.contentHash());
+        assertEquals(proof, mapper.readValue(send(request(path(campaign) + "/versions/1/manifest").GET()).body(), ReleaseBundleManifest.class));
+        assertEquals(mapper.readTree(original.body()), mapper.readTree(send(request(path(campaign) + "/versions/1").GET()).body()));
+        assertEquals(1, count("mk_audit")); assertEquals(0, count("mk_activation_directive")); assertEquals(0, count("mk_outbox"));
+        // 模拟持久内容损坏：成员保留旧签名但字段变化，控制面不能用新外层签名背书。
+        var corrupted = (tools.jackson.databind.node.ObjectNode) mapper.readTree(original.body());
+        ((tools.jackson.databind.node.ObjectNode) corrupted.path("members").get(0)).put("createdBy", "corrupted-author");
+        jdbc.update("update mk_release_bundle set content_json=? where tenant_id=? and bundle_id=?",
+                mapper.writeValueAsString(corrupted), tenant, proof.bundleId());
+        assertCode(409, "RELEASE_BUNDLE_MEMBER_UNAVAILABLE", send(request(path(campaign) + "/versions/1/manifest").GET()));
+    }
+
+    @Test void expiredHistoryRemainsReadableButCannotIssuePreparationProof() throws Exception {
+        String campaign = campaign();
+        var ids = List.of(member(campaign, "old-a", "local", now.minusSeconds(10)),
+                member(campaign, "old-b", "local", now.minusSeconds(5)));
+        var members = ids.stream().map(id -> mapper.readValue(repository.findManifest(tenant, id, false).orElseThrow().manifestJson(), ReleaseManifest.class)).toList();
+        var view = new ReleaseBundleService.BundleView(UUID.randomUUID().toString(), campaign, 1, "local", "cell-a",
+                ReleaseBundleService.State.PREPARING, ReleaseBundleManifest.contentHash(tenant, campaign, members), members, "historical-author", now.minusSeconds(60));
+        repository.saveReleaseBundle(new ControlRepository.ReleaseBundleRow(tenant, view.bundleId(), campaign, 1,
+                "local", "cell-a", "PREPARING", mapper.writeValueAsString(view), view.contentHash(), "historical-proof-key", "historical-author", view.createdAt().toString()));
+        assertEquals(200, send(request(path(campaign) + "/versions/1").GET()).statusCode());
+        assertCode(409, "RELEASE_BUNDLE_MEMBER_UNAVAILABLE", send(request(path(campaign) + "/versions/1/manifest").GET()));
+        assertEquals(0, count("mk_audit")); assertEquals(0, count("mk_activation_directive"));
+    }
+
     @Test void concurrentSameKeyAndReorderedMembersReplayOneResult() throws Exception {
         String campaign = campaign(); var members = members(campaign);
         try (var pool = Executors.newFixedThreadPool(2)) {
@@ -132,7 +170,7 @@ class ReleaseBundleIntegrationTest {
         assertEquals(400, send(write(path(campaign), body, "scope-bundle-key").setHeader("X-Dev-Organization-Ids", "org-b")).statusCode());
         assertEquals(400, send(write(path(campaign), body, "scope-bundle-key").setHeader("X-Dev-Shop-Ids", "shop-b")).statusCode());
         assertCode(409, "IDEMPOTENCY_PAYLOAD_CONFLICT", send(write(path(campaign), body, "scope-bundle-key").setHeader("X-Dev-Actor-Id", "another-author")));
-        for (String suffix : List.of("/latest", "/versions/1")) {
+        for (String suffix : List.of("/latest", "/versions/1", "/versions/1/manifest")) {
             assertEquals(403, send(request(path(campaign) + suffix).setHeader("X-Dev-Permissions", "release:write").GET()).statusCode());
             assertEquals(400, send(request(path(campaign) + suffix).setHeader("X-Dev-Shop-Ids", "shop-b").GET()).statusCode());
             assertEquals(404, send(request(path(campaign) + suffix).setHeader("X-Dev-Tenant-Id", "foreign-tenant").GET()).statusCode());

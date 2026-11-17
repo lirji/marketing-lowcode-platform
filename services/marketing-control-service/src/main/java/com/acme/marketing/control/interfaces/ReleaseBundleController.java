@@ -1,5 +1,6 @@
 package com.acme.marketing.control.interfaces;
 
+import com.acme.marketing.contracts.release.ReleaseBundleManifest;
 import com.acme.marketing.control.application.ControlCommandExecutor;
 import com.acme.marketing.control.application.ReleaseBundleError;
 import com.acme.marketing.control.application.ReleaseBundleService;
@@ -56,6 +57,12 @@ public final class ReleaseBundleController {
     @GetMapping("/versions/{version}")
     public BundleView version(@PathVariable String campaignId, @PathVariable long version) {
         return service.version(campaignId, version);
+    }
+
+    /** 导出完整组合来源证明；其内容不能直接交给旧激活接口。 */
+    @GetMapping("/versions/{version}/manifest")
+    public ReleaseBundleManifest manifest(@PathVariable String campaignId, @PathVariable long version) {
+        return service.manifest(campaignId, version);
     }
 
     private PrepareRequest read(HttpServletRequest request) {

@@ -26,7 +26,8 @@ public final class ReleaseManifestSigner {
         }
     }
 
-    private static byte[] canonical(ReleaseManifest manifest) {
+    // 同包组合协议复用既有规范字节，不能另写一份遗漏字段的成员摘要。
+    static byte[] canonical(ReleaseManifest manifest) {
         Map<String, String> values = new LinkedHashMap<>();
         values.put("manifestId", manifest.manifestId());
         values.put("tenantId", manifest.tenantId().value());
