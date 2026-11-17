@@ -146,7 +146,7 @@ export function AppShell() {
       {logoutOpen && (
         <Modal title="退出登录" description="将结束当前运营会话并返回身份提供方。" onClose={() => setLogoutOpen(false)}>
           <div className="danger-confirm">
-            <p>确认退出「{auth.displayName}」吗？未保存的设计器草稿会留在浏览器本地。</p>
+            <p>确认退出「{auth.displayName}」吗？退出后需重新登录，未保存的修改可能丢失。</p>
             <footer className="modal-actions">
               <button className="button secondary" type="button" onClick={() => setLogoutOpen(false)}>取消</button>
               <button className="button danger" type="button" onClick={() => void auth.logout()}>退出</button>

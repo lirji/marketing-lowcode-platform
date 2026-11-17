@@ -141,6 +141,7 @@ function mergeHeaders(init?: RequestInit): Headers {
 async function request<T>(path: string, init: RequestInit | undefined, parse: (value: unknown) => T): Promise<T> {
   const version = sessionVersion
   const method = (init?.method ?? 'GET').toUpperCase()
+  const headers = mergeHeaders(init)
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), runtimeConfig.requestTimeoutMs)
   const parentAbort = init?.signal
@@ -150,12 +151,14 @@ async function request<T>(path: string, init: RequestInit | undefined, parse: (v
     const response = await fetch(`${runtimeConfig.apiBaseUrl}${path}`, {
       ...init,
       method,
-      headers: mergeHeaders(init),
+      headers,
       signal: controller.signal,
     })
     requireCurrentSession(version)
     if (response.status === 401) {
-      unauthorizedHandler()
+      // 同一权限范围的令牌更新不清草稿；旧令牌的迟到401不能退出已安装的新令牌。
+      const currentAuthorization = identityHeaders().Authorization ?? null
+      if (runtimeConfig.authMode !== 'OIDC' || headers.get('Authorization') === currentAuthorization) unauthorizedHandler()
     }
     if (!response.ok) {
       const raw = await response.json().catch(() => ({ title: response.statusText, status: response.status, detail: '请求失败', type: 'about:blank' }))

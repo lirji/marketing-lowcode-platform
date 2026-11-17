@@ -553,7 +553,7 @@
 
 - N最终完整浏览器90通过/10既有独立服务项跳过，3处旧DEMO依赖全部改成接口fixture，保留原行为断言；最终lint/build再通过（s12n-fixture-*）。产品源码与453d6e5相同，测试修正提交后需新的精确CI。
 
-## S12o 首页与运营静态预览真实性（IN_PROGRESS）
+## S12o 首页与运营静态预览真实性（DONE）
 - 基于N最终db30029新分支fix/static-preview-truth。N最终精确CI44085089985运行中；runtime-db30029固定console镜像/预检PASS，sourceArtifact453d6e5与最终dist散列一致，仅测试/进度变更。等CI后正常FF main，再deploy→verify-runtime→campaign-browser，不重复453候选部署。
 - 清理首页硬编码经营指标、12小时柱图与Cell就绪，运营中心硬编码营销轨迹/候选、Journey/触达/隔离消息及资金PASS。DEMO只显示静态预览/连接提示，不请求或展示缓存中的业务数据，不显示伪造零值或成功。统一DemoBanner文案与真实能力一致；真实接口读取、时间、负数、失败恢复与写入门禁保持。
 - 既有system-mock.sql/retail-cn-extra.sql已覆盖活动/事实/发布/实例/触达/隔离/账本；这次只检查数据来源，不重灌共享库、不造真实运行结果。验证DEMO所有相关页无API请求/假业务数据、缓存隔离，真实模式既有回归、桌面手机、lint/build/完整前端、精确CI及console增量Docker。
@@ -572,3 +572,23 @@
 - 246前端测试/48文件、lint/build通过；完整浏览器92通过/10既有独立服务项跳过。初轮2失败因发放静态早返回省略原页标题，恢复标题后完整通过；暖缓存用例确保首页及六运营Tab不读API、不显示旧数据或假PASS，手机长图已查看。
 - Hygiene无阻塞；仓库无canonical formatter，格式化自动检查不可用，git diff --check通过。后端未变，复用既有真实服务证据；未写共享数据库、未发外部消息。准备独立提交/精确CI与console本机部署。
 - 相邻审查发现OIDC登录/令牌更新路径未像DEV路径一样清缓存和失效旧请求；后续S12p按真实身份范围切换补会话边界，避免旧租户/权限数据和草稿带入新会话。
+
+## S12p OIDC会话边界（IN_PROGRESS）
+- 基于S12o66ba4c9建立fix/oidc-session-isolation；O精确CI44087403939运行，runtime-66ba4c9固定console镜像/环境保留/Nginx预检PASS，尚未部署。
+- 已有DEV会话清理不能覆盖OIDC：applyUser只替换身份/令牌，logout只clear缓存，没有失效旧HTTP/mutation或卸载旧草稿。修正当前身份、业务租户、组织、店铺及权限变化时的会话边界；相同身份与权限的普通令牌更新保留编辑内容。
+- 切换立即停止旧身份、卸载观察者、取消查询并清缓存，失效旧请求回执，再安装最新身份；以代际防止慢初始化和并发身份事件覆盖新身份。退出/过期/401同样清理，错误不将旧令牌复活。不变更OIDC身份源、后端信任或业务会员ID。
+- 验证真实API客户端的迟到读写/401、切换/权限变化/同范围令牌更新/退出/过期/并发初始化；复用DEV回归及全前端/浏览器、精确CI和本机console部署。外部IdP端到端未由本地模拟证明。
+
+### S12p 首轮验证与修正
+- O精确CI前端与Compose通过，Java在Maven下载阶段HTTP429（未编译），已仅重跑失败job；不绕过门禁。
+- P首轮264前端通过，包含18OIDC边界用例及原DEV/API回归；初始构建缺useRef参数、测试请求缺scope字段已修正。双视口当前401及原轨迹/DEV通过；远端退出失败暴露OIDC RedirectNavigator.close的window.stop中断LoginPage懒加载，已保持会话转换页至远端流程结束再挂登录页。只保留新的身份与权限，普通令牌刷新不清草稿，旧令牌401不退出新令牌。
+- 新增浏览器使用真实oidc-client-ts和受控IdP/API接口返回，验证客户端错误恢复；不代表真实IdP或生产认证联调。最终全量前端/lint/build和定向浏览器正在复验。
+
+### S12o 真实运行交付
+- 66ba4c938d670cfe120468bccf507d1ff83a415d精确CI44087403939重试失败下载job后全部PASS，正常FF main并推送；runtime-66ba4c9 console部署PASS，18必要容器healthy、17保护容器不变、Flink检查点推进。
+- 8084桌面/Pixel7首页活动数量与实际API一致，运营轨迹默认空输入、实例/触达/隔离消息及资金对账都读取真实接口；零业务写入、API失败、页面异常。真实资金PASS由本次接口结果证明，手机截图已查看；静态预览不会借此显示PASS。
+
+### S12p 最终本地验证
+- 266前端测试/49文件（20项新增OIDC会话用例）、96浏览器PASS/10既有隔离服务用例跳过，lint/build/Hygiene无阻塞。增加旧登录回调与新身份/退出竞争覆盖，最终s12p-frontend-final2/lint-final2/build-final2及browser-full为证据；无canonical formatter。
+- 浏览器使用真实oidc-client-ts和受控API/IdP，验证当前401清会话、远端退出失败恢复及原DEV/轨迹回归；手机登录失败恢复截图已查看。更新安全基线，修正owner不是业务租户的旧描述；实际IdP生产联调保持未验证。
+- 准备独立提交/精确CI与console本机更新。

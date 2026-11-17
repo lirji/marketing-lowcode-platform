@@ -93,3 +93,7 @@
 ### S12n 控制台活动真实数据（db30029）
 - 精确CI44085089985 PASS后，正常FF main；runtime-db30029固定console制品部署PASS。18必要容器healthy，17其它运行容器不变，Flink检查点推进。
 - 桌面/Pixel7读取真实活动API、搜索/空结果/恢复及创建表单取消通过，零业务写入。入口仍为http://localhost:8084；私有部署回执与截图在既有证据目录runtime-db30029。
+
+### S12o 首页与运营真实数据（66ba4c9）
+- CI44087403939最终全部PASS后正常FF main，runtime-66ba4c9固定console部署与双视口真实运行PASS；18必要容器健康、17保护容器不变、Flink检查点推进。
+- 首页计数、Journey/触达/隔离列表与资金对账对照实际API；零业务写入/页面异常/API失败。DEMO验证另见s12o日志与静态预览截图；未改运行环境认证模式或种子。
