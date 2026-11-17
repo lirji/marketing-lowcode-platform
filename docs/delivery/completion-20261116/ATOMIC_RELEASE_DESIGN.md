@@ -140,3 +140,13 @@ S11g2合同模块保持无JSON生产依赖，动作在wire中使用经Action.fro
 - 原幂等作用域不变，完整bundleContext自然进入请求摘要；缺省字段不输出null，保持旧请求摘要。相同key换绑定拒绝。JDBC/Redis成功重放在返回旧结果前重新检查当前权限、范围、kill和凭证信任/来源；不重新签发旧报价，不把重放视为新的准入。报价结果仍只证明计算，不代表预占/发奖/到账。
 - Owner=backend；范围：Decision消费解析、Runtime精确历史校验、请求可选上下文/求值/幂等重放、配置、OpenAPI、真实MySQL HTTP及必要Redis重放测试。无需迁移、部署、外部上游或新中间件；复用原JDBC/Redis选择。无凭证旧入口仍待最终切换门禁关闭。
 - 验收：未单slot激活的精确组合可求值；新授权到达不改变旧参与；历史期限与当前风险检查独立；不同主体/活动/参与/组织/店铺/来源/签名拒绝；丢失或损坏制品不回退；同key换绑定冲突、重放撤权/停用拒绝；旧请求wire及旧用例回归。唯一准入DB绑定、实际APPLIED指针、Control整体回执和混合版本能力仍未完成。
+
+## S11g6a：持久化唯一参与准入（应用入口仍关闭）
+- Control继续拥有组合及发布授权/结果；Decision在本cell的共享关系库保存实际准入应用位置。所有同一tenant/environment/cell/campaign的新参与必须使用同一权威库，不能让各namespace或进程独立选择latest。这个位置与g3最高RECORDED游标分离；只有后续完整能力/安装/切换门禁成功的应用步骤才能写入，Control收到真实应用回执后才展示成功。g6a不提供任何应用写入入口，空库/只有RECORDED时拒绝新准入。
+- V6增加已应用授权历史、活动准入指针和唯一参与事实三表；历史保存完整签名g2授权，指针只引用真实应用历史。参与业务主键为tenant/environment/cell/campaign/participationId（无namespace），同时唯一约束tenant/bindingId；保存subjectHash、源序号及完整已签名凭证，不保存明文subject。全表/字段注释，utf8mb4_0900_bin保持业务标识大小写与Unicode精确区分，外键确保参与只引用本范围历史。不得自动把RECORDED回填为APPLIED，不做历史清理。
+- `POST /api/v1/decisions/bundle-participations`是内部可信业务入口，权限`bundle:admit`；最多8KiB严格JSON，body={campaignId,participationId,subjectToken}。租户与environment/cell来自认证/本地配置，组织/店铺范围从已签名来源再核验。C端必须由完成Auth/会员映射的可信适配方调用，客户端不能直接认领任意subject；本片不实现或假装该映射已完成。
+- 返回已持久化ReleaseBundleParticipation。业务主键本身承担永久幂等，同键同主体始终返回原凭证（即使当前组合已切换/过期），同键换主体409；新准入只读取真实应用位置，校验当前完整签名和期限，再生成bindingId/准入时刻并签发保存。重复返回也检查当前调用范围和参与/来源信任，不重签旧事实。现行业务kill、资格/同意/额度仍由实际消费动作复核，准入事实不代表可发奖。
+- READ_COMMITTED短事务：首个SQL对当前指针及源记录FOR SHARE，应用更新需要独占同一指针，因此一次新准入和整体切换有确定先后；不同参与可并发。参与查找不锁不存在的间隙，完整候选凭证INSERT由唯一键仲裁，冲突后读取获胜不可变事实并复核主体。保存/返回均在事务边界，不返回未提交签名；任何异常回滚。无需Redis锁、新队列或跨库事务。
+- 参与签发使用独立可选key-id/private/public配置，缺省不生成临时私钥且拒绝新签发；配套当前参与公钥信任必须能验证新签名。已有凭证只读恢复不需要私钥，但仍需可信公钥。生产密钥来源/轮换与保留期限、容量、灾备沿S13记录，不自动发放机器凭据或部署。
+- Owner=backend；范围：Decision V6/Mapper/Repository/应用/严格API/可选签发配置、共享错误目录/入参校验复用、OpenAPI和隔离MySQL并发/事务测试。验收：空库及仅RECORDED拒绝；同键并发同主体唯一凭证、不同主体唯一胜者；不同参与不互锁；共享锁与切换串行关系；重复固定旧源、权限/信任撤销拒绝、保存失败全回滚、真实重建读回；无共享库迁移或实际应用副作用。
+- 之后g6b实现带真实运行能力证据的完整应用协议，g6c接Control发起/查询/回滚及旧入口切换；g6a的测试专用APPLIED夹具不构成这些能力已交付的证据。

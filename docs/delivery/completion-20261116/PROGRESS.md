@@ -15,7 +15,7 @@
 - 用户授权Docker只运行本项目组件；13个额外无关容器及原17个langchain应用保持停止，所有容器与数据卷保留。本轮只更新console，17个其它运行容器ID/镜像/启动时间不变；3个原Flink作业及检查点继续推进，禁止重复恢复或提交空作业。
 - 上一轮部署验证：271项前端测试、98项浏览器用例通过，10项既有独立服务用例跳过；lint/build/Hygiene无阻塞，未配置canonical formatter。真实Docker四类资产页在桌面与Pixel7的分页、搜索、详情及字段/节点读取回归通过，无业务写入、API失败或页面异常。运行回执与截图：私有证据目录 `runtime-dbe268b/`。
 - 上一轮部署可见结果：活动/首页/运营/资产的静态预览不显示假业务数据或旧缓存，资产刷新不能绕过读取门禁；OIDC身份范围变化、退出与过期清理旧请求/缓存/草稿，旧令牌401不退出已更新令牌，远端退出失败能恢复登录页。本机仍为DEV认证，真实IdP联调未验证。
-- 当前HEAD/远程任务分支d6c29c2，main/origin=bca69ce。g5a精确CI44127908234全部SUCCESS；g5b本地38模块/47合同/14JSON/10架构/Hygiene通过，准备提交、精确CI并正常交付g5a。继续g6唯一准入和实际应用闭环；无部署或共享库迁移。
+- 当前HEAD/远程任务分支631dce2，main/origin=d6c29c2。g5b精确CI44130020254三项SUCCESS；g6a唯一准入本地45模块/49合同/14JSON/10架构/Hygiene通过，待提交/精确CI。继续真实能力、实际应用与Control闭环；无部署或共享库迁移。
 
 ## 未完成项与恢复顺序
 
@@ -818,3 +818,13 @@
 - 完整Decision模块38项、合同47项及依赖回归PASS（s11g5b-modules-final2.log），14JSON和10架构PASS（s11g5b-json-final.log、s11g5b-architecture-final.log）。6项新增隔离MySQL/Redis/HTTP测试覆盖并发重放、最新接收不覆盖旧参与、换凭证冲突、停用/信任撤销重放拒绝、历史期限与当前优惠期限分离、持久源/制品损坏不回退、旧JSON摘要及专用入口边界。
 - 根代理另行复核当前权限/来源组织店铺、两种幂等路径、作用域查询、原制品签名、限流/熔断路由、旧服务忽略未知字段风险与专用URL保护；无剩余阻断。Hygiene/diff PASS（s11g5b-hygiene.json，无新增Finding；无canonical formatter限制）。没有改OfferToken、共享库或部署；实际准入/应用/能力门禁仍待后续。
 - g5a d6c29c2精确CI44127908234三项全部SUCCESS，待本片提交后正常FF main。当前g5b准备逻辑提交和精确CI，继续S11g6持久化唯一准入与实际应用闭环，整体仍PARTIAL。
+
+## S11g6a 唯一参与准入
+- g5b提交631dce2、CI44130020254已启动；g5a已FF main/origin=d6c29c2。g6a设计细化真实应用投影与RECORDED分离、共享指针锁/唯一业务键、独立签发与内部机器入口；本片没有应用写入口，不能把测试seed当真实整体发布。产品尚未修改，继续实施。
+- g6a V6三表/完整外键与注释、Mapper XML共享锁/唯一插入、不可变签名事实恢复、严格8KiB内部接口和可选专用私钥已写。首轮编译PASS（s11g6a-compile.log）；复核补上应用时间不得晚于首次准入、不得早于授权或超出原有效期，尚未验证。当前待OpenAPI、真实MySQL并发/切换/失败恢复及签发关闭测试，没有任何实际应用指针写入口或共享数据变更。
+- g6a首轮7项隔离MySQL真实准入测试全PASS（s11g6a-first.log），覆盖并发唯一、跨主体冲突、不同参与共享锁、切换等待、插入后故障回滚、缺私钥恢复/撤信任拒绝、严格输入与大小写/尾空格/Unicode键、源时间损坏。复核把历史资源范围检查前置于主体冲突响应，避免越权探测；已补断言，待最终模块回归。OpenAPI/操作说明/契约入参测试已写；g5b精确CI44130020254三项SUCCESS，待清洁提交后正常FF main。
+
+### S11g6a 本地验收通过
+- 完整Decision模块45项、合同49项及依赖回归PASS（s11g6a-modules-final.log），14JSON和10架构PASS（s11g6a-json-final.log、s11g6a-architecture-final.log）。补充不完整签发配置与不被当前参与公钥信任的私钥拒绝后，7项准入真实MySQL测试再次PASS（s11g6a-signing-final.log）；原模块其他结果仍适用。
+- 根代理单独复核READ_COMMITTED共享指针锁、实际切换等待、同键唯一仲裁/失败后读回、MyBatis写入清理会话缓存、提交前异常回滚、无远程/MQ事务副作用、先检查历史资源范围再报告主体冲突、时间/签名/Unicode边界、无私钥读取恢复以及空APPLIED默认拒绝。Hygiene/diff PASS（s11g6a-hygiene-final.json）；数值项为显式容量/事务预算常量，事务ADVISORY已有真实并发与回滚证据，无剩余阻断；仍无canonical formatter。
+- 本片没有实际应用写入口，V6不回填任何APPLIED记录；未迁移共享数据库或部署。准备逻辑提交/精确CI，随后正常交付已绿g5b；下一步g6b真实执行能力证据与应用协议，不能将测试APPLIED夹具当作线上原子发布完成。

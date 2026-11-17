@@ -121,6 +121,13 @@ Decision V5/Journey V4会回填历史接收记录：已有active指针保持原g
 ### Decision固定参与求值（S11g5b，尚未启用准入）
 - 组合专用`POST /api/v1/decisions/bundle:evaluate`和`/bundle:batch-evaluate`的每个请求必须带`bundleContext={campaignId,participationId,participation:ReleaseBundleParticipation}`。主体仍来自可信业务请求，租户来自认证。旧URL在新服务拒绝组合上下文，新URL在旧服务404，禁止调用者失败后降级回旧URL；签名必须与独立活动/参与编号、主体、本地environment/cell/namespace和g3精确历史授权一致。调用者仍需decision:evaluate及当前组织/店铺范围，来源组织必须等于请求组织，来源限定店铺时购物车不能混入其他店铺。
 - 新路径从持久库核对原组合成员/制品，不使用latest或单slot active。历史清单在准入时有效即可恢复；当前策略有效期、商品/渠道/人群和kill检查照常执行。当前签名信任来自进程配置快照，换钥匙/撤销需刷新配置或滚动重启，不宣称已有热轮换。
-- 可选`MARKETING_PARTICIPATION_TRUSTED_KEY_ID/PUBLIC_KEY_BASE64/TRUSTED_PUBLIC_KEYS`仅用于参与签名角色，默认空拒绝新路径；旧OfferToken、Control与compiler配置不能代替。没有新增私钥、签发端或上线开关。
+- 可选`MARKETING_PARTICIPATION_TRUSTED_KEY_ID/PUBLIC_KEY_BASE64/TRUSTED_PUBLIC_KEYS`仅用于参与签名角色，默认空拒绝新路径；旧OfferToken、Control与compiler配置不能代替。g5b本片不增加私钥或签发端；后续g6a的专用准入入口见下节。
 - 旧请求不输出null新字段，因此原幂等摘要不变。新请求完整上下文计入摘要，同key换绑定409；JDBC和Redis成功重放返回原报价前重验当前权限、范围、kill和来源/签名/制品。报价有效期与原响应一致，不刷新OfferToken；计算结果不代表预占、支付或发奖。
 - 本片没有唯一准入DB绑定、APPLIED指针、Control整体生效回执或完整旧入口封锁；它只补消费者。实际启用仍须完成上述步骤及所有Decision/Flink运行版本能力验证。无部署、共享迁移或运行中作业变更。
+
+### 唯一参与准入（S11g6a，尚无应用写入口）
+- `POST /api/v1/decisions/bundle-participations`要求内部机器权限`bundle:admit`，严格JSON最多8KiB，body={campaignId,participationId,subjectToken}；返回签名ReleaseBundleParticipation。tenant来自认证，environment/cell来自部署配置，组织与店铺范围由真实签名来源核对。可信业务适配方必须先完成Auth/会员映射，接口不把任意C端输入或OIDC sub当业务会员。
+- V6的`mk_bundle_applied_authorization`、`mk_bundle_admission_pointer`、`mk_bundle_participation`分别保存实际应用历史、同cell跨namespace共享准入指针、不可变参与事实。迁移不从g3 RECORDED导入数据；只有后续完整应用协议可以建立指针。当前没有应用写入API，空库和仅接收授权均409，不能靠本接口开启发布。
+- 同一tenant/environment/cell/campaign/participationId永久绑定同一主体与完整组合，重试返回原签名；同键换主体409，不重签或换版本。READ_COMMITTED短事务以共享指针锁固定应用位置、唯一插入仲裁并发；实际切换需独占同一指针。不同参与可并发，失败不留下半份记录；旧组合过期不改变历史绑定，但新参与拒绝。返回之前仍检查当前权限/资源范围和签名信任。
+- 新签发必须配置独立`MARKETING_PARTICIPATION_SIGNING_KEY_ID/PRIVATE_KEY_BASE64/SIGNING_PUBLIC_KEY_BASE64`，并由现有参与公钥配置认可。默认不生成临时私钥；缺配置或私钥与当前信任不匹配均409，已存在参与只读恢复不需要私钥。密钥不得提交Git，生产密钥保管/轮换另按S13验证。
+- 表中保留主体用途摘要及签名事实，不保存明文subject；摘要不是匿名化。当前没有自动删除，保留/归档/撤销传播和容量仍待S13。独占测试数据库的APPLIED夹具只验证准入并发/恢复，不证明Control整体发布、实际运行能力或生产容量已完成；本轮未迁移共享库或部署。

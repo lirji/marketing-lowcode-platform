@@ -47,6 +47,12 @@ public record ReleaseBundleParticipation(String bindingId, TenantId tenantId, St
                 "participationId", participationId, "bindingId", bindingId, "memberManifestId", memberManifestId)));
     }
 
+    /** 准入请求和最终凭证共用标识/Unicode边界，避免数据库键与签名字节解释不同。 */
+    static void requireAdmissionInput(String campaignId, String participationId, String subjectToken) {
+        if (!identifier(campaignId) || !bounded(participationId, MAX_PARTICIPATION_LENGTH)
+                || !bounded(subjectToken, MAX_SUBJECT_LENGTH)) throw invalid();
+    }
+
     private static boolean digest(String value) { return value != null && value.matches("[a-f0-9]{64}"); }
     private static boolean identifier(String value) {
         return value != null && value.length() <= MAX_IDENTIFIER_LENGTH && value.matches("[A-Za-z0-9_.:-]+");

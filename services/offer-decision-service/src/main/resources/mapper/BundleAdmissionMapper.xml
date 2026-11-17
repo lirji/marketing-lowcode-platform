@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.decision.infrastructure.persistence.mapper.BundleAdmissionMapper">
+    <select id="lockApplied" resultType="com.acme.marketing.decision.application.BundleAdmissionRepository$AppliedAuthorization">
+        SELECT a.activation_sequence AS activationSequence, a.directive_id AS directiveId,
+               a.directive_json AS directiveJson, a.applied_at AS appliedAt
+        FROM mk_bundle_admission_pointer p
+        JOIN mk_bundle_applied_authorization a ON a.tenant_id=p.tenant_id AND a.environment_name=p.environment_name
+          AND a.cell_id=p.cell_id AND a.campaign_id=p.campaign_id AND a.activation_sequence=p.applied_sequence
+        WHERE p.tenant_id=#{key.tenantId} AND p.environment_name=#{key.environment}
+          AND p.cell_id=#{key.cell} AND p.campaign_id=#{key.campaignId}
+        FOR SHARE
+    </select>
+    <select id="applied" resultType="com.acme.marketing.decision.application.BundleAdmissionRepository$AppliedAuthorization">
+        SELECT activation_sequence AS activationSequence, directive_id AS directiveId,
+               directive_json AS directiveJson, applied_at AS appliedAt
+        FROM mk_bundle_applied_authorization
+        WHERE tenant_id=#{key.tenantId} AND environment_name=#{key.environment} AND cell_id=#{key.cell}
+          AND campaign_id=#{key.campaignId} AND activation_sequence=#{sequence}
+    </select>
+    <select id="participation" resultType="com.acme.marketing.decision.application.BundleAdmissionRepository$StoredParticipation">
+        SELECT binding_id AS bindingId, subject_hash AS subjectHash, activation_sequence AS activationSequence,
+               participation_json AS participationJson, created_by AS createdBy, created_at AS createdAt
+        FROM mk_bundle_participation
+        WHERE tenant_id=#{key.tenantId} AND environment_name=#{key.environment} AND cell_id=#{key.cell}
+          AND campaign_id=#{key.campaignId} AND participation_id=#{participationId}
+    </select>
+    <insert id="insert">
+        INSERT INTO mk_bundle_participation (tenant_id,environment_name,cell_id,campaign_id,participation_id,
+            binding_id,subject_hash,activation_sequence,participation_json,created_by,created_at)
+        VALUES (#{key.tenantId},#{key.environment},#{key.cell},#{key.campaignId},#{participationId},
+            #{value.bindingId},#{value.subjectHash},#{value.activationSequence},#{value.participationJson},#{value.createdBy},#{value.createdAt})
+    </insert>
+</mapper>

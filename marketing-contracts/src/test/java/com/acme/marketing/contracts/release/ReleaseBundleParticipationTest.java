@@ -27,6 +27,15 @@ class ReleaseBundleParticipationTest {
     private final PinnedReleaseBundleParticipationVerifier verifier = new PinnedReleaseBundleParticipationVerifier(
             Map.of("decision", decisionKey.getPublic()), controlVerifier);
 
+    @Test void admissionInputSharesTheSignedIdentifierAndUnicodeBoundaries() {
+        assertEquals("参与", new ReleaseBundleAdmissionRequest("campaign", "参与", "subject").participationId());
+        for (String invalid : new String[]{"", " ", "a\n", "x".repeat(129), "\uD800"})
+            assertThrows(IllegalArgumentException.class, () -> new ReleaseBundleAdmissionRequest("campaign", invalid, "subject"));
+        assertThrows(IllegalArgumentException.class, () -> new ReleaseBundleAdmissionRequest("campaign/other", "one", "subject"));
+        assertThrows(IllegalArgumentException.class, () -> new ReleaseBundleAdmissionRequest("campaign", "one", "x".repeat(513)));
+        assertThrows(IllegalArgumentException.class, () -> new ReleaseBundleAdmissionRequest("campaign", "one", "\uDFFF"));
+    }
+
     @Test void wireRoundTripPreservesHistoricalBindingAfterRulesExpire() {
         var directive = directive(); var proof = signed(directive, now);
         String json = mapper.writeValueAsString(proof);

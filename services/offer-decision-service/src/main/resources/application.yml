@@ -51,3 +51,7 @@ management.opentelemetry.tracing.export.max-batch-size: 256
 marketing.participation.trusted-key-id: ${MARKETING_PARTICIPATION_TRUSTED_KEY_ID:}
 marketing.participation.public-key-base64: ${MARKETING_PARTICIPATION_PUBLIC_KEY_BASE64:}
 marketing.participation.trusted-public-keys: ${MARKETING_PARTICIPATION_TRUSTED_PUBLIC_KEYS:}
+# 独立私钥缺省不配置；应用指针未建立时此入口仍拒绝新参与。
+marketing.participation.signing-key-id: ${MARKETING_PARTICIPATION_SIGNING_KEY_ID:}
+marketing.participation.private-key-base64: ${MARKETING_PARTICIPATION_PRIVATE_KEY_BASE64:}
+marketing.participation.signing-public-key-base64: ${MARKETING_PARTICIPATION_SIGNING_PUBLIC_KEY_BASE64:}

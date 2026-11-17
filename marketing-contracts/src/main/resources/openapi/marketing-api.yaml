@@ -552,6 +552,23 @@ paths:
         required: true
         content: {application/json: {schema: {type: array, minItems: 1, maxItems: 50, items: {$ref: '#/components/schemas/UnboundDecisionRequest'}}}}
       responses: *list
+  /api/v1/decisions/bundle-participations:
+    post:
+      tags: [Decision]
+      operationId: admitBundleParticipation
+      summary: Persist one immutable whole-bundle binding for a trusted business participation
+      description: Internal machine entry requiring bundle:admit and the current organization/shop scope of the signed source. Strict JSON up to 8KiB. The tenant and environment/cell come from authentication/server configuration. The business participation key is permanently idempotent; another subject conflicts. Only an actual applied pointer can admit a new participant; RECORDED alone cannot. Returns the original persisted proof on replay without extending eligibility. A trusted Auth/member mapping adapter is required before C-end integration; callers cannot supply a version or bypass that mapping.
+      x-required-permission: 'bundle:admit'
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ReleaseBundleAdmissionRequest'}}}
+      responses:
+        '200':
+          description: Persisted signed participation, identical for the same existing business binding
+          content: {application/json: {schema: {$ref: '#/components/schemas/ReleaseBundleParticipation'}}}
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
   /api/v1/decisions/bundle:evaluate:
     post:
       tags: [Decision]
@@ -1166,6 +1183,14 @@ components:
         latestSequence: {type: integer, format: int64, minimum: 1}
         current: {type: boolean, description: Whether this receipt is the highest recorded sequence; does not describe online routing}
         recordedAt: {type: string, format: date-time}
+    ReleaseBundleAdmissionRequest:
+      type: object
+      additionalProperties: false
+      required: [campaignId, participationId, subjectToken]
+      properties:
+        campaignId: {type: string, pattern: '^[A-Za-z0-9_.:-]{1,64}$'}
+        participationId: {type: string, minLength: 1, maxLength: 128, description: Stable identifier from the trusted business caller; no control characters or invalid Unicode. Not a client-selected release version.}
+        subjectToken: {type: string, minLength: 1, maxLength: 512, description: Canonical subject from the trusted identity/member adapter; never inferred from raw OIDC sub by this endpoint.}
     ReleaseBundleParticipation:
       type: object
       additionalProperties: false

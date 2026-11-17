@@ -52,7 +52,7 @@ class ContractSpecificationsTest {
             "/api/v1/audiences/snapshots/{snapshotId}/memberships",
             "/api/v1/audiences/snapshots/{snapshotId}/memberships/{subjectToken}",
             "/api/v1/decisions:evaluate", "/api/v1/decisions:batch-evaluate",
-            "/api/v1/decisions/bundle:evaluate", "/api/v1/decisions/bundle:batch-evaluate",
+            "/api/v1/decisions/bundle:evaluate", "/api/v1/decisions/bundle:batch-evaluate", "/api/v1/decisions/bundle-participations",
             "/api/v1/decisions/traces/requests/{requestId}", "/api/v1/decisions/traces/orders/{orderId}",
             "/api/v1/journey-runtime/release-bundle-directives",
             "/api/v1/journey-runtime/release-bundle-directives/{campaignId}/latest",
@@ -152,6 +152,19 @@ class ContractSpecificationsTest {
         assertEquals(Set.of("campaignId", "participationId", "participation"), new HashSet<>((List<?>) context.get("required")));
         assertEquals("#/components/schemas/ReleaseBundleParticipation", map(map(context.get("properties")).get("participation")).get("$ref"));
         assertEquals(false, context.get("additionalProperties"));
+    }
+
+    @Test
+    void admissionContractCannotSelectTenantOrReleaseAndRequiresMachinePermission() throws IOException {
+        var document = yaml(RESOURCES.resolve("openapi/marketing-api.yaml"));
+        var operation = map(map(map(document.get("paths")).get("/api/v1/decisions/bundle-participations")).get("post"));
+        assertEquals("bundle:admit", operation.get("x-required-permission"));
+        var schema = map(map(map(document.get("components")).get("schemas")).get("ReleaseBundleAdmissionRequest"));
+        var names = java.util.Arrays.stream(com.acme.marketing.contracts.release.ReleaseBundleAdmissionRequest.class.getRecordComponents())
+                .map(java.lang.reflect.RecordComponent::getName).collect(java.util.stream.Collectors.toSet());
+        assertEquals(names, map(schema.get("properties")).keySet());
+        assertEquals(names, new HashSet<>((List<?>) schema.get("required")));
+        assertEquals(false, schema.get("additionalProperties"));
     }
 
     @Test
