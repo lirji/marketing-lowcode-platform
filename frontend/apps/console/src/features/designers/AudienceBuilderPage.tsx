@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom'
 import { RecordTable } from '../../components/RecordTable'
 import { DateTimePicker } from '../../components/DateTimePicker'
 import { FieldHint } from '../../components/FieldHint'
@@ -61,6 +62,13 @@ function fieldOptionsFrom(fields: FieldDefinition[] | undefined) {
 }
 
 export function AudienceBuilderPage() {
+  const [params] = useSearchParams()
+  const auth = useAuth()
+  const selectedId = params.get('segmentId')?.trim() || ''
+  return <AudienceEditor key={`${auth.tenantId}:${auth.subject}:${selectedId}`} selectedId={selectedId} />
+}
+
+function AudienceEditor({ selectedId }: { selectedId: string }) {
   const auth = useAuth()
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
@@ -69,6 +77,7 @@ export function AudienceBuilderPage() {
   const [conditions, setConditions] = useState<Condition[]>([])
   const [match, setMatch] = useState<'ALL' | 'ANY'>('ALL')
   const [notice, setNotice] = useState('')
+  const [selectionError, setSelectionError] = useState('')
   const [hydrated, setHydrated] = useState(false)
   const canWrite = auth.hasPermission('audience:write')
   const audiences = useQuery({ queryKey: ['audiences'], queryFn: api.audiences, enabled: !api.demoMode && auth.hasPermission('audience:read') })
@@ -82,6 +91,7 @@ export function AudienceBuilderPage() {
     setConditions([])
   }
   const applySegment = (item: AudienceView) => {
+    setSelectionError('')
     setSegmentId(item.segmentId)
     setVersion(item.version)
     setName(item.name)
@@ -94,11 +104,12 @@ export function AudienceBuilderPage() {
       if (api.demoMode && !hydrated) setHydrated(true)
       return
     }
-    if (audiences.isPending) return
-    const first = audiences.data?.[0]
-    if (first) applySegment(first)
+    if (audiences.isPending || audiences.isError) return
+    const selected = selectedId ? audiences.data?.find((item) => item.segmentId === selectedId) : audiences.data?.[0]
+    if (selected) applySegment(selected)
+    else if (selectedId) setSelectionError('所选人群不存在或当前身份无权访问，请从已保存版本中重新选择。')
     setHydrated(true)
-  }, [audiences.data, audiences.isPending, hydrated])
+  }, [audiences.data, audiences.isPending, audiences.isError, hydrated, selectedId])
 
   const update = (id: number, key: keyof Condition, value: string) => setConditions((items) => items.map((item) => {
     if (item.id !== id) return item
@@ -121,8 +132,9 @@ export function AudienceBuilderPage() {
   const fieldMeta = (fieldId: string) => fields.data?.find((item) => item.fieldId === fieldId)
 
   return <div className="workspace audience-page">
-    <PageHeader eyebrow={version ? `AUDIENCE_EXPRESSION · v${version}` : 'AUDIENCE_EXPRESSION'} title={name.trim() || '新人群'} description="保存圈选规则与字段用途；真实人群的计算需要已接入的画像来源。" actions={<><Button disabled title="画像来源接入后可预估真实人群"><Eye size={15} />预估人数</Button><Button disabled title="真实人群计算完成后可生成快照"><ShieldCheck size={15} />保存快照</Button>{!api.demoMode && canWrite && <Button tone="primary" disabled={save.isPending || !name.trim()} onClick={() => save.mutate()}><Save size={15} />保存规则</Button>}</>} />
+    <PageHeader eyebrow={version ? `AUDIENCE_EXPRESSION · v${version}` : 'AUDIENCE_EXPRESSION'} title={name.trim() || '新人群'} description="保存圈选规则与字段用途；真实人群的计算需要已接入的画像来源。" actions={<><Button disabled title="画像来源接入后可预估真实人群"><Eye size={15} />预估人数</Button><Button disabled title="真实人群计算完成后可生成快照"><ShieldCheck size={15} />保存快照</Button>{!api.demoMode && canWrite && <Button tone="primary" disabled={save.isPending || !name.trim() || Boolean(selectionError)} onClick={() => save.mutate()}><Save size={15} />保存规则</Button>}</>} />
     <DemoBanner />
+    {selectionError && <StateBanner tone="error" title="无法打开所选人群" detail={selectionError} />}
     {!api.demoMode && <StateBanner tone="info" title="画像来源尚未接入" detail="可以保存圈选规则；接入真实会员画像后才能预估人数和生成完整人群快照。" />}
     {notice && <StateBanner tone="success" title="已写入控制面" detail={notice} />}
     {audiences.isError && <StateBanner tone="error" title="人群加载失败" detail={problemDetail(audiences.error)} />}

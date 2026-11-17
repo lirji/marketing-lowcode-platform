@@ -98,15 +98,23 @@ public final class EngagementService {
         return policy;
     }
 
+    /** 即使命令命中旧成功回执，也必须仍有当前写权限且输入合法。 */
+    public void authorizeTemplateWrite(TemplateRequest request) {
+        TenantContextHolder.requireCurrent().requirePermission("template:write");
+        TemplateInput.validate(request);
+    }
+
+    /** 新版本只追加；冲突明确返回409，不覆盖已被旅程引用的历史正文。 */
     public TemplateView createTemplate(TemplateRequest request) {
+        authorizeTemplateWrite(request);
         var scope = TenantContextHolder.requireCurrent();
-        scope.requirePermission("template:write");
-        if (!request.content().contains("unsubscribe") && "EMAIL".equals(request.channel())) {
-            throw new ConflictException("UNSUBSCRIBE_NOTICE_REQUIRED", "email template requires unsubscribe text");
-        }
         Instant now = clock.instant();
-        transactions.executeWithoutResult(ignored -> repository.insertTemplate(scope.tenantId().value(),
-                scope.actorId(), request, now));
+        try {
+            transactions.executeWithoutResult(ignored -> repository.insertTemplate(scope.tenantId().value(),
+                    scope.actorId(), request, now));
+        } catch (DuplicateKeyException conflict) {
+            throw TemplateInput.versionExists();
+        }
         return new TemplateView(request.templateId(), request.version(), request.channel(), request.content(),
                 request.requiredVariables(), TemplateState.APPROVED.code(), now);
     }
@@ -510,7 +518,11 @@ public final class EngagementService {
     }
     public record TemplateRequest(String templateId, long version, String channel, String content,
             Set<String> requiredVariables) {
-        public TemplateRequest { requiredVariables = Set.copyOf(requiredVariables); }
+        public TemplateRequest {
+            // 结构性无效项交给统一输入校验，避免反序列化时抛NPE而丢失稳定错误码。
+            requiredVariables = requiredVariables == null ? null
+                    : java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(requiredVariables));
+        }
     }
     public record TemplateView(String templateId, long version, String channel, String content,
             Set<String> requiredVariables, String state, Instant createdAt) { }

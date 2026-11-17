@@ -180,3 +180,6 @@ main { min-width: 0; }.topbar { height: 64px; padding: 0 28px; display: flex; al
 .award-fulfillment-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
 
 .award-fulfillment-region { scroll-margin-top: 88px; min-width: 0; }
+
+.template-fields { border: 0; padding: 0; margin: 20px 0; display: grid; gap: 20px; min-width: 0; }
+.template-content { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }

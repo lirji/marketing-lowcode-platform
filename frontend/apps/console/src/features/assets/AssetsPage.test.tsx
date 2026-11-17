@@ -77,6 +77,7 @@ describe('AssetsPage', () => {
     renderAssets()
     await user.click(screen.getByRole('tab', { name: '权益与券' }))
     expect(await screen.findByText('真实满减券')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '编辑真实满减券' })).toHaveAttribute('href', '/designers/benefit?benefitId=coupon-live')
     expect(screen.queryByText('家电满500减80券')).not.toBeInTheDocument()
     expect(screen.queryByText('预算 ¥20M')).not.toBeInTheDocument()
   })

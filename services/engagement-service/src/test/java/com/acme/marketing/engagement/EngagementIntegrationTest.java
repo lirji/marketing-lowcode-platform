@@ -414,6 +414,75 @@ class EngagementIntegrationTest extends MySqlIntegrationTest {
                 Integer.class, "tenant-a", command.commandId()));
     }
 
+    @Test
+    void templateVersionsStayImmutableUnderConcurrentCreationAndRetry() throws Exception {
+        String id = "version-test-" + UUID.randomUUID();
+        Map<String, Object> first = Map.of("templateId", id, "version", 1, "channel", "SMS",
+                "content", "Original {{name}}", "requiredVariables", Set.of("name"));
+        String key = "template-" + UUID.randomUUID();
+        JsonNode created = post("/api/v1/templates", first, key);
+        assertEquals(created, post("/api/v1/templates", first, key));
+        Map<String, Object> next = new java.util.LinkedHashMap<>(first);
+        next.put("version", 2); next.put("content", "New {{name}}");
+        CyclicBarrier gate = new CyclicBarrier(2);
+        try (var workers = Executors.newFixedThreadPool(2)) {
+            var a = workers.submit(() -> { gate.await(); return rawPost("/api/v1/templates", next); });
+            var b = workers.submit(() -> { gate.await(); return rawPost("/api/v1/templates", next); });
+            var results = java.util.List.of(a.get(30, TimeUnit.SECONDS), b.get(30, TimeUnit.SECONDS));
+            assertEquals(Set.of(201, 409), results.stream().map(HttpResponse::statusCode).collect(java.util.stream.Collectors.toSet()));
+            assertTrue(results.stream().filter(response -> response.statusCode() == 409)
+                    .allMatch(response -> response.body().contains("TEMPLATE_VERSION_EXISTS")));
+        }
+        assertEquals("Original {{name}}", jdbc.queryForObject("select content_text from mk_template_version where tenant_id=? and template_id=? and version_no=1", String.class, "tenant-a", id));
+        assertEquals(2, jdbc.queryForObject("select count(*) from mk_template_version where tenant_id=? and template_id=?", Integer.class, "tenant-a", id));
+        JsonNode latest = get("/api/v1/templates");
+        assertTrue(latest.findValues("templateId").stream().anyMatch(value -> value.asString().equals(id)));
+        for (JsonNode item : latest) if (id.equals(item.path("templateId").asString())) assertEquals(2, item.path("version").asInt());
+    }
+
+    @Test
+    void templateReplayRechecksWritePermissionAndTenantScope() throws Exception {
+        String id = "scope-test-" + UUID.randomUUID(), key = "template-" + UUID.randomUUID();
+        Map<String, Object> body = Map.of("templateId", id, "version", 1, "channel", "SMS",
+                "content", "Scope-only content", "requiredVariables", Set.of());
+        post("/api/v1/templates", body, key);
+        var revoked = client.send(base("/api/v1/templates").setHeader("X-Dev-Permissions", "template:read")
+                .header("Content-Type", "application/json").header("Idempotency-Key", key)
+                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, revoked.statusCode());
+        var other = client.send(base("/api/v1/templates").setHeader("X-Dev-Tenant-Id", "tenant-template-other").GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, other.statusCode()); assertTrue(!other.body().contains(id));
+        var otherWrite = client.send(base("/api/v1/templates").setHeader("X-Dev-Tenant-Id", "tenant-template-other")
+                .header("Content-Type", "application/json").header("Idempotency-Key", key)
+                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(201, otherWrite.statusCode());
+        assertEquals(2, jdbc.queryForObject("select count(*) from mk_template_version where template_id=?", Integer.class, id));
+    }
+
+    @Test
+    void templateInputBoundsAndEmailNoticeAreEnforcedBeforePersistence() throws Exception {
+        String id = "invalid-test-" + UUID.randomUUID();
+        Map<String, Object> valid = Map.of("templateId", id, "version", 1, "channel", "SMS", "content", "Message", "requiredVariables", Set.of());
+        var badFields = java.util.List.of(Map.entry("templateId", (Object) " "), Map.entry("templateId", (Object) "x".repeat(129)),
+                Map.entry("channel", (Object) " SMS"), Map.entry("content", (Object) " "), Map.entry("content", (Object) "x".repeat(8001)),
+                Map.entry("version", (Object) 0), Map.entry("version", (Object) 9_007_199_254_740_992L),
+                Map.entry("requiredVariables", (Object) java.util.List.of("name,other")),
+                Map.entry("requiredVariables", (Object) java.util.stream.IntStream.range(0, 33).mapToObj(value -> "v" + value).toList()));
+        for (var field : badFields) {
+            var body = new java.util.LinkedHashMap<>(valid); body.put(field.getKey(), field.getValue());
+            var response = rawPost("/api/v1/templates", body);
+            assertEquals(400, response.statusCode(), response.body());
+            assertTrue(response.body().contains("TEMPLATE_INPUT_INVALID"), response.body());
+        }
+        var missing = new java.util.LinkedHashMap<>(valid); missing.put("requiredVariables", null);
+        assertEquals(400, rawPost("/api/v1/templates", missing).statusCode());
+        var email = new java.util.LinkedHashMap<>(valid); email.put("channel", "EMAIL");
+        var response = rawPost("/api/v1/templates", email); assertEquals(409, response.statusCode());
+        assertTrue(response.body().contains("UNSUBSCRIBE_NOTICE_REQUIRED"));
+        assertEquals(0, jdbc.queryForObject("select count(*) from mk_template_version where tenant_id=? and template_id=?", Integer.class, "tenant-a", id));
+        email.put("content", "Message unsubscribe"); assertEquals(201, rawPost("/api/v1/templates", email).statusCode());
+    }
+
     private JsonNode post(String path, Object body) throws Exception { return successful(rawPost(path, body)); }
     private JsonNode post(String path, Object body, String key) throws Exception {
         return successful(rawPost(path, body, key));

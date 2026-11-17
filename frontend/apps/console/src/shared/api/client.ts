@@ -243,6 +243,8 @@ export const api = {
     request(`/api/v1/audiences/${encodeURIComponent(segmentId)}/versions/${version}/snapshots`, { method: 'POST', headers: commandHeaders(), body: JSON.stringify(payload) }, (value) => parseWith(audienceSnapshotSchema, value)),
   fields: () => request('/api/v1/fields', undefined, (value) => zArray(fieldDefinitionSchema, value)),
   templates: () => request('/api/v1/templates', undefined, (value) => zArray(templateViewSchema, value)),
+  createTemplate: (payload: { templateId: string; version: number; channel: string; content: string; requiredVariables: string[] }, idempotencyKey: string) =>
+    request('/api/v1/templates', { method: 'POST', headers: commandHeaders(idempotencyKey), body: JSON.stringify(payload) }, (value) => parseWith(templateViewSchema, value)),
   benefits: () => request('/api/v1/benefits', undefined, (value) => zArray(benefitViewSchema, value)),
   benefit: (benefitId: string) =>
     request(`/api/v1/benefits/${encodeURIComponent(benefitId)}`, undefined, (value) => parseWith(benefitViewSchema, value)),

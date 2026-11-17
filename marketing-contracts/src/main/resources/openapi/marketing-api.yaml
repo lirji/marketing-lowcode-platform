@@ -556,7 +556,25 @@ paths:
     put: {tags: [Engagement], operationId: setFrequencyPolicy, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
   /api/v1/templates:
     get: {tags: [Engagement], operationId: listTemplates, responses: *list}
-    post: {tags: [Engagement], operationId: createTemplate, parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}
+    post:
+      tags: [Engagement]
+      operationId: createTemplate
+      description: >-
+        Requires current template:write permission, including idempotent replay. Creates
+        an immutable tenant/templateId/version row with the existing APPROVED state;
+        it does not send a message or update existing Journey references. Duplicate
+        versions return 409 TEMPLATE_VERSION_EXISTS without overwriting content.
+        Invalid bounded input returns 400 TEMPLATE_INPUT_INVALID. EMAIL content must
+        contain unsubscribe or returns 409 UNSUBSCRIBE_NOTICE_REQUIRED. Same key and
+        payload replays the saved result; a changed payload returns 409 IDEMPOTENCY_PAYLOAD_CONFLICT.
+        Channels remain server-configured string identifiers, not a promise of delivery support.
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TemplateCreate'}
+      responses: *created
   /api/v1/contacts:
     get:
       tags: [Engagement]
@@ -717,6 +735,19 @@ components:
     JsonArray: {description: Successful collection, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/JsonObject'}}}}}
     Problem: {description: RFC 9457 problem response, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
   schemas:
+    TemplateCreate:
+      type: object
+      required: [templateId, version, channel, content, requiredVariables]
+      properties:
+        templateId: {type: string, minLength: 1, maxLength: 128, description: No whitespace or control characters}
+        version: {type: integer, format: int64, minimum: 1, maximum: 9007199254740991}
+        channel: {type: string, minLength: 1, maxLength: 32, description: Configured channel identifier without whitespace or control characters}
+        content: {type: string, minLength: 1, maxLength: 8000, description: Nonblank message body, stored verbatim}
+        requiredVariables:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 60, pattern: '^[A-Za-z_][A-Za-z0-9_.-]{0,59}$'}
     JsonObject: {type: object, additionalProperties: true}
     BenefitStatus: {type: string, enum: [DRAFT, ACTIVE, RETIRED]}
     BenefitSkuStatus: {type: string, enum: [DRAFT, PENDING_APPROVAL, ACTIVE, PAUSED, RETIRED]}

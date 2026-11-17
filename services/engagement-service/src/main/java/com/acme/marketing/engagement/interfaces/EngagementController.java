@@ -49,6 +49,7 @@ public class EngagementController {
     @PostMapping("/templates") @ResponseStatus(HttpStatus.CREATED)
     public EngagementService.TemplateView template(@RequestHeader("Idempotency-Key") String key,
             @RequestBody EngagementService.TemplateRequest request) {
+        service.authorizeTemplateWrite(request);
         return commands.execute(TenantContextHolder.requireCurrent().tenantId(), "engagement.template.create",
                 key, request, EngagementService.TemplateView.class, () -> service.createTemplate(request));
     }

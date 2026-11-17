@@ -33,11 +33,11 @@ vi.mock('../../shared/api/client', async (importOriginal) => {
 
 import { AudienceBuilderPage } from './AudienceBuilderPage'
 
-function renderAudience() {
+function renderAudience(entry = '/designers/audience') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[entry]}>
         <AuthProvider>
           <AudienceBuilderPage />
         </AuthProvider>
@@ -47,6 +47,22 @@ function renderAudience() {
 }
 
 describe('AudienceBuilderPage', () => {
+  it('opens the requested asset instead of the first item and refuses an unknown ID', async () => {
+    mocks.audiences.mockResolvedValue([
+      { segmentId: 'first', version: 1, name: '第一个人群', status: 'ACTIVE' },
+      { segmentId: 'chosen', version: 3, name: '指定人群', status: 'ACTIVE' },
+    ])
+    mocks.fields.mockResolvedValue([])
+    const view = renderAudience('/designers/audience?segmentId=chosen')
+    expect(await screen.findByRole('heading', { name: '指定人群' })).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('第一个人群')).not.toBeInTheDocument()
+    view.unmount()
+    renderAudience('/designers/audience?segmentId=missing')
+    expect(await screen.findByText('无法打开所选人群')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('第一个人群')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '保存规则' })).toBeDisabled()
+  })
+
   it('offers ordered comparisons only for number and instant fields', async () => {
     mocks.audiences.mockResolvedValue([{ segmentId: 'recent', version: 1, name: 'Recent', status: 'ACTIVE',
       rule: { match: 'ALL', conditions: [{ fieldId: 'joined', operator: 'GT', value: '2026-01-01T00:00:00Z' }] },

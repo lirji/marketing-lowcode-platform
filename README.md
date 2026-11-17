@@ -245,3 +245,14 @@ Kill Switch 的原因随原签名指令保存，其范围是当前租户的整�
 活动筛选读取有权访问的真实活动列表（需 `campaign:read`），dashboard与series同时按可选 `campaignId` 精确过滤当前租户投影；未传包含未关联活动的事实。两响应回显实际 `campaignId`，旧服务没有确认所选活动时页面拒绝显示和导出。活动ID与窗口写入CSV；归因策略筛选仍未实现。分析页不内置营收、实验或归因样本。静态DEMO仅提示连接数据源，演示事实/投影使用 `scripts/seed-data/system-mock.sql` 写入隔离库后通过真实接口读取。浏览器合同验证：`pnpm --filter @marketing/console exec playwright test analytics-report.spec.ts`；设置 `MARKETING_LIVE_ANALYTICS=1` 可对本机18080执行只读GET及下载验收，不触发归因重算。
 
 活动筛选新增测量服务Flyway V5索引 `(tenant_id,campaign_id,occurred_at)`，保留原全租户时间索引。未知活动返回零值，不做跨服务活动查找；空白、周围空白、控制字符或超过128字符返回 `MEASUREMENT_CAMPAIGN_FILTER_INVALID`。水位仍表示整个租户的投影进度。后端升级前，旧服务上的全部活动报告继续可读，选择活动会明确失败而非静默显示全量。
+
+
+### 营销资产与消息模板版本
+
+营销资产的人群、权益记录可直接进入对应 ID 的设计器；人群链接失效时明确提示，不加载另一条记录代替。消息模板分类读取真实 `GET /api/v1/templates` 的最新版本，支持搜索、完整正文详情、新建模板和基于已有内容保存新版本。正文按纯文本展示；页面不内置业务模板。
+
+`POST /api/v1/templates` 沿用 `template:write`、`Idempotency-Key` 和不可变 `(tenant, templateId, version)`；旧成功回执也检查当前写权限。版本重复返回 `409 TEMPLATE_VERSION_EXISTS`，旧正文不变；同键同载荷重试回原结果，同键不同载荷仍冲突。保存沿用现有 `APPROVED` 状态，不增加审批流程、不发送消息，也不自动替换 Journey 引用的版本。渠道标识须与运营配置一致，保存模板不等于验证外部通道可用。
+
+输入边界：模板 ID 1–128字符、渠道1–32字符且无空白/控制字符；版本为正安全整数；正文1–8000字符且非全空白；必需变量最多32个，每个1–60位字母、数字、下划线、点或短横线，以字母或下划线开头。EMAIL须包含 `unsubscribe` 说明；输入错误和版本冲突保留页面草稿。未改载荷的失败重试沿用同一幂等键，改内容才换键；保存中防止关闭/重复点击，未保存输入关闭时提示。模板管理在无写权限或DEMO模式不执行写入。
+
+浏览器验证：`pnpm --filter @marketing/console exec playwright test template-management.spec.ts`。设置 `MARKETING_LIVE_TEMPLATE_ENDPOINT` 为已授权的隔离触达服务地址可验证真实MySQL双版本保存；该用例只创建模板，不发送消息。不要将其指向生产。

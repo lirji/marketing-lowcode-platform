@@ -289,3 +289,22 @@
 ### S12b 最终本地验收
 - 降低测试并发后176/176全量前端PASS，未改测试超时/断言；lint/build、Hygiene通过（无canonical formatter为限制）。证据s12b-unit-bounded.log、s12b-lint-final.log、s12b-build-final.log、s12b-hygiene.json。前述5真实后端/10架构/13JSON合同/8双视口浏览器证据均仍适用。
 - 根代理第二轮确认：筛选参数与租户/时间共同进入全部聚合SQL、未知ID不会退回全量、前端必须收到两个一致的筛选回显、CSV包含实际活动ID。共享服务/数据未修改。当前准备提交与精确CI，Docker必要服务更新仍未执行。
+
+## S12c 资产入口与消息模板版本管理（本地验收通过，交付中）
+- 基线main `881c337`，独立分支feat/asset-template-management；本地运行版本045dfd9。使用frontend-implementation/backend-implementation，复用现有资产分类、Modal/Select/RecordTable及模板GET/POST协议。
+- 范围：资产人群/权益行链接到选中ID设计器；人群不存在时明确提示，不误载首条。消息模板展示完整内容/必需变量/版本/状态/创建时间，新建模板或基于当前内容保存新版本；不修改旧版本或引用方，不发送消息。保存沿用现有APPROVED语义并显式提示，不伪造新的审批流程。
+- 契约补齐：模板ID≤128、渠道≤32、正安全整数版本、正文≤8000字符、最多32个变量且每个≤60字符；沿用项目ProblemDetail，重复版本409、输入400及当前权限在幂等回放前核对。渠道保持既有字符串协议，界面说明渠道必须与运营通道配置一致。
+- 验收：真实MySQL验证版本不可覆盖、同键回放/不同载荷冲突、同版本竞争、读写租户隔离和权限撤销、输入边界；前端成功/失败/409保留输入、相同请求重试同键、修改载荷换键、未保存关闭保护、权限/DEMO、桌面/手机真实接口及视觉检查。
+- 资产全部分页、归因策略、剩余DEMO治理与前端错误采集不计入本片完成；外部身份/履约合同待确认。
+
+### S12c 验证检查点
+- 28项触达真实MySQL集成测试PASS（含3项新增版本并发、权限/租户隔离、输入边界）；全量186项前端组件测试PASS，lint/build通过。证据s12c-backend-first.log、s12c-frontend-all.log、s12c-lint-first.log、s12c-build-first.log。
+- 浏览器实证准备使用本任务独占MySQL容器的独立template_live库，临时触达API18888；Kafka消费者/Outbox关闭、Sandbox模式，不写共享业务库或发送消息。首次启动因数据库授权步骤尚未成功而失败，已核对并补齐此测试库授权后重启；不会修改业务连接权限。
+- 当前待办：浏览器桌面/手机实际保存与DB双版本核验、契约/架构检查、根代理第二轮审查、文档与精确CI交付。尚未提交/更新应用镜像。
+
+### S12c 最终本地验收
+- 真实MySQL28项、全量前端186项通过；最终变更后模板后端3项和受影响前端19项再次通过。lint/build、10项架构检查、13项JSON合同及实际OpenAPI YAML解析通过。日志s12c-backend-final.log、s12c-frontend-final.log、s12c-lint-verified.log、s12c-build-verified.log、s12c-architecture.log、s12c-contracts.log、s12c-openapi.log。
+- 桌面/手机4项浏览器最终PASS（s12c-browser-verified.log及同名目录）：冲突保留输入/未保存关闭保护，真实隔离MySQL创建v1、基于内容保存v2、读取详情。已查看桌面详情与手机编辑区截图，修正弹窗留白后通过。s12c-live-db.json确认8个测试模板均保留v1/v2，零contact/outbox；测试数据仅在自有template_live。
+- 根代理第二轮复核权限撤销后的回放、租户隔离、版本并发唯一性、存储边界、晚到响应与资产深链；未声称独立代理审查。Hygiene无阻断项，仅无canonical formatter限制及已命名数字常量的提示，见s12c-hygiene-final.json。
+- 自有临时18888服务和MySQL容器已停止，数据保留，见s12c-live-cleanup.json。共享dev-infra、11应用和Flink未改变。当前提交/精确CI待执行，Docker仍为045dfd9。
+- 下一步：本片提交与精确CI通过后正常快进main，更新本机engagement-service与console并验证；随后处理列表完整分页，优先修正审批范围过滤发生在LIMIT之后的问题。
