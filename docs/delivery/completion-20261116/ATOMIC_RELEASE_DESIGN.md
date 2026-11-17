@@ -57,3 +57,19 @@ S11f 按同一任务内的三个可验证增量实施：f1 控制面导出完整
 - 组合ACK封装现有RuntimeAck并额外绑定bundleId、campaignId、version、contentHash和精确成员签名，外层签名有独立用途前缀。验证须同时通过内外层签名，旧单清单ACK不能补字段冒充新协议。ACK只证明签发时已安装，需要在激活时重新校验新鲜度和每个成员的容量。
 - f1允许变更：marketing-contracts签名合同/测试，control组合导出入口/测试，机器API及本设计。f2再扩展Decision/Journey各自运行端及测试；f3涉及控制面ACK持久化和迁移。无新服务、中间件、后台线程或在线控制面回源。
 - 验收：改任意成员或外层字段、换租户、过期、未知密钥、混用旧ACK均拒绝；换序规范化稳定；历史准备读不变；权限撤销后导出拒绝。运行端需证明重启后从持久库核验、未安装/字节不符拒绝、旧新generation同时存在、active指针未变。
+
+### S11f2 接口与持久化复核
+- POST `/api/v1/decisions/runtime/release-bundles:prepare`、`/api/v1/journey-runtime/release-bundles:prepare`；`runtime:warm`，body={bundle:ReleaseBundleManifest,memberManifestId}。先鉴权，再最多1MiB原始JSON解析，未知字段和尾随内容拒绝。
+- 返回200 `ReleaseBundleAck {bundleId,campaignId,version,contentHash,memberSignature,runtimeAck,signature}`。runtimeAck为既有签名READY ACK，外层绑定完整内层规范内容和签名；继承运行端身份、容量、编译ABI和运行密钥配置。没有新业务状态或新凭据来源。
+- 验证顺序：可信租户及外层签名/期限 → 成员确属完整组合 → 本站slot和generation持久记录 → 清单完全相等 → 原发布/编译签名、校验和及可执行结构。Journey另须存在与制品相同的已安装定义。所有读取不改变active pointer。
+- 错误复用平台Problem；协议错误目录为ReleaseBundleProtocolError。缺失Journey generation沿用既有404，其余准备前提/签名错误409；格式/大小400、缺权限403。无法准备时不以active/latest替代请求成员。
+- 每次重试重验并签发新证据，无外部副作用或幂等写回执。旧ACK不能转为新协议；应用上下文重建仍从原持久库核验，而非恢复进程内临时标记。生产多副本和Flink链路仍属于后续整体发布验收。
+
+### S11f3 控制面组合就绪合同（下一片）
+- POST `/api/v1/campaigns/{campaignId}/release-bundles/versions/{version}/acks` 接受完整ReleaseBundleAck，要求runtime:ack与当前活动范围；GET同级`/readiness`要求release:read与当前活动范围。写入口先鉴权再最多16KiB严格JSON解析。只持久化证据，不产生激活事件。
+- 证据必须内外签名都通过现有runtime-ack信任配置，并绑定该活动组合的bundleId/version/contentHash及确切成员签名、manifestId/generation/cell、完整制品集合和ABI。沿用既有release-policy副本/总容量/单副本容量及build digest配置。签发时间在既有5分钟新鲜度及1分钟时钟偏差内；成员或组合过期拒绝。
+- V9只增加组合ACK表，主键为tenant/bundle/member/runtime；组合头行锁串行化同组合证据写入，避免空ACK索引锁升级。每成员最多64个运行身份，整体最多512；固定9位UTC时间保序。原文JSON、签发时间和签名随当前证据保存，audit与更新同事务。
+- 相同时间与同签名重复成功且不重复审计；相同时间不同内容409；较旧但仍有效的证据不覆盖较新记录。只替换同一身份的更晚证据；到达身份上限拒绝新增，不能无界扩张或悄悄删除审计历史。
+- 返回`BundleReadinessView {bundleId,version,contentHash,runtimeReady,checkedAt,expiresAt,members:[{manifestId,runtime,namespace,readyReplicas,readyCapacity,ignoredEvidence,runtimeReady}]}`。每次读取按当前时间与信任重新核验，过期/不匹配/损坏证据不计入，ignoredEvidence可观察。只有每一个成员各自满足副本与容量要求时runtimeReady=true；不能把成员之间的数量或容量合并凑门槛。
+- 准备历史的PREPARING不因此被改成ACTIVE。runtimeReady仅代表运行准备条件，正式激活仍在S11g重新核对审批、有效期、当前指针与实时停用；旧单清单ACK不会计入此接口。
+- 验收：真实MySQL并发同身份/不同身份、乱序/同时间冲突、审计失败回滚、撤权/跨租户、每成员门槛、过期降级、旧ACK拒绝与零激活副作用。范围为控制面/Mapper/V9、PinnedRuntimeAckVerifier扩展、API与测试；不改运行端、不启用调度。

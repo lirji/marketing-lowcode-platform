@@ -57,3 +57,9 @@ V8 新增组合历史及成员归属，以现有活动行上的版本游标和�
 `GET /api/v1/campaigns/{campaignId}/release-bundles/versions/{version}/manifest` 在当前权限/范围检查后返回完整签名组合。外层使用独立协议用途，覆盖完整成员内容及签名，过期或成员签名不可信时拒绝；历史准备记录仍可读取。密钥轮换可以更新外层签名，但不改变原版本或contentHash。
 
 此签名仅证明冻结内容来源。它既不是运行端组合ACK，也不是整体激活指令；不得把导出成功展示成线上已生效。准备阶段仍不改变运行流量。
+
+### 运行端组合准备（S11f2）
+
+`POST /api/v1/decisions/runtime/release-bundles:prepare` 与 `POST /api/v1/journey-runtime/release-bundles:prepare` 接收 `{bundle,memberManifestId}`，要求 `runtime:warm`，原始JSON最大1MiB。先验证完整组合签名/租户/有效期，再核对本站持久化的精确清单、制品签名/校验和及可执行结构；Journey还核对已安装定义。
+
+成功返回内外两层签名的 `ReleaseBundleAck`，绑定组合摘要和成员签名。准备和重复调用不安装制品、不激活流量；缺版本时应先通过原manifest入口预热，不能回退到latest。当前ACK容量仍来自既有运行预算配置，不代表生产容量实测结果。控制面证据收集及整体激活仍待后续切片。

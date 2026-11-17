@@ -8,14 +8,14 @@
 - 规范：`~/.codex/architecture-standards.md` 业务建模、持久化、接口契约、并发安全；`personal-tech-stack.md` 并发、线程池、日志、状态机；engineering-workflows/backend-implementation/continue-approved-delivery/task-git-delivery。前端、Runtime 专项随切片读取。
 
 ## 当前状态（2026-11-17，恢复执行）
-- 用户已确认同一活动组合整体生效/回滚，并要求继续流程；会员/画像优先Commerce、交易证据优先交易中心、认证Auth的方向进入增量接入设计。具体技术合同和机器凭据仍按真实系统核对，不再重复询问来源选型。当前分支 `feat/activity-release-bundles` 基于 `d57a572`，S11e验证通过，准备Git交付；设计与切片见 [活动组合增量设计](ATOMIC_RELEASE_DESIGN.md)。
+- 用户已确认同一活动组合整体生效/回滚，并要求继续流程；会员/画像优先Commerce、交易证据优先交易中心、认证Auth的方向进入增量接入设计。具体技术合同和机器凭据仍按真实系统核对，不再重复询问来源选型。当前分支 `feat/activity-release-bundles` 基于 `d57a572`，S11e已交付，S11f2运行端组合准备实施中；设计与切片见 [活动组合增量设计](ATOMIC_RELEASE_DESIGN.md)。
 - 先执行依赖齐备的S11e不可变组合准备与成员发布保护，再推进运行端和整体切换；上游缺少机器快照/主体映射的部分保留依赖状态。当前未修改其他仓库、未部署或迁移共享库。文档提交 `d57a572` 的CI `44095478630` 已核实三项SUCCESS，原pending记录失效。
 - S01–S05已完成；S06–S13仍按下表保留未完成范围。S12c–S12q已交付；最新产品提交 `dbe268b5ed25004c5ee35af171ceb147e2509e55` 已正常快进合入并推送main，精确CI `44092826351` 的Java/合同/架构、前端、Compose/Helm三项全部通过。该阶段分支为 `fix/asset-preview-reads`，其后交付回执仅改文档，运行制品仍固定该产品提交。
 - 本机仅18个必要容器运行：13个marketing-r1、权益目录适配服务、MySQL/Redis/Kafka/ClickHouse；15个配置了健康检查且全部healthy，另3个未配置健康检查，全部运行且无OOM。console=dbe268b、edge-gateway=7764526、engagement=166dc43、benefit-funding=607542e、audience=a260865、control=b3858e6，其余应用045dfd9。control V7已迁移；UI8084、网关18080、Flink18081。详见 [本机部署回执](LOCAL_DEPLOYMENT_20261117.md)。
 - 用户授权Docker只运行本项目组件；13个额外无关容器及原17个langchain应用保持停止，所有容器与数据卷保留。本轮只更新console，17个其它运行容器ID/镜像/启动时间不变；3个原Flink作业及检查点继续推进，禁止重复恢复或提交空作业。
 - 最新验证：271项前端测试、98项浏览器用例通过，10项既有独立服务用例跳过；lint/build/Hygiene无阻塞，未配置canonical formatter。真实Docker四类资产页在桌面与Pixel7的分页、搜索、详情及字段/节点读取回归通过，无业务写入、API失败或页面异常。运行回执与截图：私有证据目录 `runtime-dbe268b/`。
 - 本轮新增结果：活动/首页/运营/资产的静态预览不显示假业务数据或旧缓存，资产刷新不能绕过读取门禁；OIDC身份范围变化、退出与过期清理旧请求/缓存/草稿，旧令牌401不退出已更新令牌，远端退出失败能恢复登录页。本机仍为DEV认证，真实IdP联调未验证。
-- 当前先完成S11e验证与交付，随后实现S11f运行端组合准备；S06b来源方向已确定，机器快照/主体映射合同仍待落实。本地验证进程已结束；S11e准备提交及精确远程CI，无部署或共享库迁移任务。
+- 当前先完成S11e验证与交付，随后实现S11f运行端组合准备；S06b来源方向已确定，机器快照/主体映射合同仍待落实。S11e精确CI通过并合入main；S11f1精确CI44102999560运行中。S11f2实施中，无部署或共享库迁移任务。
 
 ## 未完成项与恢复顺序
 
@@ -647,11 +647,25 @@
 - 本片不部署、不写共享库，不声称组合整体激活完成；接下来精确候选CI/正常合入main，并继续S11f。
 
 ### S11e 远程交付检查点
-- 已提交并推送任务分支0b332bf；精确CI44101729406运行中，尚未合入main。连接器没有workflow dispatch能力，使用gh启动，运行结果继续通过GitHub连接器核对。
+- 0b332bf精确CI44101729406三项全部SUCCESS，已正常FF合入并推送main，远程一致。连接器没有workflow dispatch能力，使用gh启动，运行结果继续通过GitHub连接器核对。
 - S11f采用增量设计末节，先实现签名组合导出（f1），再运行端精确准备（f2）与控制面组合ACK门禁（f3）。不改变已批准整体生效/回滚原则。
 
-## S11f1 完整组合签名导出（本地验证通过）
+## S11f1 完整组合签名导出（验证通过，待合入）
 - 在S11e之上新增只读签名导出，不修改原准备版本/摘要；独立签名用途覆盖全部成员内容，签名前重验成员可信性；到期拒绝导出但仍允许查看历史。
 - 当前权限/组织/店铺/租户保护、12项真实MySQL组合用例（包含存储损坏与过期历史）、4项新组合签名、1项旧签名及8项机器合同PASS；全合同脚本/13份JSON PASS。日志s11f1-final.log、s11f1-first.log、s11f1-contracts.log；Hygiene/diff PASS（无formatter限制）。
 - 独立于编码的根代理复核：完整成员字段进入外层规范字节、用途隔离、内容hash与首片兼容、导出无数据库写入或激活副作用；未发现当前片阻断。没有新增依赖、迁移或运行进程。
 - 下游继续S11f2运行端精确成员校验/组合ACK，再S11f3控制面门禁；整体原子生效仍待S11g，不能提前开放UI发布。
+
+### S11f2 恢复检查点
+- 中断后核对：当前HEAD/远程任务分支6d21caf，main/origin=0b332bf；上轮dispatch已成功启动44102999560，无需重复触发。
+- 正在实现组合专属双层签名ACK、runtime:warm保护且1MiB有界的两个prepare入口；从原generation持久库验证完整成员与制品，Journey同时核对已安装定义，不变更active pointer。
+- 无新增基础设施或迁移；共享签名协议、Decision/Journey及对应测试为本片范围，沿用现有信任/运行身份/容量配置。
+
+- S11f2首轮接口文件编译遗漏类结束括号已修（s11f2-compile.log保留）；修复后6项合同签名用例及Decision 5项、Journey 6项真实MySQL/HTTP用例全部PASS（s11f2-first.log）。两个服务均关闭并重建Spring应用上下文后，仍能从持久库准备generation2且线上指针保持generation1；这不是生产进程崩溃或多副本容量验收。应用上下文关闭时Tomcat acceptor日志为关闭socket，不是用例失败。
+- 当前继续旧Decision/Journey回归、最终机器合同与架构检查；无活动测试进程，随后启动相关检查并保存日志。
+
+### S11f2 最终验证与交付准备
+- 新增运行端11项真实MySQL/HTTP、6项签名协议测试PASS（s11f2-first.log）。旧Decision业务/持久化4项PASS；旧Journey两项首次因Ryuk socket连接失败而未进入业务测试（s11f2-regression.log），单独复跑2项PASS（s11f2-journey-recheck.log），未禁用清理机制或修改业务断言。
+- 最终合同脚本及13份JSON、架构检查PASS（s11f2-contracts.log、s11f2-architecture.log）；Hygiene/diff PASS，仍仅缺canonical formatter。根代理从跨租户、签名用途、持久化与缓存差异、准备副作用、旧接口兼容角度另行复核，无本片剩余阻断。
+- 测试进程已结束，18既有必要容器保持运行健康，无部署或共享库写入。S11f1候选6d21caf的CI44102999560已全部SUCCESS，准备正常合入main；S11f2准备逻辑提交及精确CI。
+- 后续S11f3具体合同已补入增量设计；只收集组合专属ACK并按每成员计算runtimeReady，整体激活依旧属于S11g。

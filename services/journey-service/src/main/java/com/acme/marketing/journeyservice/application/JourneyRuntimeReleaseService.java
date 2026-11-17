@@ -7,6 +7,11 @@ import com.acme.marketing.contracts.release.ArtifactReference;
 import com.acme.marketing.contracts.release.ReleaseManifest;
 import com.acme.marketing.contracts.release.RuntimeAck;
 import com.acme.marketing.contracts.release.RuntimeAckSigner;
+import com.acme.marketing.contracts.release.PinnedReleaseBundleVerifier;
+import com.acme.marketing.contracts.release.ReleaseBundleAck;
+import com.acme.marketing.contracts.release.ReleaseBundleAckSigner;
+import com.acme.marketing.contracts.release.ReleaseBundlePrepareRequest;
+import com.acme.marketing.contracts.release.ReleaseBundleProtocolError;
 import com.acme.marketing.journey.JourneyPlan;
 import com.acme.marketing.journey.JourneyReleaseVerifier;
 import com.acme.marketing.platform.crypto.SigningKeyRing;
@@ -31,6 +36,7 @@ public class JourneyRuntimeReleaseService {
     private final JourneyRepository repository;
     private final ObjectMapper mapper;
     private final JourneyReleaseVerifier verifier;
+    private final PinnedReleaseBundleVerifier bundleVerifier;
     private final SigningKeyRing ackKeys;
     private final Clock clock;
     private final String runtimeId;
@@ -38,7 +44,7 @@ public class JourneyRuntimeReleaseService {
     private final long capacity;
 
     public JourneyRuntimeReleaseService(JourneyRepository repository, ObjectMapper mapper,
-            JourneyReleaseVerifier verifier,
+            JourneyReleaseVerifier verifier, PinnedReleaseBundleVerifier bundleVerifier,
             @Qualifier("journeyRuntimeAckSigningKeyRing") SigningKeyRing ackKeys, Clock clock,
             @Value("${marketing.runtime.id:journey-local}") String runtimeId,
             @Value("${marketing.runtime.build-digest:development}") String buildDigest,
@@ -46,6 +52,7 @@ public class JourneyRuntimeReleaseService {
         this.repository = repository;
         this.mapper = mapper;
         this.verifier = verifier;
+        this.bundleVerifier = bundleVerifier;
         this.ackKeys = ackKeys;
         this.clock = clock;
         this.runtimeId = runtimeId;
@@ -61,13 +68,8 @@ public class JourneyRuntimeReleaseService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("runtime:warm");
         byte[] payload = decode(request.artifactBase64());
-        JourneyReleaseVerifier.VerifiedArtifact artifact;
-        try {
-            artifact = verifier.verifyInstallation(scope.tenantId().value(), request.releaseKeyId(),
-                    request.manifest(), payload, clock.instant());
-        } catch (IllegalArgumentException invalid) {
-            throw new ConflictException("JOURNEY_RELEASE_INVALID", invalid.getMessage());
-        }
+        JourneyReleaseVerifier.VerifiedArtifact artifact = verifyArtifact(scope.tenantId().value(),
+                request.releaseKeyId(), request.manifest(), payload);
         JourneyPlan plan = read(payload, JourneyPlan.class);
         assertPlan(plan, artifact.reference());
         ReleaseManifest manifest = request.manifest();
@@ -84,11 +86,39 @@ public class JourneyRuntimeReleaseService {
             }
         }
         installDefinition(scope.tenantId().value(), plan, request.releaseKeyId());
+        return new WarmView(artifact.reference().artifactId(), plan.journeyId(), plan.version(), ready(manifest, artifact.reference()));
+    }
+
+    /** 仅从持久库复核完整组合及本站版本，不重装定义、不推进激活指针。 */
+    @Transactional(readOnly = true, timeout = 10)
+    public ReleaseBundleAck prepareBundle(ReleaseBundlePrepareRequest request) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("runtime:warm");
+        bundleVerifier.requireValid(scope.tenantId().value(), request.bundle(), clock.instant());
+        ReleaseManifest member = request.member();
+        StoredGeneration stored = generation(scope.tenantId().value(), member, member.generation());
+        if (!member.equals(stored.manifest())) throw ReleaseBundleProtocolError.MEMBER_MISMATCH.conflict();
+        var artifact = verifyArtifact(scope.tenantId().value(), stored.releaseKeyId(), member, stored.payload());
+        JourneyPlan plan = read(stored.payload(), JourneyPlan.class);
+        assertPlan(plan, artifact.reference());
+        String definition = repository.findPlanJson(scope.tenantId().value(), plan.journeyId(), plan.version())
+                .orElseThrow(ReleaseBundleProtocolError.MEMBER_NOT_INSTALLED::conflict);
+        if (!plan.equals(read(definition, JourneyPlan.class))) throw ReleaseBundleProtocolError.MEMBER_MISMATCH.conflict();
+        return ReleaseBundleAckSigner.sign(ackKeys.activePrivateKey(), scope.tenantId().value(),
+                ReleaseBundleAck.unsigned(request.bundle(), member, ready(member, artifact.reference())));
+    }
+
+    private JourneyReleaseVerifier.VerifiedArtifact verifyArtifact(String tenantId, String releaseKeyId,
+            ReleaseManifest manifest, byte[] payload) {
+        try { return verifier.verifyInstallation(tenantId, releaseKeyId, manifest, payload, clock.instant()); }
+        catch (IllegalArgumentException invalid) { throw new ConflictException("JOURNEY_RELEASE_INVALID", invalid.getMessage()); }
+    }
+
+    private RuntimeAck ready(ReleaseManifest manifest, ArtifactReference artifact) {
         RuntimeAck unsigned = new RuntimeAck(manifest.manifestId(), manifest.generation(), runtimeId,
-                manifest.cell(), RuntimeAck.Status.READY, buildDigest, Set.of(artifact.reference().abi()),
-                Set.of(artifact.reference().artifactId()), capacity, clock.instant(), ackKeys.activeKeyId(), "");
-        RuntimeAck ack = RuntimeAckSigner.sign(ackKeys.activePrivateKey(), scope.tenantId().value(), unsigned);
-        return new WarmView(artifact.reference().artifactId(), plan.journeyId(), plan.version(), ack);
+                manifest.cell(), RuntimeAck.Status.READY, buildDigest, Set.of(artifact.abi()),
+                Set.of(artifact.artifactId()), capacity, clock.instant(), ackKeys.activeKeyId(), "");
+        return RuntimeAckSigner.sign(ackKeys.activePrivateKey(), manifest.tenantId().value(), unsigned);
     }
 
     @Transactional

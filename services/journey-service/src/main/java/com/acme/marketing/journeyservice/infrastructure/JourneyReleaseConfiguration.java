@@ -1,6 +1,7 @@
 package com.acme.marketing.journeyservice.infrastructure;
 
 import com.acme.marketing.journey.JourneyReleaseVerifier;
+import com.acme.marketing.contracts.release.PinnedReleaseBundleVerifier;
 import com.acme.marketing.journeyservice.application.JourneyKillSwitchRegistry;
 import com.acme.marketing.journeyservice.application.JourneyRepository;
 import com.acme.marketing.platform.crypto.Ed25519;
@@ -17,6 +18,18 @@ import tools.jackson.databind.ObjectMapper;
 
 @Configuration
 public class JourneyReleaseConfiguration {
+    /** 与原发布清单使用同一受控信任来源，不新增密钥配置体系。 */
+    @Bean
+    public PinnedReleaseBundleVerifier releaseBundleVerifier(
+            @Value("${marketing.release.trusted-key-id:}") String keyId,
+            @Value("${marketing.release.public-key-base64:}") String publicKey,
+            @Value("${marketing.release.trusted-public-keys:}") String additionalKeys,
+            @Value("${marketing.security.mode:DEV}") String securityMode) {
+        var keys = trustedKeys(keyId, publicKey, additionalKeys);
+        requireTrustInProduction(securityMode, java.util.List.of(keys));
+        return new PinnedReleaseBundleVerifier(keys);
+    }
+
     @Bean
     public JourneyReleaseVerifier journeyReleaseVerifier(
             @Value("${marketing.release.trusted-key-id:}") String releaseKeyId,

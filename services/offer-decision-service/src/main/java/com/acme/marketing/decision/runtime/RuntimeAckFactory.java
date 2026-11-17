@@ -4,6 +4,9 @@ import com.acme.marketing.contracts.release.ArtifactReference;
 import com.acme.marketing.contracts.release.ReleaseManifest;
 import com.acme.marketing.contracts.release.RuntimeAck;
 import com.acme.marketing.contracts.release.RuntimeAckSigner;
+import com.acme.marketing.contracts.release.ReleaseBundleAck;
+import com.acme.marketing.contracts.release.ReleaseBundleAckSigner;
+import com.acme.marketing.contracts.release.ReleaseBundleManifest;
 import com.acme.marketing.platform.crypto.SigningKeyRing;
 import java.time.Clock;
 import java.util.stream.Collectors;
@@ -41,5 +44,11 @@ public final class RuntimeAckFactory {
                         .collect(Collectors.toUnmodifiableSet()),
                 capacity, clock.instant(), keys.activeKeyId(), "");
         return RuntimeAckSigner.sign(keys.activePrivateKey(), manifest.tenantId().value(), unsigned);
+    }
+
+    /** 调用方必须先完成组合验签和持久化成员核验；复用原运行身份和容量配置。 */
+    public ReleaseBundleAck ready(ReleaseBundleManifest bundle, ReleaseManifest member) {
+        return ReleaseBundleAckSigner.sign(keys.activePrivateKey(), bundle.tenantId().value(),
+                ReleaseBundleAck.unsigned(bundle, member, ready(member)));
     }
 }

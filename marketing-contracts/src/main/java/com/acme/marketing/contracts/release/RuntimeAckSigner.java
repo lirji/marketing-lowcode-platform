@@ -30,7 +30,8 @@ public final class RuntimeAckSigner {
         }
     }
 
-    private static byte[] canonical(String tenantId, RuntimeAck ack) {
+    // 同包组合ACK复用规范字节，保持原单清单协议签名兼容。
+    static byte[] canonical(String tenantId, RuntimeAck ack) {
         Map<String, String> values = new LinkedHashMap<>();
         values.put("tenantId", tenantId);
         values.put("manifestId", ack.manifestId());

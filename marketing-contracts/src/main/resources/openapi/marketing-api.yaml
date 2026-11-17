@@ -519,6 +519,20 @@ paths:
         required: true
         content: {application/json: {schema: {type: array, minItems: 1, maxItems: 50, items: {$ref: '#/components/schemas/DecisionRequest'}}}}
       responses: *list
+  /api/v1/decisions/runtime/release-bundles:prepare:
+    post:
+      tags: [Decision]
+      operationId: prepareDecisionReleaseBundle
+      x-required-permission: runtime:warm
+      description: >-
+        Verifies the complete signed bundle, trusted tenant, expiry and exact locally persisted member.
+        Revalidates stored artifact bytes, compiler signature and executable structure before issuing a bundle-bound ACK.
+        Does not install artifacts or move the active pointer. Retries recheck storage and issue fresh evidence.
+        The raw JSON body is limited to 1 MiB after authorization and before parsing; unknown fields are rejected.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ReleaseBundlePrepareRequest'}}}}
+      responses:
+        '200': {description: Signed evidence for this exact bundle and member only, content: {application/json: {schema: {$ref: '#/components/schemas/ReleaseBundleAck'}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/decisions/runtime/manifest:
     put: {tags: [Decision], operationId: warmDecisionRuntime, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
   /api/v1/decisions/runtime/activation:
@@ -693,6 +707,20 @@ paths:
     get: {tags: [Event], operationId: listQuarantine, responses: *list}
   /api/v1/quarantine/{quarantineId}:replay:
     post: {tags: [Event], operationId: replayQuarantinedEvent, parameters: [{$ref: '#/components/parameters/QuarantineId'}], responses: *ok}
+  /api/v1/journey-runtime/release-bundles:prepare:
+    post:
+      tags: [Journey]
+      operationId: prepareJourneyReleaseBundle
+      x-required-permission: runtime:warm
+      description: >-
+        Verifies the complete signed bundle, trusted tenant, expiry and exact locally persisted member.
+        Revalidates stored artifact bytes, compiler signature and executable structure before issuing a bundle-bound ACK.
+        Does not install artifacts or move the active pointer. Retries recheck storage and issue fresh evidence.
+        The raw JSON body is limited to 1 MiB after authorization and before parsing; unknown fields are rejected.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ReleaseBundlePrepareRequest'}}}}
+      responses:
+        '200': {description: Signed evidence for this exact bundle and member only, content: {application/json: {schema: {$ref: '#/components/schemas/ReleaseBundleAck'}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/journey-runtime/manifest:
     put: {tags: [Journey], operationId: warmJourneyRuntime, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
   /api/v1/journey-runtime/activation:
@@ -945,6 +973,25 @@ components:
     JsonArray: {description: Successful collection, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/JsonObject'}}}}}
     Problem: {description: RFC 9457 problem response, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
   schemas:
+    ReleaseBundlePrepareRequest:
+      type: object
+      additionalProperties: false
+      required: [bundle, memberManifestId]
+      properties:
+        bundle: {$ref: '#/components/schemas/ReleaseBundleManifest'}
+        memberManifestId: {type: string, pattern: '^[A-Za-z0-9_.:-]{1,64}$'}
+    ReleaseBundleAck:
+      type: object
+      additionalProperties: false
+      required: [bundleId, campaignId, version, contentHash, memberSignature, runtimeAck, signature]
+      properties:
+        bundleId: {type: string, maxLength: 64}
+        campaignId: {type: string, maxLength: 64}
+        version: {type: integer, format: int64, minimum: 1}
+        contentHash: {type: string, pattern: '^[a-f0-9]{64}$'}
+        memberSignature: {type: string, minLength: 1}
+        runtimeAck: {$ref: '#/components/schemas/RuntimeAck'}
+        signature: {type: string, minLength: 1, description: Independent purpose signature covering all bundle fields and the complete inner READY ACK}
     ReleaseBundleManifest:
       type: object
       additionalProperties: false

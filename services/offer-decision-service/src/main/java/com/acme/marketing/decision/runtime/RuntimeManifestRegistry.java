@@ -4,6 +4,7 @@ import com.acme.marketing.contracts.artifact.PinnedArtifactVerifier;
 import com.acme.marketing.contracts.release.ActivationDirective;
 import com.acme.marketing.contracts.release.ArtifactReference;
 import com.acme.marketing.contracts.release.ReleaseManifest;
+import com.acme.marketing.contracts.release.ReleaseBundleProtocolError;
 import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.crypto.StableBucket;
 import com.acme.marketing.platform.error.ConflictException;
@@ -71,6 +72,16 @@ public final class RuntimeManifestRegistry {
         stateStore.install(keyId, manifest, policyArtifactBytes);
         generations.put(new SlotGeneration(manifest.slotKey(), manifest.generation()), snapshot);
         return snapshot;
+    }
+
+    /** 从持久库核验指定成员；不使用当前路由或缓存代替精确版本，也不切换流量。 */
+    public GenerationSnapshot verifyInstalledMember(String expectedTenantId, ReleaseManifest member) {
+        if (!expectedTenantId.equals(member.tenantId().value()) || !slot.matches(member)
+                || !"decision".equals(member.runtime())) throw ReleaseBundleProtocolError.MEMBER_MISMATCH.conflict();
+        RuntimeStateStore.StoredGeneration stored = stateStore.generation(slot, expectedTenantId, member.generation())
+                .orElseThrow(ReleaseBundleProtocolError.MEMBER_NOT_INSTALLED::conflict);
+        if (!member.equals(stored.manifest())) throw ReleaseBundleProtocolError.MEMBER_MISMATCH.conflict();
+        return verifyAndDecode(expectedTenantId, stored.releaseKeyId(), stored.manifest(), stored.artifactPayload());
     }
 
     /** Compatibility alias whose semantics are deliberately warm-only. */
