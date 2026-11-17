@@ -62,10 +62,10 @@ test('calendar selects time without typing ISO and cancel keeps the existing dra
 
 test('search matches formatted list dates, IDs and Chinese status labels', async ({ page }) => {
   await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
-  await page.route('**/api/v1/**', (route) => route.fulfill({ json: [] }))
-  await page.route('**/api/v1/benefits', (route) => route.fulfill({ json: [
+  await page.route('**/api/v1/**', (route) => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/audiences/page') ? { items: [], nextCursor: null, hasMore: false, query: '' } : [] }))
+  await page.route('**/api/v1/benefits/catalog/page?**', (route) => route.fulfill({ json: { query: new URL(route.request().url()).searchParams.get('q') ?? '', nextCursor: null, hasMore: false, items: [
     { benefitId: 'coupon-search', version: 1, name: '搜索一致性权益', status: 'ACTIVE', createdAt: '2026-10-18T16:30:00Z', resourceKey: '', policy: {} },
-  ] }))
+  ] } }))
   await page.goto('/assets')
   await page.getByRole('tab', { name: '权益与券' }).click()
   const search = page.getByRole('searchbox', { name: '搜索权益' })
