@@ -93,6 +93,28 @@ class ContractSpecificationsTest {
             "mk.release.kill-switch.v1", "marketing.award-expected.v1");
 
     @Test
+    void bundleTenantSchemaMatchesTheActualValueObjectWireShape() throws IOException {
+        var document = yaml(RESOURCES.resolve("openapi/marketing-api.yaml"));
+        var schemas = map(map(document.get("components")).get("schemas"));
+        var property = map(map(map(schemas.get("ReleaseBundleManifest")).get("properties")).get("tenantId"));
+        var schema = property.containsKey("$ref") ? map(schemas.get(String.valueOf(property.get("$ref")).substring("#/components/schemas/".length()))) : property;
+        var wire = new tools.jackson.databind.ObjectMapper().readTree(new tools.jackson.databind.ObjectMapper()
+                .writeValueAsString(new com.acme.marketing.platform.identity.TenantId("tenant-wire")));
+        assertTrue(wire.isObject());
+        assertEquals("object", schema.get("type"));
+        assertEquals(Set.of("value"), map(schema.get("properties")).keySet());
+        assertEquals(List.of("value"), schema.get("required"));
+        assertEquals("tenant-wire", wire.path("value").asString());
+        for (String resource : List.of("schema/artifact/release-manifest.schema.json", "schema/events/release-activation.schema.json")) {
+            var tenant = new tools.jackson.databind.ObjectMapper().readTree(Files.readString(RESOURCES.resolve(resource)))
+                    .path("properties").path("tenantId");
+            assertEquals("object", tenant.path("type").asString(), resource);
+            assertEquals("string", tenant.path("properties").path("value").path("type").asString(), resource);
+            assertEquals("value", tenant.path("required").get(0).asString(), resource);
+        }
+    }
+
+    @Test
     void openApiMatchesTheImplementedR1Surface() throws IOException {
         Path source = RESOURCES.resolve("openapi/marketing-api.yaml");
         Map<String, Object> document = yaml(source);

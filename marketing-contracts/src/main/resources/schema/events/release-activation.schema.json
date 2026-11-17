@@ -6,7 +6,10 @@
   "required": ["directiveId", "tenantId", "manifestId", "environment", "cell", "runtime", "namespace", "activationSequence", "generation", "stableGeneration", "canaryBasisPoints", "manifestSignature", "activatedAt", "expiresAt", "activatedBy", "signatureKeyId", "signature"],
   "properties": {
     "directiveId": {"type": "string", "minLength": 1},
-    "tenantId": {"type": "string", "minLength": 1},
+    "tenantId": {
+      "type": "object", "additionalProperties": false, "required": ["value"],
+      "properties": {"value": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"}}
+    },
     "manifestId": {"type": "string", "minLength": 1},
     "environment": {"type": "string", "minLength": 1},
     "cell": {"type": "string", "minLength": 1},

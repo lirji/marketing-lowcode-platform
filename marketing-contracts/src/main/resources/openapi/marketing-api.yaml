@@ -1164,13 +1164,19 @@ components:
         authorizedBy: {type: string, minLength: 1, maxLength: 128}
         signatureKeyId: {type: string, pattern: '^[A-Za-z0-9_.:@-]{1,64}$'}
         signature: {type: string, minLength: 1, description: Independent activation purpose signature covers full nested bundle content and signature}
+    TenantId:
+      type: object
+      additionalProperties: false
+      required: [value]
+      properties:
+        value: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'}
     ReleaseBundleManifest:
       type: object
       additionalProperties: false
       required: [bundleId, tenantId, campaignId, version, environment, cell, contentHash, members, createdAt, expiresAt, signatureKeyId, signature]
       properties:
         bundleId: {type: string, maxLength: 64}
-        tenantId: {type: string}
+        tenantId: {$ref: '#/components/schemas/TenantId'}
         campaignId: {type: string, maxLength: 64}
         version: {type: integer, format: int64, minimum: 1}
         environment: {type: string, maxLength: 32}

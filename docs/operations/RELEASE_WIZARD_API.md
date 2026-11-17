@@ -93,3 +93,5 @@ V10在原slot行增加组合管理标记，并回填历史组合成员；不改�
 Journey提供对应的`POST /api/v1/journey-runtime/release-bundle-directives`与`GET .../{campaignId}/latest`，使用相同的`runtime:activate`、1MiB严格解析和`RECORDED`合同。它在Journey自己的V3表保存授权历史/head，除原签名制品外还核对真实已安装的Journey定义；缺generation沿用404，定义缺失或内容不符拒绝。
 
 本片不推进Journey旧active pointer、不改enrollment/Outbox或Flink，不返回实际应用证明。后续Flink固定组合执行必须继续验证授权和参与绑定；不能把两个服务都RECORDED作为整体发布已生效。
+
+组合签名对象的`tenantId`保持既有Java值对象的实际JSON格式，例如`{"value":"dev-tenant"}`；机器合同以共享`TenantId`对象描述，不改变已发布响应为字符串。签名规范仍使用其中的租户值，签名格式不变。

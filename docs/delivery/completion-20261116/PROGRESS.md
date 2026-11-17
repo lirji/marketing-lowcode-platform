@@ -745,3 +745,11 @@
 - g3b合同34项/13份JSON、架构10项PASS（s11g3b-contracts-final.log、s11g3b-architecture-final.log）。完整暂存Hygiene/diff随后执行；g3a远程CI44114923717前端/部署PASS、后端仍运行，暂不重复触发以免取消有效的在途验证。
 
 - g3b完整暂存Hygiene/diff PASS（s11g3b-hygiene-final.json），1MiB输入和10秒事务是已定义协议预算，事务人工复核与真实失败/并发测试已覆盖；保留无formatter限制。g3a精确CI44114923717现已三项全部SUCCESS，可以正常交付。
+
+## S11g合同复核修正：租户JSON形状
+- g3b提交420d84d已推，精确CI44116867989运行中；g3a 9930648已正常FF合入并推送main。
+- 在下一步参与证明设计前发现：ReleaseBundleManifest的tenantId实际序列化为`{value:...}`，OpenAPI却写成string。新增真实Jackson序列化对照测试先复现失败（s11g-tenant-wire-first.log），现按原运行格式修正机器合同为共享TenantId对象，不改变API数据或签名字节。当前仅合同/测试/文档修正，待最终验证；没有开启g4业务绑定实现。
+
+- 同一复核发现原ReleaseManifest与ActivationDirective的JSON schema也把同一个TenantId值对象误标为string，已一起按实际类型修正，并加入相同序列化对照验收；只有机器文档变化，无产品字节/行为变化，不扩展到无关事件类型。
+
+- 租户形状修正最终35项合同测试（机器规格由8增至9项）及13份JSON PASS：s11g-tenant-wire-final2.log。只改schema/测试/说明，既有运行源码未变；签名与真实HTTP证据继续有效。

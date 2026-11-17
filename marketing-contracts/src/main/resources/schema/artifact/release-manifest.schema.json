@@ -7,7 +7,10 @@
   "required": ["manifestId", "tenantId", "environment", "cell", "runtime", "namespace", "generation", "artifacts", "createdAt", "signature"],
   "properties": {
     "manifestId": {"type": "string"},
-    "tenantId": {"type": "string"},
+    "tenantId": {
+      "type": "object", "additionalProperties": false, "required": ["value"],
+      "properties": {"value": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"}}
+    },
     "environment": {"type": "string"},
     "cell": {"type": "string"},
     "runtime": {"type": "string"},
