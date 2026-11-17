@@ -20,7 +20,10 @@ test('release actions stay inert in demo mode', async ({ page }) => {
 })
 
 test('live release confirm posts to the control API', async ({ page }) => {
+  await page.route('**/api/v1/approvals/page?**', route => route.fulfill({ json: { items: [], hasMore: false, nextCursor: null, status: new URL(route.request().url()).searchParams.get('status') } }))
   await page.route('**/api/v1/releases/page?**', async (route) => {
+    const state = new URL(route.request().url()).searchParams.get('state')
+    if (state) { await route.fulfill({ json: { items: [], hasMore: false, nextCursor: null, state } }); return }
     if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 200,
@@ -237,7 +240,7 @@ test('referral operations reads live participants without marking payouts', asyn
     await route.fulfill({ json: { items: [], nextCursor: null, hasMore: false, status: new URL(route.request().url()).searchParams.get('status') } })
   })
   await page.route('**/api/v1/releases/page?**', async (route) => {
-    await route.fulfill({ json: { items: [], nextCursor: null, hasMore: false, state: null } })
+    await route.fulfill({ json: { items: [], nextCursor: null, hasMore: false, state: new URL(route.request().url()).searchParams.get('state') } })
   })
   await page.route('**/api/v1/campaigns', async (route) => {
     await route.fulfill({

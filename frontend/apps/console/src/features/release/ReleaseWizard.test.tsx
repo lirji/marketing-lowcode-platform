@@ -6,12 +6,12 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthProvider } from '../../shared/auth/AuthContext'
 import { ApiProblem } from '../../shared/api/client'
-import type { ApprovalView, ArtifactView, BenefitSku, DefinitionBundle } from '../../shared/api/schemas'
+import type { ApprovalView, ArtifactView, BenefitSku, DefinitionBundle, ReleaseView } from '../../shared/api/schemas'
 
 const { state, mocks } = vi.hoisted(() => ({
   state: { demoMode: false },
   mocks: {
-    approvalPage: vi.fn(), getDefinition: vi.fn(), benefits: vi.fn(), benefitSkus: vi.fn(), releases: vi.fn(),
+    approvalPage: vi.fn(), getDefinition: vi.fn(), benefits: vi.fn(), benefitSkus: vi.fn(), releases: vi.fn(), getRelease: vi.fn(),
     compile: vi.fn(), getArtifact: vi.fn(), stageRelease: vi.fn(), acknowledgeRelease: vi.fn(),
   },
 }))
@@ -28,6 +28,7 @@ vi.mock('../../shared/api/client', async (importOriginal) => {
       benefits: mocks.benefits,
       benefitSkus: mocks.benefitSkus,
       releases: mocks.releases,
+      getRelease: mocks.getRelease,
       compile: mocks.compile,
       getArtifact: mocks.getArtifact,
       stageRelease: mocks.stageRelease,
@@ -121,4 +122,29 @@ describe('ReleaseWizard', () => {
     expect(activate).not.toHaveBeenCalled()
     expect(mocks.acknowledgeRelease).not.toHaveBeenCalled()
   })
+
+  it('reads the staged ID directly and blocks activation after a failed readiness refresh', async () => {
+    const staged = { manifest: { manifestId: 'older-than-fifty', cell: 'cell-a', generation: 1, artifacts: [artifact] }, state: 'STAGED', readyReplicas: 0, readyCapacity: 0 } as unknown as ReleaseView
+    const ready = { ...staged, readyReplicas: 1, readyCapacity: 7 }
+    mocks.stageRelease.mockResolvedValue(staged)
+    mocks.getRelease.mockResolvedValue(ready)
+    mocks.compile.mockResolvedValue({ valid: true, artifactId: artifact.artifactId, checksum: artifact.checksum, signatureKeyId: artifact.signatureKeyId, signature: artifact.signature, abi: artifact.abi, messages: [] })
+    const activate = renderWizard()
+    expect(mocks.getRelease).not.toHaveBeenCalled()
+    const user = await selectApprovedDefinition()
+    await user.click(screen.getByRole('button', { name: '编译' }))
+    await screen.findByText('制品已读取')
+    await user.click(screen.getByRole('button', { name: '暂存' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '进入激活确认' })).toBeEnabled())
+    expect(mocks.getRelease).toHaveBeenCalledWith('older-than-fifty')
+    expect(mocks.releases).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: '进入激活确认' }))
+    expect(activate).toHaveBeenCalledWith(ready)
+    mocks.getRelease.mockRejectedValue(new Error('ACK read unavailable'))
+    await user.click(screen.getByRole('button', { name: '刷新状态' }))
+    await screen.findByText('清单状态读取失败')
+    expect(screen.getByRole('button', { name: '进入激活确认' })).toBeDisabled()
+    expect(mocks.acknowledgeRelease).not.toHaveBeenCalled()
+  })
+
 })

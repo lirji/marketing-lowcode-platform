@@ -91,3 +91,17 @@ describe('release page contract', () => {
     await expect(api.releasePage({ cursor: 'manifest-old' })).rejects.toThrow('重复游标')
   })
 })
+
+
+describe('single release contract', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  it('reads the encoded ID and rejects a response for a different manifest', async () => {
+    const item = { manifest: { manifestId: 'manifest-old', cell: 'cell-a', generation: 1, artifacts: [] }, state: 'STAGED' }
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(item))))
+    vi.stubGlobal('fetch', fetch)
+    await expect(api.getRelease('manifest-old')).resolves.toMatchObject(item)
+    expect(fetch.mock.calls[0][0]).toContain('/api/v1/releases/manifest-old')
+    await expect(api.getRelease('another manifest')).rejects.toThrow('不同的清单')
+    expect(fetch.mock.calls[1][0]).toContain('/api/v1/releases/another%20manifest')
+  })
+})

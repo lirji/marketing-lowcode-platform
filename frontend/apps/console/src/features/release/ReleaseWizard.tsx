@@ -7,13 +7,17 @@ import { Badge, Button, Modal, StateBanner } from '../../components/ui'
 import { api, ApiProblem } from '../../shared/api/client'
 import { problemDetail } from '../../shared/api/problem'
 import { useAuth } from '../../shared/auth/useAuth'
+import { releaseScopeKey } from '../../shared/api/useReleasePages'
 import { approvalScopeKey, APPROVAL_STATUS, useApprovalPages } from '../../shared/api/useApprovalPages'
+import { ReleaseState } from '../../shared/api/schemas'
 import type { ApprovalView, ArtifactReference, DefinitionBundle, GraphDefinition, ReleaseView } from '../../shared/api/schemas'
 
 type RuntimeChoice = {
   runtime: 'decision' | 'journey'
   format: 'OFFER_POLICY' | 'JOURNEY_PLAN'
 }
+
+const RELEASE_ACK_POLL_MS = 2_000
 
 const STAGE_PROBLEM_HINTS: Record<string, string> = {
   RELEASE_NOT_APPROVED: '审核尚未完成，请回到治理中心补齐审核。',
@@ -83,12 +87,6 @@ function ScopedReleaseWizard({ open, onClose, onRequestActivate }: ReleaseWizard
     queryKey: ['benefit-skus', 'ACTIVE'],
     queryFn: () => api.benefitSkus('ACTIVE'),
     enabled: open && choice?.runtime === 'decision' && auth.hasPermission('benefit:read'),
-  })
-  const releases = useQuery({
-    queryKey: ['releases'],
-    queryFn: api.releases,
-    enabled: open && auth.hasPermission('release:read'),
-    refetchInterval: (query) => query.state.data?.some((item) => item.state === 'STAGED') ? 2_000 : false,
   })
 
   const compile = useMutation({
@@ -161,10 +159,16 @@ function ScopedReleaseWizard({ open, onClose, onRequestActivate }: ReleaseWizard
     },
   })
 
-  const stagedRelease = stage.data
-    ? (releases.data ?? []).find((item) => item.manifest.manifestId === stage.data?.manifest.manifestId) ?? stage.data
-    : undefined
-  const ready = Boolean(stagedRelease?.state === 'STAGED' && stagedRelease.readyReplicas > 0 && stagedRelease.readyCapacity > 0)
+  // 只轮询本次暂存ID；更多清单产生时也不会让目标掉出最近列表。
+  const stagedId = stage.data?.manifest.manifestId
+  const stagedQuery = useQuery({
+    queryKey: ['release-detail', releaseScopeKey(auth), stagedId],
+    queryFn: () => api.getRelease(stagedId!),
+    enabled: open && !api.demoMode && auth.authenticated && auth.hasPermission('release:read') && Boolean(stagedId),
+    refetchInterval: (query) => query.state.data?.state === ReleaseState.STAGED ? RELEASE_ACK_POLL_MS : false,
+  })
+  const stagedRelease = stagedQuery.data?.manifest.manifestId === stagedId ? stagedQuery.data : undefined
+  const ready = Boolean(stagedQuery.isSuccess && !stagedQuery.isFetching && stagedRelease?.state === ReleaseState.STAGED && stagedRelease.readyReplicas > 0 && stagedRelease.readyCapacity > 0)
   const missingPermissions = ['definition:read', 'definition:compile', 'artifact:read', 'release:write', 'release:read', 'release:activate']
     .filter((permission) => !auth.hasPermission(permission))
 
@@ -236,8 +240,10 @@ function ScopedReleaseWizard({ open, onClose, onRequestActivate }: ReleaseWizard
 
       <section>
         <header><Badge tone={ready ? 'good' : 'warn'}>4</Badge><strong>等待 runtime ACK</strong></header>
-        <p>控制台只轮询 GET /releases；runtime 预热并验签后自行回 ACK，控制台不代签。</p>
-        <Button onClick={() => void releases.refetch()} disabled={!stagedRelease || releases.isFetching}><RefreshCw size={15} />刷新状态</Button>
+        <p>按本次暂存的清单 ID 读取最新状态；运行时预热并验签后自行回传 ACK。</p>
+        <Button onClick={() => void stagedQuery.refetch()} disabled={!stagedId || stagedQuery.isFetching || !auth.hasPermission('release:read')}><RefreshCw size={15} />刷新状态</Button>
+        {stagedId && stagedQuery.isPending && <p>正在读取本次清单状态…</p>}
+        {stagedQuery.isError && <StateBanner tone="error" title="清单状态读取失败" detail={problemDetail(stagedQuery.error)} />}
         {stagedRelease && <div className="release-ready"><CheckCircle2 size={16} /><span>{stagedRelease.state} · readyReplicas {stagedRelease.readyReplicas} · capacity {stagedRelease.readyCapacity}</span></div>}
       </section>
 

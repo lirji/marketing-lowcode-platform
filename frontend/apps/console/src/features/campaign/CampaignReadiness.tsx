@@ -1,7 +1,8 @@
 import { definitionsHaveRelease } from './campaignReleaseReadiness'
 import { useQuery } from '@tanstack/react-query'
-import { Badge, EmptyState } from '../../components/ui'
+import { Badge, Button, EmptyState } from '../../components/ui'
 import { api, optionalResource } from '../../shared/api/client'
+import { useReleasePages } from '../../shared/api/useReleasePages'
 import { problemDetail } from '../../shared/api/problem'
 import { useAuth } from '../../shared/auth/useAuth'
 import { REFERRAL_POLICY_DIALECT } from '../../shared/api/schemas'
@@ -57,24 +58,20 @@ export function CampaignReadiness({ campaignId }: { campaignId: string }) {
   })
   const offer = useQuery({
     queryKey: ['definition-latest', campaignId, 'OFFER_DECISION_DAG'],
-    queryFn: () => optionalResource(() => api.latestDefinition(campaignId, 'OFFER_DECISION_DAG')),
+    queryFn: async () => (await optionalResource(() => api.latestDefinition(campaignId, 'OFFER_DECISION_DAG'))) ?? null,
     enabled: !api.demoMode && canRead && Boolean(campaignId),
   })
   const journey = useQuery({
     queryKey: ['definition-latest', campaignId, 'JOURNEY_STATE_MACHINE'],
-    queryFn: () => optionalResource(() => api.latestDefinition(campaignId, 'JOURNEY_STATE_MACHINE')),
+    queryFn: async () => (await optionalResource(() => api.latestDefinition(campaignId, 'JOURNEY_STATE_MACHINE'))) ?? null,
     enabled: !api.demoMode && canRead && Boolean(campaignId),
   })
   const referral = useQuery({
     queryKey: ['definition-latest', campaignId, REFERRAL_POLICY_DIALECT],
-    queryFn: () => optionalResource(() => api.latestDefinition(campaignId, REFERRAL_POLICY_DIALECT)),
+    queryFn: async () => (await optionalResource(() => api.latestDefinition(campaignId, REFERRAL_POLICY_DIALECT))) ?? null,
     enabled: !api.demoMode && canRead && Boolean(campaignId),
   })
-  const releases = useQuery({
-    queryKey: ['releases'],
-    queryFn: api.releases,
-    enabled: !api.demoMode && canRead,
-  })
+  const releases = useReleasePages(undefined, canRead)
 
   if (api.demoMode) {
     return <EmptyState title="演示模式不查就绪" detail="关闭 DEMO_MODE 后按控制面接口核对权益 / 人群 / Offer / Journey / 发布。" />
@@ -85,7 +82,12 @@ export function CampaignReadiness({ campaignId }: { campaignId: string }) {
   const audienceReady = (audiences.data ?? []).some((item) => item.status === 'ACTIVE')
   const offerReady = Boolean(offer.data)
   const journeyReady = Boolean(journey.data)
-  const releaseReady = definitionsHaveRelease([offer.data, journey.data], releases.data ?? [])
+  const releaseReady = definitionsHaveRelease([offer.data, journey.data], releases.items)
+  const releaseUnknown = !releases.canRead || releases.isPending || releases.isError || Boolean(releases.hasNextPage)
+    || offer.isPending || journey.isPending || offer.isError || journey.isError
+  const releaseLabel = !releases.canRead ? '发布（缺少 release:read）'
+    : releaseReady ? '发布（已发现对应版本的暂存或激活清单）'
+      : releaseUnknown ? '发布（尚未核实完整清单）' : '发布（未发现对应版本的暂存或激活清单）'
   const referralGraph = referral.data?.graph ? fromReferralGraph(referral.data.graph) : undefined
   const referralReady = Boolean(referral.data)
   const referralPinsReady = Boolean(referralGraph && referralGraph.errors.length === 0 && rewardsHaveCatalogPins(referralGraph.draft))
@@ -102,7 +104,7 @@ export function CampaignReadiness({ campaignId }: { campaignId: string }) {
         { key: 'audience', label: '人群', ready: audienceReady },
         { key: 'offer', label: 'Offer', ready: offerReady },
         { key: 'journey', label: 'Journey', ready: journeyReady },
-        { key: 'release', label: releaseReady ? '发布' : '发布（未在发布中心编译）', ready: releaseReady },
+        { key: 'release', label: releaseLabel, ready: releaseReady && !releases.isError },
       ]
   const loadError = [benefits, skus, audiences, offer, journey, referral, releases].find((q) => q.isError)
 
@@ -112,11 +114,16 @@ export function CampaignReadiness({ campaignId }: { campaignId: string }) {
       <ul>
         {items.map((item) => (
           <li key={item.key}>
-            <Badge tone={item.ready ? 'good' : 'warn'}>{item.ready ? '就绪' : '未就绪'}</Badge>
+            <Badge tone={item.ready ? 'good' : 'warn'}>{item.ready ? '就绪' : item.key === 'release' && releaseUnknown ? '待核实' : '未就绪'}</Badge>
             {item.label}
           </li>
         ))}
       </ul>
+      {!referralReady && releases.canRead && <div className="toolbar">
+        <span>已核对 {releases.items.length} 条发布清单</span>
+        {releases.hasNextPage && <Button disabled={releases.isFetching} onClick={() => void releases.fetchNextPage()}>{releases.isFetchNextPageError ? '重试后续发布清单' : '继续核对发布清单'}</Button>}
+        <Button disabled={releases.isFetching} onClick={() => void releases.refresh()}>重新核对发布清单</Button>
+      </div>}
     </div>
   )
 }

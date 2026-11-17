@@ -97,6 +97,27 @@ class ReleasePaginationIntegrationTest extends MySqlIntegrationTest {
         assertEquals(4, body(send(request("/api/v1/releases/page").setHeader("X-Dev-Organization-Ids", "*").setHeader("X-Dev-Shop-Ids", "*"))).path("items").size());
     }
 
+    @Test void readsOlderManifestAndFreshAckWithoutListWindowOrScopeBypass() throws Exception {
+        seed("older", "org-a", "shop-a", "STAGED", 1, EARLY);
+        seed("recent", "org-a", "shop-a", "ACTIVE", 60, LATE);
+        seed("hidden", "org-b", "shop-b", "STAGED", 1, EARLY);
+        assertFalse(body(send(request("/api/v1/releases"))).toString().contains("older-000"));
+        String path = "/api/v1/releases/older-000";
+        assertEquals("older-000", body(send(request(path))).path("manifest").path("manifestId").asString());
+        assertEquals(0, body(send(request(path))).path("readyReplicas").asInt());
+        jdbc.update("INSERT INTO mk_runtime_ack (tenant_id,manifest_id,runtime_id,status_name,build_digest,supported_abis,warmed_artifact_ids,capacity_value,acknowledged_at,signature_key_id,signature_value) VALUES (?,?,?,'READY','test','[]','[]',7,?,'test','test')",
+                tenant, "older-000", "runtime-test", Instant.now().toString());
+        var ready = body(send(request(path)));
+        assertEquals(1, ready.path("readyReplicas").asInt()); assertEquals(7, ready.path("readyCapacity").asInt());
+        assertEquals(403, send(request(path).setHeader("X-Dev-Permissions", "campaign:read")).statusCode());
+        assertCode(send(request(path).setHeader("X-Dev-Organization-Ids", "ORG-A")), 400, "INVALID_ARGUMENT");
+        assertCode(send(request(path).setHeader("X-Dev-Shop-Ids", "shop-b")), 400, "INVALID_ARGUMENT");
+        assertCode(send(request("/api/v1/releases/hidden-000")), 400, "INVALID_ARGUMENT");
+        assertCode(send(request(path).setHeader("X-Dev-Tenant-Id", "other-tenant")), 404, "MANIFEST_NOT_FOUND");
+        assertCode(send(request("/api/v1/releases/absent")), 404, "MANIFEST_NOT_FOUND");
+        assertEquals(200, send(request("/api/v1/releases/hidden-000").setHeader("X-Dev-Organization-Ids", "*").setHeader("X-Dev-Shop-Ids", "*")).statusCode());
+    }
+
     /** 数据仅写入Testcontainers隔离库，每个用例独立租户，不触碰共享业务库。 */
     private void seed(String prefix, String organization, String shop, String state, int count, String time) {
         jdbc.update("INSERT INTO mk_campaign (tenant_id,campaign_id,name,objective,status,organization_id,shop_id,created_at,updated_at,campaign_type) VALUES (?,?,?,?,?,?,?,?,?,?)", tenant,prefix,prefix,"pagination","DRAFT",organization,shop,time,time,"STANDARD");

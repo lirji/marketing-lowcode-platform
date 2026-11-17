@@ -42,6 +42,12 @@ public class ReleaseController {
         return service.manifestPage(limit, state, cursor);
     }
 
+    /** 按当前清单ID读取ACK，不受列表窗口或其它清单数量影响。 */
+    @GetMapping("/{manifestId}")
+    public ReleaseApplicationService.ReleaseView manifest(@PathVariable String manifestId) {
+        return service.manifest(manifestId);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ReleaseApplicationService.ReleaseView stage(

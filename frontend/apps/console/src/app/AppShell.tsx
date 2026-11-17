@@ -3,9 +3,9 @@ import { Bell, Building2, ChevronDown, Command, Menu, Search, X } from 'lucide-r
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { navigation } from './navigation'
 import { useAuth } from '../shared/auth/useAuth'
-import { useQuery } from '@tanstack/react-query'
+import { useReleasePages } from '../shared/api/useReleasePages'
 import { api } from '../shared/api/client'
-import { APPROVAL_PAGE_SIZES } from '../shared/api/schemas'
+import { APPROVAL_PAGE_SIZES, ReleaseState } from '../shared/api/schemas'
 import { APPROVAL_STATUS, useApprovalPages } from '../shared/api/useApprovalPages'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { Modal } from '../components/ui'
@@ -37,14 +37,14 @@ export function AppShell() {
   const searchable = useMemo(() => visibleNav.flatMap((group) => group.items), [visibleNav])
   const results = searchable.filter((item) => item.label.toLowerCase().includes(query.toLowerCase()))
   const approvals = useApprovalPages(APPROVAL_STATUS.OPEN, authenticated, APPROVAL_PAGE_SIZES.MAX)
-  const releases = useQuery({
-    queryKey: ['releases', 'health'],
-    queryFn: api.releases,
-    enabled: authenticated && !api.demoMode && auth.hasPermission('release:read'),
-  })
+  const releases = useReleasePages(ReleaseState.ACTIVE)
   const openApprovals = approvals.items.length
   const openApprovalLabel = `${openApprovals}${approvals.hasNextPage ? '+' : ''}`
-  const activeCells = (releases.data ?? []).filter((item) => item.state === 'ACTIVE').length
+  const activeReleases = releases.items.length
+  const releaseSummary = !releases.canRead ? '无发布读取权限'
+    : releases.isError ? '发布状态读取失败'
+      : releases.isPending ? '发布状态加载中'
+        : `已激活清单 ${activeReleases}${releases.hasNextPage ? '+' : ''} 条`
   const orgLabel = auth.organizations.includes('*') || auth.organizations.length === 0
     ? '全域组织'
     : auth.organizations.join(' / ')
@@ -106,10 +106,10 @@ export function AppShell() {
           ))}
         </nav>
         <div className="sidebar-foot">
-          <div className={`health-orb ${api.demoMode || activeCells > 0 ? 'ok' : 'unknown'}`} />
+          <div className={`health-orb ${api.demoMode || activeReleases > 0 && !releases.isError ? 'ok' : 'unknown'}`} />
           <div>
             <strong>{auth.tenantId || '未声明租户'}</strong>
-            <small>{api.demoMode ? '演示模式 · 非生产数据' : activeCells > 0 ? `${activeCells} 个 Active 发布槽` : '等待运行时就绪'}</small>
+            <small>{api.demoMode ? '演示模式 · 非生产数据' : releaseSummary}</small>
           </div>
         </div>
       </aside>

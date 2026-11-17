@@ -35,7 +35,7 @@ class ContractSpecificationsTest {
             "/api/v1/definitions/{definitionId}/versions/{version}:submit",
             "/api/v1/definitions/{definitionId}/versions/{version}/terms",
             "/api/v1/approvals", "/api/v1/approvals/page", "/api/v1/approvals/{caseId}/decisions", "/api/v1/registries/nodes",
-            "/api/v1/releases", "/api/v1/releases/page", "/api/v1/releases/{manifestId}:ack",
+            "/api/v1/releases", "/api/v1/releases/page", "/api/v1/releases/{manifestId}", "/api/v1/releases/{manifestId}:ack",
             "/api/v1/releases/{manifestId}:activate", "/api/v1/releases/{manifestId}:rollback",
             "/api/v1/releases/desired", "/api/v1/releases/kill-switches/{namespace}",
             "/api/v1/compile", "/api/v1/dmn/analyze", "/api/v1/campaigns/{campaignId}/dmn-drafts",
@@ -123,6 +123,9 @@ class ContractSpecificationsTest {
         var document = yaml(RESOURCES.resolve("openapi/marketing-api.yaml"));
         var paths = map(document.get("paths"));
         assertTrue(paths.containsKey("/api/v1/releases"));
+        var detail = map(map(paths.get("/api/v1/releases/{manifestId}")).get("get"));
+        assertEquals("release:read", detail.get("x-required-permission"));
+        assertTrue(map(detail.get("responses")).keySet().containsAll(Set.of("200", "403", "404")));
         var operation = map(map(paths.get("/api/v1/releases/page")).get("get"));
         var parameters = (List<?>) operation.get("parameters");
         var limit = parameters.stream().map(ContractSpecificationsTest::map)

@@ -372,3 +372,16 @@
 ## S12f 发布读取调用点（IN_PROGRESS）
 - 计划：增加按清单ID读取的只读授权接口，向导只轮询自身暂存清单；壳层/首页复用完整身份键分页并明确已加载数量；活动就绪可继续分页、未遍历完不宣称未发布。保持发布/回滚写语义，不自动加载无界全集。
 - 验收：真实MySQL验证较早清单、租户/组织门店/权限拒绝；前端ACK目标、失败禁用、身份切换、页尾就绪与局部计数；合同/构建/远程CI以及真实本地Docker双视口回归。
+
+### S12f 实现与验证检查点
+- 已实现按ID读取当前ReleaseView，复用租户/冻结定义范围与release:read；向导只轮询本次暂存ID，读取失败/刷新中不能激活，客户端拒绝ID不匹配。首页/壳层复用完整范围分页并标注局部数量；活动就绪支持更多/失败重试与未知状态。
+- 真实MySQL4发布读取/分页 +5发布目标、合同规格7、架构10测试PASS，见s12f-backend-final.log；全前端首轮204通过/1失败（活动缺省定义返回undefined被React Query视为失败），已将当前组件的空定义明确转null，受影响5项重新PASS。新接口范围错误沿用现有TenantScope的400 INVALID_ARGUMENT，权限缺失403，合同与测试已按真实语义对齐。
+- 初始单测另发现JSX闭合遗漏和重复消费同一个Response的测试fixture，已修复。上述失败日志保留s12f-initial-unit.log、s12f-consumers-unit.log、s12f-frontend.log、s12f-backend.log，不把首轮失败写为通过。
+- lint/build已通过；状态常量复用调整后待最终验证。双视口向导ID/ACK失败保护浏览器测试运行中，日志s12f-browser.log。尚未提交/推送/部署S12f。
+
+### S12f 本地验收结果
+- 当前源码全前端41文件205项PASS；最后状态常量修复后受影响3项再次PASS，lint/build最终通过。见s12f-frontend-final.log、s12f-overview-final.log、s12f-lint-final.log、s12f-build-final.log。
+- 真实MySQL9项、OpenAPI合同规格7项、架构10项PASS，控制面exec JAR打包通过。新接口读取较早清单和新ACK，无权限403、组织/门店越界400 INVALID_ARGUMENT、跨租户/不存在404；复用原TenantScope拒绝语义。
+- 新向导ID读取/错误禁用激活2视口、既有激活确认2视口、回滚未知结果2视口，共6浏览器用例PASS，s12f-browser-verified.log；测试HTTP样例隔离，无真实编译/暂存/ACK/激活写入。已查看桌面ACK就绪与手机失败截图。最终fixture正确回应侧栏状态筛选/批准单读取，未依赖8080外部服务。
+- 根代理复核ID/租户/范围授权、失败不授予激活、完整身份缓存、未遍历完待核实、旧操作回归及差异；不声称独立代理审查。Hygiene最终无finding，唯一限制是仓库无canonical formatter；s12f-hygiene-final.json。源码指纹与产物哈希分别s12f-validated-fingerprint.json、s12f-built-artifacts.json。
+- S12f本地验收PASS，待精确远程CI、正常FF main及本机control/console增量部署后完成运行验收。整体S06–S13仍未全部完成。

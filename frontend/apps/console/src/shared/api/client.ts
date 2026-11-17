@@ -223,6 +223,11 @@ export const api = {
   decideApproval: (caseId: string, role: ApprovalRole, decision: 'APPROVE' | 'REJECT' = 'APPROVE', comment?: string) =>
     request(`/api/v1/approvals/${encodeURIComponent(caseId)}/decisions`, { method: 'POST', headers: commandHeaders(), body: JSON.stringify({ role, decision, comment }) }, (value) => parseWith(approvalViewSchema, value)),
   releases: () => request('/api/v1/releases', undefined, (value) => zArray(releaseViewSchema, value)),
+  getRelease: (manifestId: string) => request(`/api/v1/releases/${encodeURIComponent(manifestId)}`, undefined, (value) => {
+    const release = parseWith(releaseViewSchema, value)
+    if (release.manifest.manifestId !== manifestId) throw new Error('发布服务返回了不同的清单，请刷新后重试。')
+    return release
+  }),
   releasePage: (query: { state?: ReleaseStatus; limit?: number; cursor?: string } = {}) => {
     const params = new URLSearchParams()
     if (query.state) params.set('state', query.state)

@@ -354,6 +354,15 @@ public class ReleaseApplicationService {
         return new KillSwitchView(namespace, enabled, reason, scope.actorId(), now, sequence, directive);
     }
 
+    /** 单清单读取仍校验当前租户、权限和冻结定义范围，不能用已知ID绕过授权。 */
+    public ReleaseView manifest(String manifestId) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("release:read");
+        StoredManifest stored = stored(scope.tenantId().value(), manifestId, false);
+        requireManifestScope(scope, stored.manifest());
+        return view(scope.tenantId().value(), stored);
+    }
+
     /** 兼容旧数组接口；先限制可见范围，再取最近50条，避免其它组织记录挤占配额。 */
     public List<ReleaseView> manifests() {
         var scope = TenantContextHolder.requireCurrent();

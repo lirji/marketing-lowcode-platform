@@ -6,6 +6,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Badge, DemoBanner, EmptyState, PageHeader, Panel, PanelHeader, StateBanner } from '../../components/ui'
 import { problemDetail } from '../../shared/api/problem'
 import { api } from '../../shared/api/client'
+import { ReleaseState } from '../../shared/api/schemas'
+import { useReleasePages } from '../../shared/api/useReleasePages'
 
 const demoMetrics = [
   { label: '今日归因成交', value: '¥ 18,426,780', delta: '+12.8%', icon: CircleDollarSign },
@@ -39,7 +41,11 @@ export function DashboardPage() {
     enabled: !api.demoMode,
   })
   const campaigns = useQuery({ queryKey: ['campaigns'], queryFn: api.campaigns, enabled: !api.demoMode })
-  const releases = useQuery({ queryKey: ['releases'], queryFn: api.releases, enabled: !api.demoMode })
+  const releases = useReleasePages()
+  const releaseSummary = !releases.canRead ? '无发布读取权限'
+    : releases.isError ? '发布清单读取失败'
+      : releases.isPending ? '发布清单加载中'
+        : `已加载 ${releases.items.length} 条发布清单${releases.hasNextPage ? '，还有更多可在发布中心查看' : ''}`
   const metrics = api.demoMode
     ? demoMetrics
     : dashboard.data
@@ -54,9 +60,10 @@ export function DashboardPage() {
   const peak = Math.max(1, ...points.map((point) => point.revenueMinor))
 
   return <div className="workspace">
-    <PageHeader eyebrow={api.demoMode ? '运营总览 · 2026 双十一' : '运营总览'} title="早上好，今天的增长脉搏稳定。" description={api.demoMode ? '126 个活动正在 3 个 Cell 中运行，暂无资金不变量告警。' : `当前租户可见 ${campaigns.data?.length ?? 0} 个活动、${releases.data?.length ?? 0} 个发布代际。`} actions={<><Link className="button secondary" to="/releases">查看发布态势</Link><Link className="button primary" to="/campaigns?create=true"><Sparkles size={16} />创建营销活动</Link></>} />
+    <PageHeader eyebrow={api.demoMode ? '运营总览 · 2026 双十一' : '运营总览'} title="早上好，今天的增长脉搏稳定。" description={api.demoMode ? '126 个活动正在 3 个 Cell 中运行，暂无资金不变量告警。' : `当前已加载 ${campaigns.data?.length ?? 0} 个活动；${releaseSummary}。`} actions={<><Link className="button secondary" to="/releases">查看发布态势</Link><Link className="button primary" to="/campaigns?create=true"><Sparkles size={16} />创建营销活动</Link></>} />
     <DemoBanner />
     {dashboard.isError && <StateBanner tone="error" title="指标加载失败" detail={problemDetail(dashboard.error)} />}
+    {releases.isError && <StateBanner tone="error" title="发布清单加载失败" detail={problemDetail(releases.error)} />}
     {series.isError && <StateBanner tone="error" title="序列加载失败" detail={problemDetail(series.error)} />}
     <section className="metric-grid" aria-label="核心指标">
       {metrics.map(({ label, value, delta, icon: Icon }) => <article className="metric-card" key={label}><div className="metric-icon"><Icon size={18} /></div><p>{label}</p><strong>{value}</strong><span>{delta}</span></article>)}
@@ -69,7 +76,7 @@ export function DashboardPage() {
             ? <EmptyState title="暂无小时序列" detail="GET /api/v1/measurements/series 尚未返回数据点。" />
             : <div className="pulse-chart" aria-label="今日小时归因收入">{points.slice(-12).map((point) => <span key={point.at} style={{ '--height': `${Math.max(8, Math.round((point.revenueMinor / peak) * 100))}%` } as React.CSSProperties} title={`${displayTimestamp(point.at)} · ${formatMinor(point.revenueMinor)}`} />)}</div>}
       </Panel>
-      <Panel className="readiness-panel"><PanelHeader eyebrow={api.demoMode ? '发布代际 #1842' : '发布就绪'} title="Cell 就绪度" aside={<Link className="text-button" to="/releases">打开控制台 →</Link>} />{api.demoMode ? <RecordTable label="Cell 就绪度" columns={['区域', '部署单元', '就绪比例', '状态', '就绪副本']}>{[['华东', 'A', '100%', '已激活', '—'], ['华北', 'B', '100%', '已激活', '—'], ['华南', 'C', '67%', '预热中', '2/3']].map(([region, cell, ratio, state, replicas]) => <tr key={cell}><td>{region}</td><td>{cell}</td><td>{ratio}</td><td><Badge tone={state === '已激活' ? 'good' : 'warn'}>{state}</Badge></td><td>{replicas}</td></tr>)}</RecordTable> : <RecordTable label="Cell 就绪度" columns={['发布清单 ID', '部署单元', '状态', '就绪副本', '声明容量']}>{(releases.data ?? []).slice(0, 3).map((item) => <tr key={item.manifest.manifestId}><td>{item.manifest.manifestId}</td><td>{item.manifest.cell}</td><td><Badge tone={item.state === 'ACTIVE' ? 'good' : 'warn'}>{item.state}</Badge></td><td>{item.readyReplicas}</td><td>{item.readyCapacity}</td></tr>)}</RecordTable>}</Panel>
+      <Panel className="readiness-panel"><PanelHeader eyebrow={api.demoMode ? '发布代际 #1842' : '发布就绪'} title={api.demoMode ? 'Cell 就绪度' : '最近发布清单'} aside={<Link className="text-button" to="/releases">打开控制台 →</Link>} />{api.demoMode ? <RecordTable label="Cell 就绪度" columns={['区域', '部署单元', '就绪比例', '状态', '就绪副本']}>{[['华东', 'A', '100%', '已激活', '—'], ['华北', 'B', '100%', '已激活', '—'], ['华南', 'C', '67%', '预热中', '2/3']].map(([region, cell, ratio, state, replicas]) => <tr key={cell}><td>{region}</td><td>{cell}</td><td>{ratio}</td><td><Badge tone={state === '已激活' ? 'good' : 'warn'}>{state}</Badge></td><td>{replicas}</td></tr>)}</RecordTable> : <RecordTable label="Cell 就绪度" columns={['发布清单 ID', '部署单元', '状态', '就绪副本', '声明容量']}>{releases.items.slice(0, 3).map((item) => <tr key={item.manifest.manifestId}><td>{item.manifest.manifestId}</td><td>{item.manifest.cell}</td><td><Badge tone={item.state === ReleaseState.ACTIVE ? 'good' : 'warn'}>{item.state}</Badge></td><td>{item.readyReplicas}</td><td>{item.readyCapacity}</td></tr>)}</RecordTable>}</Panel>
     </section>
   </div>
 }

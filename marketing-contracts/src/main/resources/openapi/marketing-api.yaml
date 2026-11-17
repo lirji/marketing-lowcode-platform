@@ -200,6 +200,19 @@ paths:
           description: RELEASE_NOT_APPROVED, APPROVAL_CASE_INVALID, BENEFIT_RELEASE_UNBOUND, BENEFIT_RELEASE_NOT_ACTIVE, SKU_NOT_ACTIVE, BENEFIT_SKU_TYPE_MISMATCH, or artifact closure/provenance rejection.
           content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/releases/{manifestId}:
+    get:
+      tags: [Release]
+      operationId: getRelease
+      description: Read one manifest and current ACK readiness by ID, independent of list pagination. Rechecks tenant, release:read and the frozen definition organization/shop scope on every read. This never creates an ACK or activation.
+      x-required-permission: release:read
+      parameters: [{$ref: '#/components/parameters/ManifestId'}]
+      responses:
+        '200': {description: Current visible release, content: {application/json: {schema: {$ref: '#/components/schemas/ReleaseView'}}}}
+        '400': {description: INVALID_ARGUMENT for organization/shop scope rejection under the existing TenantScope contract, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '403': {description: Read permission denied, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '404': {description: MANIFEST_NOT_FOUND or RELEASE_DEFINITION_NOT_FOUND, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/releases/{manifestId}:ack:
     post:
       tags: [Release]
