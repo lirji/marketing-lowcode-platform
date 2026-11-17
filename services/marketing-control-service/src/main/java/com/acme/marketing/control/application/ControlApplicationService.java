@@ -404,11 +404,7 @@ public class ControlApplicationService {
     }
 
     private void requireCampaignScope(TenantScope scope, String campaignId, boolean lock) {
-        ControlRepository.CampaignOwnershipRow ownership = repository.findCampaignOwnership(
-                        scope.tenantId().value(), campaignId, lock)
-                .orElseThrow(() -> new NotFoundException("CAMPAIGN_NOT_FOUND", "campaign not found"));
-        scope.requireOrganization(ownership.organizationId());
-        if (ownership.shopId() != null && !ownership.shopId().isBlank()) scope.requireShop(ownership.shopId());
+        ControlCampaignScope.require(repository, scope, campaignId, lock);
     }
 
     private void updateDefinitionStatus(String tenantId, String definitionId, long version,
@@ -482,24 +478,8 @@ public class ControlApplicationService {
     }
 
     private void audit(String tenantId, String actorId, String action, String resource, Instant now) {
-        // 无操作 upsert 会立即取得排他行锁，避免先捕获重复键再锁头记录时发生锁升级死锁。
-        repository.ensureAuditHead(tenantId, format(now));
-        ControlRepository.AuditHeadRow stored = repository.findAuditHeadForUpdate(tenantId).orElse(null);
-        AuditHead head = stored == null ? null : new AuditHead(stored.chainIndex(), stored.entryHash());
-        if (head == null) throw new IllegalStateException("tenant audit head was not created");
-        long chainIndex = Math.addExact(head.chainIndex(), 1);
-        String previous = head.entryHash();
-        String hash = com.acme.marketing.platform.crypto.Digests.sha256Hex(
-                previous + '|' + chainIndex + '|' + tenantId + '|' + actorId + '|' + action + '|' + resource
-                        + '|' + format(now));
-        repository.saveAudit(new ControlRepository.AuditWrite(tenantId, UUID.randomUUID().toString(), chainIndex,
-                actorId, action, resource, format(now), previous, hash));
-        int updated = repository.compareAndSetAuditHead(new ControlRepository.AuditHeadWrite(tenantId, chainIndex,
-                hash, format(now), head.chainIndex(), head.entryHash()));
-        if (updated != 1) throw new IllegalStateException("tenant audit head compare-and-set failed");
+        ControlAuditChain.append(repository, tenantId, actorId, action, resource, now);
     }
-
-    private record AuditHead(long chainIndex, String entryHash) { }
 
     public record CampaignView(String id, String name, String objective, Campaign.Status status,
             Instant createdAt, Instant updatedAt, Campaign.Type campaignType) {

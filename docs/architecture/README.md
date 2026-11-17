@@ -56,6 +56,8 @@ flowchart TB
 
 ## 控制面到运行面的发布协议
 
+当前活动组合扩展仅实现不可变准备版本和具体成员的单独发布保护；跨 slot 的运行端就绪、请求固定版本与整体激活仍在实施。下面的既有逐 slot 协议不能保证活动组合原子生效，边界和分步验收见 [组合发布设计](../delivery/completion-20261116/ATOMIC_RELEASE_DESIGN.md)。
+
 ```mermaid
 sequenceDiagram
   participant O as Operator

@@ -185,6 +185,7 @@ public class ReleaseApplicationService {
         scope.requirePermission("release:activate");
         StoredManifest stored = stored(scope.tenantId().value(), manifestId, true);
         requireManifestScope(scope, stored.manifest());
+        requireStandaloneManifest(scope.tenantId().value(), manifestId, true);
         requireReferralReleaseUnavailable(stored.manifest());
         requireExecutableOfferSources(scope.tenantId().value(), stored.manifest());
         if (stored.state() != State.STAGED) {
@@ -230,6 +231,7 @@ public class ReleaseApplicationService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("release:activate");
         requireManifestScope(scope, stored(scope.tenantId().value(), manifestId, false).manifest());
+        requireStandaloneManifest(scope.tenantId().value(), manifestId, false);
     }
 
     /** 回滚回执可能包含目标制品，源与目标都必须仍处于当前身份范围内。 */
@@ -238,7 +240,10 @@ public class ReleaseApplicationService {
         scope.requirePermission("release:rollback");
         StoredManifest source = stored(scope.tenantId().value(), manifestId, false);
         requireManifestScope(scope, source.manifest());
-        requireManifestScope(scope, byGeneration(scope.tenantId().value(), source.manifest(), targetGeneration).manifest());
+        requireStandaloneManifest(scope.tenantId().value(), manifestId, false);
+        var target = byGeneration(scope.tenantId().value(), source.manifest(), targetGeneration).manifest();
+        requireManifestScope(scope, target);
+        requireStandaloneManifest(scope.tenantId().value(), target.manifestId(), false);
     }
 
     /** 候选只是读取时的快照，真正提交仍检查源指针、目标状态与有效期。 */
@@ -301,6 +306,7 @@ public class ReleaseApplicationService {
         scope.requirePermission("release:rollback");
         StoredManifest current = stored(scope.tenantId().value(), manifestId, true);
         requireManifestScope(scope, current.manifest());
+        requireStandaloneManifest(scope.tenantId().value(), manifestId, true);
         requireReferralReleaseUnavailable(current.manifest());
         requireActiveRollbackSource(current);
         if (!current.manifest().retainedGenerations().contains(targetGeneration)) {
@@ -308,6 +314,7 @@ public class ReleaseApplicationService {
         }
         StoredManifest target = byGeneration(scope.tenantId().value(), current.manifest(), targetGeneration);
         requireManifestScope(scope, target.manifest());
+        requireStandaloneManifest(scope.tenantId().value(), target.manifest().manifestId(), true);
         requireReferralReleaseUnavailable(target.manifest());
         requireExecutableOfferSources(scope.tenantId().value(), target.manifest());
         Instant now = clock.instant();
@@ -648,6 +655,12 @@ public class ReleaseApplicationService {
         if (rows.size() != 1) throw new NotFoundException("RELEASE_DEFINITION_NOT_FOUND",
                 "release definition scope is unavailable");
         requireScope(scope, resourceScope(rows.getFirst()));
+    }
+
+    /** 具体组合成员不能从兼容的单清单入口拆开发布；新执行与旧回执都需要此门禁。 */
+    private void requireStandaloneManifest(String tenantId, String manifestId, boolean lock) {
+        if (repository.findReleaseBundleOwner(tenantId, manifestId, lock).isPresent())
+            throw ReleaseBundleError.REQUIRED.conflict();
     }
 
     private static ResourceScope resourceScope(ControlRepository.ResourceScopeRow row) {

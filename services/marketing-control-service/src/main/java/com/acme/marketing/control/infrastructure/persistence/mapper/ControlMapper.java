@@ -10,6 +10,17 @@ import org.apache.ibatis.annotations.Param;
 /** 营销控制库 MyBatis Mapper；SQL 统一维护在同名 XML 中。 */
 @Mapper
 public interface ControlMapper {
+    Long selectReleaseBundleVersion(@Param("tenantId") String tenantId, @Param("campaignId") String campaignId);
+    int advanceReleaseBundleVersion(@Param("tenantId") String tenantId, @Param("campaignId") String campaignId,
+            @Param("expectedVersion") long expectedVersion);
+    ControlRepository.ReleaseBundleRow selectLatestReleaseBundle(@Param("tenantId") String tenantId,
+            @Param("campaignId") String campaignId, @Param("lock") boolean lock);
+    ControlRepository.ReleaseBundleRow selectReleaseBundle(@Param("tenantId") String tenantId,
+            @Param("campaignId") String campaignId, @Param("version") long version);
+    int insertReleaseBundle(ControlRepository.ReleaseBundleRow row);
+    int insertReleaseBundleMember(ControlRepository.ReleaseBundleMemberWrite write);
+    String selectReleaseBundleOwner(@Param("tenantId") String tenantId,
+            @Param("manifestId") String manifestId, @Param("lock") boolean lock);
     int insertCampaign(ControlRepository.CampaignWrite write);
     List<ControlRepository.CampaignRow> selectCampaigns(@Param("tenantId") String tenantId,
             @Param("organizations") Set<String> organizations, @Param("shops") Set<String> shops, @Param("campaignType") String campaignType);

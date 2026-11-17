@@ -43,3 +43,11 @@
 | activate | `ACTIVATION_TOO_EARLY` | 等到 `activationAt` 再重试同一激活命令 |
 
 依赖校验不可达时返回可重试的 `BENEFIT_RELEASE_GATE_UNAVAILABLE`，采用 fail-closed，不创建 STAGED manifest。
+
+## 活动组合准备（S11e）
+
+`POST /api/v1/campaigns/{campaignId}/release-bundles` 接收 `expectedVersion` 和 2–8 个 `manifestIds`，使用 `Idempotency-Key`、`release:write` 及当前活动组织/店铺范围。仅接受同活动、同环境/cell、不同 slot、已审批且未过期的 STAGED 签名清单，不支持部分灰度。服务端冻结完整成员，返回版本、contentHash和PREPARING状态；同键相同集合换序重试返回原结果，异载荷或版本竞争返回409。
+
+使用同路径的 `GET /latest` 或 `/versions/{version}` 读取，要求 `release:read` 和当前活动范围。具体成员登记后，原单清单激活和回滚入口返回 `RELEASE_BUNDLE_REQUIRED`，包括旧幂等回执。准备不会生成激活指令，现阶段不能从该接口整体上线。
+
+V8 新增组合历史及成员归属，以现有活动行上的版本游标和清单行锁保证事务；审计失败全部回滚。迁移后的旧服务不能保护新成员归属，回退前须冻结发布写入口并保留数据。完整合同、后续运行端准备和整体切换验收见 [增量设计](../delivery/completion-20261116/ATOMIC_RELEASE_DESIGN.md)。本机共享库尚未执行此迁移。

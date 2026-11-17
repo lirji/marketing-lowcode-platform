@@ -299,6 +299,60 @@ paths:
       responses:
         '200': {description: Deterministic compiler report, content: {application/json: {schema: {$ref: '#/components/schemas/CompileReport'}}}}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/campaigns/{campaignId}/release-bundles:
+    post:
+      tags: [Release]
+      operationId: prepareReleaseBundle
+      x-required-permission: release:write
+      description: >-
+        Freeze 2-8 signed staged manifests from the same campaign, environment and cell.
+        Only PREPARING is supported; this operation does not activate runtimes or emit activation events.
+        Exact member manifests are then protected from standalone activation and rollback (409 RELEASE_BUNDLE_REQUIRED).
+        Current campaign scope is checked before replay. Sorted member IDs, campaign and actor enter the command fingerprint.
+        Body limit is 16 KiB before parsing. Partial canaries are not supported.
+      parameters:
+        - {in: path, name: campaignId, required: true, schema: {type: string, maxLength: 64}}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion, manifestIds]
+              properties:
+                expectedVersion: {type: integer, format: int64, minimum: 0, maximum: 9223372036854775806}
+                manifestIds:
+                  type: array
+                  minItems: 2
+                  maxItems: 8
+                  uniqueItems: true
+                  items: {type: string, pattern: '^[A-Za-z0-9_.:-]{1,64}$'}
+      responses:
+        '201': {description: Immutable preparing bundle or original idempotent receipt, content: {application/json: {schema: {$ref: '#/components/schemas/ReleaseBundleView'}}}}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/campaigns/{campaignId}/release-bundles/latest:
+    get:
+      tags: [Release]
+      operationId: getLatestReleaseBundle
+      x-required-permission: release:read
+      parameters:
+        - {in: path, name: campaignId, required: true, schema: {type: string, maxLength: 64}}
+      responses:
+        '200': {description: Latest stored preparation version, content: {application/json: {schema: {$ref: '#/components/schemas/ReleaseBundleView'}}}}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/campaigns/{campaignId}/release-bundles/versions/{version}:
+    get:
+      tags: [Release]
+      operationId: getReleaseBundleVersion
+      x-required-permission: release:read
+      parameters:
+        - {in: path, name: campaignId, required: true, schema: {type: string, maxLength: 64}}
+        - {in: path, name: version, required: true, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200': {description: Immutable historical preparation version, content: {application/json: {schema: {$ref: '#/components/schemas/ReleaseBundleView'}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/campaigns/{campaignId}/dmn-drafts:
     post:
       tags: [Control]
@@ -876,6 +930,25 @@ components:
     JsonArray: {description: Successful collection, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/JsonObject'}}}}}
     Problem: {description: RFC 9457 problem response, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
   schemas:
+    ReleaseBundleView:
+      type: object
+      additionalProperties: false
+      required: [bundleId, campaignId, version, environment, cell, state, contentHash, members, createdBy, createdAt]
+      properties:
+        bundleId: {type: string}
+        campaignId: {type: string}
+        version: {type: integer, format: int64, minimum: 1}
+        environment: {type: string}
+        cell: {type: string}
+        state: {type: string, enum: [PREPARING]}
+        contentHash: {type: string, pattern: '^[a-f0-9]{64}$'}
+        members:
+          type: array
+          minItems: 2
+          maxItems: 8
+          items: {type: object, description: Existing signed ReleaseManifest frozen at preparation time}
+        createdBy: {type: string}
+        createdAt: {type: string, format: date-time}
     ClientErrorEvent:
       type: object
       additionalProperties: false

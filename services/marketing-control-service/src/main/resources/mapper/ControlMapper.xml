@@ -475,4 +475,48 @@
             (tenant_id, campaign_id, version_no, table_json, content_hash, command_id, created_by, created_at)
         VALUES (#{tenantId}, #{campaignId}, #{versionNo}, #{tableJson}, #{contentHash}, #{commandId}, #{createdBy}, #{createdAt})
     </insert>
+    <!-- 活动组合的所有读写均绑定可信租户；只插入历史，不覆盖冻结内容。 -->
+    <sql id="releaseBundleColumns">
+        tenant_id, bundle_id, campaign_id, version_no, environment_name, cell_id, state_name,
+        content_json, content_hash, command_id, created_by, created_at
+    </sql>
+    <select id="selectReleaseBundleVersion" resultType="long">
+        SELECT release_bundle_version FROM mk_campaign
+        WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId} FOR UPDATE
+    </select>
+    <update id="advanceReleaseBundleVersion">
+        UPDATE mk_campaign SET release_bundle_version = release_bundle_version + 1
+        WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId}
+          AND release_bundle_version = #{expectedVersion}
+    </update>
+    <select id="selectLatestReleaseBundle" resultType="com.acme.marketing.control.application.ControlRepository$ReleaseBundleRow">
+        SELECT tenant_id AS tenantId, bundle_id AS bundleId, campaign_id AS campaignId, version_no AS versionNo,
+            environment_name AS environmentName, cell_id AS cellId, state_name AS stateName,
+            content_json AS contentJson, content_hash AS contentHash, command_id AS commandId,
+            created_by AS createdBy, created_at AS createdAt FROM mk_release_bundle
+        WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId}
+        ORDER BY version_no DESC LIMIT 1
+        <if test="lock">FOR UPDATE</if>
+    </select>
+    <select id="selectReleaseBundle" resultType="com.acme.marketing.control.application.ControlRepository$ReleaseBundleRow">
+        SELECT tenant_id AS tenantId, bundle_id AS bundleId, campaign_id AS campaignId, version_no AS versionNo,
+            environment_name AS environmentName, cell_id AS cellId, state_name AS stateName,
+            content_json AS contentJson, content_hash AS contentHash, command_id AS commandId,
+            created_by AS createdBy, created_at AS createdAt FROM mk_release_bundle
+        WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId} AND version_no = #{version}
+    </select>
+    <insert id="insertReleaseBundle">
+        INSERT INTO mk_release_bundle (<include refid="releaseBundleColumns"/>)
+        VALUES (#{tenantId}, #{bundleId}, #{campaignId}, #{versionNo}, #{environmentName}, #{cellId},
+            #{stateName}, #{contentJson}, #{contentHash}, #{commandId}, #{createdBy}, #{createdAt})
+    </insert>
+    <update id="insertReleaseBundleMember">
+        UPDATE mk_release_manifest SET bundle_id = #{bundleId}
+        WHERE tenant_id = #{tenantId} AND manifest_id = #{manifestId} AND bundle_id IS NULL
+    </update>
+    <select id="selectReleaseBundleOwner" resultType="string">
+        SELECT bundle_id FROM mk_release_manifest
+        WHERE tenant_id = #{tenantId} AND manifest_id = #{manifestId}
+        <if test="lock">FOR UPDATE</if>
+    </select>
 </mapper>

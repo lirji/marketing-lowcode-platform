@@ -7,28 +7,30 @@
 - 审计证据：`/Users/liruijun/.local/share/marketing-audits/20261116-completeness/`；Docker 启动与恢复证据：`/Users/liruijun/.local/share/marketing-deployments/20261116-start/`。
 - 规范：`~/.codex/architecture-standards.md` 业务建模、持久化、接口契约、并发安全；`personal-tech-stack.md` 并发、线程池、日志、状态机；engineering-workflows/backend-implementation/continue-approved-delivery/task-git-delivery。前端、Runtime 专项随切片读取。
 
-## 当前状态（2026-11-17 21:39，Asia/Taipei）
-- S01–S05已完成；S06–S13仍按下表保留未完成范围。S12c–S12q已交付；最新产品提交 `dbe268b5ed25004c5ee35af171ceb147e2509e55` 已正常快进合入并推送main，精确CI `44092826351` 的Java/合同/架构、前端、Compose/Helm三项全部通过。当前任务分支 `fix/asset-preview-reads`，后续交付回执仅改文档，运行制品仍固定该产品提交。
+## 当前状态（2026-11-17，恢复执行）
+- 用户已确认同一活动组合整体生效/回滚，并要求继续流程；会员/画像优先Commerce、交易证据优先交易中心、认证Auth的方向进入增量接入设计。具体技术合同和机器凭据仍按真实系统核对，不再重复询问来源选型。当前分支 `feat/activity-release-bundles` 基于 `d57a572`，S11e验证通过，准备Git交付；设计与切片见 [活动组合增量设计](ATOMIC_RELEASE_DESIGN.md)。
+- 先执行依赖齐备的S11e不可变组合准备与成员发布保护，再推进运行端和整体切换；上游缺少机器快照/主体映射的部分保留依赖状态。当前未修改其他仓库、未部署或迁移共享库。文档提交 `d57a572` 的CI `44095478630` 已核实三项SUCCESS，原pending记录失效。
+- S01–S05已完成；S06–S13仍按下表保留未完成范围。S12c–S12q已交付；最新产品提交 `dbe268b5ed25004c5ee35af171ceb147e2509e55` 已正常快进合入并推送main，精确CI `44092826351` 的Java/合同/架构、前端、Compose/Helm三项全部通过。该阶段分支为 `fix/asset-preview-reads`，其后交付回执仅改文档，运行制品仍固定该产品提交。
 - 本机仅18个必要容器运行：13个marketing-r1、权益目录适配服务、MySQL/Redis/Kafka/ClickHouse；15个配置了健康检查且全部healthy，另3个未配置健康检查，全部运行且无OOM。console=dbe268b、edge-gateway=7764526、engagement=166dc43、benefit-funding=607542e、audience=a260865、control=b3858e6，其余应用045dfd9。control V7已迁移；UI8084、网关18080、Flink18081。详见 [本机部署回执](LOCAL_DEPLOYMENT_20261117.md)。
 - 用户授权Docker只运行本项目组件；13个额外无关容器及原17个langchain应用保持停止，所有容器与数据卷保留。本轮只更新console，17个其它运行容器ID/镜像/启动时间不变；3个原Flink作业及检查点继续推进，禁止重复恢复或提交空作业。
 - 最新验证：271项前端测试、98项浏览器用例通过，10项既有独立服务用例跳过；lint/build/Hygiene无阻塞，未配置canonical formatter。真实Docker四类资产页在桌面与Pixel7的分页、搜索、详情及字段/节点读取回归通过，无业务写入、API失败或页面异常。运行回执与截图：私有证据目录 `runtime-dbe268b/`。
 - 本轮新增结果：活动/首页/运营/资产的静态预览不显示假业务数据或旧缓存，资产刷新不能绕过读取门禁；OIDC身份范围变化、退出与过期清理旧请求/缓存/草稿，旧令牌401不退出已更新令牌，远端退出失败能恢复登录页。本机仍为DEV认证，真实IdP联调未验证。
-- 当前下一步不是Docker扩容，而是确认S06b的会员/画像权威来源与主体映射，并核对S08的交易合同；下节列出真实未完成项，不把局部验证通过等同项目全部完成。无运行中的本地测试、部署或迁移任务。
+- 当前先完成S11e验证与交付，随后实现S11f运行端组合准备；S06b来源方向已确定，机器快照/主体映射合同仍待落实。本地验证进程已结束；S11e准备提交及精确远程CI，无部署或共享库迁移任务。
 
 ## 未完成项与恢复顺序
 
 | 顺序 / ID | 当前事实与未完成范围 | 下一步及所需输入 |
 |---|---|---|
-| 1 / S06b | 已有同意与导入边界补强；真实人群来源、全量计算、snapshot/segment投影及审批发布到决策闭环未完成 | 先确认会员/画像的权威系统、业务会员与登录主体映射、可用读取接口。先前来源问题尚未回答，不能把OIDC sub或本地预览名单当权威会员 |
+| 1 / S06b | 已有同意与导入边界补强；真实人群来源、全量计算、snapshot/segment投影及审批发布到决策闭环未完成 | 已选择Commerce会员/画像和Auth认证；需落实业务会员映射、机器读取/稳定快照合同，不能把OIDC sub或本地预览名单当权威会员 |
 | 2 / S07 | SKU版本前提、履约观察与恢复、轨迹及对账边界已补；真实终态查询、取消/追回和Journey发奖闭环未验证或未接完 | 需要同租户且有benefit.award.read的机器凭据、按来源取消墓碑及终态合同；Journey还缺可信会员、OfferToken和正式资格输入 |
 | 3 / S08–S10 | 裂变本地资格/配额/奖励/授权/回滚持久化保留；可信来源适配、READY ACK、C端、Worker、专用投递取消、measurement及运行端到端仍待完成 | 先签收身份、会员、订单、SKU、风控与权益合同，再逐层接入；默认拒绝保持，不能用模拟来源宣称真实闭环 |
-| 4 / S11 | DMN工作台、发布目标/回滚及Journey同源仿真已完成；活动聚合、跨slot组合、定时发布、完整Journey、可恢复迁移/重算、真实实验曝光尚未完成 | 明确跨slot原子边界、定时执行时区/审批过期/失败恢复和长任务语义；实际曝光/发奖依赖前述来源。包含待设计及待实施工作，并非全部由外部环境阻塞 |
+| 4 / S11 | DMN工作台、发布目标/回滚及Journey同源仿真已完成；活动聚合、跨slot组合、定时发布、完整Journey、可恢复迁移/重算、真实实验曝光尚未完成 | 已确定同活动组合整体生效/回滚，按S11e–i继续实现；定时执行到期重验、失败恢复和业务长任务仍需补齐。实际曝光/发奖依赖前述来源，并非全部由外部环境阻塞 |
 | 5 / S12 | 活动和时间窗口筛选/CSV、资产管理分页、审批发布分页、错误采集及静态预览真实性已补齐；归因策略筛选与敏感字段访问工单尚无完整接口 | 统计需正式策略维度及投影合同；敏感访问需授权工单合同。原审计的风险策略配置和权益历史扩展仍需按真实后端能力细化，不以现有详情页替代完整历史 |
 | 6 / S13 | 本机Docker启动、健康检查和Flink恢复已验证；进程级编译沙箱、生产存储/归档、真实OIDC/KMS/轮换、隐私保留及容量/故障/混合版本/灾备验收未完成 | 明确生产目标、资源、保留策略与验收预算；生产部署需另行授权。安全基线和方案文档不等于生产验证通过 |
 
-合同冲突已核对：同一个POST `/internal/v1/order-referral-evidence:query`，在[裂变合同第4节](../../plans/referral-campaign-20260907/EXTERNAL_CONTRACTS.md)按主体/时间窗/首单策略查询，在[交易中心合同第3节](../../plans/transaction-center-20260907/EXTERNAL_CONTRACTS_AND_API.md)却按最多100个orderIds查询；会员资格字段也不同。两份均为目标/拟新增合同，尚不能选一个直接当外部已上线。先确认权威系统与接口Owner，再统一签收版本，不在进度维护中自行改写合同。
+旧目标合同存在同路径不同入参的冲突；本轮已查交易中心真实代码：批量查询保留 `/internal/v1/order-referral-evidence:query`，首单补查另有 `/internal/v1/first-order-referral-evidence:query`。两者使用交易原生memberId，营销canonicalSubject适配仍Pending；首次确认支付与目标结算首单口径尚需显式映射。下一步据实际接口修订消费者合同，不把旧规划或源码存在当真实上游联调成功。
 
-恢复入口：先读本节和根CODEX_PROGRESS，再核对Git/main及 `runtime-dbe268b/rollout-state.json`；已有通过证据与产品散列未变化时不重跑部署。业务来源确认后从S06b开始，保留现有接线边界与已完成切片；无需用户反复授权继续。
+恢复入口：先读本节和根CODEX_PROGRESS，再核对Git/main及 `runtime-dbe268b/rollout-state.json`；已有通过证据与产品散列未变化时不重跑部署。按活动组合增量设计继续S11e–i，同时保留S06b/S08真实上游合同依赖；无需用户反复授权继续。
 
 ## 执行清单与验收
 
@@ -626,3 +628,20 @@
 - `dbe268b5ed25004c5ee35af171ceb147e2509e55`精确CI44092826351三项全部PASS，正常FF main并推送；固定console镜像部署PASS。18必要容器运行、15健康检查通过、无OOM，17保护容器不变，原3个Flink作业检查点推进。
 - 桌面/Pixel7真实人群、权益、模板分页/搜索/详情与字段/节点读取验收全部通过；无业务写入、API失败、页面异常或整页横向溢出。字段/节点手机截图已查看；不重灌种子、不迁移数据库、不恢复/重提Flink。
 - 证据：既有私有目录`s12q-ci-exact.json`、`s12q-git-delivery.json`及`runtime-dbe268b/{rollout-state,runtime-smoke,audience-browser,benefit-browser,template-browser,registry-browser}.json`。后续文档回执不改变本轮验证的产品代码/运行制品；本任务整体仍PARTIAL，未完成依赖见当前状态。
+
+## S11e 活动组合准备（本地验证通过）
+- 分支feat/activity-release-bundles基于d57a572。组合准备/历史读取、严格16KiB输入、规范幂等、活动范围和签名成员检查、V8持久化及单清单成员保护已写；尚不能整体激活。
+- 编译PASS（s11e-compile.log）。首轮测试编译因新ACK fixture参数类型不符失败，已按真实RuntimeAckWrite修正；第二轮真实MySQL测试进行中，日志s11e-backend-second.log。无共享库写入或部署。
+- 实施复核将成员归属存入原清单行，避免独立空索引间隙锁造成不同活动之间的登记死锁；设计已同步。规范采用architecture-standards的业务建模/持久化/接口/并发/容量/发布，以及personal-tech-stack并发、状态机；API/授权/审计/DB专题已读。
+
+- 首轮真实数据库回归中，组合9项有8项PASS，发布目标5项、控制链4项、DMN草稿6项全部PASS。唯一失败为“重复slot”fixture同时重复了既有唯一generation键；已改为同slot不同generation，保留原拒绝断言，新增不同活动并发登记验证。最终10组合+旧门禁+机器合同复验日志s11e-backend-final.log，session12756。
+
+- 最终轮发现真实并发缺陷：不同活动同时首次准备时，空组合历史的FOR UPDATE范围产生间隙锁死锁。已改为在始终存在的campaign行上持久分配版本（CAS且与组合/审计同事务），不降低隔离级别、不增加自动重试。其余9组合、13旧门禁及8合同已PASS；针对性10项复验及审计回滚后的序号检查正在继续。
+
+- 并发修复后10项真实MySQL组合测试全部PASS（s11e-concurrency-recheck.log）。活动范围与旧入口提取共用检查，避免新建第二份错误/范围规则；最后范围改动影响的组合、控制流程与DMN测试正在复验（s11e-scope-final.log）。未宣称全项目完成。
+
+### S11e 最终验证
+- 共用活动范围检查后，10项组合、4项控制流程、6项DMN集成测试全部PASS（s11e-scope-final.log）。旧发布目标5项及13项发布门禁此前通过且对应代码未再改；合同8项和13份JSON验证、架构检查PASS（s11e-contracts-final.log、s11e-architecture-final.log）。
+- 根代理另行按越权重放、并发锁序、失败回滚、成员签名/审批、输入上限及未发布副作用进行对抗复核；未发现本片剩余阻断。审计故障测试日志中的SQL异常是注入故障，断言全部回滚并成功重试。
+- Hygiene和diff检查PASS，仓库没有canonical formatter为明确限制；新增错误目录沿用平台异常，活动权限与审计链复用原规则。文档地图、架构边界、接口说明及机器合同已同步。
+- 本片不部署、不写共享库，不声称组合整体激活完成；接下来精确候选CI/正常合入main，并继续S11f。

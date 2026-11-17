@@ -15,6 +15,28 @@ public class MybatisControlRepository implements ControlRepository {
 
     public MybatisControlRepository(ControlMapper mapper) { this.mapper = mapper; }
 
+    @Override public long lockReleaseBundleVersion(String tenantId, String campaignId) {
+        Long version = mapper.selectReleaseBundleVersion(tenantId, campaignId);
+        if (version == null) throw new IllegalStateException("locked campaign disappeared");
+        return version;
+    }
+    @Override public int advanceReleaseBundleVersion(String tenantId, String campaignId, long expectedVersion) {
+        return mapper.advanceReleaseBundleVersion(tenantId, campaignId, expectedVersion);
+    }
+    @Override public Optional<ReleaseBundleRow> findLatestReleaseBundle(String tenantId, String campaignId, boolean lock) {
+        return Optional.ofNullable(mapper.selectLatestReleaseBundle(tenantId, campaignId, lock));
+    }
+    @Override public Optional<ReleaseBundleRow> findReleaseBundle(String tenantId, String campaignId, long version) {
+        return Optional.ofNullable(mapper.selectReleaseBundle(tenantId, campaignId, version));
+    }
+    @Override public void saveReleaseBundle(ReleaseBundleRow row) { one(mapper.insertReleaseBundle(row), "保存活动组合"); }
+    @Override public void saveReleaseBundleMember(ReleaseBundleMemberWrite write) {
+        one(mapper.insertReleaseBundleMember(write), "保存活动组合成员");
+    }
+    @Override public Optional<String> findReleaseBundleOwner(String tenantId, String manifestId, boolean lock) {
+        return Optional.ofNullable(mapper.selectReleaseBundleOwner(tenantId, manifestId, lock));
+    }
+
     @Override public void saveCampaign(CampaignWrite write) { one(mapper.insertCampaign(write), "保存活动"); }
     @Override public List<CampaignRow> findCampaigns(String tenantId, Set<String> organizations,
             Set<String> shops, String campaignType) { return mapper.selectCampaigns(tenantId, organizations, shops, campaignType); }

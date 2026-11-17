@@ -23,6 +23,9 @@ class ContractSpecificationsTest {
     private static final Set<String> API_PATHS = Set.of(
             "/api/v1/client-errors",
             "/api/v1/campaigns",
+            "/api/v1/campaigns/{campaignId}/release-bundles",
+            "/api/v1/campaigns/{campaignId}/release-bundles/latest",
+            "/api/v1/campaigns/{campaignId}/release-bundles/versions/{version}",
             "/api/v1/releases/{manifestId}/rollback-candidates",
             "/api/v1/referral-rewards/{rewardId}:reevaluate",
             "/api/v1/referral-campaigns/{campaignId}/participants",
