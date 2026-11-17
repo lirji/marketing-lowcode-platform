@@ -2,7 +2,12 @@
 
 以下最新状态优先于下文历史交付记录。
 
-## 最新增量交付：f0ab7cf / b3858e6
+## 最新增量交付：0c8aff8 / b3858e6
+- S12i源码0c8aff81e2fdb44239cfad1c5763259dcc21311c精确CI44067162029三项PASS并FF main，console更新至0c8aff8；control b3858e6、engagement c14289e、其它8应用045dfd9，控制库V7。
+- runtime-0c8aff8运行与真实双视口Journey转换/撤销PASS，18必要容器正常、其余17不变，Flink检查点推进。两个已核对本机演示租户的旧等待节点通过现有API追加v2，校验和纯仿真成功；原v1、审批、发布、运行定义/槽与发件箱计数散列不变，见s12i-seed-result.json。
+- 不重新应用旧脚本或覆盖已审批版本；本次新草稿未提交审批/发布，也未触达。数据快照/幂等计划只在本机0600证据目录保留。
+
+## 历史增量交付：f0ab7cf / b3858e6
 - S12h f0ab7cfe7826e211316ef32318e59a2f3c61dec5精确CI44063426678三项PASS并FF main，仅console更新至f0ab7cf；control保持b3858e6、engagement c14289e、其余8应用045dfd9。控制库V7。
 - runtime-f0ab7cf运行/真实桌面与Pixel7验收PASS，18必要容器正常、其它17容器未变、3个原恢复Flink作业检查点推进。首页数据陈旧如实展示；无浏览器错误/请求失败/业务写请求。实际截图已查看，回执status=PASS。
 - 本次没有业务数据迁移、Flink重提或基础设施重启。证据、不可变镜像来源与私密配置在同名证据目录保留。

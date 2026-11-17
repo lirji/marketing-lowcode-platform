@@ -9,10 +9,10 @@
 
 ## 当前状态（2026-11-17）
 - S01–S05已完成；S06–S13按下表继续。S12c资产/消息模板 `c14289e`、容器路由修复 `8bb1270`、S12d审批完整分页 `e9f3972d2584fa5e96437a782e50d1b3bb6bb5c8` 均已精确CI三项PASS并正常快进推送main；对应运行编号44041099756、44044235242、44047459413。
-- 本地部署已验证：control为b3858e6、console为f0ab7cf，engagement为c14289e，其余8应用保留045dfd9；11应用健康。control V7索引已迁移成功，更新前已备份。模板、审批分页、发布选择的真实Docker接口及桌面/手机浏览器PASS，见 [LOCAL_DEPLOYMENT_20261117.md](LOCAL_DEPLOYMENT_20261117.md)。
+- 本地部署已验证：control为b3858e6、console为0c8aff8，engagement为c14289e，其余8应用保留045dfd9；11应用健康。control V7索引已迁移成功，更新前已备份。模板、审批分页、发布选择的真实Docker接口及桌面/手机浏览器PASS，见 [LOCAL_DEPLOYMENT_20261117.md](LOCAL_DEPLOYMENT_20261117.md)。
 - 用户最新授权“如果当前是docker问题，可以让docker只运行该项目的组件”。Docker管理卡死已通过本机重启恢复；重启前3个Flink作业成功stop-with-savepoint，重启后逐个no_claim恢复并确认新检查点持续推进。保留数据卷；没有空状态启动或生产部署。
 - 当前仅18个必要容器运行：13个marketing-r1常驻容器、现有权益目录适配服务、MySQL/Redis/Kafka/ClickHouse。额外停止13个无关容器，原17个langchain应用仍停止。实际容器内存合计约6.32GiB（单次快照，不代表容量压测）；容器/数据卷保留，可按记录恢复。
-- S12e发布中心完整分页与范围过滤已交付，3f22019精确CI44056163714三项PASS，正常FF main并完成本地Docker/真实双视口验收。S12f发布读取调用点2e2263f与S12g活动范围b3858e6也已精确CI并FF main、本地运行验收；S12h首页数据表述f0ab7cf已精确CI44063426678三项PASS、FF main并完成console增量运行/真实双视口验收；下一步核对历史Journey定义迁移，资产分页等仍未完成。真实会员/画像来源、裂变外部合同仍待确认，不改变拒绝保护。
+- S12e发布中心完整分页与范围过滤已交付，3f22019精确CI44056163714三项PASS，正常FF main并完成本地Docker/真实双视口验收。S12f发布读取调用点2e2263f与S12g活动范围b3858e6也已精确CI并FF main、本地运行验收；S12h首页数据表述f0ab7cf已精确CI44063426678三项PASS、FF main并完成console增量运行/真实双视口验收；S12i历史Journey转换0c8aff8亦已精确CI/主干/console部署与两条本机演示定义v2追加校验验收；下一步资产列表分页，错误采集等仍未完成。真实会员/画像来源、裂变外部合同仍待确认，不改变拒绝保护。
 
 ## 执行清单与验收
 
@@ -421,7 +421,7 @@
 - runtime-f0ab7cf运行与真实桌面/Pixel7浏览器PASS，18必要容器正常、3个Flink原作业检查点推进；实际首页展示7个已加载活动、4条清单和61天18小时历史延迟，无页面错误、请求失败、业务写请求或横向溢出。已查看真实双视口截图。
 - S12h已完成；下一步核对历史Journey节点及版本迁移，原S06–S13计划继续，外部会员/交易/履约合同仍未解决。
 
-## S12i 历史Journey等待节点修复（IN_PROGRESS）
+## S12i 历史Journey等待节点修复（DONE）
 - 只读核对当前库：marketing-platform与retail-cn各有mock-journey-cart-recall v1使用journey.wait_timer@1.0.0，其它Journey节点为当前类型；当前种子已为journey.wait-timer，重新灌种子会覆盖历史版本，不能用作迁移。
 - 从d855213建立fix/journey-legacy-definition。修复范围仅已知等待节点旧名：设计器明确展示迁移提示，由编辑动作替换当前草稿类型，保留节点ID、配置、端口、连线、变量及原definitionId；保存沿现有API创建/复用新DRAFT版本，原审批/发布与运行实例不变。不放宽后端注册表，不转换未知语义版本；新注册节点不可用时禁用迁移。
 - 验收：加载不隐式改图/写入、权限/注册表/语义版本保护、撤销/重做、保存新版本与失效校验、真实MySQL原版本/审批/发布保留；双视口按钮与保存/仿真流程、lint/build、精确CI和console增量运行验收。仅已核对的本机演示定义可通过现有保存/校验API追加草稿，不提交审批或发布。
@@ -433,3 +433,9 @@
 ### S12i 本地验收结果
 - 214项前端PASS；修正测试类型后9项受影响测试与最终build通过，lint通过。真实MySQL4项、桌面/Pixel7浏览器2项通过；已查看手机迁移提示与桌面仿真弹窗截图。s12i-before.log保留修复前2项失败，s12i-build.log保留首轮类型失败，其余对应*-final日志。
 - 根代理复核仅已知旧名/语义版本转换、写权限/当前目录保护、原图内容保留与新版本幂等、原审批发布不变；没有后端产品代码或公开合同变更。Hygiene通过，仓库无canonical formatter是明确限制，非独立代理审查。待精确CI、FF main及console增量部署，之后对两个已核对本机演示定义追加草稿并复核原始记录。
+
+### S12i 远程与真实数据验收
+- 0c8aff81e2fdb44239cfad1c5763259dcc21311c精确CI44067162029三项PASS，正常FF main；仅console更新，control保持b3858e6，其它17容器未变，18必要容器正常、3个Flink原作业检查点推进。runtime-0c8aff8/回执PASS。
+- 真实8084桌面/Pixel7读取历史v1、转换与撤销均PASS，零页面错误/请求失败/写请求；截图已查看。随后通过既有API为marketing-platform与retail-cn的mock-journey-cart-recall分别追加v2并校验，3600秒窗口纯仿真均完成（1800秒等待与拟发送指令），未实际触达。
+- s12i-seed-plan.private.json保留原完整图和固定幂等键，s12i-seed-result.json记录新版本及结果。两次操作前后原v1定义、审批、发布、Journey运行定义/槽与控制面/旅程发件箱计数散列全部一致；没有重灌种子、替换发布、迁移运行实例或改其它租户。后续恢复先读回v2，不重复创建或重跑旧迁移。
+- 下一步S12资产完整分页及其服务端全字段搜索；真实会员来源、交易/取消终态等外部合同仍待确认，整体计划未完成。
