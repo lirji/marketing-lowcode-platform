@@ -7,6 +7,11 @@
 - 审计证据：`/Users/liruijun/.local/share/marketing-audits/20261116-completeness/`；Docker 启动与恢复证据：`/Users/liruijun/.local/share/marketing-deployments/20261116-start/`。
 - 规范：`~/.codex/architecture-standards.md` 业务建模、持久化、接口契约、并发安全；`personal-tech-stack.md` 并发、线程池、日志、状态机；engineering-workflows/backend-implementation/continue-approved-delivery/task-git-delivery。前端、Runtime 专项随切片读取。
 
+## 当前状态（2026-11-17）
+- S01–S05已完成；S06–S13按下表继续。S11d、S12a、S12b已交付main，最新产品提交 `045dfd933f878562b611c83b7e555cd74e720a82` 的精确CI `44032496693` 三项全部PASS。
+- 本地Docker的11个应用已更新至此提交并通过真实验收；部署回执见 [LOCAL_DEPLOYMENT_20261117.md](LOCAL_DEPLOYMENT_20261117.md)。共享基础设施和原3个Flink作业保留，未部署生产。
+- 下一项：S12c资产管理，优先复用现有资产版本与设计器接口；真实会员/画像来源、裂变外部合同等仍未确认，不改变拒绝保护。旧演示Journey `mock-journey-cart-recall` 的历史节点名 `journey.wait_timer` 与当前注册表不一致，当前仿真明确拒绝；后续种子迁移需保留旧版本和发布语义，不直接覆盖已批准定义。
+
 ## 执行清单与验收
 
 | ID | 结果及可观察验收 | 依赖 | 状态 |
@@ -75,7 +80,7 @@
 - 最终27项（25真实MySQL集成+2回调）通过，包含频控拒绝后的记录回滚断言；契约Maven/13份JSON、Hygiene和diff检查通过（无formatter限制）。独立业务/事务复核无新增阻断。证据`s04c-final.log`、`s04c-contracts.log`、`s04c-hygiene.json`。无真实短信、无共享库迁移。
 
 ## 下一步
-S01–S05已交付，S05提交61b471b已正常快进推送main，精确候选CI43804843190全部PASS。随后S06→S13继续；先补人群快照/动态segment的身份一致性，真实会员来源仍待业务确认。Docker应用仍为旧镜像，后续按实际受影响服务重建验证，不能以源码测试替代已部署状态。
+当前恢复入口见上方“当前状态”；以下阶段记录保留当时的验证事实，涉及“待交付/未部署”的历史描述以当前状态及部署回执为准。
 
 ## S05 实现与验证
 - 分支 feat/usable-lowcode-editors，基于已推候选 b67dbc7（S04c）；S04 已合 main/origin 7b49a92，S04c 精确候选 CI43802922378 的Java/契约/架构、前端与部署全部PASS，b67dbc7已正常合入main/origin。
