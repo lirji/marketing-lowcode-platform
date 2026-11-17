@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/marketing/journey-bundle-execution-probe-message/1-0-0",
+  "title": "JourneyBundleExecutionProbeMessage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventType",
+    "probe",
+    "routingNonce"
+  ],
+  "properties": {
+    "eventType": {
+      "const": "JOURNEY_BUNDLE_EXECUTION_PROBE"
+    },
+    "probe": {
+      "$ref": "https://schemas.example.invalid/marketing/journey-bundle-execution-probe/1-0-0"
+    },
+    "routingNonce": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2047
+    }
+  }
+}

@@ -1,5 +1,8 @@
 package com.acme.marketing.jobs.journey;
 
+import com.acme.marketing.contracts.release.JourneyBundleExecutionProbe;
+import com.acme.marketing.contracts.release.ReleaseBundleProtocolError;
+
 import com.acme.marketing.contracts.release.ActivationDirective;
 import com.acme.marketing.contracts.release.ReleaseManifest;
 import com.acme.marketing.jobs.support.JsonCodec;
@@ -121,13 +124,26 @@ final class JdbcJourneyPlanResolver implements JourneyPlanResolver {
             com.acme.marketing.contracts.release.ReleaseBundleParticipation participation,
             Instant now, boolean requireCurrentActivation) {
         if (participation == null) return resolve(tenantId, reference, now, requireCurrentActivation);
-        if (now == null) throw com.acme.marketing.contracts.release.ReleaseBundleProtocolError.PARTICIPATION_INVALID.conflict();
+        if (now == null) throw ReleaseBundleProtocolError.PARTICIPATION_INVALID.conflict();
         assertNotKilled(tenantId, now);
+        return bundleResolver().resolve(tenantId, enrollmentId, subjectToken, reference, participation, now);
+    }
+
+    /** 当前停用始终优先；只证明已装精确计划具备执行条件，不推进任何active指针。 */
+    @Override
+    public void verifyExecutionProbe(JourneyBundleExecutionProbe probe,
+            String jobId, int parallelism, String buildDigest, Instant now) {
+        if (probe == null || now == null) throw ReleaseBundleProtocolError.EXECUTION_PROBE_INVALID.conflict();
+        assertNotKilled(probe.tenantId().value(), now);
+        bundleResolver().verifyExecutionProbe(probe, jobId, parallelism, buildDigest, now);
+    }
+
+    private JdbcBundleJourneyPlanResolver bundleResolver() {
         if (bundleResolver == null) bundleResolver = new JdbcBundleJourneyPlanResolver(reader(),
                 TrustedPublicKeys.parse(releaseKeyId, releasePublicKeyBase64, additionalReleaseKeys),
                 TrustedPublicKeys.parse(compilerKeyId, compilerPublicKeyBase64, additionalCompilerKeys),
                 TrustedPublicKeys.parse(participationKeyId, participationPublicKeyBase64, additionalParticipationKeys), environment, cell, namespace);
-        return bundleResolver.resolve(tenantId, enrollmentId, subjectToken, reference, participation, now);
+        return bundleResolver;
     }
 
     /** 两条解析路径共用原计划身份和运行上限，不因组合模式放宽编译边界。 */

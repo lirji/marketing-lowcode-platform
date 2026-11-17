@@ -15,7 +15,7 @@
 - 用户授权Docker只运行本项目组件；13个额外无关容器及原17个langchain应用保持停止，所有容器与数据卷保留。本轮只更新console，17个其它运行容器ID/镜像/启动时间不变；3个原Flink作业及检查点继续推进，禁止重复恢复或提交空作业。
 - 上一轮部署验证：271项前端测试、98项浏览器用例通过，10项既有独立服务用例跳过；lint/build/Hygiene无阻塞，未配置canonical formatter。真实Docker四类资产页在桌面与Pixel7的分页、搜索、详情及字段/节点读取回归通过，无业务写入、API失败或页面异常。运行回执与截图：私有证据目录 `runtime-dbe268b/`。
 - 上一轮部署可见结果：活动/首页/运营/资产的静态预览不显示假业务数据或旧缓存，资产刷新不能绕过读取门禁；OIDC身份范围变化、退出与过期清理旧请求/缓存/草稿，旧令牌401不退出已更新令牌，远端退出失败能恢复登录页。本机仍为DEV认证，真实IdP联调未验证。
-- 当前HEAD/远程任务分支ad48a2a，main/origin=631dce2。g5b已通过精确CI并正常交付；g6a精确CI44132761406三项SUCCESS，待本片清洁提交后正常FF main。g6b1真实Journey执行探针合同本地验收通过，准备提交/精确CI；继续g6b2真实operator；真实operator/收集/应用门禁及Control闭环仍未完成。无部署或共享库迁移。
+- 当前HEAD/远程任务分支f1cf177，main/origin=ad48a2a。g6a已正常交付；g6b1精确CI44135347731在途。继续g6b2真实Flink探针处理，设计已细化；实际可靠收集/应用门禁和Control闭环未完成。无部署或共享库迁移。
 
 ## 未完成项与恢复顺序
 
@@ -837,3 +837,13 @@
 ### S11g6b1 本地验收通过
 - 合同57项、16份JSON、10项架构检查全部PASS（s11g6b1-final.log、s11g6b1-json-final.log、s11g6b1-architecture-final.log）。根代理另行复核独立签名用途、全部字段覆盖、可信部署来源、完整源链、时限与实际子任务下标约束；单份回执不等于整个作业就绪。
 - Hygiene/diff通过（s11g6b1-hygiene.json）；5条ADVISORY均为已命名协议/容量/时钟常量，无阻断，仓库未配置canonical formatter。本片无真实probe投递、无APPLIED写入口、无共享库或运行作业变更。准备提交推送及精确CI，随后交付已绿g6a；下一片g6b2接实际Flink分支。
+
+## S11g6b2 真实Flink探针处理
+- g6b1 f1cf177已提交推送，CI44135347731在途；g6a ad48a2a已正常FF main并推送。g6b2设计记录事件封套、真实运行身份和JAR摘要、无旅程状态副作用、只读失败重试边界与有界摘要缓存；尚未实现。
+- g6b2输入/输出封套、实际作业身份/专用签名、提交JAR摘要、无状态探针分支及复用本地读端校验已写，首轮编译待核对（s11g6b2-compile.log）。尚未功能验证或发出任何真实探针；下一步真实DB与处理函数测试、schema和操作文档。
+- 首轮产品编译PASS；测试编译受Mockito泛型Context替身unchecked/Werror阻断，仅对该测试helper局部标注受控转换，未放宽全局门禁（s11g6b2-first.log）。二轮真实DB/处理函数/旧状态/合同验证运行中，日志s11g6b2-second.log、session96590；两份封套schema/AsyncAPI及操作说明已补。
+
+### S11g6b2 验证检查点
+- 完整Journey job31项、合同58项及依赖回归PASS（s11g6b2-modules-final.log），18JSON和10架构PASS；shaded JAR打包与从该真实归档加载入口计算摘要PASS（s11g6b2-package-final.log、s11g6b2-jar-identity.log）。没有连接或改变运行中Flink。
+- 根代理另行复核完整探针摘要缓存、时间/当前kill、严格类型路由、missing/浮点nonce拒绝、专用密钥与job graph序列化、源/制品/编译签名、状态零副作用、成功与失败输出故障传播，以及旧生产者/消费者启用门禁。Hygiene提示两处制品启动检查catch过宽，已缩窄到IO/URI/算法/权限异常；继续受影响7项验证并重打最终JAR，不重复未受影响DB回归。g6b1 f1cf177精确CI44135347731三项SUCCESS，待本片清洁提交后正常FF main。
+- 最终7项处理函数/制品测试、重打JAR与真实归档摘要核对PASS（s11g6b2-artifact-final.log、s11g6b2-jar-identity-final.log），其余31项模块范围/58合同/10架构证据保持适用。最终Hygiene/diff PASS（s11g6b2-hygiene-final.json），仅已命名路由容量常量ADVISORY及无formatter限制。无剩余当前片阻断；准备逻辑提交/精确CI，继续g6b3可靠探测与收集。未新增worktree，原忽略构建/测试/恢复文件保留，无清理。

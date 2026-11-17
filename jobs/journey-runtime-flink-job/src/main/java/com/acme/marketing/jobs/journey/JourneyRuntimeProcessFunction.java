@@ -1,5 +1,10 @@
 package com.acme.marketing.jobs.journey;
 
+import com.acme.marketing.contracts.event.JourneyBundleExecutionProbeMessage;
+import com.acme.marketing.contracts.event.JourneyBundleExecutionAckEvent;
+import com.acme.marketing.contracts.release.ReleaseBundleProtocolError;
+import java.time.Instant;
+
 import com.acme.marketing.jobs.support.JsonCodec;
 import com.acme.marketing.jobs.support.KafkaJobOutput;
 import com.acme.marketing.contracts.event.JourneyEffectCommand;
@@ -12,20 +17,32 @@ import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.util.Collector;
 
+/** 业务转换与只读探针分别处理，所有实际状态及输出故障继续由checkpoint恢复。 */
 public final class JourneyRuntimeProcessFunction
         extends KeyedProcessFunction<String, String, KafkaJobOutput> {
     private static final long serialVersionUID = 1L;
     private final JourneyJobReducer reducer;
+    private final JourneyPlanResolver plans;
+    private final JourneyExecutionProbeHandler probes;
     private static final int MAX_TIMER_RETRIES = 5;
     private transient ValueState<JourneyJobState> valueState;
     private transient ValueState<String> bundleParticipationState;
 
+    /** 原调用方缺省关闭探针签名，维持既有业务执行。 */
     public JourneyRuntimeProcessFunction(JourneyPlanResolver plans) {
+        this(plans, JourneyExecutionProbeHandler.disabled());
+    }
+
+    /** 探针与业务执行共享一个只读解析器，保持连接和缓存预算不翻倍。 */
+    JourneyRuntimeProcessFunction(JourneyPlanResolver plans, JourneyExecutionProbeHandler probes) {
+        this.plans = plans; this.probes = probes;
         this.reducer = new JourneyJobReducer(plans);
     }
 
+    /** 恢复运行身份，并保持原受管状态描述符和类型。 */
     @Override
     public void open(OpenContext openContext) {
+        probes.open(getRuntimeContext());
         valueState = getRuntimeContext().getState(
                 new ValueStateDescriptor<>("journey-enrollment-v2", JourneyJobState.class));
         // 原状态的名称/类型保持不变；字符串凭证使用独立描述符，旧savepoint中此状态为空。
@@ -33,13 +50,18 @@ public final class JourneyRuntimeProcessFunction
                 new ValueStateDescriptor<>("journey-bundle-participation-v1", String.class));
     }
 
+    /** 输入校验/探针在状态操作之前，避免坏探针影响已有旅程。 */
     @Override
     public void processElement(String input, Context context, Collector<KafkaJobOutput> output) throws Exception {
-        JourneyJobInput message;
-        try { message = Objects.requireNonNull(JsonCodec.read(input, JourneyJobInput.class)); }
+        JourneyRuntimeMessage envelope;
+        try { envelope = Objects.requireNonNull(JsonCodec.read(input, JourneyRuntimeMessage.class)); }
         catch (RuntimeException malformed) {
             output.collect(KafkaJobOutput.deadLetter("invalid", input, malformed)); return;
         }
+        if (envelope.probe() != null) {
+            processProbe(envelope.probe(), input, context, output); return;
+        }
+        JourneyJobInput message = envelope.signal();
         String key = message.partitionKey();
         JourneyJobState before = valueState.value();
         var storedParticipation = storedParticipation();
@@ -51,7 +73,7 @@ public final class JourneyRuntimeProcessFunction
         JourneyJobReducer.Result result;
         try {
             if (before == null && storedParticipation != null)
-                throw com.acme.marketing.contracts.release.ReleaseBundleProtocolError.PARTICIPATION_CONSUMED.conflict();
+                throw ReleaseBundleProtocolError.PARTICIPATION_CONSUMED.conflict();
             result = reducer.apply(before, message, now, participation);
         } catch (JourneyInfrastructureException | JourneyExecutionPausedException unavailable) {
             throw unavailable;
@@ -65,12 +87,29 @@ public final class JourneyRuntimeProcessFunction
         emit(key, message.signal().signalId(), result, output);
     }
 
+    /** 纯探测先于所有旅程状态读取；失败不重启业务实例，也不触发任何业务效果。 */
+    private void processProbe(JourneyBundleExecutionProbeMessage message,
+            String input, Context context, Collector<KafkaJobOutput> output) {
+        KafkaJobOutput result;
+        try {
+            var ack = probes.acknowledge(plans, message.probe(), Instant.ofEpochMilli(context.timerService().currentProcessingTime()));
+            result = KafkaJobOutput.data(message.partitionKey(), new JourneyBundleExecutionAckEvent(
+                    JourneyBundleExecutionAckEvent.EVENT_TYPE, ack));
+        } catch (RuntimeException unavailable) {
+            // 只读探测失败由持久发布任务重试；不向DLT泄漏数据库/密钥异常详情。
+            result = KafkaJobOutput.deadLetter(message.partitionKey(), input,
+                    ReleaseBundleProtocolError.EXECUTION_PROBE_UNAVAILABLE.conflict());
+        }
+        // 输出失败必须传播，不能把一次collect失败捕获后再collect并推进checkpoint。
+        output.collect(result);
+    }
+
     private com.acme.marketing.contracts.release.ReleaseBundleParticipation storedParticipation() throws Exception {
         String content = bundleParticipationState.value();
         if (content == null) return null;
         try {
             var value = JsonCodec.read(content, com.acme.marketing.contracts.release.ReleaseBundleParticipation.class);
-            if (value == null || value.signature().isEmpty()) throw new IllegalArgumentException(com.acme.marketing.contracts.release.ReleaseBundleProtocolError.PARTICIPATION_INVALID.message());
+            if (value == null || value.signature().isEmpty()) throw new IllegalArgumentException(ReleaseBundleProtocolError.PARTICIPATION_INVALID.message());
             return value;
         } catch (RuntimeException corrupt) { throw new JourneyInfrastructureException(corrupt); }
     }

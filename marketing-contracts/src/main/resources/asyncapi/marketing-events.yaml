@@ -17,10 +17,13 @@ channels:
     messages: {membershipChanged: {$ref: '#/components/messages/AudienceMembershipChanged'}}
   journeySignals:
     address: mk.journey.signal.v1
-    messages: {journeySignal: {$ref: '#/components/messages/JourneySignal'}}
+    messages:
+      journeySignal: {$ref: '#/components/messages/JourneySignal'}
+      executionProbe: {$ref: '#/components/messages/JourneyBundleExecutionProbe'}
   journeyOutput:
     address: mk.journey.output.v1
     messages:
+      executionAck: {$ref: '#/components/messages/JourneyBundleExecutionAck'}
       stateChanged: {$ref: '#/components/messages/JourneyStateChanged'}
       effectCommand: {$ref: '#/components/messages/JourneyEffectCommand'}
   engagementCommands:
@@ -107,6 +110,19 @@ components:
       x-partition-key: tenantId:enrollmentId
       x-delivery: at-least-once-idempotent-by-signalId
       payload: {$ref: '../schema/events/journey-signal.schema.json'}
+    JourneyBundleExecutionProbe:
+      name: JourneyBundleExecutionProbeMessage
+      x-owner: journey-service
+      x-partition-key: canonical-tenant-probeId-routingNonce-sha256
+      x-delivery: bounded-probe-with-persistent-controller-retry
+      description: Disabled until reliable producer/collector and runtime deployment gates are implemented and validated.
+      payload: {$ref: '../schema/events/journey-bundle-execution-probe-message.schema.json'}
+    JourneyBundleExecutionAck:
+      name: JourneyBundleExecutionAckEvent
+      x-owner: journey-runtime-flink-job
+      x-partition-key: original-probe-partition-key
+      x-delivery: checkpointed-transactional-output-collector-must-verify-and-deduplicate
+      payload: {$ref: '../schema/events/journey-bundle-execution-ack-event.schema.json'}
     JourneyStateChanged:
       name: JourneyStateChangedEvent
       x-owner: journey-runtime-flink-job

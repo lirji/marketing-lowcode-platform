@@ -159,3 +159,11 @@ S11g2合同模块保持无JSON生产依赖，动作在wire中使用经Action.fro
 - 后续实际probe事件单独分支处理，不创建/修改enrollment状态，不触发业务效果。通过有界多路由键发送，在同一probeId下按实际subtaskIndex收集；只有0..parallelism-1全部不同下标的有效回执才齐备，不按消息条数或假定散列分布判成功。现有Kafka事务输出提供checkpoint后可见性；无回执/覆盖不全/目标变化均停止应用，允许有界重试。旧作业不能生成该新用途回执，旧消费组必须在真实部署时完成退出/恢复核验。
 - g6b1 Owner=contracts/backend；范围仅共享probe/ack/用途签名/作用域验证器、JSON schema与合同测试及文档。后续g6b2实现真实Flink探针处理和制品身份，g6b3实现可靠投递/持久收集与Decision执行证据，g6b4完成应用门禁/共享指针CAS；Control发起/回滚/查询另接g6c。无新服务、中间件、实际作业变更或生产部署。
 - 验收：篡改任一目标/来源/部署/任务下标/时间、混用旧ACK或角色密钥、历史probe重放、不同probe混用、源成员或完整签名损坏均拒绝；真实JSON往返与边界值保持稳定。当前片不宣称已探测任何运行作业或具备实际应用能力。
+
+## S11g6b2：Flink实际探针处理
+- Owner=backend/runtime，依赖g6b1；沿用已选Flink2.2.1、Kafka、MyBatis只读安装库，不引入基础设施或改变3个运行作业。范围为共享事件封套、Journey job解析/路由/处理/源校验/实际制品身份、相关测试及操作说明。
+- 输入独立封套`eventType=JOURNEY_BUNDLE_EXECUTION_PROBE, probe, routingNonce`；nonce为0–2047的有界路由扰动，不改变签名授权。输出`eventType=JOURNEY_BUNDLE_EXECUTION_ACK, ack`。共享分区键按tenant/probeId/nonce规范编码散列；由实际回执下标统计覆盖，不推断散列必然均匀。旧JourneyJobInput JSON、enrollment状态类型、operator UID均保持。
+- 处理函数在读取任何旅程ValueState之前识别探针；当前processing time只用于时限。复用同一个JdbcJourneyPlanResolver读端，要求当前kill允许、参与公钥ID已配置、实际jobId/并行度匹配，再核验g3完整授权、精确原成员和真实编译制品/计划上限。原参与缺数据仍按原逻辑抛基础设施异常使checkpoint重放。
+- 探针本身只读，失败不生成就绪ACK，输出统一失败码的DLT；Control后续持久流程负责有界重试，不能让一次探测失败误改旅程或冒充成功。输出collect异常不捕获，必须随checkpoint重放。验证成功只按完整探针JSON摘要缓存至expiresAt，最多128个小摘要；每次仍检查当前kill和时间，不缓存业务许可，不抑制重复ACK。
+- 专用`JOURNEY_EXECUTION_ACK_KEY_ID/PRIVATE_KEY_BASE64/PUBLIC_KEY_BASE64`全部空时新路径关闭；部分配置或钥匙不匹配启动失败。main从实际加载的已打包JAR计算SHA256并把摘要随不可变job graph传给operator，不接受环境变量或请求自报digest；只在启用ACK时要求真实JAR。实际jobId/parallelism/subtaskIndex/attemptNumber取Flink RuntimeContext。
+- 验收覆盖真实MySQL源/制品/当前kill及拒绝路径，实际处理函数无状态写/无业务效果/重复ACK/输出失败传播，真实Flink接口及序列化图、旧输入/状态兼容；对最终shaded JAR单独核对实际摘要。暂不生产probe，不把签名成功或单个operator替身当运行集群/完整Kafka checkpoint/生产savepoint验证。g6b3接可靠投递收集和Decision证据，再g6b4应用门禁。

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/marketing/journey-bundle-execution-ack-event/1-0-0",
+  "title": "JourneyBundleExecutionAckEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventType",
+    "ack"
+  ],
+  "properties": {
+    "eventType": {
+      "const": "JOURNEY_BUNDLE_EXECUTION_ACK"
+    },
+    "ack": {
+      "$ref": "https://schemas.example.invalid/marketing/journey-bundle-execution-ack/1-0-0"
+    }
+  }
+}

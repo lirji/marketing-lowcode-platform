@@ -74,6 +74,14 @@ final class BundleJourneyFixture {
         }
     }
 
+    JourneyBundleExecutionProbe probe() { return probe("1".repeat(32), 2, "participation"); }
+    JourneyBundleExecutionProbe probe(String jobId, int parallelism, String participationKeyId) {
+        return JourneyBundleExecutionProbeSigner.sign(RELEASE.getPrivate(), new JourneyBundleExecutionProbe("probe",
+                new TenantId(tenant), directive.bundle().campaignId(), "local", "cell", "main", member.manifestId(),
+                directive.activationSequence(), directive.signature(), jobId, parallelism, participationKeyId,
+                now, now.plusSeconds(120), "release", ""));
+    }
+
     static String encoded(KeyPair pair) { return Base64.getEncoder().encodeToString(pair.getPublic().getEncoded()); }
     private ReleaseManifest member(String runtime, String namespace, long generation) {
         String id = runtime + "-" + generation, checksum = "sha256:" + Digests.sha256Hex(payload), source = "sha256:" + "b".repeat(64);

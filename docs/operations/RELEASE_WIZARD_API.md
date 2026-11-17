@@ -132,7 +132,14 @@ Decision V5/Journey V4会回填历史接收记录：已有active指针保持原g
 - 新签发必须配置独立`MARKETING_PARTICIPATION_SIGNING_KEY_ID/PRIVATE_KEY_BASE64/SIGNING_PUBLIC_KEY_BASE64`，并由现有参与公钥配置认可。默认不生成临时私钥；缺配置或私钥与当前信任不匹配均409，已存在参与只读恢复不需要私钥。密钥不得提交Git，生产密钥保管/轮换另按S13验证。
 - 表中保留主体用途摘要及签名事实，不保存明文subject；摘要不是匿名化。当前没有自动删除，保留/归档/撤销传播和容量仍待S13。独占测试数据库的APPLIED夹具只验证准入并发/恢复，不证明Control整体发布、实际运行能力或生产容量已完成；本轮未迁移共享库或部署。
 
-### 实际Flink执行证据合同（S11g6b1，尚未接实际作业）
+### 实际Flink执行证据合同（S11g6b1，运行环境尚未启用）
 - JourneyBundleExecutionProbe由Control独立用途签名，固定租户/活动/运行位置、精确成员、整体授权序号及签名、目标jobId/parallelism、准入公钥ID与最多5分钟有效期。消费者必须读取并重验本地完整g3来源，不能仅靠探针索引或Web安装ACK发回成功。
 - JourneyBundleExecutionAck覆盖完整原探针及其签名，包含固定协议code、实际jobId/parallelism/subtaskIndex/attemptNumber、实际提交JAR的SHA256和时间；使用专门执行钥匙，不能用Control/普通READY签名替换。校验期望jobId、并行度和JAR摘要来自可信部署登记，禁止从待验回执复制。
 - 当前并行度合同上限128；越界拒绝。单份ACK不表示整个作业齐备，后续必须按同probeId收齐全部不同subtaskIndex，并检查当前部署、回执期限及真实应用门禁。合同模型/签名/JSON schema已具备，实际operator接线、可靠投递/收集、部署登记和应用写入仍未完成，本节不代表已探测运行中作业。
+
+### Flink探针处理（S11g6b2，投递/收集及部署仍待门禁）
+- `mk.journey.signal.v1`新增独立`JourneyBundleExecutionProbeMessage`封套：`eventType=JOURNEY_BUNDLE_EXECUTION_PROBE, probe, routingNonce`（0–2047）。路由键按共享合同从tenant/probeId/nonce生成，只用于覆盖不同实际子任务；不能用发送条数证明覆盖率。旧业务信号JSON及全部operator UID不变。
+- 实际process函数先验证探针，复用只读MyBatis源授权/精确制品及编译证明/计划上限检查，并保留当前kill-switch的1秒刷新上限。全部通过才输出`JourneyBundleExecutionAckEvent={eventType:JOURNEY_BUNDLE_EXECUTION_ACK,ack}`到原事务输出topic；不读取/更新enrollment、参与状态或业务定时器，不创建触达/权益命令。重复输入仍输出ACK。
+- 只读探针失败输出统一失败DLT，由后续持久发布流程有界重试；不会返回成功ACK。旧真实参与缺数据的checkpoint恢复规则不变。ACK/DLT的collect失败继续抛出，防止吞掉未提交输出。校验结果只按完整探针JSON摘要缓存至原expiresAt，最多128个摘要，仍逐次检查当前停用与时限。
+- `JOURNEY_EXECUTION_ACK_KEY_ID/PRIVATE_KEY_BASE64/PUBLIC_KEY_BASE64`三项全空时新路径关闭；部分配置或密钥不匹配启动失败。主入口只从实际加载的可执行shaded JAR流式计算SHA256（上限512MiB），不支持请求/环境变量指定摘要。jobId、parallelism、subtaskIndex、attemptNumber取实际Flink RuntimeContext，恢复后重读；专用钥匙不能由Web安装ACK代签。
+- 本片没有真实投递者或可靠ACK收集器，不向现有3个Flink作业发探针、不重启部署。旧消费者会拒绝新封套；只有g6b3收集/投递、g6b4实际应用、可信部署登记以及旧消费者退出/恢复验收齐备后才允许启用。隔离函数/DB测试和最终JAR摘要核对不替代生产savepoint、混合版本或完整Kafka checkpoint验收。

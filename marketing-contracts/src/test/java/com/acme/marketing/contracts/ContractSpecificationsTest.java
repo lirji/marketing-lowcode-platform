@@ -168,6 +168,29 @@ class ContractSpecificationsTest {
     }
 
     @Test
+    void executionEventEnvelopesMatchRecordsAndProvisionedTopics() throws IOException {
+        var mapper = new tools.jackson.databind.ObjectMapper();
+        var types = Map.of("probe-message", com.acme.marketing.contracts.event.JourneyBundleExecutionProbeMessage.class,
+                "ack-event", com.acme.marketing.contracts.event.JourneyBundleExecutionAckEvent.class);
+        for (var entry : types.entrySet()) {
+            var schema = mapper.readTree(Files.readString(RESOURCES.resolve("schema/events/journey-bundle-execution-" + entry.getKey() + ".schema.json")));
+            var names = java.util.Arrays.stream(entry.getValue().getRecordComponents()).map(java.lang.reflect.RecordComponent::getName).collect(java.util.stream.Collectors.toSet());
+            var required = new HashSet<String>(); schema.get("required").forEach(value -> required.add(value.asString()));
+            var properties = new HashSet<String>(); properties.addAll(schema.get("properties").propertyNames());
+            assertEquals(names, required); assertEquals(names, properties); assertFalse(schema.get("additionalProperties").asBoolean());
+            String field = entry.getKey().startsWith("probe") ? "probe" : "ack";
+            var nested = mapper.readTree(Files.readString(RESOURCES.resolve("schema/events/journey-bundle-execution-" + field + ".schema.json")));
+            assertEquals(nested.get("$id").asString(), schema.get("properties").get(field).get("$ref").asString());
+        }
+        var schema = mapper.readTree(Files.readString(RESOURCES.resolve("schema/events/journey-bundle-execution-probe-message.schema.json")));
+        assertEquals(com.acme.marketing.contracts.event.JourneyBundleExecutionProbeMessage.MAX_ROUTING_NONCE,
+                schema.get("properties").get("routingNonce").get("maximum").asInt());
+        var events = yaml(RESOURCES.resolve("asyncapi/marketing-events.yaml"));
+        assertTrue(map(map(map(events.get("channels")).get("journeySignals")).get("messages")).containsKey("executionProbe"));
+        assertTrue(map(map(map(events.get("channels")).get("journeyOutput")).get("messages")).containsKey("executionAck"));
+    }
+
+    @Test
     void executionProofSchemasCoverEveryFieldAndResolveTheProbeByItsCanonicalIdentity() throws IOException {
         var mapper = new tools.jackson.databind.ObjectMapper();
         var types = Map.of("probe", com.acme.marketing.contracts.release.JourneyBundleExecutionProbe.class,

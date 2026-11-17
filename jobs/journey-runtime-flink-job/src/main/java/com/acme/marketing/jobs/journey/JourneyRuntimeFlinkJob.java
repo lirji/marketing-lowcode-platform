@@ -7,10 +7,12 @@ import com.acme.marketing.jobs.support.KafkaJobDefinition;
 import com.acme.marketing.platform.crypto.Digests;
 import org.apache.flink.api.java.functions.KeySelector;
 
+/** 保持原算子身份，只有专用执行钥匙齐备时启用真实制品探针。 */
 public final class JourneyRuntimeFlinkJob {
     private JourneyRuntimeFlinkJob() {
     }
 
+    /** 从提交制品读取身份后构造作业，不接受外部自报build digest。 */
     public static void main(String[] args) throws Exception {
         KafkaJobDefinition definition = new KafkaJobDefinition("journey-runtime",
                 JobEnvironment.value("JOURNEY_INPUT_TOPIC", "mk.journey.signal.v1"),
@@ -33,16 +35,16 @@ public final class JourneyRuntimeFlinkJob {
                 JobEnvironment.value("JOURNEY_PARTICIPATION_TRUSTED_KEY_ID", ""),
                 JobEnvironment.value("JOURNEY_PARTICIPATION_PUBLIC_KEY_BASE64", ""),
                 JobEnvironment.value("JOURNEY_PARTICIPATION_TRUSTED_PUBLIC_KEYS", ""));
-        FlinkKafkaJobRunner.run(definition, new EnrollmentKeySelector(), new JourneyRuntimeProcessFunction(plans));
+        FlinkKafkaJobRunner.run(definition, new EnrollmentKeySelector(), new JourneyRuntimeProcessFunction(plans, JourneyExecutionProbeHandler.configured()));
     }
 
-    private static final class EnrollmentKeySelector implements KeySelector<String, String> {
+    static final class EnrollmentKeySelector implements KeySelector<String, String> {
         private static final long serialVersionUID = 1L;
 
         @Override
         public String getKey(String input) {
             try {
-                return JsonCodec.read(input, JourneyJobInput.class).partitionKey();
+                return JsonCodec.read(input, JourneyRuntimeMessage.class).partitionKey();
             } catch (RuntimeException invalid) {
                 return "invalid:" + Digests.sha256Hex(input == null ? "" : input);
             }

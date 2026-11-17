@@ -102,6 +102,53 @@ class JdbcBundleJourneyPlanResolverTest {
         assertThrows(JourneyExecutionPausedException.class, () -> resolve(resolver, fixture, NOW.plusSeconds(1)));
     }
 
+    @Test void executionProbeUsesInstalledBundleBytesWithoutCreatingStandaloneActivation() throws Exception {
+        var fixture = installed(); var resolver = resolver();
+        probe(resolver, fixture, NOW);
+        probe(resolver, fixture, NOW.plusSeconds(1));
+        assertEquals(0, count("mk_journey_runtime_activation", fixture.tenant));
+        assertEquals(0, count("mk_journey_runtime_slot", fixture.tenant));
+        assertThrows(ConflictException.class, () -> probe(resolver, fixture, NOW.plusSeconds(120)));
+        assertThrows(ConflictException.class, () -> resolver.verifyExecutionProbe(fixture.probe(), "2".repeat(32), 2, digest(), NOW));
+        assertThrows(ConflictException.class, () -> resolver.verifyExecutionProbe(fixture.probe(), "1".repeat(32), 3, digest(), NOW));
+        assertThrows(ConflictException.class, () -> resolver.verifyExecutionProbe(fixture.probe("1".repeat(32), 2, "absent"), "1".repeat(32), 2, digest(), NOW));
+        // 命中摘要缓存后也不能更换字段、复用签名或绕过当前kill。
+        var forged = JsonCodec.read(JsonCodec.write(fixture.probe()).replace("\"probeId\":\"probe\"", "\"probeId\":\"forged\""),
+                com.acme.marketing.contracts.release.JourneyBundleExecutionProbe.class);
+        assertThrows(ConflictException.class, () -> resolver.verifyExecutionProbe(forged, "1".repeat(32), 2, digest(), NOW));
+        try (var connection = connection(); var statement = connection.prepareStatement("INSERT INTO mk_journey_runtime_kill_switch VALUES (?,'main',1,TRUE,'pause','signature','{}',?)")) {
+            statement.setString(1, fixture.tenant); statement.setString(2, NOW.toString()); statement.executeUpdate();
+        }
+        assertThrows(JourneyExecutionPausedException.class, () -> probe(resolver, fixture, NOW.plusSeconds(2)));
+    }
+
+    @Test void executionProbeRefusesMissingOrDamagedSourcesAndRetestsAfterRecovery() throws Exception {
+        var fixture = fixture(); var resolver = resolver();
+        assertThrows(JourneyInfrastructureException.class, () -> probe(resolver, fixture, NOW));
+        try (var connection = connection()) { fixture.install(connection); }
+        probe(resolver, fixture, NOW);
+        update("UPDATE mk_journey_runtime_generation SET artifact_payload=X'00' WHERE tenant_id=?", fixture.tenant);
+        assertThrows(IllegalArgumentException.class, () -> probe(resolver(), fixture, NOW));
+        update("UPDATE mk_runtime_bundle_directive SET directive_json='null' WHERE tenant_id=?", fixture.tenant);
+        assertThrows(ConflictException.class, () -> probe(resolver(), fixture, NOW));
+    }
+
+    @Test void executionProbeRequiresParticipationTrustAndActualNamespace() throws Exception {
+        var fixture = installed();
+        var missing = new JdbcJourneyPlanResolver(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword(),
+                "release", BundleJourneyFixture.encoded(BundleJourneyFixture.RELEASE), "", "compiler", BundleJourneyFixture.encoded(BundleJourneyFixture.COMPILER), "", "local", "cell", "main");
+        assertThrows(ConflictException.class, () -> probe(missing, fixture, NOW));
+        var other = new JdbcJourneyPlanResolver(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword(),
+                "release", BundleJourneyFixture.encoded(BundleJourneyFixture.RELEASE), "", "compiler", BundleJourneyFixture.encoded(BundleJourneyFixture.COMPILER), "", "local", "cell", "other",
+                "participation", BundleJourneyFixture.encoded(BundleJourneyFixture.PARTICIPATION), "");
+        assertThrows(ConflictException.class, () -> probe(other, fixture, NOW));
+    }
+
+    private static String digest() { return "sha256:" + "a".repeat(64); }
+    private static void probe(JdbcJourneyPlanResolver resolver, BundleJourneyFixture fixture, Instant now) {
+        resolver.verifyExecutionProbe(fixture.probe(), "1".repeat(32), 2, digest(), now);
+    }
+
     private static JdbcJourneyPlanResolver resolver() {
         return new JdbcJourneyPlanResolver(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword(),
                 "release", BundleJourneyFixture.encoded(BundleJourneyFixture.RELEASE), "", "compiler", BundleJourneyFixture.encoded(BundleJourneyFixture.COMPILER), "", "local", "cell", "main",

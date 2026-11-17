@@ -1,5 +1,9 @@
 package com.acme.marketing.jobs.journey;
 
+import com.acme.marketing.contracts.release.PinnedJourneyBundleExecutionVerifier;
+import com.acme.marketing.contracts.release.JourneyBundleExecutionProbe;
+import com.acme.marketing.platform.crypto.Digests;
+
 import com.acme.marketing.contracts.release.PinnedReleaseBundleActivationVerifier;
 import com.acme.marketing.contracts.release.PinnedReleaseBundleParticipationVerifier;
 import com.acme.marketing.contracts.release.ReleaseBundleActivationDirective;
@@ -29,6 +33,11 @@ final class JdbcBundleJourneyPlanResolver {
     private final Map<String, PublicKey> participationKeys;
     private final PinnedReleaseBundleParticipationVerifier participationVerifier;
     private final JourneyReleaseVerifier releaseVerifier;
+    private final PinnedJourneyBundleExecutionVerifier executionVerifier;
+    private final Map<String, Instant> probeCache = new LinkedHashMap<>(16, 0.75f, true) {
+        private static final long serialVersionUID = 1L;
+        @Override protected boolean removeEldestEntry(Map.Entry<String, Instant> eldest) { return size() > MAX_CACHE_ENTRIES; }
+    };
     private final String environment;
     private final String cell;
     private final String namespace;
@@ -43,6 +52,7 @@ final class JdbcBundleJourneyPlanResolver {
     JdbcBundleJourneyPlanResolver(JourneyRuntimeReader reader, Map<String, PublicKey> releaseKeys,
             Map<String, PublicKey> compilerKeys, Map<String, PublicKey> participationKeys,
             String environment, String cell, String namespace) {
+        this.executionVerifier = new PinnedJourneyBundleExecutionVerifier(releaseKeys, Map.of());
         this.reader = reader; this.participationKeys = Map.copyOf(participationKeys);
         this.participationVerifier = new PinnedReleaseBundleParticipationVerifier(participationKeys,
                 new PinnedReleaseBundleActivationVerifier(releaseKeys));
@@ -91,6 +101,35 @@ final class JdbcBundleJourneyPlanResolver {
         } catch (IllegalArgumentException corrupt) { throw new JourneyInfrastructureException(corrupt); }
         cache.put(key, new CachedPlan(directive, plan, now));
         return plan;
+    }
+
+    /** 同一完整挑战只缓存小摘要；重放仍签回执，缓存绝不替代当前kill检查。 */
+    void verifyExecutionProbe(JourneyBundleExecutionProbe probe,
+            String jobId, int parallelism, String buildDigest, Instant now) {
+        if (!environment.equals(probe.environment()) || !cell.equals(probe.cell()) || !namespace.equals(probe.namespace())
+                || !jobId.equals(probe.targetJobId()) || parallelism != probe.targetParallelism()
+                || !participationKeys.containsKey(probe.participationKeyId()) || now.isBefore(probe.issuedAt()) || !now.isBefore(probe.expiresAt()))
+            throw ReleaseBundleProtocolError.EXECUTION_PROBE_INVALID.conflict();
+        String fingerprint = Digests.sha256Hex(JsonCodec.write(probe));
+        Instant cachedUntil = probeCache.get(fingerprint);
+        if (cachedUntil != null && now.isBefore(cachedUntil)) return;
+        String source = reader.bundleDirective(probe.tenantId().value(), environment, cell, namespace, probe.campaignId(), probe.activationSequence());
+        if (source == null || source.getBytes(StandardCharsets.UTF_8).length > MAX_AUTHORIZATION_BYTES) throw storedFailure();
+        var directive = JsonCodec.read(source, ReleaseBundleActivationDirective.class);
+        var expected = new PinnedJourneyBundleExecutionVerifier.ExpectedDeployment(
+                probe.tenantId(), probe.campaignId(), environment, cell, namespace, jobId, parallelism, buildDigest, probe.participationKeyId());
+        var member = executionVerifier.requireProbe(expected, probe, directive, now);
+        if (member.artifacts().size() != 1) throw ReleaseBundleProtocolError.EXECUTION_PROBE_INVALID.conflict();
+        var artifactReference = member.artifacts().getFirst();
+        var row = reader.bundled(probe.tenantId().value(), environment, cell, namespace, probe.campaignId(), member.generation(),
+                directive.activationSequence(), artifactReference.artifactId());
+        if (row == null || !source.equals(row.directiveJson()) || row.generation() != member.generation()
+                || row.activationSequence() != directive.activationSequence() || !artifactReference.artifactId().equals(row.artifactId())
+                || !member.equals(JsonCodec.read(row.manifestJson(), ReleaseManifest.class))) throw storedFailure();
+        var artifact = releaseVerifier.verifyInstallation(probe.tenantId().value(), row.releaseKeyId(), member, row.payload(), now);
+        JdbcJourneyPlanResolver.verifiedPlan(new JourneyJobInput.PlanReference(artifactReference.artifactId(), member.generation(),
+                directive.activationSequence(), artifactReference.definitionId(), artifactReference.definitionVersion()), artifact);
+        probeCache.put(fingerprint, probe.expiresAt());
     }
 
     private ReleaseManifest validateBinding(String tenantId, String enrollmentId, String subjectToken,
