@@ -16,6 +16,9 @@ public interface BenefitFundingMapper {
     int updateAccountFence(BenefitFundingRepository.AccountFenceWrite write);
     int updateAccountBalance(BenefitFundingRepository.AccountBalanceWrite write);
     List<BenefitFundingRepository.BenefitRow> selectLatestBenefits(@Param("tenantId") String tenantId);
+    /** 所有搜索条件和游标范围均绑定参数，并在LIMIT之前执行。 */
+    List<BenefitFundingRepository.BenefitRow> selectLatestBenefitPage(@Param("tenantId") String tenantId,
+            @Param("query") String query, @Param("cursor") String cursor, @Param("fetchSize") int fetchSize);
     BenefitFundingRepository.BenefitRow selectLatestBenefit(@Param("tenantId") String tenantId,
             @Param("benefitId") String benefitId);
     BenefitFundingRepository.ReleaseBenefitRow selectReleaseBenefit(@Param("tenantId") String tenantId,

@@ -98,6 +98,27 @@ public class BenefitFundingService {
                 .map(this::benefitView).toList();
     }
 
+    /** 最新版本与全字段搜索在SQL中先于LIMIT执行，禁止先取一页再过滤。 */
+    @Transactional(readOnly = true)
+    public BenefitPage benefitPage(Integer limit, String query, String cursor) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("benefit:read");
+        var page = BenefitPaging.validate(limit, query, cursor);
+        String tenant = scope.tenantId().value();
+        if (page.cursor() != null && repository.findLatestBenefit(tenant, page.cursor()).isEmpty()) {
+            throw BenefitPaging.invalidCursor();
+        }
+        List<BenefitView> fetched = repository.findLatestBenefitPage(tenant, page.query(), page.cursor(), page.limit() + 1).stream().map(this::benefitView).toList();
+        boolean hasMore = fetched.size() > page.limit();
+        List<BenefitView> items = hasMore ? fetched.subList(0, page.limit()) : fetched;
+        return new BenefitPage(items, hasMore ? items.getLast().benefitId() : null, hasMore, page.query());
+    }
+
+    /** nextCursor仅在仍有下一页时提供；query回显规范化搜索，不能由客户端猜测结果范围。 */
+    public record BenefitPage(List<BenefitView> items, String nextCursor, boolean hasMore, String query) {
+        public BenefitPage { items = List.copyOf(items); }
+    }
+
     @Transactional(readOnly = true)
     public BenefitView benefit(String benefitId) {
         var scope = TenantContextHolder.requireCurrent();

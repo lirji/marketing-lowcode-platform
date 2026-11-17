@@ -6,7 +6,7 @@ import { FieldHint } from '../../components/FieldHint'
 import { ListToolbar } from '../../components/ListToolbar'
 import { Badge, Button, EmptyState, Modal } from '../../components/ui'
 
-const assetStateLabels: Record<string, string> = { ACTIVE: '已生效', READY: '已就绪', DRAFT: '草稿', STALE: '已过期' }
+const assetStateLabels: Record<string, string> = { ACTIVE: '已生效', READY: '已就绪', DRAFT: '草稿', STALE: '已过期', RETIRED: '已退役' }
 
 function assetValue(value: string, column: string): string {
   if (!value) return '—'

@@ -475,6 +475,27 @@ paths:
           description: BENEFIT_CATALOG_TENANT_MISMATCH when the delegated tenant is rejected; BENEFIT_CATALOG_ACCESS_DENIED for other authorization failures.
           content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/benefits/catalog/page:
+    get:
+      tags: [Benefit]
+      operationId: listBenefitPage
+      x-required-permission: benefit:read
+      description: >-
+        Read the latest version of each benefit under the authenticated tenant, ordered by benefit ID ascending.
+        Search is applied before the limit, case-insensitive literal substring matching on name, ID, version,
+        bound SKU (or 未绑定 SKU when absent), creation time displayed as yyyy/MM/dd HH:mm:ss in Beijing (UTC+08:00), and raw or Chinese
+        status (ACTIVE 已生效, RETIRED 已退役, DRAFT 草稿). Percent and underscore are literal.
+        q is trimmed and echoed as query. Cursor is the previous page's final ID and must exist in this tenant,
+        independently of q. Invalid query returns 400 BENEFIT_QUERY_INVALID; invalid or foreign cursor returns
+        400 BENEFIT_CURSOR_INVALID. This is not a snapshot across requests: updated versions keep the same ID
+        position; newly inserted earlier IDs require refreshing. The legacy array endpoint remains unchanged.
+      parameters:
+        - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 100, default: 25}}
+        - {in: query, name: cursor, schema: {type: string, minLength: 1, maxLength: 128}}
+        - {in: query, name: q, schema: {type: string, maxLength: 128, default: ''}}
+      responses:
+        '200': {description: Bounded current benefit page, content: {application/json: {schema: {$ref: '#/components/schemas/BenefitPage'}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/benefits/{benefitId}:
     get:
       tags: [Benefit]
@@ -860,6 +881,29 @@ components:
               createdAt: {type: string, format: date-time}
         hasMore: {type: boolean}
         nextCursor: {type: [string, 'null'], description: Final returned segment ID only when another page exists}
+        query: {type: string, maxLength: 128, description: Trimmed search query}
+    BenefitPage:
+      type: object
+      required: [items, hasMore, nextCursor, query]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            required: [benefitId, version, name, status, resourceKey, benefitSkuId, policy, createdBy, createdAt]
+            properties:
+              benefitId: {type: string}
+              version: {type: integer, format: int64, minimum: 1}
+              name: {type: string}
+              status: {type: string}
+              policy: {type: object, additionalProperties: true}
+              resourceKey: {type: string}
+              createdBy: {type: string}
+              benefitSkuId: {type: [string, 'null']}
+              createdAt: {type: string, format: date-time}
+        hasMore: {type: boolean}
+        nextCursor: {type: [string, 'null'], description: Final returned benefit ID only when another page exists}
         query: {type: string, maxLength: 128, description: Trimmed search query}
     ApprovalPage:
       type: object

@@ -49,6 +49,13 @@ public class BenefitController {
         return service.benefits();
     }
 
+    /** 供资产目录进行完整服务端搜索和有界分页，授权复用权益只读权限。 */
+    @GetMapping("/benefits/catalog/page")
+    public BenefitFundingService.BenefitPage benefitPage(@RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) String q, @RequestParam(required = false) String cursor) {
+        return service.benefitPage(limit, q, cursor);
+    }
+
     @GetMapping("/benefits/{benefitId}")
     public BenefitFundingService.BenefitView benefit(@PathVariable String benefitId) {
         return service.benefit(benefitId);

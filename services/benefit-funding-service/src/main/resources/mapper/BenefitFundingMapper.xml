@@ -60,6 +60,30 @@
           )
         ORDER BY name_text, benefit_id
     </select>
+    <select id="selectLatestBenefitPage"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$BenefitRow">
+        SELECT <include refid="benefitColumns"/>
+        FROM mk_benefit_definition current
+        WHERE current.tenant_id = #{tenantId}
+          AND current.version_no = (
+              SELECT MAX(latest.version_no) FROM mk_benefit_definition latest
+              WHERE latest.tenant_id = current.tenant_id AND latest.benefit_id = current.benefit_id
+          )
+        <if test="cursor != null">AND current.benefit_id &gt; #{cursor}</if>
+        <if test="query.length() > 0">
+          AND (
+            LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(current.name_text) AS BINARY)) &gt; 0
+            OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(current.benefit_id) AS BINARY)) &gt; 0
+            OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(CAST(current.version_no AS CHAR)) AS BINARY)) &gt; 0
+            OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(COALESCE(current.benefit_sku_id, '未绑定 SKU')) AS BINARY)) &gt; 0
+            OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(current.status_name) AS BINARY)) &gt; 0
+            OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(CASE current.status_name WHEN 'ACTIVE' THEN '已生效' WHEN 'RETIRED' THEN '已退役' WHEN 'DRAFT' THEN '草稿' ELSE current.status_name END) AS BINARY)) &gt; 0
+            OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(DATE_FORMAT(DATE_ADD(STR_TO_DATE(SUBSTRING(current.created_at, 1, 19), '%Y-%m-%dT%H:%i:%s'), INTERVAL 8 HOUR), '%Y/%m/%d %H:%i:%s')) AS BINARY)) &gt; 0
+          )
+        </if>
+        ORDER BY current.benefit_id
+        LIMIT #{fetchSize}
+    </select>
     <select id="selectLatestBenefit"
             resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$BenefitRow">
         SELECT <include refid="benefitColumns"/> FROM mk_benefit_definition

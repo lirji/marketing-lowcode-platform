@@ -507,6 +507,17 @@ export const benefitViewSchema = z.object({
   createdAt: z.string().optional(),
 })
 export type BenefitView = z.infer<typeof benefitViewSchema>
+export const BENEFIT_PAGE_SIZES = { DEFAULT: 25, MAX: 100 } as const
+export const benefitPageSchema = z.object({
+  items: z.array(benefitViewSchema).max(BENEFIT_PAGE_SIZES.MAX),
+  nextCursor: z.string().min(1).nullable(), hasMore: z.boolean(), query: z.string().max(128),
+}).superRefine((page, context) => {
+  if (page.hasMore !== (page.nextCursor !== null) || page.hasMore && page.items.at(-1)?.benefitId !== page.nextCursor
+      || new Set(page.items.map(item => item.benefitId)).size !== page.items.length) {
+    context.addIssue({ code: 'custom', message: '权益分页响应的记录或游标不一致' })
+  }
+})
+export type BenefitPage = z.infer<typeof benefitPageSchema>
 
 export const accountViewSchema = z.object({
   resourceKey: z.string(),

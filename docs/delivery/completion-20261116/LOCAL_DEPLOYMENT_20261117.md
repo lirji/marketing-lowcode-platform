@@ -69,3 +69,7 @@
 - `containers-before.private.json`、`rollout.compose.private.json`、`database-backup.sql.gz`及私密日志仅存本机0600，不进入Git。
 
 恢复时先查询实际容器、镜像、健康及Flink作业，再读取本目录PROGRESS。只回滚明确失败的应用，不自动回滚数据库、恢复langchain4j或重复submit。任务分支及证据/备份保留；未建立新worktree，也未清理用户文件。
+
+## S12j 人群资产分页
+- 2026-11-17：精确CI44072001325通过后FF main a260865；audience-service和console更新为该不可变构建，control保持b3858e6、engagement保持c14289e、其余应用保持原版本。只运行18必要容器，其余16容器未变，Flink原作业持续推进。
+- runtime-a260865/{artifact-manifest,rollout-state,runtime-smoke,audience-api,audience-browser}.json PASS。真实两条人群limit1读取完整，搜索/参数/权限/租户验证通过；桌面/Pixel7实际列表详情/搜索/清除通过，无业务写入、无API失败。无数据库迁移、无演示数据重灌。

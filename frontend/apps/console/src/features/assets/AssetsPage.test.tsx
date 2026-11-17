@@ -24,7 +24,7 @@ vi.mock('../../shared/api/client', async (importOriginal) => {
         return false
       },
       audiencePage: async ({ q = '' }: { q?: string }) => ({ items: await mocks.audiences(), nextCursor: null, hasMore: false, query: q }),
-      benefits: () => mocks.benefits(),
+      benefitPage: async ({ q = '' }: { q?: string }) => ({ items: await mocks.benefits(q), nextCursor: null, hasMore: false, query: q }),
       templates: () => mocks.templates(),
       fields: () => mocks.fields(),
       nodeRegistry: () => mocks.nodeRegistry(),
@@ -83,17 +83,18 @@ describe('AssetsPage', () => {
   })
 
   it('filters real assets and opens complete read-only details without losing the query', async () => {
-    mocks.benefits.mockResolvedValue([
+    mocks.benefits.mockResolvedValueOnce([
       { benefitId: 'coupon-live', version: 2, name: '真实满减券', status: 'DRAFT', resourceKey: '', benefitSkuId: 'sku-with-a-long-stable-reference', policy: {} },
       { benefitId: 'coupon-other', version: 1, name: '其他权益', status: 'DRAFT', resourceKey: '', benefitSkuId: null, policy: {} },
-    ])
+    ]).mockResolvedValue([{ benefitId: 'coupon-live', version: 2, name: '真实满减券', status: 'DRAFT', resourceKey: '', benefitSkuId: 'sku-with-a-long-stable-reference', policy: {} }])
     const user = userEvent.setup()
     renderAssets()
     await user.click(screen.getByRole('tab', { name: '权益与券' }))
     const search = await screen.findByRole('searchbox', { name: '搜索权益' })
     await user.type(search, 'coupon-live')
+    const view = await screen.findByRole('button', { name: '查看真实满减券' })
     expect(screen.queryByText('其他权益')).not.toBeInTheDocument()
-    const view = screen.getByRole('button', { name: '查看真实满减券' })
+    expect(mocks.benefits).toHaveBeenLastCalledWith('coupon-live')
     await user.click(view)
     expect(screen.getByRole('dialog', { name: '真实满减券' })).toHaveTextContent('sku-with-a-long-stable-reference')
     await user.keyboard('{Escape}')
@@ -107,13 +108,13 @@ describe('AssetsPage', () => {
     await user.click(screen.getByRole('tab', { name: '权益与券' }))
     const search = await screen.findByRole('searchbox', { name: '搜索权益' })
     await user.type(search, '2026/10/19')
-    expect(screen.getByText('真实权益')).toBeInTheDocument()
+    expect(await screen.findByText('真实权益')).toBeInTheDocument()
     await user.clear(search)
     await user.type(search, '已生效')
-    expect(screen.getByText('真实权益')).toBeInTheDocument()
+    expect(await screen.findByText('真实权益')).toBeInTheDocument()
     await user.clear(search)
     await user.type(search, 'coupon-live')
-    expect(screen.getByText('真实权益')).toBeInTheDocument()
+    expect(await screen.findByText('真实权益')).toBeInTheDocument()
   })
 
 })

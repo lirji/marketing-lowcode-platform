@@ -19,6 +19,7 @@ import {
   awardFulfillmentSchema,
   benefitSkuSchema,
   benefitViewSchema,
+  benefitPageSchema,
   campaignSchema,
   contactViewSchema,
   compileReportSchema,
@@ -295,6 +296,20 @@ export const api = {
   templates: () => request('/api/v1/templates', undefined, (value) => zArray(templateViewSchema, value)),
   createTemplate: (payload: { templateId: string; version: number; channel: string; content: string; requiredVariables: string[] }, idempotencyKey: string) =>
     request('/api/v1/templates', { method: 'POST', headers: commandHeaders(idempotencyKey), body: JSON.stringify(payload) }, (value) => parseWith(templateViewSchema, value)),
+  benefitPage: (query: { q?: string; limit?: number; cursor?: string } = {}) => {
+    const params = new URLSearchParams()
+    const search = query.q?.trim() ?? ''
+    if (search) params.set('q', search)
+    if (query.limit !== undefined) params.set('limit', String(query.limit))
+    if (query.cursor !== undefined) params.set('cursor', query.cursor)
+    return request(`/api/v1/benefits/catalog/page?${params}`, undefined, (value) => {
+      const page = parseWith(benefitPageSchema, value)
+      if (page.query !== search || page.hasMore && page.nextCursor === query.cursor) {
+        throw new Error('权益服务未确认当前搜索或返回了重复游标，请刷新后重试。')
+      }
+      return page
+    })
+  },
   benefits: () => request('/api/v1/benefits', undefined, (value) => zArray(benefitViewSchema, value)),
   benefit: (benefitId: string) =>
     request(`/api/v1/benefits/${encodeURIComponent(benefitId)}`, undefined, (value) => parseWith(benefitViewSchema, value)),

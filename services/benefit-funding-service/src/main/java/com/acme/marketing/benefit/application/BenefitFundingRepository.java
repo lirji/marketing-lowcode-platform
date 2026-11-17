@@ -17,6 +17,8 @@ public interface BenefitFundingRepository {
     int updateAccountBalance(AccountBalanceWrite write);
 
     List<BenefitRow> findLatestBenefits(String tenantId);
+    /** 在当前租户最新版本上先搜索再按ID游标读取。 */
+    List<BenefitRow> findLatestBenefitPage(String tenantId, String query, String cursor, int fetchSize);
     Optional<BenefitRow> findLatestBenefit(String tenantId, String benefitId);
     Optional<ReleaseBenefitRow> findReleaseBenefit(String tenantId, String benefitId, long version);
     void ensureBenefitHead(String tenantId, String benefitId);

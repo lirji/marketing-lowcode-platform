@@ -440,7 +440,7 @@
 - s12i-seed-plan.private.json保留原完整图和固定幂等键，s12i-seed-result.json记录新版本及结果。两次操作前后原v1定义、审批、发布、Journey运行定义/槽与控制面/旅程发件箱计数散列全部一致；没有重灌种子、替换发布、迁移运行实例或改其它租户。后续恢复先读回v2，不重复创建或重跑旧迁移。
 - 下一步S12资产完整分页及其服务端全字段搜索；真实会员来源、交易/取消终态等外部合同仍待确认，整体计划未完成。
 
-## S12j 人群资产分页与全字段搜索（IN_PROGRESS）
+## S12j 人群资产分页与全字段搜索（DONE）
 - 基线7b98776，分支feat/audience-asset-pagination。当前人群列表一次性返回所有最新定义；先闭合人群资产，再顺序处理权益/模板，字段与节点等受限字典不机械分页。
 - 合同：新增GET /api/v1/audiences/page，复用audience:read与身份租户，limit默认25/最大100，cursor为上一页末人群ID，q最长128且trim后回显query；按人群ID升序，每ID只返回最新版本，limit+1计算hasMore/nextCursor。跨页是当前读取，不承诺数据库历史快照；同ID新版本不移动排序，新增较小ID需刷新看到。旧数组接口保持兼容。
 - 搜索在SQL中先于LIMIT执行，按可见名称、ID、版本、规则指纹、北京时间创建时间与状态中英文做字面包含匹配；百分号/下划线不是通配符。复用现有PK(tenant,id,version)做租户范围与最新版本查找，不默认增加索引。
@@ -461,3 +461,22 @@
 - API合同清单漏登记和浏览器单次503自动恢复的验证问题均已修正，保留失败日志。服务端租户/权限与参数边界、最新版本查询、游标独立搜索、前端旧页保留/身份切换/防抖已复核；跨请求不承诺冻结快照，包含搜索仍需扫描当前租户候选，未宣称容量压测通过。
 - 待打包/Hygiene、精确远程CI、正常FF main及audience-service与console本机增量更新。无数据库迁移、不重启Flink、不重灌演示数据。
 - 人群可执行JAR打包成功，Hygiene无阻断；仓库无canonical formatter，记录为工具不可用限制。语义化分页常量触发的魔法值建议经复核无需改动。最终源文件指纹保留s12j-validation-fingerprint.json。
+
+## S12k 权益资产分页与全字段搜索（IN_PROGRESS）
+- 分支feat/benefit-asset-pagination基于S12j a260865，依赖其资产表格提取；先合并部署S12j，再交付本片。S12j精确CI44072001325前端与部署PASS，Java下载Maven遇429、未执行测试，已仅重试失败job；两镜像和Nginx预检通过，尚未部署。
+- 新增GET /api/v1/benefits/catalog/page，benefit:read、身份租户、limit默认25/最大100、cursor上一页末权益ID、q最长128且trim回显，按权益ID升序只读每ID最新版本，limit+1判定后续。旧数组/单条读取和写入、库存、发放、外部SKU校验不变；本查询不调用外部中台。
+- 服务端字面包含搜索名称/ID/版本/绑定SKU（含未绑定提示）/状态原码及中文/北京时间创建时间；SQL先过滤再LIMIT，复用租户主键，无迁移。分页非冻结快照，较早新ID需刷新。
+- UI使用完整身份缓存键、300ms输入防抖、加载更多/重试/刷新、已加载计数和详情编辑。验证真实MySQL多页/最新版本/边界/隔离、前端故障/旧请求/身份切换、双视口/合同/lint/build/精确CI及benefit+console真实本地运行。
+
+### S12k 实现复核
+- 新分页/SQL搜索和前端更多/失败恢复已实现；首轮19项真实MySQL（16旧流+3分页）、7合同、226前端/44文件、lint/build、10浏览器通过。初轮测试fixture变量拼写编译失败与旧UI同步断言失败保留日志，已修复后通过；collections布局回归的预期无后端代理日志不作为真实API验收。
+- 发现旧权益ID允许page，分页路由改为/benefits/catalog/page，避免遮蔽既有GET /benefits/{benefitId}；新增page详情兼容回归。此前证据对路径变更未生效，正在重跑受影响检查。
+
+### S12k 最终本地验收
+- 最终/benefits/catalog/page版本20项真实MySQL（4新分页/兼容+16旧业务）、7合同、10架构检查PASS；226前端/44文件、lint/build、8浏览器（权益2视口+collections6）PASS。已查看手机详情状态/时间和桌面62条末页截图。证据s12k-*-final.log；基线3项404失败及中间失败均保留。
+- 根代理复核游标租户验证、SQL参数绑定/搜索先于LIMIT/同ID最新版本、旧page详情兼容、零新增数据库迁移与外部调用；未承诺包含搜索容量压测。打包/Hygiene与远程CI、实际Docker更新尚待完成。
+
+### S12j 真实运行交付
+- a260865ceb215140851ad5933cd799436448256c精确CI44072001325三项PASS；Java首次下载Maven遇HTTP429，尚未运行代码，失败job重试成功。正常FF main，仅更新audience-service与console。runtime-a260865/回执PASS。
+- 18必要容器正常，16其它容器身份/镜像/启动时间不变；3个原Flink作业保存点来源和检查点推进PASS。实际人群2条按limit1遍历与旧集合一致，搜索/非法参数/权限/租户拒绝PASS；真实8084桌面/Pixel7详情、搜索、空结果、清除搜索PASS，零写请求/API失败/页面错误，手机详情截图已查看。
+- S12k可执行JAR打包和Hygiene完成，无阻断；无canonical formatter限制保留。只读包含搜索有租户内扫描成本，本地测试不代替容量基准。最终指纹s12k-validation-fingerprint.json，待精确CI和增量本机部署。

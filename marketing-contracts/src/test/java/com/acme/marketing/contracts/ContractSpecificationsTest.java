@@ -49,7 +49,7 @@ class ContractSpecificationsTest {
             "/api/v1/decisions/runtime/manifest", "/api/v1/decisions/runtime/activation",
             "/api/v1/decisions/runtime/ack", "/api/v1/decisions/runtime/audience-membership",
             "/api/v1/funding/accounts", "/api/v1/funding/accounts/{resourceKey}:advance-fence",
-            "/api/v1/benefits", "/api/v1/benefit-skus", "/api/v1/benefits/{benefitId}",
+            "/api/v1/benefits", "/api/v1/benefits/catalog/page", "/api/v1/benefit-skus", "/api/v1/benefits/{benefitId}",
             "/api/v1/award-intents",
                 "/api/v1/award-intents/{intentId}/fulfillment",
                 "/api/v1/award-intents/{intentId}/fulfillment:refresh", "/internal/v1/award-intents",

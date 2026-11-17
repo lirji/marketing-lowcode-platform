@@ -128,3 +128,26 @@ describe('audience page contract', () => {
     await expect(api.audiencePage()).rejects.toThrow()
   })
 })
+
+describe('benefit page contract', () => {
+  const item = { benefitId: 'benefit-a', version: 1, name: '权益', status: 'ACTIVE' }
+  afterEach(() => vi.unstubAllGlobals())
+  it('encodes literal search and rejects a mismatched search or repeated cursor', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [item], nextCursor: null, hasMore: false, query: '100%_ 权益' })))
+    vi.stubGlobal('fetch', fetcher)
+    await api.benefitPage({ q: ' 100%_ 权益 ', limit: 25 })
+    expect(new URL(String(fetcher.mock.calls[0][0]), 'http://local').pathname).toBe('/api/v1/benefits/catalog/page')
+    expect(new URL(String(fetcher.mock.calls[0][0]), 'http://local').searchParams.get('q')).toBe('100%_ 权益')
+    fetcher.mockResolvedValueOnce(new Response(JSON.stringify({ items: [item], nextCursor: null, hasMore: false, query: '' })))
+    await expect(api.benefitPage({ q: 'needle' })).rejects.toThrow('权益服务未确认当前搜索')
+    fetcher.mockResolvedValueOnce(new Response(JSON.stringify({ items: [item], nextCursor: 'benefit-a', hasMore: true, query: '' })))
+    await expect(api.benefitPage({ cursor: 'benefit-a' })).rejects.toThrow('重复游标')
+  })
+  it('rejects missing pagination metadata and duplicate benefit IDs', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ items: [item] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [item, item], nextCursor: null, hasMore: false, query: '' })))
+    vi.stubGlobal('fetch', fetcher)
+    await expect(api.benefitPage()).rejects.toThrow()
+    await expect(api.benefitPage()).rejects.toThrow()
+  })
+})

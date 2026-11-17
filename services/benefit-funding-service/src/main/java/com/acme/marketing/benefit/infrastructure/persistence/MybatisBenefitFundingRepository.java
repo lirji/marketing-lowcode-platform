@@ -25,6 +25,10 @@ public class MybatisBenefitFundingRepository implements BenefitFundingRepository
     @Override public int updateAccountFence(AccountFenceWrite write) { return mapper.updateAccountFence(write); }
     @Override public int updateAccountBalance(AccountBalanceWrite write) { return mapper.updateAccountBalance(write); }
     @Override public List<BenefitRow> findLatestBenefits(String tenantId) { return mapper.selectLatestBenefits(tenantId); }
+    /** 有界读取最新权益，不在应用层截断完整集合。 */
+    @Override public List<BenefitRow> findLatestBenefitPage(String tenantId, String query, String cursor, int fetchSize) {
+        return mapper.selectLatestBenefitPage(tenantId, query, cursor, fetchSize);
+    }
     @Override public Optional<BenefitRow> findLatestBenefit(String tenantId, String benefitId) {
         return Optional.ofNullable(mapper.selectLatestBenefit(tenantId, benefitId));
     }

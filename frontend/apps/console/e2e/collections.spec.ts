@@ -30,9 +30,9 @@ test('asset details show complete values and tabs support keyboard navigation', 
     window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true }
   })
   await page.route('**/api/v1/**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/audiences/page') ? { items: [], nextCursor: null, hasMore: false, query: '' } : [] }))
-  await page.route('**/api/v1/benefits', (route) => route.fulfill({ json: [
+  await page.route('**/api/v1/benefits/catalog/page?**', (route) => route.fulfill({ json: { query: new URL(route.request().url()).searchParams.get('q') ?? '', nextCursor: null, hasMore: false, items: [
     { benefitId: 'coupon-live', version: 2, name: '测试权益完整名称', status: 'DRAFT', resourceKey: '', benefitSkuId: 'sku-complete-reference-123456789', policy: {} },
-  ] }))
+  ] } }))
   await page.goto('/assets')
   await page.getByRole('tab', { name: 'Audience 快照' }).focus()
   await page.getByRole('tab', { name: 'Audience 快照' }).press('ArrowRight')
