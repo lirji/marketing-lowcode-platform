@@ -481,7 +481,7 @@
 - 18必要容器正常，16其它容器身份/镜像/启动时间不变；3个原Flink作业保存点来源和检查点推进PASS。实际人群2条按limit1遍历与旧集合一致，搜索/非法参数/权限/租户拒绝PASS；真实8084桌面/Pixel7详情、搜索、空结果、清除搜索PASS，零写请求/API失败/页面错误，手机详情截图已查看。
 - S12k可执行JAR打包和Hygiene完成，无阻断；无canonical formatter限制保留。只读包含搜索有租户内扫描成本，本地测试不代替容量基准。最终指纹s12k-validation-fingerprint.json，待精确CI和增量本机部署。
 
-## S12l 消息模板分页与服务端搜索（IN_PROGRESS）
+## S12l 消息模板分页与服务端搜索（DONE）
 - 分支feat/template-asset-pagination基于S12k 53e151f，先交付S12k再本片；S12k精确CI44073965831运行中，两镜像与环境保留/真实Nginx预检通过，尚未部署。
 - GET /api/v1/templates/catalog/page：template:read、身份租户、limit默认25最大100、cursor模板ID、q最长128回显，ID升序每ID最新版本，limit+1；旧数组和POST版本追加语义不变。搜索覆盖模板ID、可见v版本、渠道、必需变量（含无）、状态原码/中文和北京时间创建时间，正文仍只在详情查看。最新版本筛选与搜索在LIMIT前执行，非冻结快照，无迁移。
 - 模板变量按持久化CSV顺序稳定回显，使显示值/服务端匹配一致（原Set.copyOf不保证迭代序）。UI完整身份键/防抖/更多/错误恢复/刷新/详情编辑，保存后失效原数组与新分页缓存，保持筛选和版本成功回执，不改变历史版本/旅程引用/触达。
@@ -506,7 +506,7 @@
 - 精确607542e7353793a22b413b960b688b6a5dcd359f的CI44075059624三项PASS，正常FF main；仅benefit-funding-service与console更新，audience保持a260865。runtime-607542e回执PASS，18必要容器正常、16受保护容器不变、3个原Flink作业继续推进。
 - 真实4条权益limit1完整遍历与旧数组集合一致、后页ID搜索/非法参数/权限/租户拒绝通过；8084桌面/Pixel7详情、搜索、空结果、清除通过，无业务写入/API失败/页面错误，手机完整详情截图已查看。无数据库迁移/种子改动/外部SKU调用。S12l当前改动尚未部署。
 
-## S12m 前端错误采集（IN_PROGRESS）
+## S12m 前端错误采集（DONE）
 - 分支feat/client-error-collection基于S12l 166dc43；先交付模板再本片。模板精确CI44076660106三项PASS并正常FF main；runtime-166dc43已完整部署验收，后续本片使用独立制品。
 - 现状：report.ts经无认证sendBeacon发送任意message/租户/操作者/原路径，Nginx /client-error直接204丢弃。按已批准S12补齐真实采集：POST /api/v1/client-errors在现有Servlet Gateway内处理，经既有DEV/OIDC身份链和独立租户Redis配额（复用已有基础设施），异常收集不走递归API报错路径。
 - 最小事件合同：schemaVersion=1，source固定API/WINDOW/PROMISE/REACT/UNKNOWN，route固定模块枚举，httpStatus=0或100–599，backendTraceId可选32位十六进制；请求最多1KiB、拒绝额外字段/非法枚举。身份只取已验证上下文，不接受正文租户/操作者；不采集任意message、堆栈、URL、查询参数、token或业务ID。服务端参数化结构日志及低基数Micrometer计数，不新增业务数据库或集中采集产品；此片是有界诊断接入，不宣称长期留存或生产可观测性全完成。
@@ -526,3 +526,23 @@
 - 239前端测试/46文件、lint/build通过；完整浏览器88通过/10依赖隔离服务的既有项跳过（s12m-browser-diagnostics.log实际为完整套件）。新采集桌面和Pixel7均真实触发window error、捕获认证请求、503不递归、每页10条上限；旧业务断言保留。
 - Gateway 7项采集HTTP（含JWT验证器受控边界）和4项原有限流/超时、6租户上下文、8合同、架构规则通过；固定无HTTP状态常量在Hygiene复核后提取，需以s12m-gateway-final/package-final为最后后端证据。Hygiene无阻塞，项目未提供canonical formatter；已命名常量与不同业务模块的错误码短名提示经人工核对无需合并。
 - Compose模型校验通过；只调整本机网关日志容量，不改变共享依赖、业务表、权限规则或生产目标。当前待提交/精确CI及本机gateway+console部署；不把本地通过视为全部交付。
+
+## S12n DEMO活动数据真实性（IN_PROGRESS）
+- 基于S12m 7764526建立fix/demo-campaign-truth；M的精确CI44081527926运行中，runtime-7764526镜像/环境保留/Nginx预检PASS，尚未部署；后续只能使用其固定制品。
+- 已定位唯一生产demo数据导入为CampaignsPage→shared/data/demo.ts。它还在浏览器构造CMP ID并将本地添加当成成功；已有system-mock.sql包含真实数据库演示活动，runtime API可读，不需要重灌共享库。
+- 本片将旧样本移到测试fixture，正式页面只显示真实API活动；DEMO模式保持不调用真实接口、说明如何连接后端、禁用创建/URL直开创建/手动刷新，不显示假活动或假成功。真实模式保存/导航及权限保持，测试覆盖模式切换缓存、错误、创建和浏览器，校对全前端其余DEMO分支。
+- 验证后独立提交/精确CI/正常FF main/console增量部署；不新增身份映射、自动重灌数据或业务发布。
+
+### S12n 实现检查点
+- 活动页取消本地活动数组、伪造CMP ID与本地“创建成功”；读取绑定完整身份scope，静态预览/权限不足时不读缓存数据、不请求API、不刷新或打开URL创建表单，真实创建仍使用服务端ID导航。旧业务样本移到src/test/fixtures/campaigns.ts，仅测试导入，旧未使用的过时节点样本移除。
+- 5定向单元测试与首轮build通过；浏览器/完整前端仍在执行。既有SQL种子已提供活动数据，本片不重新写共享库。进一步120处DEMO分支核对发现DashboardPage与OperationsPage仍有内嵌业务数字/运行记录，列入后续S12o清理；不将S12n宣称全部DEMO完成。
+
+- S12n首轮全量前端242通过、App路由2项失败因旧测试依赖DEMO假创建；已把这两项改成明确真实模式的API fixture，保留原深链/校验/筛选保留断言。静态预览及原Offer/裂变/Journey作者浏览器8项通过。S12m精确CI44081527926已三项PASS并FF main，gateway+console healthy，真实smoke正在执行。
+
+### S12m 真实运行交付
+- 77645267a94bbe310e74bb3c842ed0420d9fbfb7精确CI44081527926三项PASS，正常FF main；仅edge-gateway与console更新，runtime-7764526最终PASS。18必要容器健康、16受保护容器不变、3个原Flink检查点推进；本机网关日志local/10m/3已核对。
+- 真实8084桌面/Pixel7触发window error→认证诊断POST204→网关安全分类日志，业务页面继续可用，无业务写请求。18080验证匿名401、额外字段/超限400、真实Redis独立配额429且活动读取仍200、低基数Prometheus指标；非法敏感标记未进日志，旧/client-error 410。证据diagnostics-browser/api及runtime-smoke.json。未停止Redis、未触达业务、未新增数据表；不宣称生产身份/长期留存/告警完成。
+
+### S12n 最终本地验证
+- 244前端测试/47文件、lint/build通过；静态预览与原真实模式Offer/裂变/Journey作者交互8浏览器通过。修复测试内误用Playwright的exact选项后类型构建通过；移除活动页矛盾的“演示数据可浏览”横幅，单一连接说明复验桌面/手机2项通过，手机截图已查看。
+- Hygiene无阻塞（仓库无canonical formatter）；后端未改，无需重跑已有MySQL测试。原SQL种子及本机数据未写入，生产代码不再导入活动fixture；现有S12o首页/运行中心硬编码仍待处理。本片待独立提交/精确CI/console运行验收。

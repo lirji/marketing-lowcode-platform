@@ -2,11 +2,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { AuthProvider } from './shared/auth/AuthContext'
 import { permits } from './shared/auth/auth-context'
 import { decodeJwtPayload, permissionNames, splitClaim } from './shared/auth/claims'
+
+const fixture = { demo: true }
+vi.mock('./shared/api/client', async original => {
+  const actual = await original<typeof import('./shared/api/client')>()
+  return { ...actual, api: { ...actual.api, get demoMode() { return fixture.demo }, campaigns: async () => [] } }
+})
+beforeEach(() => { fixture.demo = true })
 
 function renderApp(path = '/') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -31,6 +38,7 @@ describe('marketing console routing and core interactions', () => {
   })
 
   it('opens campaign creation from a deep link and enforces schema validation', async () => {
+    fixture.demo = false
     const user = userEvent.setup()
     renderApp('/campaigns?create=true')
     expect(await screen.findByRole('dialog', { name: '创建营销活动' })).toBeInTheDocument()
@@ -49,6 +57,7 @@ describe('marketing console routing and core interactions', () => {
   })
 
   it('retains list filters when closing the campaign creation modal', async () => {
+    fixture.demo = false
     const user = userEvent.setup()
     renderApp('/campaigns?q=unmatched-search&status=DRAFT&create=true')
     expect(await screen.findByRole('dialog', { name: '创建营销活动' })).toBeInTheDocument()

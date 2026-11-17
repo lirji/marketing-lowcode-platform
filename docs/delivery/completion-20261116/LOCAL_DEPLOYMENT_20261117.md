@@ -3,8 +3,8 @@
 以下最新状态优先于下文历史交付记录。
 
 ## 当前运行版本
-- console与engagement-service为166dc43；benefit-funding-service为607542e；audience-service为a260865；marketing-control-service为b3858e6；其它应用沿用045dfd9。S12j/k/l验收均PASS，详细证据见下文同名章节。
-- 仅18个本项目必需容器运行；原3个Flink作业保持运行且检查点推进，基础设施和存量数据保留。下一项S12m尚未部署。
+- console与edge-gateway为7764526，engagement-service为166dc43；benefit-funding-service为607542e；audience-service为a260865；marketing-control-service为b3858e6；其它应用沿用045dfd9。S12j/k/l验收均PASS，详细证据见下文同名章节。
+- 仅18个本项目必需容器运行；原3个Flink作业保持运行且检查点推进，基础设施和存量数据保留。S12m真实采集验收通过；下一项S12n活动静态预览清理尚未部署。
 
 
 ## 历史增量交付：0c8aff8 / b3858e6
@@ -85,3 +85,7 @@
 
 ## S12l 模板分页增量部署
 - main/engagement-service/console=166dc43；CI44076660106三项PASS，runtime-166dc43最终PASS。18必要容器健康、16受保护容器不变、3个Flink检查点推进。实际模板完整分页/搜索/授权/隔离和桌面/Pixel7只读浏览器通过。其他服务版本和数据保持原部署记录；未重提作业。
+
+## S12m 错误采集增量部署
+- main/gateway/console=7764526，精确CI44081527926三项PASS，runtime-7764526最终PASS。18必要容器健康、16受保护容器不变、原Flink检查点推进。
+- 8084桌面和Pixel7真实错误安全分类上报204并写网关日志；18080匿名401、非法/过大正文400、真实Redis独立租户配额429和业务读取200、低基数计数器、旧入口410全部通过。仅诊断写入，无业务写入。日志local容量轮转10m/3；长期存储、告警与生产身份验收不在该结论内。

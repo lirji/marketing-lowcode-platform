@@ -2,15 +2,14 @@ import { CAMPAIGN_TYPE, type CampaignType } from '../../shared/model/campaignTyp
 import { RecordTable, RecordTime } from '../../components/RecordTable'
 import { FieldHint } from '../../components/FieldHint'
 import { Select } from '../../components/Select'
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Filter, Plus } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { z } from 'zod'
 import { api } from '../../shared/api/client'
-import { demoCampaigns } from '../../shared/data/demo'
 import type { Campaign } from '../../shared/model/types'
-import { Badge, Button, DemoBanner, EmptyState, Modal, PageHeader, Panel, StateBanner } from '../../components/ui'
+import { Badge, Button, EmptyState, Modal, PageHeader, Panel, StateBanner } from '../../components/ui'
 import { ActionMenu } from '../../components/ActionMenu'
 import { ListToolbar } from '../../components/ListToolbar'
 import { CampaignCreateReadiness, CampaignReadiness } from './CampaignReadiness'
@@ -26,6 +25,7 @@ const campaignSchema = z.object({
 })
 type CampaignInput = z.infer<typeof campaignSchema>
 type DesignIntent = CampaignType
+const CAMPAIGN_WRITE_UNAVAILABLE = '当前模式或权限不支持创建活动，请连接营销服务并确认创建权限。'
 
 const statusMeta: Record<Campaign['status'], { label: string; tone: 'good'|'warn'|'danger'|'neutral'|'info' }> = {
   DRAFT: { label: '草稿', tone: 'neutral' }, IN_REVIEW: { label: '审核中', tone: 'warn' },
@@ -48,35 +48,25 @@ export function CampaignsPage() {
     return next
   }, { replace: true })
   const [readyId, setReadyId] = useState<string | null>(null)
-  const [localCampaigns, setLocalCampaigns] = useState(demoCampaigns)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const auth = useAuth()
+  const canRead = !api.demoMode && auth.authenticated && auth.hasPermission('campaign:read')
+  const canWrite = canRead && auth.hasPermission('campaign:write')
+  const campaignKey = ['campaigns', auth.tenantId, auth.subject, auth.organizations, auth.shops, auth.permissions]
   const creationOpen = params.get('create') === 'true'
   const campaigns = useQuery({
-    queryKey: ['campaigns'], queryFn: api.demoMode ? async () => localCampaigns : api.campaigns,
+    queryKey: campaignKey, queryFn: api.campaigns, enabled: canRead,
   })
-  useEffect(() => { if (api.demoMode) void queryClient.invalidateQueries({ queryKey: ['campaigns'] }) }, [localCampaigns, queryClient])
   const create = useMutation({
     mutationFn: async (payload: CampaignInput & { designIntent: DesignIntent }) => {
+      if (!canWrite) throw new Error(CAMPAIGN_WRITE_UNAVAILABLE)
       const { designIntent, ...body } = payload
-      if (!api.demoMode) {
-        const campaign = await api.createCampaign({ ...body, campaignType: designIntent })
-        return { campaign, designIntent }
-      }
-      return {
-        campaign: { ...body, campaignType: designIntent, id: `CMP-${1100 + localCampaigns.length + 1}`, status: 'DRAFT' as const, createdBy: auth.displayName, createdAt: new Date().toISOString() } satisfies Campaign,
-        designIntent,
-      }
+      const campaign = await api.createCampaign({ ...body, campaignType: designIntent })
+      return { campaign, designIntent }
     },
     onSuccess: ({ campaign: value }) => {
-      if (api.demoMode) {
-        setLocalCampaigns((items) => [value, ...items])
-        void queryClient.invalidateQueries({ queryKey: ['campaigns'] })
-        updateParams({ create: null })
-        return
-      }
-      queryClient.setQueryData(['campaigns'], (current: Campaign[] | undefined) => {
+      queryClient.setQueryData(campaignKey, (current: Campaign[] | undefined) => {
         if (!current) return [value]
         return current.some((item) => item.id === value.id) ? current : [value, ...current]
       })
@@ -91,9 +81,9 @@ export function CampaignsPage() {
   const shopOptions = shopChoicesFromIdentity(auth.shops)
 
   return <div className="workspace campaigns-page">
-    <PageHeader eyebrow="运营工作台" title="计划与活动" description="管理营销活动，查看就绪情况，并进入对应的规则与旅程设计。" actions={auth.hasPermission('campaign:write') && <Button tone="primary" onClick={() => updateParams({ create: 'true' })}><Plus size={16} />创建活动</Button>} />
-    <DemoBanner />
+    <PageHeader eyebrow="运营工作台" title="计划与活动" description="管理营销活动，查看就绪情况，并进入对应的规则与旅程设计。" actions={auth.hasPermission('campaign:write') && <Button tone="primary" disabled={!canWrite} title={canWrite ? undefined : CAMPAIGN_WRITE_UNAVAILABLE} onClick={() => updateParams({ create: 'true' })}><Plus size={16} />创建活动</Button>} />
     <Panel className="table-panel">
+      {api.demoMode ? <EmptyState title="活动列表需要连接后端" detail="当前为静态预览。连接营销服务后，可查看已保存的活动并创建新活动。" /> : !canRead ? <StateBanner tone="warn" title="没有查看活动的权限" detail="需要有效身份与 campaign:read 权限。" /> : <>
       <ListToolbar query={query} onQueryChange={(q) => updateParams({ q })} searchLabel="搜索活动" describedBy="campaign-search-hint" placeholder="搜索名称、目标或活动 ID" count={campaigns.data ? filtered.length : undefined} unit="个活动" busy={campaigns.isFetching} onRefresh={() => void campaigns.refetch()} onReset={query || status !== 'ALL' ? () => updateParams({ q: null, status: null }) : undefined}>
         <label className="compact-select"><Filter size={15} aria-hidden="true" /><span className="sr-only">状态筛选</span><Select value={status} onChange={(event) => updateParams({ status: event.target.value === 'ALL' ? null : event.target.value })}><option value="ALL">全部状态</option>{Object.entries(statusMeta).map(([value, meta]) => <option value={value} key={value}>{meta.label}</option>)}</Select></label>
       </ListToolbar>
@@ -122,8 +112,9 @@ export function CampaignsPage() {
             {readyId === item.id && <tr className="readiness-row"><td colSpan={11}><div id={`readiness-${item.id}`}><CampaignReadiness campaignId={item.id} /></div></td></tr>}
           </Fragment>)}
       </RecordTable>}
+    </>}
     </Panel>
-    {creationOpen && <CampaignModal organizations={orgOptions} shops={shopOptions} submitting={create.isPending} error={create.error ? problemDetail(create.error) : undefined} onClose={() => updateParams({ create: null })} onSubmit={(value, designIntent) => create.mutate({ ...value, designIntent })} />}
+    {creationOpen && canWrite && <CampaignModal organizations={orgOptions} shops={shopOptions} submitting={create.isPending} error={create.error ? problemDetail(create.error) : undefined} onClose={() => updateParams({ create: null })} onSubmit={(value, designIntent) => create.mutate({ ...value, designIntent })} />}
   </div>
 }
 
