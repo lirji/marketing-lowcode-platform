@@ -119,6 +119,13 @@ public class ControlController {
         return service.approvals();
     }
 
+    /** 新分页契约独立于旧数组接口，旧客户端可在兼容窗口内继续读取最近记录。 */
+    @GetMapping("/approvals/page")
+    public ControlApplicationService.ApprovalPage approvalPage(@RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) String status, @RequestParam(required = false) String cursor) {
+        return service.approvalPage(limit, status, cursor);
+    }
+
     @PostMapping("/approvals/{caseId}/decisions")
     public ControlApplicationService.ApprovalView decide(
             @RequestHeader("Idempotency-Key") String idempotencyKey,

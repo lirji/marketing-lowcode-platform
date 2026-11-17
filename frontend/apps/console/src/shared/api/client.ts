@@ -9,6 +9,8 @@ import {
   accountViewSchema,
   artifactViewSchema,
   approvalViewSchema,
+  approvalPageSchema,
+  type ApprovalStatus,
   audiencePreviewSchema,
   audienceSnapshotSchema,
   audienceViewSchema,
@@ -203,6 +205,19 @@ export const api = {
   submit: (definitionId: string, version: number) =>
     request(`/api/v1/definitions/${encodeURIComponent(definitionId)}/versions/${version}:submit`, { method: 'POST', headers: commandHeaders() }, (value) => parseWith(approvalViewSchema, value)),
   approvals: () => request('/api/v1/approvals', undefined, (value) => zArray(approvalViewSchema, value)),
+  approvalPage: (query: { status?: ApprovalStatus; limit?: number; cursor?: string } = {}) => {
+    const params = new URLSearchParams()
+    if (query.status) params.set('status', query.status)
+    if (query.limit !== undefined) params.set('limit', String(query.limit))
+    if (query.cursor) params.set('cursor', query.cursor)
+    return request(`/api/v1/approvals/page?${params}`, undefined, (value) => {
+      const page = parseWith(approvalPageSchema, value)
+      if (page.status !== (query.status ?? null) || page.hasMore && page.nextCursor === query.cursor) {
+        throw new Error('审核服务未确认当前筛选或返回了重复游标，请刷新后重试。')
+      }
+      return page
+    })
+  },
   decideApproval: (caseId: string, role: ApprovalRole, decision: 'APPROVE' | 'REJECT' = 'APPROVE', comment?: string) =>
     request(`/api/v1/approvals/${encodeURIComponent(caseId)}/decisions`, { method: 'POST', headers: commandHeaders(), body: JSON.stringify({ role, decision, comment }) }, (value) => parseWith(approvalViewSchema, value)),
   releases: () => request('/api/v1/releases', undefined, (value) => zArray(releaseViewSchema, value)),

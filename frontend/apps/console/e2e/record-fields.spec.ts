@@ -51,10 +51,10 @@ test('operations keep identifiers, nullable metadata and guarded replay distinct
 })
 
 test('approval rows retain the right action after horizontal keyboard scrolling', async ({ page }, testInfo) => {
-  await page.route('**/api/v1/approvals', (route) => route.fulfill({ json: [
+  await page.route('**/api/v1/approvals/page?**', (route) => route.fulfill({ json: { items: [
     { caseId: 'case-a', definitionId: 'definition-a', definitionVersion: 2, status: 'OPEN', submittedBy: 'actor-a', requiredRoles: ['BUSINESS', 'FINANCE'], approvals: { BUSINESS: 'reviewer-a' }, updatedAt: '2026-10-19T00:00:00Z' },
     { caseId: 'case-b', definitionId: 'definition-b', definitionVersion: 5, status: 'OPEN', submittedBy: 'actor-b', requiredRoles: ['BUSINESS'], approvals: {}, updatedAt: '2026-10-19T01:00:00Z' },
-  ] }))
+  ], nextCursor: null, hasMore: false, status: 'OPEN' } }))
   await page.goto('/governance')
   const queue = page.getByRole('table', { name: '待审核变更' })
   await expect(queue.getByRole('cell', { name: 'case-b', exact: true })).toBeVisible()
@@ -73,6 +73,6 @@ test('approval rows retain the right action after horizontal keyboard scrolling'
   await action.click()
   await expect(page.getByRole('dialog')).toContainText('definition-b')
   await expect(page.getByRole('dialog')).not.toContainText('definition-a')
-  await page.getByRole('button', { name: '取消', exact: true }).click()
+  await page.getByRole('button', { name: '关闭详情', exact: true }).click()
   await expect(action).toBeFocused()
 })

@@ -121,12 +121,49 @@
         WHERE tenant_id = #{tenantId} AND case_id = #{caseId}
         <if test="lock">FOR UPDATE</if>
     </select>
-    <select id="selectApprovalCases"
-            resultType="com.acme.marketing.control.application.ControlRepository$ApprovalCaseRow">
-        SELECT <include refid="approvalColumns"/> FROM mk_approval_case
-        WHERE tenant_id = #{tenantId}
-        ORDER BY updated_at DESC
-        LIMIT #{limit}
+    <!-- EXISTS在截断前过滤组织/门店；二进制比较保持TenantScope对作用域标识的精确匹配。 -->
+    <sql id="approvalVisibleScope">
+        a.tenant_id = #{tenantId}
+        AND EXISTS (
+            SELECT 1 FROM mk_definition_version d
+            JOIN mk_campaign c ON c.tenant_id = d.tenant_id AND c.campaign_id = d.campaign_id
+            WHERE d.tenant_id = a.tenant_id AND d.definition_id = a.definition_id
+              AND d.version_no = a.definition_version
+            <if test="!organizations.contains(&quot;*&quot;)">
+                <choose>
+                    <when test="organizations.isEmpty()">AND 1 = 0</when>
+                    <otherwise>AND CAST(c.organization_id AS BINARY) IN
+                        <foreach collection="organizations" item="organization" open="(" separator="," close=")">#{organization}</foreach>
+                    </otherwise>
+                </choose>
+            </if>
+            <if test="!shops.contains(&quot;*&quot;)">
+                <choose>
+                    <when test="shops.isEmpty()">AND (c.shop_id IS NULL OR c.shop_id = '')</when>
+                    <otherwise>AND (c.shop_id IS NULL OR c.shop_id = '' OR CAST(c.shop_id AS BINARY) IN
+                        <foreach collection="shops" item="shop" open="(" separator="," close=")">#{shop}</foreach>)
+                    </otherwise>
+                </choose>
+            </if>
+        )
+    </sql>
+    <select id="selectApprovalCases" resultType="com.acme.marketing.control.application.ControlRepository$ApprovalCaseRow">
+        SELECT <include refid="approvalColumns"/> FROM mk_approval_case a
+        WHERE <include refid="approvalVisibleScope"/>
+        ORDER BY updated_at DESC, case_id DESC LIMIT #{limit}
+    </select>
+    <select id="selectApprovalCursor" resultType="com.acme.marketing.control.application.ControlRepository$ApprovalCursorRow">
+        SELECT a.created_at AS createdAt, a.case_id AS caseId FROM mk_approval_case a
+        WHERE <include refid="approvalVisibleScope"/> AND a.case_id = #{cursorCaseId}
+    </select>
+    <select id="selectApprovalPage" resultType="com.acme.marketing.control.application.ControlRepository$ApprovalCaseRow">
+        SELECT <include refid="approvalColumns"/> FROM mk_approval_case a
+        WHERE <include refid="approvalVisibleScope"/>
+        <if test="status != null">AND a.status = #{status}</if>
+        <if test="cursorCreatedAt != null">
+            AND (a.created_at &lt; #{cursorCreatedAt} OR (a.created_at = #{cursorCreatedAt} AND a.case_id &lt; #{cursorCaseId}))
+        </if>
+        ORDER BY a.created_at DESC, a.case_id DESC LIMIT #{limit}
     </select>
     <select id="selectApprovalDecisions"
             resultType="com.acme.marketing.control.application.ControlRepository$ApprovalDecisionRow">

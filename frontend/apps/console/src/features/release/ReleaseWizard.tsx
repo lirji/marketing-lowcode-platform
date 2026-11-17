@@ -1,12 +1,13 @@
 import { FieldHint } from '../../components/FieldHint'
 import { Select } from '../../components/Select'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, LoaderCircle, PackageCheck, RefreshCw } from 'lucide-react'
 import { Badge, Button, Modal, StateBanner } from '../../components/ui'
 import { api, ApiProblem } from '../../shared/api/client'
 import { problemDetail } from '../../shared/api/problem'
 import { useAuth } from '../../shared/auth/useAuth'
+import { approvalScopeKey, APPROVAL_STATUS, useApprovalPages } from '../../shared/api/useApprovalPages'
 import type { ApprovalView, ArtifactReference, DefinitionBundle, GraphDefinition, ReleaseView } from '../../shared/api/schemas'
 
 type RuntimeChoice = {
@@ -48,11 +49,13 @@ function problemHint(error: unknown): string {
   return problemDetail(error)
 }
 
-export function ReleaseWizard({ open, onClose, onRequestActivate }: {
-  open: boolean
-  onClose: () => void
-  onRequestActivate: (release: ReleaseView) => void
-}) {
+type ReleaseWizardProps = { open: boolean; onClose: () => void; onRequestActivate: (release: ReleaseView) => void }
+export function ReleaseWizard(props: ReleaseWizardProps) {
+  const auth = useAuth()
+  return <ScopedReleaseWizard key={approvalScopeKey(auth)} {...props} />
+}
+
+function ScopedReleaseWizard({ open, onClose, onRequestActivate }: ReleaseWizardProps) {
   const auth = useAuth()
   const queryClient = useQueryClient()
   const [caseId, setCaseId] = useState('')
@@ -62,15 +65,11 @@ export function ReleaseWizard({ open, onClose, onRequestActivate }: {
   const [compileKey, setCompileKey] = useState(() => crypto.randomUUID())
   const [stageKey, setStageKey] = useState(() => crypto.randomUUID())
 
-  const approvals = useQuery({
-    queryKey: ['approvals'],
-    queryFn: api.approvals,
-    enabled: open && !api.demoMode && auth.hasPermission('definition:read'),
-  })
-  const approved = useMemo(() => (approvals.data ?? []).filter((item) => item.status === 'APPROVED'), [approvals.data])
+  const approvals = useApprovalPages(APPROVAL_STATUS.APPROVED, open && auth.hasPermission('definition:read'))
+  const approved = approvals.items
   const selected = approved.find((item) => item.caseId === caseId)
   const definition = useQuery({
-    queryKey: ['definition-version', selected?.definitionId, selected?.definitionVersion],
+    queryKey: ['definition-version', approvalScopeKey(auth), selected?.definitionId, selected?.definitionVersion],
     queryFn: () => api.getDefinition(selected!.definitionId, selected!.definitionVersion),
     enabled: open && Boolean(selected),
   })
@@ -207,6 +206,7 @@ export function ReleaseWizard({ open, onClose, onRequestActivate }: {
           <option value="">请选择</option>
           {approved.map((item: ApprovalView) => <option value={item.caseId} key={item.caseId}>{item.definitionId} · v{item.definitionVersion} · {item.caseId}</option>)}
         </Select></label>
+        <div className="toolbar"><span>已加载 {approved.length} 条批准单{approvals.hasNextPage ? '，还有更多' : ''}</span>{approvals.hasNextPage && <Button disabled={approvals.isFetching} onClick={() => void approvals.fetchNextPage()}>{approvals.isFetchNextPageError ? '重试加载更多批准单' : '加载更多批准单'}</Button>}<Button disabled={api.demoMode || !auth.hasPermission('definition:read') || approvals.isFetching} onClick={() => { selectApproval(''); void approvals.refresh() }}>刷新批准单</Button></div>
         {definition.data && <small>{definition.data.dialect} · {choice?.runtime ?? '不支持'} runtime</small>}
       </section>
 

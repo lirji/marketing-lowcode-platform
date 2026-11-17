@@ -308,3 +308,33 @@
 - 根代理第二轮复核权限撤销后的回放、租户隔离、版本并发唯一性、存储边界、晚到响应与资产深链；未声称独立代理审查。Hygiene无阻断项，仅无canonical formatter限制及已命名数字常量的提示，见s12c-hygiene-final.json。
 - 自有临时18888服务和MySQL容器已停止，数据保留，见s12c-live-cleanup.json。共享dev-infra、11应用和Flink未改变。当前提交/精确CI待执行，Docker仍为045dfd9。
 - 下一步：本片提交与精确CI通过后正常快进main，更新本机engagement-service与console并验证；随后处理列表完整分页，优先修正审批范围过滤发生在LIMIT之后的问题。
+
+## S12d 审批范围与完整分页（本地验收通过，交付中）
+- 分支fix/approval-scope-pagination，基于S12c候选c14289e；S12c精确CI44041099756前端/部署PASS，后端运行中，尚未main/部署。两个切片分别提交。
+- 已证实：旧审批先取租户最近100条后Java过滤组织/门店，造成可见数据遗漏；审核页又在客户端筛OPEN，发布向导只看同一截断列表。侧边栏和“今日治理态势”也误将截断列表当总量/今日。
+- 范围：保留旧数组API但权限范围先于LIMIT；新增有界审批分页API，SQL先按组织/门店/状态筛选，按不可变created_at和case_id降序、limit+1探测后页，cursor需属于当前可见租户范围。返回items/nextCursor/hasMore及状态回显，不承诺数据库快照，刷新重新开始。
+- 前端：审核页支持状态选择、加载更多/失败重试/刷新，标注已加载数；发布向导加载全部可见APPROVED页；导航待审数采用有界结果与“+”标记。查询键绑定租户/身份/权限/组织/门店，权限切换清除旧内容，不将局部页统计伪装成总量。
+- 验收：真实MySQL超过100不可见/其它状态记录不遮挡可见目标；同时间多页无漏重、状态更新/新增后继续页、非法与跨租户/范围cursor、限额/权限、旧API兼容；前端分页失败保留已读、范围切换、状态切换/重试、发布较早批准单；桌面/手机真实接口及视觉检查。此片不含release列表及其它资产完整分页。
+
+### S12d 首轮验证检查点
+- 实现了审批范围SQL过滤、有界稳定游标及兼容旧数组接口；增加V6两个索引，前端审核/发布选择/导航使用分页，状态与权限范围进入缓存键，数量明确为已加载。
+- 7项真实MySQL后端PASS（3项新分页+4项原控制工作流），s12d-backend-final.log；首轮测试捕获OGNL单字符通配判断为字符而非字符串的问题，已在本片审批范围表达式修正并覆盖通配读取。9项前端专项PASS，s12d-frontend-first.log。
+- 首次前端编译缺少两处StateBanner的必需detail已修，等待全量lint/build/测试；不将首轮日志当最终证据。下一步实际OpenAPI解析、双视口真实隔离接口与视觉/根代理复核。
+- S12c精确CI44041099756三项PASS，c14289e已正常FF远程main；两服务已更新并健康，runtime-c14289e/runtime-smoke.json通过原容器/Flink保留与实际API。浏览器出现连接拒绝，curl及独立浏览器连接后续通过，正在复验；尚未把Docker交付标为最终PASS。
+
+### S12c 容器路由补修
+- 实际Docker浏览器发现`/assets`返回301 Location到内部8080，`/assets/`403；根因Nginx `try_files $uri $uri/ /index.html`将同名静态目录当页面。属于本片真实入口阻断，开发服务器验证无法覆盖。
+- 单独分支fix/console-assets-route，仅修改Nginx目录回退；S12d未提交改动保留。验证实际隔离Nginx路径、静态JS与404语义后提交精确CI，再仅更新console并复验原S12c真实浏览器。
+
+### S12d 最终验证推进
+- 全量193前端、最终9受影响组件、lint/build PASS；双视口8浏览器PASS（s12d-browser.log/目录），包括真实隔离MySQL的55条OPEN全量与发布选择105条APPROVED，120条不可见记录被排除；已查看手机列表和桌面较早批准单选择截图。
+- 浏览器仅GET；s12d-live-db-after.json确认审批280条、零决定/命令/Outbox变化。临时API18889和自有MySQL已停止，数据保留，s12d-live-cleanup.json。
+- 根代理复核发现SQL默认不区分大小写会放宽原TenantScope精确标识语义，已补组织/门店二进制比较与大小写回归；s12d-backend-verified.log重跑中。合同固定路由集合已同步新增分页API，并补有界响应检查；最终架构/合同日志待核对。
+- S12c路由补修8bb1270精确CI44044235242全部PASS且已FF main。镜像准备首次裸SHA引用错误已改为已验证本地标签；更新console后Docker inspect出现15秒超时，自动恢复流程仍在核对，当前不能宣称最终部署PASS。运行状态runtime-8bb1270/rollout-state.json；不重启Docker或共享服务。
+
+### S12d 本地验收结论
+- 最终权限精确匹配回归3项真实MySQL PASS并已重新package（s12d-backend-verified.log）；前述4控制工作流PASS仍适用。最终193全量前端、9专项、lint/build、8双视口浏览器证据见本片日志，未改动已验证的交互行为。
+- 最终10架构检查、19合同测试及13JSON检查PASS（s12d-architecture-verified.log、s12d-contracts-verified.log）；实际OpenAPI YAML解析PASS。首次架构命令误包含无关依赖集成测试，已停止自有进程并按ArchitectureRulesTest限定重跑，不把中断运行计为PASS。
+- 根代理第二轮审查通过：范围/状态先于LIMIT，通配与大小写权限语义一致，游标重新校验当前可见范围，稳定创建时间顺序，状态变化后不依赖更新时间定位；前端完整范围缓存键、失败后保留已读与重试、历史批准单可选择，无伪造总量。Hygiene无阻断（无canonical formatter限制），s12d-hygiene-final.json。
+- 本片准备逻辑提交及精确CI；当前共享库尚未应用V6。本地Docker的S12c控制台补修仍在恢复，先恢复控制台再安排本片control/console更新。
+- 相邻待办：旧campaign列表XML仍有单字符通配OGNL判断，后续范围治理需补覆盖；release列表50条截断与范围后过滤仍待下一片，不冒充已修。

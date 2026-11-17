@@ -111,6 +111,19 @@ export const approvalViewSchema = z.object({
   updatedAt: z.string(),
 })
 export type ApprovalView = z.infer<typeof approvalViewSchema>
+export const APPROVAL_PAGE_SIZES = { DEFAULT: 25, MAX: 100 } as const
+export const approvalPageSchema = z.object({
+  items: z.array(approvalViewSchema).max(APPROVAL_PAGE_SIZES.MAX), nextCursor: z.string().min(1).nullable(), hasMore: z.boolean(),
+  status: approvalViewSchema.shape.status.nullable(),
+}).superRefine((page, context) => {
+  if (page.hasMore !== (page.nextCursor !== null) || page.hasMore && page.items.at(-1)?.caseId !== page.nextCursor
+      || page.status !== null && page.items.some((item) => item.status !== page.status)) {
+    context.addIssue({ code: 'custom', message: '审核分页响应的状态或游标不一致' })
+  }
+})
+export type ApprovalPage = z.infer<typeof approvalPageSchema>
+export type ApprovalStatus = ApprovalView['status']
+
 
 export const artifactReferenceSchema = z.object({
   artifactId: z.string(),

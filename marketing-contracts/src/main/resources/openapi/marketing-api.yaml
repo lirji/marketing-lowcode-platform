@@ -129,7 +129,29 @@ paths:
       parameters: [{$ref: '#/components/parameters/DefinitionId'}, {$ref: '#/components/parameters/Version'}]
       responses: *ok
   /api/v1/approvals:
-    get: {tags: [Control], operationId: listApprovals, responses: *list}
+    get:
+      tags: [Control]
+      operationId: listApprovals
+      description: Legacy array of at most 100 visible approvals ordered by updatedAt descending. Organization and shop scope are applied before the limit. Use the page endpoint for complete traversal.
+      responses: *list
+  /api/v1/approvals/page:
+    get:
+      tags: [Control]
+      operationId: listApprovalPage
+      description: >-
+        Filters tenant, organization, shop and optional status before limiting results.
+        Uses descending immutable created_at and case_id order. nextCursor is the last returned caseId
+        when hasMore is true. Cursor must remain visible in the current tenant and scope; its status may change.
+        This is a live traversal, not a frozen snapshot; refresh from the first page to observe newer records
+        or status changes. No total-count or daily-count claim is made. Requires definition:read or an approval role.
+      parameters:
+        - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 100, default: 25}}
+        - {in: query, name: status, schema: {type: string, enum: [OPEN, APPROVED, REJECTED]}}
+        - {in: query, name: cursor, schema: {type: string, minLength: 1, maxLength: 64}}
+      responses:
+        '200': {description: Visible approval page, content: {application/json: {schema: {$ref: '#/components/schemas/ApprovalPage'}}}}
+        '400': {description: APPROVAL_QUERY_INVALID or APPROVAL_CURSOR_INVALID; refresh after cursor invalidation, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '403': {$ref: '#/components/responses/Problem'}
   /api/v1/approvals/{caseId}/decisions:
     post:
       tags: [Control]
@@ -735,6 +757,26 @@ components:
     JsonArray: {description: Successful collection, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/JsonObject'}}}}}
     Problem: {description: RFC 9457 problem response, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
   schemas:
+    ApprovalPage:
+      type: object
+      required: [items, nextCursor, hasMore, status]
+      properties:
+        items: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/ApprovalView'}}
+        nextCursor: {type: [string, 'null'], description: Last returned caseId only when hasMore is true}
+        hasMore: {type: boolean}
+        status: {type: [string, 'null'], enum: [OPEN, APPROVED, REJECTED, null], description: Echo of the requested status; null means all statuses}
+    ApprovalView:
+      type: object
+      required: [caseId, definitionId, definitionVersion, submittedBy, requiredRoles, approvals, status, updatedAt]
+      properties:
+        caseId: {type: string}
+        definitionId: {type: string}
+        definitionVersion: {type: integer, format: int64}
+        submittedBy: {type: string}
+        requiredRoles: {type: array, items: {type: string, enum: [BUSINESS, FINANCE, COMPLIANCE, MERCHANT]}}
+        approvals: {type: object, additionalProperties: {type: string}}
+        status: {type: string, enum: [OPEN, APPROVED, REJECTED]}
+        updatedAt: {type: string, format: date-time}
     TemplateCreate:
       type: object
       required: [templateId, version, channel, content, requiredVariables]

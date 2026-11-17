@@ -335,29 +335,44 @@ public class ControlApplicationService {
         return stored;
     }
 
+    /** 兼容旧数组接口，保留最近更新时间排序，但先在SQL中过滤可见范围。 */
     public List<ApprovalView> approvals() {
-        var scope = TenantContextHolder.requireCurrent();
-        if (!scope.permits("definition:read")
-                && !scope.permits("approval:business")
-                && !scope.permits("approval:finance")
-                && !scope.permits("approval:compliance")
-                && !scope.permits("approval:merchant")) {
-            scope.requirePermission("definition:read");
-        }
-        List<ApprovalCase> cases = repository.findApprovalCases(scope.tenantId().value(), 100).stream()
-                .map(row -> approval(scope.tenantId().value(), row))
-                .toList();
-        List<ApprovalView> views = new ArrayList<>();
-        for (ApprovalCase item : cases) {
-            try {
-                definition(scope, item.definitionId(), item.definitionVersion());
-                views.add(ApprovalView.from(item));
-            } catch (NotFoundException | IllegalArgumentException ignored) {
-                // Skip cases outside the caller's campaign/org/shop scope.
-            }
-        }
-        return views;
+        var scope = approvalReadScope();
+        var query = new ControlRepository.ApprovalListQuery(scope.tenantId().value(), scope.organizations(),
+                scope.shops(), null, null, null, ApprovalPaging.MAX_PAGE_SIZE);
+        return repository.findApprovalCases(query).stream()
+                .map(row -> ApprovalView.from(approval(scope.tenantId().value(), row))).toList();
     }
+
+    /** 按不可变提交时间与ID翻页；状态可变，刷新后从第一页重新核对当前事实。 */
+    public ApprovalPage approvalPage(Integer limit, String status, String cursor) {
+        var scope = approvalReadScope();
+        var input = ApprovalPaging.validate(limit, status, cursor);
+        String createdAt = null;
+        if (input.cursor() != null) {
+            var pointQuery = new ControlRepository.ApprovalListQuery(scope.tenantId().value(), scope.organizations(),
+                    scope.shops(), null, null, input.cursor(), 1);
+            // 游标允许已改变审核状态，但必须仍在当前租户/组织/门店的可见范围。
+            createdAt = repository.findApprovalCursor(pointQuery).orElseThrow(ApprovalPaging::invalidCursor).createdAt();
+        }
+        var query = new ControlRepository.ApprovalListQuery(scope.tenantId().value(), scope.organizations(),
+                scope.shops(), input.status(), createdAt, input.cursor(), input.limit() + 1);
+        var rows = repository.findApprovalPage(query);
+        boolean hasMore = rows.size() > input.limit();
+        var items = rows.stream().limit(input.limit())
+                .map(row -> ApprovalView.from(approval(scope.tenantId().value(), row))).toList();
+        return new ApprovalPage(items, hasMore ? items.getLast().caseId() : null, hasMore, input.status());
+    }
+
+    private TenantScope approvalReadScope() {
+        var scope = TenantContextHolder.requireCurrent();
+        if (!scope.permits("definition:read") && !scope.permits("approval:business")
+                && !scope.permits("approval:finance") && !scope.permits("approval:compliance")
+                && !scope.permits("approval:merchant")) scope.requirePermission("definition:read");
+        return scope;
+    }
+
+    public record ApprovalPage(List<ApprovalView> items, String nextCursor, boolean hasMore, String status) { }
 
     public TermsView terms(String definitionId, long version) {
         var scope = TenantContextHolder.requireCurrent();

@@ -233,8 +233,8 @@ test('referral operations reads live participants without marking payouts', asyn
       OIDC_SCOPE: 'openid profile email',
     }
   })
-  await page.route('**/api/v1/approvals', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+  await page.route('**/api/v1/approvals/page?**', async (route) => {
+    await route.fulfill({ json: { items: [], nextCursor: null, hasMore: false, status: new URL(route.request().url()).searchParams.get('status') } })
   })
   await page.route('**/api/v1/releases', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })

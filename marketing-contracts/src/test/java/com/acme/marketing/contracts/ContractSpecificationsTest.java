@@ -34,7 +34,7 @@ class ContractSpecificationsTest {
             "/api/v1/definitions/{definitionId}/versions/{version}:simulate-journey",
             "/api/v1/definitions/{definitionId}/versions/{version}:submit",
             "/api/v1/definitions/{definitionId}/versions/{version}/terms",
-            "/api/v1/approvals", "/api/v1/approvals/{caseId}/decisions", "/api/v1/registries/nodes",
+            "/api/v1/approvals", "/api/v1/approvals/page", "/api/v1/approvals/{caseId}/decisions", "/api/v1/registries/nodes",
             "/api/v1/releases", "/api/v1/releases/{manifestId}:ack",
             "/api/v1/releases/{manifestId}:activate", "/api/v1/releases/{manifestId}:rollback",
             "/api/v1/releases/desired", "/api/v1/releases/kill-switches/{namespace}",
@@ -99,6 +99,23 @@ class ContractSpecificationsTest {
         }
         assertFalse(Files.readString(source).contains("X-Payload-SHA256"));
         verifyExternalReferences(document, source);
+    }
+
+    @Test
+    void approvalPageContractKeepsLegacyArrayAndBoundedTraversal() throws IOException {
+        var document = yaml(RESOURCES.resolve("openapi/marketing-api.yaml"));
+        var paths = map(document.get("paths"));
+        assertTrue(paths.containsKey("/api/v1/approvals"));
+        var operation = map(map(paths.get("/api/v1/approvals/page")).get("get"));
+        var parameters = (List<?>) operation.get("parameters");
+        var limit = parameters.stream().map(ContractSpecificationsTest::map)
+                .filter(parameter -> "limit".equals(parameter.get("name"))).findFirst().orElseThrow();
+        assertEquals(100, map(limit.get("schema")).get("maximum"));
+        assertEquals(25, map(limit.get("schema")).get("default"));
+        var schemas = map(map(document.get("components")).get("schemas"));
+        var page = map(schemas.get("ApprovalPage"));
+        assertEquals(Set.of("items", "nextCursor", "hasMore", "status"), new HashSet<>((List<?>) page.get("required")));
+        assertEquals(100, map(map(page.get("properties")).get("items")).get("maxItems"));
     }
 
     @Test

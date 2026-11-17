@@ -5,6 +5,8 @@ import { navigation } from './navigation'
 import { useAuth } from '../shared/auth/useAuth'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../shared/api/client'
+import { APPROVAL_PAGE_SIZES } from '../shared/api/schemas'
+import { APPROVAL_STATUS, useApprovalPages } from '../shared/api/useApprovalPages'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { Modal } from '../components/ui'
 
@@ -34,17 +36,14 @@ export function AppShell() {
   )
   const searchable = useMemo(() => visibleNav.flatMap((group) => group.items), [visibleNav])
   const results = searchable.filter((item) => item.label.toLowerCase().includes(query.toLowerCase()))
-  const approvals = useQuery({
-    queryKey: ['approvals', 'badge'],
-    queryFn: api.approvals,
-    enabled: authenticated && !api.demoMode && auth.hasAnyPermission(['approval:business', 'approval:finance', 'approval:compliance', 'approval:merchant', 'definition:read']),
-  })
+  const approvals = useApprovalPages(APPROVAL_STATUS.OPEN, authenticated, APPROVAL_PAGE_SIZES.MAX)
   const releases = useQuery({
     queryKey: ['releases', 'health'],
     queryFn: api.releases,
     enabled: authenticated && !api.demoMode && auth.hasPermission('release:read'),
   })
-  const openApprovals = (approvals.data ?? []).filter((item) => item.status === 'OPEN').length
+  const openApprovals = approvals.items.length
+  const openApprovalLabel = `${openApprovals}${approvals.hasNextPage ? '+' : ''}`
   const activeCells = (releases.data ?? []).filter((item) => item.state === 'ACTIVE').length
   const orgLabel = auth.organizations.includes('*') || auth.organizations.length === 0
     ? '全域组织'
@@ -100,7 +99,7 @@ export function AppShell() {
               {group.items.map(({ label, path, icon: Icon }) => (
                 <NavLink end={path === '/'} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} to={path} key={path} aria-label={label} title={label}>
                   <Icon size={17} aria-hidden="true" /><span>{label}</span>
-                  {path === '/governance' && openApprovals > 0 && <b className="nav-badge">{openApprovals}</b>}
+                  {path === '/governance' && openApprovals > 0 && <b className="nav-badge">{openApprovalLabel}</b>}
                 </NavLink>
               ))}
             </div>
@@ -122,7 +121,7 @@ export function AppShell() {
             <span className="scope-icon"><Building2 size={17} aria-hidden="true" /></span><div className="scope-info"><strong>业务租户 · {auth.tenantId || '未声明'}</strong><small title={`${orgLabel} · ${auth.shops.includes('*') || auth.shops.length === 0 ? '全部店铺' : auth.shops.join(' / ')}`}>{orgLabel} · {auth.shops.includes('*') || auth.shops.length === 0 ? '全部店铺' : auth.shops.join(' / ')}</small></div>
           </div>
           <button className="global-search" type="button" onClick={() => setSearchOpen(true)}><Search size={16} /><span>搜索模块…</span><kbd><Command size={11} /> K</kbd></button>
-          <button className="icon-button" type="button" aria-label={openApprovals > 0 ? `${openApprovals} 条待审核` : '通知'} onClick={() => navigate('/governance')}>
+          <button className="icon-button" type="button" aria-label={openApprovals > 0 ? `${openApprovalLabel} 条可见待审核` : '通知'} onClick={() => navigate('/governance')}>
             <Bell size={18} />
             {openApprovals > 0 && <i />}
           </button>

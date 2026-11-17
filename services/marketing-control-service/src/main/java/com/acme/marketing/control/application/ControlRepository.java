@@ -37,7 +37,9 @@ public interface ControlRepository {
     void saveApprovalDecision(ApprovalDecisionWrite write);
     void updateApprovalCase(String tenantId, String caseId, String status, String updatedAt);
     Optional<ApprovalCaseRow> findApprovalCase(String tenantId, String caseId, boolean lock);
-    List<ApprovalCaseRow> findApprovalCases(String tenantId, int limit);
+    List<ApprovalCaseRow> findApprovalCases(ApprovalListQuery query);
+    List<ApprovalCaseRow> findApprovalPage(ApprovalListQuery query);
+    Optional<ApprovalCursorRow> findApprovalCursor(ApprovalListQuery query);
     List<ApprovalDecisionRow> findApprovalDecisions(String tenantId, String caseId);
     Optional<TermsRow> findLatestTerms(String tenantId, String definitionId, long version);
 
@@ -98,6 +100,10 @@ public interface ControlRepository {
             String decidedAt) { }
     record ApprovalCaseRow(String caseId, String definitionId, long definitionVersion, String submittedBy,
             String requiredRoles, String status, String updatedAt) { }
+    /** 仅承载已验证的查询条件；范围谓词必须先于LIMIT执行。 */
+    record ApprovalListQuery(String tenantId, Set<String> organizations, Set<String> shops, String status,
+            String cursorCreatedAt, String cursorCaseId, int limit) { }
+    record ApprovalCursorRow(String createdAt, String caseId) { }
     record ApprovalDecisionRow(String roleName, String actorId) { }
     record TermsRow(String termsId, String contentJson, String contentHash, String createdAt) { }
     record AuditHeadRow(long chainIndex, String entryHash) { }

@@ -40,8 +40,9 @@ public interface ControlMapper {
             @Param("status") String status, @Param("updatedAt") String updatedAt);
     ControlRepository.ApprovalCaseRow selectApprovalCase(@Param("tenantId") String tenantId,
             @Param("caseId") String caseId, @Param("lock") boolean lock);
-    List<ControlRepository.ApprovalCaseRow> selectApprovalCases(@Param("tenantId") String tenantId,
-            @Param("limit") int limit);
+    List<ControlRepository.ApprovalCaseRow> selectApprovalCases(ControlRepository.ApprovalListQuery query);
+    List<ControlRepository.ApprovalCaseRow> selectApprovalPage(ControlRepository.ApprovalListQuery query);
+    ControlRepository.ApprovalCursorRow selectApprovalCursor(ControlRepository.ApprovalListQuery query);
     List<ControlRepository.ApprovalDecisionRow> selectApprovalDecisions(@Param("tenantId") String tenantId,
             @Param("caseId") String caseId);
     ControlRepository.TermsRow selectLatestTerms(@Param("tenantId") String tenantId,

@@ -56,8 +56,14 @@ public class MybatisControlRepository implements ControlRepository {
     @Override public Optional<ApprovalCaseRow> findApprovalCase(String tenantId, String caseId, boolean lock) {
         return Optional.ofNullable(mapper.selectApprovalCase(tenantId, caseId, lock));
     }
-    @Override public List<ApprovalCaseRow> findApprovalCases(String tenantId, int limit) {
-        return mapper.selectApprovalCases(tenantId, limit);
+    @Override public List<ApprovalCaseRow> findApprovalCases(ApprovalListQuery query) {
+        return mapper.selectApprovalCases(query);
+    }
+    @Override public List<ApprovalCaseRow> findApprovalPage(ApprovalListQuery query) {
+        return mapper.selectApprovalPage(query);
+    }
+    @Override public Optional<ApprovalCursorRow> findApprovalCursor(ApprovalListQuery query) {
+        return Optional.ofNullable(mapper.selectApprovalCursor(query));
     }
     @Override public List<ApprovalDecisionRow> findApprovalDecisions(String tenantId, String caseId) {
         return mapper.selectApprovalDecisions(tenantId, caseId);

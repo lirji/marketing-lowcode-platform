@@ -11,7 +11,7 @@ import type { ApprovalView, ArtifactView, BenefitSku, DefinitionBundle } from '.
 const { state, mocks } = vi.hoisted(() => ({
   state: { demoMode: false },
   mocks: {
-    approvals: vi.fn(), getDefinition: vi.fn(), benefits: vi.fn(), benefitSkus: vi.fn(), releases: vi.fn(),
+    approvalPage: vi.fn(), getDefinition: vi.fn(), benefits: vi.fn(), benefitSkus: vi.fn(), releases: vi.fn(),
     compile: vi.fn(), getArtifact: vi.fn(), stageRelease: vi.fn(), acknowledgeRelease: vi.fn(),
   },
 }))
@@ -23,7 +23,7 @@ vi.mock('../../shared/api/client', async (importOriginal) => {
     api: {
       ...actual.api,
       get demoMode() { return state.demoMode },
-      approvals: mocks.approvals,
+      approvalPage: mocks.approvalPage,
       getDefinition: mocks.getDefinition,
       benefits: mocks.benefits,
       benefitSkus: mocks.benefitSkus,
@@ -75,12 +75,25 @@ describe('ReleaseWizard', () => {
   beforeEach(() => {
     state.demoMode = false
     Object.values(mocks).forEach((mock) => mock.mockReset())
-    mocks.approvals.mockResolvedValue([approval])
+    mocks.approvalPage.mockResolvedValue({ items: [approval], nextCursor: null, hasMore: false, status: 'APPROVED' })
     mocks.getDefinition.mockResolvedValue(bundle)
     mocks.benefits.mockResolvedValue([{ benefitId: 'benefit-1', version: 1, name: '券', status: 'ACTIVE', benefitSkuId: '1001', policy: {} }])
     mocks.benefitSkus.mockResolvedValue([{ skuId: '1001', benefitType: 'COUPON', status: 'ACTIVE', version: 1 } as BenefitSku])
     mocks.releases.mockResolvedValue([])
     mocks.getArtifact.mockResolvedValue(artifact)
+  })
+
+  it('loads an older approved definition from a subsequent page', async () => {
+    const older = { ...approval, caseId: 'older-approval' }
+    mocks.approvalPage.mockImplementation(({ cursor }) => Promise.resolve(cursor
+      ? { items: [older], nextCursor: null, hasMore: false, status: 'APPROVED' }
+      : { items: [approval], nextCursor: approval.caseId, hasMore: true, status: 'APPROVED' }))
+    renderWizard(); const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: '加载更多批准单' }))
+    await selectOption(screen.getByLabelText('批准单 / 冻结版本'), older.caseId)
+    await screen.findByText(/OFFER_DECISION_DAG/)
+    expect(mocks.approvalPage).toHaveBeenLastCalledWith({ status: 'APPROVED', limit: 25, cursor: approval.caseId })
+    expect(screen.getByRole('button', { name: '编译' })).toBeEnabled()
   })
 
   it('stops after valid=false and never reads or stages an artifact', async () => {
