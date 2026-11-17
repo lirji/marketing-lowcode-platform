@@ -99,3 +99,9 @@ S11g2合同模块保持无JSON生产依赖，动作在wire中使用经Action.fro
 - 返回`{state:"RECORDED",directive,latestSequence,current,recordedAt}`。RECORDED只证明持久接收，不是READY或APPLIED；该片不修改旧mk_runtime_slot、在线evaluate或Flink，不把接收回执作为激活能力ACK。GET读取持久原文（包括已过期历史的latest），不延长授权；后续使用时必须重新验签/期限/实时停用。
 - 历史与head有完整主键/唯一键、head到历史的复合外键，使用utf8mb4_0900_bin保持签名身份/范围的大小写和尾空格精确性；初始head序号可空且只在同事务内存在，失败整体回滚。保留不可变授权证据，不新增自动清理；生产保留/容量验收仍在S13，不宣称无限容量。
 - 验收：真实MySQL/HTTP并发首次与重复、乱序/同序号冲突、不同活动并发、拒绝越权/租户/slot/缺制品/损坏制品/签名/过期、有界解析、应用上下文重建后读取、旧在线指针不变。范围仅Decision、g2共用错误与机器API、V4及测试。无新中间件、线程池、外部调用或共享库迁移。
+
+## S11g3b：Journey持久接收整体授权
+- 对Journey增加`POST /api/v1/journey-runtime/release-bundle-directives`与`GET .../{campaignId}/latest`，复用g3a的runtime:activate权限、1MiB边界、RECORDED回执、严格签名及单调接收语义；不跨服务数据库共享表或应用类。
+- Journey本库V3新增独立接收历史/head，使用相同完整作用域、二进制NO PAD排序规则与复合外键。接收时复用Journey原持久generation/签名制品/已安装定义核验；缺generation沿用原404，定义缺失或内容不一致拒绝，不伪造ACK。
+- 先锁head再查询持久成员，保证事务内一致性；提取包内核验方法供原prepareBundle和新接收服务共用，不放宽HTTP鉴权。Journey旧active pointer、定义、enrollment、Flink与Outbox保持不变。后续Flink只在执行绑定协议齐备后使用这些记录，本片不宣称应用成功。
+- 验收：与g3a同级的真实MySQL并发/重放/乱序/失败回滚/重建上下文/输入边界，加已安装Journey定义损坏拒绝和旧运行模块回归。范围Journey服务/V3、机器API与测试；无需新增基础设施或部署。

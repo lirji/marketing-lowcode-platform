@@ -96,16 +96,22 @@ public class JourneyRuntimeReleaseService {
         scope.requirePermission("runtime:warm");
         bundleVerifier.requireValid(scope.tenantId().value(), request.bundle(), clock.instant());
         ReleaseManifest member = request.member();
-        StoredGeneration stored = generation(scope.tenantId().value(), member, member.generation());
+        ArtifactReference artifact = verifyInstalledMember(scope.tenantId().value(), member);
+        return ReleaseBundleAckSigner.sign(ackKeys.activePrivateKey(), scope.tenantId().value(),
+                ReleaseBundleAck.unsigned(request.bundle(), member, ready(member, artifact)));
+    }
+
+    /** 仅供已鉴权/验签的组合应用入口复用；验证持久制品和实际安装定义，不签发ACK。 */
+    ArtifactReference verifyInstalledMember(String tenantId, ReleaseManifest member) {
+        StoredGeneration stored = generation(tenantId, member, member.generation());
         if (!member.equals(stored.manifest())) throw ReleaseBundleProtocolError.MEMBER_MISMATCH.conflict();
-        var artifact = verifyArtifact(scope.tenantId().value(), stored.releaseKeyId(), member, stored.payload());
+        var artifact = verifyArtifact(tenantId, stored.releaseKeyId(), member, stored.payload());
         JourneyPlan plan = read(stored.payload(), JourneyPlan.class);
         assertPlan(plan, artifact.reference());
-        String definition = repository.findPlanJson(scope.tenantId().value(), plan.journeyId(), plan.version())
+        String definition = repository.findPlanJson(tenantId, plan.journeyId(), plan.version())
                 .orElseThrow(ReleaseBundleProtocolError.MEMBER_NOT_INSTALLED::conflict);
         if (!plan.equals(read(definition, JourneyPlan.class))) throw ReleaseBundleProtocolError.MEMBER_MISMATCH.conflict();
-        return ReleaseBundleAckSigner.sign(ackKeys.activePrivateKey(), scope.tenantId().value(),
-                ReleaseBundleAck.unsigned(request.bundle(), member, ready(member, artifact.reference())));
+        return artifact.reference();
     }
 
     private JourneyReleaseVerifier.VerifiedArtifact verifyArtifact(String tenantId, String releaseKeyId,

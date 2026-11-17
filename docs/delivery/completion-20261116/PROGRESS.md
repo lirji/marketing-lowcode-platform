@@ -8,14 +8,14 @@
 - 规范：`~/.codex/architecture-standards.md` 业务建模、持久化、接口契约、并发安全；`personal-tech-stack.md` 并发、线程池、日志、状态机；engineering-workflows/backend-implementation/continue-approved-delivery/task-git-delivery。前端、Runtime 专项随切片读取。
 
 ## 当前状态（2026-11-17，恢复执行）
-- 用户已确认同一活动组合整体生效/回滚，并要求继续流程；会员/画像优先Commerce、交易证据优先交易中心、认证Auth的方向进入增量接入设计。具体技术合同和机器凭据仍按真实系统核对，不再重复询问来源选型。当前分支 `feat/activity-release-bundles` 基于 `d57a572`，S11e/f2已交付，S11f3组合就绪已验证并推送，S11g开始实施；设计与切片见 [活动组合增量设计](ATOMIC_RELEASE_DESIGN.md)。
+- 用户已确认同一活动组合整体生效/回滚，并要求继续流程；会员/画像优先Commerce、交易证据优先交易中心、认证Auth的方向进入增量接入设计。具体技术合同和机器凭据仍按真实系统核对，不再重复询问来源选型。当前分支 `feat/activity-release-bundles` 基于 `d57a572`，S11e/f/g1/g2已交付，S11g3a Decision持久接收已验证并推送，S11g3b Journey接收正在验证；设计与切片见 [活动组合增量设计](ATOMIC_RELEASE_DESIGN.md)。
 - 先执行依赖齐备的S11e不可变组合准备与成员发布保护，再推进运行端和整体切换；上游缺少机器快照/主体映射的部分保留依赖状态。当前未修改其他仓库、未部署或迁移共享库。文档提交 `d57a572` 的CI `44095478630` 已核实三项SUCCESS，原pending记录失效。
-- S01–S05已完成；S06–S13仍按下表保留未完成范围。S12c–S12q已交付；最新产品提交 `dbe268b5ed25004c5ee35af171ceb147e2509e55` 已正常快进合入并推送main，精确CI `44092826351` 的Java/合同/架构、前端、Compose/Helm三项全部通过。该阶段分支为 `fix/asset-preview-reads`，其后交付回执仅改文档，运行制品仍固定该产品提交。
+- S01–S05已完成；S06–S13仍按下表保留未完成范围。S12c–S12q已交付；上一轮已部署产品提交 `dbe268b5ed25004c5ee35af171ceb147e2509e55` 已正常快进合入并推送main，精确CI `44092826351` 的Java/合同/架构、前端、Compose/Helm三项全部通过。该阶段分支为 `fix/asset-preview-reads`，其后交付回执仅改文档，运行制品仍固定该产品提交。
 - 本机仅18个必要容器运行：13个marketing-r1、权益目录适配服务、MySQL/Redis/Kafka/ClickHouse；15个配置了健康检查且全部healthy，另3个未配置健康检查，全部运行且无OOM。console=dbe268b、edge-gateway=7764526、engagement=166dc43、benefit-funding=607542e、audience=a260865、control=b3858e6，其余应用045dfd9。control V7已迁移；UI8084、网关18080、Flink18081。详见 [本机部署回执](LOCAL_DEPLOYMENT_20261117.md)。
 - 用户授权Docker只运行本项目组件；13个额外无关容器及原17个langchain应用保持停止，所有容器与数据卷保留。本轮只更新console，17个其它运行容器ID/镜像/启动时间不变；3个原Flink作业及检查点继续推进，禁止重复恢复或提交空作业。
-- 最新验证：271项前端测试、98项浏览器用例通过，10项既有独立服务用例跳过；lint/build/Hygiene无阻塞，未配置canonical formatter。真实Docker四类资产页在桌面与Pixel7的分页、搜索、详情及字段/节点读取回归通过，无业务写入、API失败或页面异常。运行回执与截图：私有证据目录 `runtime-dbe268b/`。
-- 本轮新增结果：活动/首页/运营/资产的静态预览不显示假业务数据或旧缓存，资产刷新不能绕过读取门禁；OIDC身份范围变化、退出与过期清理旧请求/缓存/草稿，旧令牌401不退出已更新令牌，远端退出失败能恢复登录页。本机仍为DEV认证，真实IdP联调未验证。
-- 当前HEAD/远程任务分支a8664e2，main/origin=9fc65e3。S11f2精确CI44107210890全部SUCCESS且已正常合入推送main；S11f3本地27项数据库测试、合同/架构/Hygiene PASS（无formatter），精确CI44108641742全部SUCCESS。接续S11g控制面同slot防绕过，再实施执行版本绑定与整体激活。无部署或共享库迁移任务。
+- 上一轮部署验证：271项前端测试、98项浏览器用例通过，10项既有独立服务用例跳过；lint/build/Hygiene无阻塞，未配置canonical formatter。真实Docker四类资产页在桌面与Pixel7的分页、搜索、详情及字段/节点读取回归通过，无业务写入、API失败或页面异常。运行回执与截图：私有证据目录 `runtime-dbe268b/`。
+- 上一轮部署可见结果：活动/首页/运营/资产的静态预览不显示假业务数据或旧缓存，资产刷新不能绕过读取门禁；OIDC身份范围变化、退出与过期清理旧请求/缓存/草稿，旧令牌401不退出已更新令牌，远端退出失败能恢复登录页。本机仍为DEV认证，真实IdP联调未验证。
+- 当前HEAD/远程任务分支9930648，main/origin=dde7c6c。S11g1/2精确CI44110842403、44112359075全部SUCCESS并已正常合入main；S11g3a完整Decision28项、合同34项/架构10项/Hygiene PASS（无formatter），精确CI44114923717运行中。S11g3b已实现并编译PASS，完整Journey模块测试session37569运行中（s11g3b-module-first.log）。无部署或共享库迁移任务。
 
 ## 未完成项与恢复顺序
 
@@ -731,3 +731,17 @@
 - 常量收敛后的8项受影响真实HTTP/MySQL测试再次PASS（s11g3a-final.log）。当前无未结束测试，完整模块28项其余证据有效。Git忽略项为既有构建/测试产物及本机恢复文件，保留不清理；没有新worktree、部署或共享迁移。
 
 - 完整暂存Hygiene/diff PASS（s11g3a-hygiene-final.json）；事务需人工复核项已由上述锁序/回滚/并发证据覆盖，只有无canonical formatter限制。准备提交及精确CI，S11g2精确CI44112359075已全部SUCCESS。
+
+## S11g3b Journey授权持久接收（实施中）
+- g3a提交9930648已推送，精确CI44114923717运行中；g2 dde7c6c已通过CI44112359075且已正常FF合入并推送main。
+- 继续Journey本库接收投影与核验复用，具体边界见增量设计末节。只保存RECORDED事实，不改Flink/在线状态，仍不依赖待答的参与粒度。
+
+- g3b代码/Mapper/V3、严格接口已写，复用原Journey包内持久核验且未生成ACK或线上指令；编译PASS（s11g3b-compile.log）。真实模块测试session37569正在执行，未连接共享数据库。
+
+### S11g3b 本地验证检查点
+- 完整Journey模块17项（新增9项+旧8项）PASS，相关依赖测试一并通过（s11g3b-module-first.log）。覆盖旧active指针不变、上下文重建恢复、并发同键/冲突/不同大小写活动、未知旧序号、缺制品/损坏定义、越权/有界解析、事务失败回滚、复合外键和损坏原文/时间拒绝。
+- 根代理复核Journey抽取方法仍为包内能力、两个公开入口分别保留原权限/签名校验；未重新签发ACK、未触及Flink或业务状态。继续合同/架构/Hygiene检查；无共享操作。
+
+- g3b合同34项/13份JSON、架构10项PASS（s11g3b-contracts-final.log、s11g3b-architecture-final.log）。完整暂存Hygiene/diff随后执行；g3a远程CI44114923717前端/部署PASS、后端仍运行，暂不重复触发以免取消有效的在途验证。
+
+- g3b完整暂存Hygiene/diff PASS（s11g3b-hygiene-final.json），1MiB输入和10秒事务是已定义协议预算，事务人工复核与真实失败/并发测试已覆盖；保留无formatter限制。g3a精确CI44114923717现已三项全部SUCCESS，可以正常交付。

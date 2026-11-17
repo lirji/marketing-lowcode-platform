@@ -87,3 +87,9 @@ V10在原slot行增加组合管理标记，并回填历史组合成员；不改�
 `POST /api/v1/decisions/runtime/release-bundle-directives`要求`runtime:activate`并接收最多1MiB的严格JSON整体授权。先验证当前可信签名/租户/时间、本地完整slot及已安装制品，再在同一数据库事务记录不可变历史与最高接收序号。相同序号相同内容返回原接收时间；同序号异内容或复用指令编号409，未知旧序号409，已记录旧授权重放成功但`current=false`。
 
 `GET /api/v1/decisions/runtime/release-bundle-directives/{campaignId}/latest`在相同权限下查询最高已接收授权；跨租户和大小写不同的活动键严格隔离。返回`state=RECORDED`，`current`仅指最高接收序号；不改变旧线上指针，不是READY/APPLIED回执。过期历史仍可读，后续使用必须重新验证有效期及实时停用。V4仅在隔离MySQL验证，未部署或迁移共享库。
+
+### Journey持久接收整体授权（S11g3b）
+
+Journey提供对应的`POST /api/v1/journey-runtime/release-bundle-directives`与`GET .../{campaignId}/latest`，使用相同的`runtime:activate`、1MiB严格解析和`RECORDED`合同。它在Journey自己的V3表保存授权历史/head，除原签名制品外还核对真实已安装的Journey定义；缺generation沿用404，定义缺失或内容不符拒绝。
+
+本片不推进Journey旧active pointer、不改enrollment/Outbox或Flink，不返回实际应用证明。后续Flink固定组合执行必须继续验证授权和参与绑定；不能把两个服务都RECORDED作为整体发布已生效。

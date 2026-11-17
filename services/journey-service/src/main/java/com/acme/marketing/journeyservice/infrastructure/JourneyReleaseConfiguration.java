@@ -2,6 +2,7 @@ package com.acme.marketing.journeyservice.infrastructure;
 
 import com.acme.marketing.journey.JourneyReleaseVerifier;
 import com.acme.marketing.contracts.release.PinnedReleaseBundleVerifier;
+import com.acme.marketing.contracts.release.PinnedReleaseBundleActivationVerifier;
 import com.acme.marketing.journeyservice.application.JourneyKillSwitchRegistry;
 import com.acme.marketing.journeyservice.application.JourneyRepository;
 import com.acme.marketing.platform.crypto.Ed25519;
@@ -28,6 +29,18 @@ public class JourneyReleaseConfiguration {
         var keys = trustedKeys(keyId, publicKey, additionalKeys);
         requireTrustInProduction(securityMode, java.util.List.of(keys));
         return new PinnedReleaseBundleVerifier(keys);
+    }
+
+    /** 整体授权和原发布使用同一控制公钥集合，不信任运行ACK密钥签发。 */
+    @Bean
+    public PinnedReleaseBundleActivationVerifier releaseBundleActivationVerifier(
+            @Value("${marketing.release.trusted-key-id:}") String keyId,
+            @Value("${marketing.release.public-key-base64:}") String publicKey,
+            @Value("${marketing.release.trusted-public-keys:}") String additionalKeys,
+            @Value("${marketing.security.mode:DEV}") String securityMode) {
+        var keys = trustedKeys(keyId, publicKey, additionalKeys);
+        requireTrustInProduction(securityMode, java.util.List.of(keys));
+        return new PinnedReleaseBundleActivationVerifier(keys);
     }
 
     @Bean

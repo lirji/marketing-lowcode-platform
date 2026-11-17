@@ -53,6 +53,8 @@ class ContractSpecificationsTest {
             "/api/v1/audiences/snapshots/{snapshotId}/memberships/{subjectToken}",
             "/api/v1/decisions:evaluate", "/api/v1/decisions:batch-evaluate",
             "/api/v1/decisions/traces/requests/{requestId}", "/api/v1/decisions/traces/orders/{orderId}",
+            "/api/v1/journey-runtime/release-bundle-directives",
+            "/api/v1/journey-runtime/release-bundle-directives/{campaignId}/latest",
             "/api/v1/decisions/runtime/release-bundle-directives",
             "/api/v1/decisions/runtime/release-bundle-directives/{campaignId}/latest",
             "/api/v1/decisions/runtime/manifest", "/api/v1/decisions/runtime/release-bundles:prepare", "/api/v1/decisions/runtime/activation",

@@ -779,6 +779,46 @@ paths:
     get: {tags: [Event], operationId: listQuarantine, responses: *list}
   /api/v1/quarantine/{quarantineId}:replay:
     post: {tags: [Event], operationId: replayQuarantinedEvent, parameters: [{$ref: '#/components/parameters/QuarantineId'}], responses: *ok}
+  /api/v1/journey-runtime/release-bundle-directives:
+    post:
+      operationId: recordJourneyBundleDirective
+      summary: Persist a signed whole-bundle authorization without changing online routing
+      description: Requires runtime:activate. Strict JSON up to 1MiB. Verifies trusted complete signatures and the exact persisted local member and installed Journey definition; a missing generation preserves the existing 404 response. Same sequence and same content replay; conflicts or unknown stale sequences return 409. RECORDED is not READY or APPLIED.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReleaseBundleActivationDirective'}
+      responses:
+        '200':
+          description: Durable receipt only; existing routing pointers are unchanged
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecordedBundleDirective'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
+  /api/v1/journey-runtime/release-bundle-directives/{campaignId}/latest:
+    get:
+      operationId: getLatestRecordedJourneyBundleDirective
+      summary: Recover the latest durable bundle authorization receipt
+      description: Requires runtime:activate for the trusted tenant and configured runtime slot. Expired authorization remains readable as history; reading does not extend validity or apply it.
+      parameters:
+        - name: campaignId
+          in: path
+          required: true
+          schema: {type: string, pattern: '^[A-Za-z0-9_.:-]{1,64}$'}
+      responses:
+        '200':
+          description: Highest recorded sequence, not current online state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecordedBundleDirective'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
   /api/v1/journey-runtime/release-bundles:prepare:
     post:
       tags: [Journey]
