@@ -96,7 +96,19 @@ public class JourneyExecutionProbeService {
     }
 
     private Receipt receipt(Key key, StoredProbe row, TenantScope scope) {
-        var probe = probe(key, row); var source = source(key, row.activationSequence()); requireScope(scope, source);
+        requireScope(scope, source(key, row.activationSequence()));
+        return receipt(key, row);
+    }
+
+    /** 仅供本包已领取持久投递任务使用；调用方必须在短事务中持锁校验，不能映射到HTTP。 */
+    Receipt inspectDelivery(Key key) {
+        if (!key.equals(deployment.key(key.tenantId(), key.campaignId(), key.probeId())))
+            throw ReleaseBundleProtocolError.EXECUTION_DELIVERY_INVALID.conflict();
+        return receipt(key, locked(key));
+    }
+
+    private Receipt receipt(Key key, StoredProbe row) {
+        var probe = probe(key, row); var source = source(key, row.activationSequence());
         Instant now = clock.instant(); boolean expired = !now.isBefore(probe.expiresAt());
         // 过期仅查看历史：仍检查当前信任，按有效窗末端验证当时证据；不能把该时刻用于实际应用。
         Instant verificationAt = expired ? probe.expiresAt().minusNanos(1) : now;
@@ -157,5 +169,8 @@ public class JourneyExecutionProbeService {
         String code() { return code; }
     }
     /** 返回原证据供下一层重验；字段不表示活动已整体生效。 */
-    public record Receipt(String state, JourneyBundleExecutionProbe probe, List<JourneyBundleExecutionAck> acknowledgements, Instant observedAt) { }
+    public record Receipt(String state, JourneyBundleExecutionProbe probe, List<JourneyBundleExecutionAck> acknowledgements, Instant observedAt) {
+        public boolean ready() { return ProbeState.READY.code().equals(state); }
+        public boolean expired() { return ProbeState.EXPIRED.code().equals(state); }
+    }
 }

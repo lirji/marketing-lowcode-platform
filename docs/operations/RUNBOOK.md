@@ -109,6 +109,21 @@ Journey 的 `JOURNEY_RUNTIME_STORE_UNAVAILABLE` 表示数据库连接/查询或�
 
 连接串中的 connectTimeout/socketTimeout 会被上述有界设置覆盖，不能用 0 关闭保护。这里是单次等待上限，作业重启/退避策略仍由 Flink 部署配置管理；本轮没有验证真实集群 checkpoint 恢复时长。
 
+### Journey 组合执行探针投递（代码已接入，运行环境尚未启用）
+
+探针用于证明指定 Flink 作业各子任务实际支持组合协议；它不创建旅程、不发奖、不切换活动。当前运行环境仍未部署此能力，禁止为了验证探针重提已有三个作业。可信目标 job ID、实际提交 JAR SHA256、并行度和参与公钥 ID 必须由受控部署证据提供，不能从回执反推预期值。
+
+- 登记 `POST /api/v1/journey-runtime/execution-probes` 只保存签名挑战；显式 `POST /api/v1/journey-runtime/execution-probes/{campaignId}/{probeId}:dispatch` 才创建投递任务。两者都要求 `runtime:warm`、可信租户及原组织/店铺范围。重复派发返回原进度，不重置终态；没有新挑战时不得用改表方式重新开始。
+- 查询原执行证据用 `GET .../{campaignId}/{probeId}`，查询持久投递进度用 `GET .../{campaignId}/{probeId}/dispatch`。`SENT` 只代表全部有界消息获 broker 确认，`COVERED` 只代表当时校验的实际子任务集合完整；两者都不是活动 `APPLIED`，后续应用仍须重验当前部署、信任、时间及风险门禁。完整集合后来到达时，已 `SENT` 的投递记录仍保留 `SENT`，执行证据查询反映最新覆盖情况。
+- `JOURNEY_PROBE_DELIVERY_ENABLED=false` 为安全默认；打开前需具备完整 `JOURNEY_EXECUTION_TARGET_*`、Control/编译公钥和专用 `JOURNEY_EXECUTION_ACK_TRUSTED_*` 配置，并独立批准部署。`JOURNEY_INPUT_TOPIC` 固定服务端发送目标；目标改变后旧任务拒绝继续，不能静默转投。`JOURNEY_PROBE_DELIVERY_RELAY_ENABLED=false` 可暂停后台领取而保留派发/查询，重启后按原租约恢复；两个开关均为启动配置，不是即时取消已发送消息。
+- 回执仍从既有 `marketing.journey.output-topic` 消费，需要原 `MARKETING_KAFKA_CONSUMERS_ENABLED` 和 Kafka 连接/安全配置。Web 服务只持有执行公钥；执行私钥仅属于实际 Flink 作业。缺回执时先检查可信目标、作业日志、checkpoint 和消费者积压；不得用 Web 安装 ACK、消息条数或人工测试签名代替真实子任务证据。
+- V6 `mk_journey_probe_delivery` 属于 Journey 本库，以原挑战全作用域为主键/外键，保存下一 nonce、失败计数与 30 秒租约代次。每次最多 16 条，固定总量为 16 倍并行度（上限 2048）；未知发送结果不推进游标。领取/证据复核/进度提交分属短事务，Kafka 在事务外发送。旧执行者迟到提交不会覆盖新进度。
+- `RETRY` 使用有界指数退避和抖动，连续失败最多 5 次；原挑战到期转 `EXPIRED`，校验失败或耗尽预算转 `DEAD`。进程退出或提交结果未知时等待原租约到期并查询持久状态；恢复可能重复发送同一 nonce，数据库按实际 subtask 唯一回执去重。不得直接写 `SENT`、清空失败次数或延长签名有效期。
+- 独立 producer 每次 send 最多阻塞 100ms，一批确认最多等 2 秒，底层 delivery timeout 5 秒、request timeout 3 秒，缓冲 1MiB；专用单线程 relay 每次只处理一批，固定延迟 250ms，停机最多等待 20 秒。预算按每个启用实例计算，共享 DB/多副本容量与租户公平性仍需 S13 实测，不能将单次故障测试当作容量验收。
+- 观察 `marketing.journey.probe.delivery{result}`、`marketing.journey.probe.relay.failure`、`journey-probe-delivery` executor 指标和 `marketing.journey.probe.relay` trace。查询返回稳定 `lastErrorCode`，不返回目标 topic、租约令牌或内部异常。告警出现 `DEAD/EXPIRED` 或持续 relay failure 时核对签名期限、部署配置、数据库及 broker，再通过新签名挑战重试；历史任务不自动删除，保留与归档政策待 S13 签收。
+
+隔离验证使用真实 MySQL 8.4.11 与 apache/kafka:3.8.0（与已核对的 dev_infra broker 版本一致），应用当前 Kafka client 4.1.1。Testcontainers Kafka 沿用项目管理的 2.0.3，无版本升级。实际 Flink/Kafka checkpoint 端到端、生产 savepoint、混合版本退出与生产容量仍是独立未完成验收。
+
 ### 决策侧人群缓存
 
 数据库 `mk_audience_membership_projection` 仍为权威。启动不再全表扫描，查询使用 `(tenant_id,audience_id,subject_hash)` 主键；本地缓存默认最多 10000 个正/负结果，最长缓存一秒，跨副本撤销最多受该缓存窗口影响（另计事件投递和查询耗时）。`marketing.audience-projection.max-cache-entries` 控制容量，`marketing.audience-projection.cache-max-age-ms` 可在 1–1000 ms 内缩短缓存；原 reconcile-interval 轮询参数不再使用。

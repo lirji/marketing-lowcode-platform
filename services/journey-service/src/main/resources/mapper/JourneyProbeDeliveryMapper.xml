@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.journeyservice.infrastructure.persistence.mapper.JourneyProbeDeliveryMapper">
+    <sql id="columns">
+        tenant_id AS tenantId, environment_name AS environment, cell_id AS cell, namespace_name AS namespace,
+        campaign_id AS campaignId, probe_id AS probeId, destination_topic AS destinationTopic, total_routes AS totalRoutes,
+        next_nonce AS nextNonce, delivery_state AS deliveryState, failure_count AS failureCount, next_attempt_at AS nextAttemptAt,
+        expires_at AS expiresAt, lease_owner AS leaseOwner, lease_epoch AS leaseEpoch, lease_until AS leaseUntil,
+        last_error_code AS lastErrorCode, created_by AS createdBy, created_at AS createdAt, updated_at AS updatedAt
+    </sql>
+    <insert id="ensure">
+        INSERT INTO mk_journey_probe_delivery (tenant_id, environment_name, cell_id, namespace_name, campaign_id, probe_id, destination_topic, total_routes, next_nonce, delivery_state,
+            failure_count, next_attempt_at, expires_at, lease_owner, lease_epoch, lease_until, last_error_code, created_by, created_at, updated_at)
+        VALUES (#{key.tenantId}, #{key.environment}, #{key.cell}, #{key.namespace}, #{key.campaignId}, #{key.probeId}, #{value.destinationTopic}, #{value.totalRoutes}, 0, 'QUEUED',
+            0, #{value.nextAttemptAt}, #{value.expiresAt}, NULL, 0, NULL, '', #{value.createdBy}, #{value.createdAt}, #{value.createdAt})
+        ON DUPLICATE KEY UPDATE probe_id = mk_journey_probe_delivery.probe_id
+    </insert>
+    <select id="find" resultType="com.acme.marketing.journeyservice.application.JourneyProbeDeliveryRepository$Delivery">
+        SELECT <include refid="columns"/> FROM mk_journey_probe_delivery WHERE tenant_id = #{key.tenantId} AND environment_name = #{key.environment} AND cell_id = #{key.cell} AND namespace_name = #{key.namespace} AND campaign_id = #{key.campaignId} AND probe_id = #{key.probeId}
+    </select>
+    <select id="lockDue" resultType="com.acme.marketing.journeyservice.application.JourneyProbeDeliveryRepository$Delivery">
+        <!-- 强制有序待执行索引，避免filesort在LIMIT之前锁住所有候选而使SKIP LOCKED失去并发能力。 -->
+        SELECT <include refid="columns"/> FROM mk_journey_probe_delivery FORCE INDEX (idx_probe_delivery_due)
+        WHERE environment_name = #{slot.environment} AND cell_id = #{slot.cell} AND namespace_name = #{slot.namespace} AND pending = TRUE
+          AND next_attempt_at &lt;= #{now} AND expires_at &gt; #{now} AND (lease_until IS NULL OR lease_until &lt;= #{now})
+        ORDER BY next_attempt_at, created_at LIMIT 1 FOR UPDATE SKIP LOCKED
+    </select>
+    <update id="claim">
+        UPDATE mk_journey_probe_delivery SET lease_owner = #{owner}, lease_epoch = lease_epoch + 1, lease_until = #{leaseUntil}, updated_at = #{now}
+        WHERE tenant_id = #{key.tenantId} AND environment_name = #{key.environment} AND cell_id = #{key.cell} AND namespace_name = #{key.namespace} AND campaign_id = #{key.campaignId} AND probe_id = #{key.probeId} AND lease_epoch = #{expectedEpoch} AND delivery_state IN ('QUEUED','RETRY')
+          AND next_attempt_at &lt;= #{now} AND expires_at &gt; #{now} AND (lease_until IS NULL OR lease_until &lt;= #{now})
+    </update>
+    <update id="finish">
+        UPDATE mk_journey_probe_delivery SET next_nonce = #{completion.nextNonce}, delivery_state = #{completion.state},
+            failure_count = #{completion.failureCount}, next_attempt_at = #{completion.nextAttemptAt}, last_error_code = #{completion.errorCode},
+            lease_owner = NULL, lease_until = NULL, updated_at = #{now}
+        WHERE tenant_id = #{key.tenantId} AND environment_name = #{key.environment} AND cell_id = #{key.cell} AND namespace_name = #{key.namespace} AND campaign_id = #{key.campaignId} AND probe_id = #{key.probeId} AND lease_owner = #{lease.owner} AND lease_epoch = #{lease.epoch}
+          AND lease_until &gt; #{now} AND delivery_state IN ('QUEUED','RETRY')
+    </update>
+    <update id="expireDue">
+        UPDATE mk_journey_probe_delivery SET delivery_state = 'EXPIRED', lease_owner = NULL, lease_until = NULL,
+            last_error_code = #{errorCode}, updated_at = #{now}
+        WHERE environment_name = #{slot.environment} AND cell_id = #{slot.cell} AND namespace_name = #{slot.namespace} AND pending = TRUE
+          AND expires_at &lt;= #{now} AND (lease_until IS NULL OR lease_until &lt;= #{now}) LIMIT #{limit}
+    </update>
+</mapper>

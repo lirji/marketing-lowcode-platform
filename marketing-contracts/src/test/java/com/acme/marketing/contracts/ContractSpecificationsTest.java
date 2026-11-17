@@ -54,6 +54,7 @@ class ContractSpecificationsTest {
             "/api/v1/decisions:evaluate", "/api/v1/decisions:batch-evaluate",
             "/api/v1/decisions/bundle:evaluate", "/api/v1/decisions/bundle:batch-evaluate", "/api/v1/decisions/bundle-participations",
             "/api/v1/decisions/traces/requests/{requestId}", "/api/v1/decisions/traces/orders/{orderId}",
+            "/api/v1/journey-runtime/execution-probes/{campaignId}/{probeId}:dispatch", "/api/v1/journey-runtime/execution-probes/{campaignId}/{probeId}/dispatch",
             "/api/v1/journey-runtime/execution-probes", "/api/v1/journey-runtime/execution-probes/{campaignId}/{probeId}",
             "/api/v1/journey-runtime/release-bundle-directives",
             "/api/v1/journey-runtime/release-bundle-directives/{campaignId}/latest",
@@ -165,6 +166,20 @@ class ContractSpecificationsTest {
                 .map(java.lang.reflect.RecordComponent::getName).collect(java.util.stream.Collectors.toSet());
         assertEquals(names, map(schema.get("properties")).keySet());
         assertEquals(names, new HashSet<>((List<?>) schema.get("required")));
+        assertEquals(false, schema.get("additionalProperties"));
+    }
+
+    @Test
+    void executionDeliveryRequiresWarmPermissionAndNeverClaimsApplied() throws IOException {
+        var document = yaml(RESOURCES.resolve("openapi/marketing-api.yaml")); var paths = map(document.get("paths"));
+        assertEquals("runtime:warm", permission(paths, "/api/v1/journey-runtime/execution-probes/{campaignId}/{probeId}:dispatch", "post"));
+        assertEquals("runtime:warm", permission(paths, "/api/v1/journey-runtime/execution-probes/{campaignId}/{probeId}/dispatch", "get"));
+        var schema = map(map(map(document.get("components")).get("schemas")).get("JourneyExecutionProbeDelivery"));
+        var properties = map(schema.get("properties"));
+        assertEquals(List.of("QUEUED", "RETRY", "SENT", "DEAD", "EXPIRED", "COVERED"), map(properties.get("state")).get("enum"));
+        assertEquals(2048, map(properties.get("totalRoutes")).get("maximum"));
+        assertEquals(5, map(properties.get("failureCount")).get("maximum"));
+        assertEquals(properties.keySet(), new HashSet<>((List<?>) schema.get("required")));
         assertEquals(false, schema.get("additionalProperties"));
     }
 

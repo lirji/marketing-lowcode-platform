@@ -44,6 +44,8 @@ public final class JourneyExecutionDeployment {
             throw ReleaseBundleProtocolError.EXECUTION_REQUEST_INVALID.invalid();
         return new JourneyExecutionProbeRepository.Key(tenant, environment, cell, namespace, campaign, probeId);
     }
+    /** 后台领取限定本站位置；租户来自已授权的持久任务。 */
+    public JourneyProbeDeliveryRepository.Slot slot() { return new JourneyProbeDeliveryRepository.Slot(environment, cell, namespace); }
     /** 绑定登记时的完整目标，配置变化必须重新签挑战，不能沿用旧READY。 */
     public String fingerprint() {
         return Digests.sha256Hex(CanonicalMapCodec.encode(Map.of("purpose", "marketing.journey-execution-target/v1",

@@ -176,3 +176,14 @@ S11g2合同模块保持无JSON生产依赖，动作在wire中使用经Action.fro
 - `mk.journey.output.v1`既有消费者先分流独立ACK封套，普通业务投影不变。ACK最多16KiB，租户/完整挑战/目标/源码及所有签名均重验；只接受已登记挑战。按探针行锁序列化并以完整作用域+subtaskIndex为数据库主键，重复或不同attempt的同子任务有效回执不增加覆盖；无效/未知/过期输入走原有失败/DLT机制。不得把Kafka位点或收到消息数当不同子任务数。
 - 登记/收集使用本地READ_COMMITTED短事务与数据库唯一约束/行锁；查询同样锁定该探针以取得一致集合。不在事务内调用Kafka/外部服务。先校验后保存，保存或后续投影失败全部回滚；多进程从持久库重建结果。g6b3b须提供可靠投递/失败重试并完成隔离Kafka端到端后，才可接g6b4应用门禁。
 - 验收：同键并发登记唯一事实、不同挑战冲突、跨租户/组织/店铺拒绝、重复ACK不虚增覆盖、两个不同下标才READY、签名/任务/制品/源/过期/撤钥/部署变化拒绝、失败回滚和重建读取；旧输出投影回归，迁移注释/合同/架构门禁。
+
+## S11g6b3b：有界可靠探针投递与恢复
+- Owner=backend/runtime；依赖g6b3a。维持“登记本身不投递”的原语义，新增需要runtime:warm的`POST /api/v1/journey-runtime/execution-probes/{campaignId}/{probeId}:dispatch`和只读`GET .../{probeId}/dispatch`。显式调用后才在本地事务保存投递任务；默认`marketing.journey.probe-delivery.enabled=false`拒绝新投递，不向当前运行环境发送探针。源租户/组织/店铺、完整挑战、可信部署、制品/签名与剩余有效期在排队时复核。
+- 新V6投递任务以g6b3a完整挑战键为主键/外键，保存固定路由总数、下一nonce、状态、连续失败数、下次执行时间、租约拥有者/代次/到期、最后错误code和创建更新时间。总数固定为16*parallelism（最大2048），每批最多16个；same-id重复派发只返回原任务，不重置DEAD/SENT或清空进度。无旧挑战回填、无原消费者/数据库/作业变更。
+- 队列与工作流使用数据库持久状态，既有内部relay tick机制只负责唤醒；专用单线程、固定延迟、有界批次，默认关闭。先以SKIP LOCKED取得一个到期工作行并提交30秒租约，再用独立本地事务重验父挑战/当前证据，随后在事务外发送Kafka；最后按lease owner+epoch条件推进nonce或重试。不会在持有工作行锁时等待父挑战锁，因此与排队的父行→工作行顺序不成环。
+- 复用既有Kafka连接与安全属性，探测发送使用独立有界producer，避免改动业务producer预算；每次send的max.block.ms=100、确认等待最多2秒、delivery.timeout=5秒、请求超时3秒，单批16个。确认全部成功后才推进cursor；任意超时/未知结果保留原批次，恢复后相同nonce允许重发。有效期内按有界指数退避+jitter重试，连续失败最多5次；过期或目标失效停止，不签发新probe、不扩大原授权。lease/代次隔离迟到执行者的状态写入，迟到MQ输出由原签名期限和唯一子任务集合防误计。
+- 状态区分QUEUED/RETRY/SENT/DEAD/EXPIRED/COVERED，均使用显式code。SENT只代表全部有界探针获broker确认；COVERED须重新验证真实完整子任务证据，不等于活动APPLIED。工作进程崩溃后从数据库租约和nonce恢复，不能以内存Future成功作为任务终态。终态不自动删除，保留/归档/容量仍待S13。
+- 只读状态返回真实cursor/总数/重试/时间/最后错误code，不暴露密钥或内部异常。指标采用固定低基数状态/结果标签。生产定时发布仍走后续XXL-JOB业务编排；此relay是已经持久交接的消息投递基础设施，不新增业务调度平台。
+- 验收：隔离真实MySQL+Kafka投递及消费；同任务并发派发唯一、租约过期接管、旧执行者CAS失败、发送成功后提交失败的同批重发、broker故障与有界重试/DEAD、过期不发、覆盖齐全停止、服务重建恢复cursor、旧业务输出与关闭配置回归。完整真实Flink/Kafka checkpoint回执链另需隔离运行验收，当前现有3作业不得被测试重提。
+
+- 配置补充：`JOURNEY_PROBE_DELIVERY_RELAY_ENABLED=false`只暂停后台领取，便于受控维护与恢复，仍保持原签名有效期。专用producer不注册第二个KafkaTemplate Bean；仅复制既有连接/安全属性并设置本路径资源预算。运行与故障处置见`docs/operations/RUNBOOK.md`的Journey组合执行探针投递段。

@@ -838,6 +838,32 @@ paths:
       responses:
         '200': {description: Consistent current or expired evidence, content: {application/json: {schema: {$ref: '#/components/schemas/JourneyExecutionProbeReceipt'}}}}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/journey-runtime/execution-probes/{campaignId}/{probeId}:dispatch:
+    post:
+      tags: [Journey]
+      operationId: dispatchJourneyExecutionProbe
+      description: Explicitly enqueue one durable bounded delivery for a registered unexpired challenge. Requires current tenant, source organization/shop scope, trust and deployment. Disabled by default (409 RELEASE_BUNDLE_EXECUTION_DELIVERY_DISABLED). Same challenge returns original progress without resetting terminal state. No request body or client-selected topic. SENT only means broker confirmations; COVERED only means verified subtask evidence; neither is APPLIED.
+      x-internal: true
+      x-required-permission: runtime:warm
+      parameters:
+        - {in: path, name: campaignId, required: true, schema: {type: string, pattern: '^[A-Za-z0-9_.:@-]{1,64}$'}}
+        - {in: path, name: probeId, required: true, schema: {type: string, pattern: '^[A-Za-z0-9_.:@-]{1,64}$'}}
+      responses:
+        '200': {description: Persisted delivery checkpoint, content: {application/json: {schema: {$ref: '#/components/schemas/JourneyExecutionProbeDelivery'}}}}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/journey-runtime/execution-probes/{campaignId}/{probeId}/dispatch:
+    get:
+      tags: [Journey]
+      operationId: getJourneyExecutionProbeDelivery
+      description: Read durable delivery progress under current tenant, source organization/shop scope, trust and deployment. Unknown delivery returns 404; works when new dispatch is disabled. Expired evidence never restores eligibility. Internal topic and lease credentials are not exposed.
+      x-internal: true
+      x-required-permission: runtime:warm
+      parameters:
+        - {in: path, name: campaignId, required: true, schema: {type: string, pattern: '^[A-Za-z0-9_.:@-]{1,64}$'}}
+        - {in: path, name: probeId, required: true, schema: {type: string, pattern: '^[A-Za-z0-9_.:@-]{1,64}$'}}
+      responses:
+        '200': {description: Persisted delivery checkpoint, content: {application/json: {schema: {$ref: '#/components/schemas/JourneyExecutionProbeDelivery'}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/journey-runtime/release-bundle-directives:
     post:
       operationId: recordJourneyBundleDirective
@@ -1211,6 +1237,23 @@ components:
       $ref: '../schema/events/journey-bundle-execution-probe.schema.json'
     JourneyBundleExecutionAck:
       $ref: '../schema/events/journey-bundle-execution-ack.schema.json'
+    JourneyExecutionProbeDelivery:
+      type: object
+      additionalProperties: false
+      required: [campaignId, probeId, state, nextNonce, totalRoutes, failureCount, nextAttemptAt, expiresAt, lastErrorCode, createdAt, updatedAt, observedAt]
+      properties:
+        campaignId: {type: string, maxLength: 64}
+        probeId: {type: string, maxLength: 64}
+        state: {type: string, enum: [QUEUED, RETRY, SENT, DEAD, EXPIRED, COVERED]}
+        nextNonce: {type: integer, minimum: 0, maximum: 2048, description: First unconfirmed routing nonce; unknown sends preserve the original batch}
+        totalRoutes: {type: integer, minimum: 16, maximum: 2048, description: Immutable 16 times trusted actual parallelism}
+        failureCount: {type: integer, minimum: 0, maximum: 5, description: Consecutive confirmed retry decisions; successful batches reset to zero}
+        nextAttemptAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        lastErrorCode: {type: string, maxLength: 96, description: Stable module error code or empty on success; never raw exception text}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        observedAt: {type: string, format: date-time}
     JourneyExecutionProbeReceipt:
       type: object
       additionalProperties: false

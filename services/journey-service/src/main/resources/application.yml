@@ -55,6 +55,11 @@ marketing.journey.execution-target:
   parallelism: ${JOURNEY_EXECUTION_TARGET_PARALLELISM:0}
   build-digest: ${JOURNEY_EXECUTION_TARGET_BUILD_DIGEST:}
   participation-key-id: ${JOURNEY_EXECUTION_TARGET_PARTICIPATION_KEY_ID:}
+# 新探针可靠发送独立关闭；登记本身仍无投递副作用。
+marketing.journey.probe-delivery:
+  enabled: ${JOURNEY_PROBE_DELIVERY_ENABLED:false}
+  relay-enabled: ${JOURNEY_PROBE_DELIVERY_RELAY_ENABLED:true}
+  input-topic: ${JOURNEY_INPUT_TOPIC:mk.journey.signal.v1}
 marketing.journey.execution-ack:
   trusted-key-id: ${JOURNEY_EXECUTION_ACK_TRUSTED_KEY_ID:}
   public-key-base64: ${JOURNEY_EXECUTION_ACK_TRUSTED_PUBLIC_KEY_BASE64:}

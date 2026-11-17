@@ -15,7 +15,7 @@
 - 用户授权Docker只运行本项目组件；13个额外无关容器及原17个langchain应用保持停止，所有容器与数据卷保留。本轮只更新console，17个其它运行容器ID/镜像/启动时间不变；3个原Flink作业及检查点继续推进，禁止重复恢复或提交空作业。
 - 上一轮部署验证：271项前端测试、98项浏览器用例通过，10项既有独立服务用例跳过；lint/build/Hygiene无阻塞，未配置canonical formatter。真实Docker四类资产页在桌面与Pixel7的分页、搜索、详情及字段/节点读取回归通过，无业务写入、API失败或页面异常。运行回执与截图：私有证据目录 `runtime-dbe268b/`。
 - 上一轮部署可见结果：活动/首页/运营/资产的静态预览不显示假业务数据或旧缓存，资产刷新不能绕过读取门禁；OIDC身份范围变化、退出与过期清理旧请求/缓存/草稿，旧令牌401不退出已更新令牌，远端退出失败能恢复登录页。本机仍为DEV认证，真实IdP联调未验证。
-- 当前HEAD/远程任务分支86ffe42，main/origin=f1cf177。g6b1已正常交付；g6b2精确CI44137055316在途。继续g6b3a持久探针登记与回执收集，设计已细化；可靠投递/Decision证据/应用门禁/Control闭环均未完成。无部署或共享库迁移。
+- 当前HEAD/远程任务分支/main/origin均bd36e29；g6b3a精确CI44139430044三项SUCCESS并已正常FF交付。本地29服务/59合同/18JSON/10架构及8项重建复验/Hygiene通过。继续g6b3b可靠投递及失败恢复，设计已细化；Decision证据/实际应用/Control闭环仍未完成。无部署、真实探针或共享库迁移。
 
 ## 未完成项与恢复顺序
 
@@ -859,3 +859,26 @@
 - 复核确认父行锁+READ_COMMITTED/唯一子键、无网络事务、完整租户与运行位置、当前身份与原组织/店铺、原挑战等价校验、第一份子任务ACK不被重复消息覆盖、历史EXPIRED不恢复资格、普通旧输出不新增数据库事务。尚待架构/Hygiene最终门禁及精确CI，不把注册/API可用当可靠投递或实际发布。
 - 最终重建查询/撤钥/换部署8项复验PASS（s11g6b3a-reconstruction-final.log），架构10项PASS（s11g6b3a-architecture-final.log）。Hygiene/diff PASS（s11g6b3a-hygiene.json）；事务ADVISORY已以真实并发、回滚及无远程副作用复核，16KiB为已命名协议容量常量，ProbeState与裂变State同名值分别属于执行证据和业务资格，不能跨域合并。无canonical formatter为现有工具限制。
 - g6b2 86ffe42精确CI44137055316三项SUCCESS，待本片清洁提交后正常FF main；g6b3a准备提交/精确CI。无运行测试进程，无新增worktree，忽略构建/测试/本机恢复文件保留不清理；未部署、发送probe、迁移共享库或触动原3个Flink作业。继续g6b3b有界可靠投递及恢复。
+
+## S11g6b3b 可靠投递与恢复
+- g6b3a bd36e29提交推送/CI44139430044在途；g6b2正常FF main/origin=86ffe42。下一片新增显式派发入口及有界持久投递任务/租约/CAS恢复，原登记API继续不自动发送；设计已写，尚未产品实现。默认关闭，无真实探针或共享环境变更。
+- g6b3b已开始V6持久投递表与显式投递状态/Repository合同，尚未Mapper/应用/发送器/API或测试；未迁移数据库。已核对当前dev_infra实际Kafka镜像apache/kafka:3.8.0，隔离测试将沿用该版本和现有Testcontainers BOM，不升级平台。官方模块说明确认org.testcontainers.kafka.KafkaContainer支持apache/kafka；详见https://java.testcontainers.org/modules/kafka/。Spring Kafka4.0.2本地API已核对独立ProducerFactory配置复制与有界关闭能力。
+- g6b3b持久层Mapper/XML及适配器已写：完整作用域、SKIP LOCKED单任务领取、租约代次/有效期CAS提交、有界过期退休；仍未应用服务/API/发送器或测试。当前仅代码文件，无真实迁移或投递。
+- g6b3b持久层编译PASS（s11g6b3b-persistence-compile.log）；新增真实MySQL/SKIP LOCKED、并发租约、旧代次拒写、提交后故障回滚、重建cursor及过期退休用例正在执行（session89555，s11g6b3b-persistence-first.log）。尚无应用/API/真实Kafka发送器，不把持久层测试当可靠投递完成。
+- g6b3b首轮租约测试在编译阶段因JUnit assertEquals与TransactionTemplate泛型返回值重载歧义失败（s11g6b3b-persistence-first.log）；已显式Integer类型并解箱断言，不改产品SQL。复验日志s11g6b3b-persistence-second.log，结果待核对。
+- g6b3b真实MySQL持久层用例已完成复验，日志s11g6b3b-persistence-second.log；恢复先核对最终状态，再实现派发应用/有界发送器/worker及机器合同。租约测试不涉及实际Kafka或现有Flink作业。
+- g6b3b二轮真实并发测试复现领取缺陷：原候选排序发生filesort，首个事务在LIMIT前锁住多行，第二个SKIP LOCKED事务无法获取另一任务（s11g6b3b-persistence-second.log）。已增加带中文注释的派生pending列及slot/pending/next_at/created_at有序索引，领取查询明确使用该索引，避免多状态过滤破坏排序；待第三轮真实双事务复验。
+- g6b3b有序索引修正后，第三轮真实双事务领取/旧代次拒写/回滚/重建cursor/有界过期用例PASS（s11g6b3b-persistence-third.log）。补充对实际Mapper绑定SQL的EXPLAIN断言，固定无filesort的领取执行计划；该新增断言待窄复验。g6b3a bd36e29精确CI44139430044三项SUCCESS，正常快进交付main进行中，原脏工作树保留；先核对Git命令结果，不重复执行未知操作。
+
+- 恢复核验：g6b3b持久层第三轮及实际Mapper SQL EXPLAIN复验PASS（s11g6b3b-persistence-third.log / persistence-plan-final.log）；无测试或Git未知结果。应用层显式派发/查询、短事务租约与CAS、当前证据复核、批次恢复和有界失败已写，正在编译；Kafka适配/生命周期/新合同与全链路验证仍未完成。
+- 应用层与独立Kafka发送器test-compile PASS（s11g6b3b-application-compile.log / kafka-compile.log）。新入口/六状态合同、有界单线程relay/停机/指标观察及默认关闭配置已写；隔离apache/kafka:3.8.0与真实MySQL测试正在执行（session49978，s11g6b3b-integration-first.log），包含真实发送/实际KafkaListener收集、未知发送与提交失败恢复、派发权限/唯一性/终态不重置。测试ACK由测试密钥产生，不冒充真实Flink集群。
+- 集成首轮停在测试编译：FaultDeliveryRepository缺少父挑战Key显式导入，已修正；产品编译保持通过，尚无本轮功能PASS。继续第二轮真实组件验证，保留首轮失败日志。
+- 第二轮13项真实MySQL/Kafka集成全部PASS（s11g6b3b-integration-second.log），含实际KafkaListener重复ACK收集、未知发送/提交回滚后的原nonce恢复与唯一派发。追加隔离broker暂停/恢复预算和独立relay故障后继续/停机/线程不泄漏验证，正在跑完整Journey服务+合同依赖（session8246，s11g6b3b-modules-final.log）。同步运行手册，明确SENT与COVERED都不是APPLIED。
+- 完整模块首轮合同60项通过；服务新relay测试编译遇到SmartLifecycle.stop重载与submit方法引用歧义，改为明确void lambda，未改变产品行为或断言。继续完整服务验证，首轮日志保留。
+- 完整模块执行中，新增14项真实集成（含隔离broker暂停恢复）与1项relay生命周期验证已PASS，原服务回归继续。Hygiene首轮提示缺UNIT_TEST结论和testcontainers-kafka依赖审批元数据；前者待整模块结束，后者属于已批准切片的真实Kafka隔离验证，test-scope沿用平台2.0.3、不升级/新增生产组件，以该既有授权登记approved-dependency后复核，无需用户重复确认。
+
+### S11g6b3b 验证与交付检查点
+- 当前完整Journey服务36项、合同60项及依赖回归全部PASS（s11g6b3b-modules-final2.log）；架构10项PASS（s11g6b3b-architecture-final.log）。新增14项真实MySQL/Kafka测试包含：双事务SKIP LOCKED及实际SQL无filesort、租约接管/旧写拒绝、入队/进度回滚、重建游标、真实发送与实际KafkaListener收集、未知确认重复nonce、暂停broker有界等待/恢复、失败预算与终态不重置；独立relay故障后继续和停机线程释放1项PASS。
+- 根代理另行复核：完整租户/位置/原组织店铺权限、原登记不投递、受控topic、三段短事务锁序与事务外发送、当前签名/目标/制品复核、原期限、代次CAS和未知提交恢复、低基数指标/独立producer/单周期线程/有界停机；未发现当前片剩余阻断。旧服务默认关闭路径及原安装/来源/投影/迁移回归通过。真实Flink checkpoint、生产savepoint、混合版本/容量仍UNVERIFIED，测试签名不能替代真实集群证据。
+- Hygiene最终无阻断（s11g6b3b-hygiene-final.json）：事务ADVISORY已由并发/回滚/锁序和发送无事务断言核验；三个数值为已命名预算常量；投递State与裂变State属不同领域，不合并。testcontainers-kafka已按授权的隔离验证设计登记，版本沿用2.0.3；无canonical formatter为现有工具限制。diff检查PASS，26个相关文件已核对；无用户改动或新增worktree，忽略构建/测试/本机配置均保留，不清理。
+- 本片准备逻辑提交及精确CI；尚未部署、迁移共享库、发送真实运行probe或改变原3个Flink作业。之后继续实际Flink/Kafka checkpoint链路验证、Decision执行证据及g6b4应用门禁，再接Control整体闭环；S06–S13总目标仍PARTIAL。

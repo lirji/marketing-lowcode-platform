@@ -13,6 +13,13 @@ public enum ReleaseBundleProtocolError {
     ACTIVATION_NOT_RECORDED("RELEASE_BUNDLE_ACTIVATION_NOT_RECORDED", "尚未接收该活动的组合激活授权"),
     ACTIVATION_STORED_INVALID("RELEASE_BUNDLE_ACTIVATION_STORED_INVALID", "持久化组合激活授权与索引不一致"),
     ACTIVATION_INVALID("RELEASE_BUNDLE_ACTIVATION_INVALID", "组合激活授权的结构、签名、租户或有效期无效"),
+    EXECUTION_DELIVERY_DISABLED("RELEASE_BUNDLE_EXECUTION_DELIVERY_DISABLED", "执行探针派发尚未启用"),
+    EXECUTION_DELIVERY_NOT_FOUND("RELEASE_BUNDLE_EXECUTION_DELIVERY_NOT_FOUND", "该执行探针尚未派发"),
+    EXECUTION_DELIVERY_EXPIRED("RELEASE_BUNDLE_EXECUTION_DELIVERY_EXPIRED", "执行探针已过期，不能继续派发"),
+    EXECUTION_DELIVERY_INVALID("RELEASE_BUNDLE_EXECUTION_DELIVERY_INVALID", "投递任务或当前执行证据校验失败"),
+    EXECUTION_DELIVERY_UNCONFIRMED("RELEASE_BUNDLE_EXECUTION_DELIVERY_UNCONFIRMED", "探针发送未获完整确认，保留原批次等待恢复"),
+    EXECUTION_DELIVERY_STORAGE_UNAVAILABLE("RELEASE_BUNDLE_EXECUTION_DELIVERY_STORAGE_UNAVAILABLE", "探针证据存储暂不可用"),
+    EXECUTION_DELIVERY_CONFIG_INVALID("RELEASE_BUNDLE_EXECUTION_DELIVERY_CONFIG_INVALID", "探针投递配置无效"),
     EXECUTION_REQUEST_INVALID("RELEASE_BUNDLE_EXECUTION_REQUEST_INVALID", "执行探针请求格式无效或超过允许大小"),
     EXECUTION_DEPLOYMENT_UNAVAILABLE("RELEASE_BUNDLE_EXECUTION_DEPLOYMENT_UNAVAILABLE", "可信Flink部署目标未配置完整或已经变化"),
     EXECUTION_PROBE_CONFLICT("RELEASE_BUNDLE_EXECUTION_PROBE_CONFLICT", "该执行探针编号已绑定其他挑战"),
@@ -37,6 +44,8 @@ public enum ReleaseBundleProtocolError {
     private final String code;
     private final String message;
     ReleaseBundleProtocolError(String code, String message) { this.code = code; this.message = message; }
+    /** 持久任务只存稳定错误码，不保存下游异常或秘密配置。 */
+    public String code() { return code; }
     /** 契约构造与JSON解析共用同一错误文案。 */
     public String message() { return message; }
     /** 输入错误沿用平台400问题响应。 */
