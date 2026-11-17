@@ -5,9 +5,10 @@ test('template catalog searches all pages, refreshes after save and recovers a f
     content: index === 61 ? '最后模板完整正文 {{coupon_needle}}' : '原有模板正文', requiredVariables: index === 61 ? ['zeta', 'coupon_needle'] : [], state: 'APPROVED', createdAt: '2026-10-18T16:30:00Z' }))
   let allowNext = false
   const errors: string[] = [], writes: string[] = [], queries: string[] = []
-  page.on('pageerror', error => errors.push(error.message)); page.on('request', req => { if (req.url().includes('/api/v1/') && req.method() !== 'GET') writes.push(new URL(req.url()).pathname) })
+  page.on('pageerror', error => errors.push(error.message)); page.on('request', req => { if (req.url().includes('/api/v1/') && !new URL(req.url()).pathname.endsWith('/client-errors') && req.method() !== 'GET') writes.push(new URL(req.url()).pathname) })
   await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
   await page.route('**/api/v1/**', async route => {
+    if (new URL(route.request().url()).pathname.endsWith('/client-errors')) { await route.fulfill({ status: 204 }); return }
     const url = new URL(route.request().url()), path = url.pathname
     if (path.endsWith('/templates/catalog/page')) {
       const q = url.searchParams.get('q') ?? '', cursor = url.searchParams.get('cursor'); queries.push(q)

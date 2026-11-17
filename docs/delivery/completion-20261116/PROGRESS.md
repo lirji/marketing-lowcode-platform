@@ -12,7 +12,7 @@
 - 本地部署已验证：control为b3858e6、console为0c8aff8，engagement为c14289e，其余8应用保留045dfd9；11应用健康。control V7索引已迁移成功，更新前已备份。模板、审批分页、发布选择的真实Docker接口及桌面/手机浏览器PASS，见 [LOCAL_DEPLOYMENT_20261117.md](LOCAL_DEPLOYMENT_20261117.md)。
 - 用户最新授权“如果当前是docker问题，可以让docker只运行该项目的组件”。Docker管理卡死已通过本机重启恢复；重启前3个Flink作业成功stop-with-savepoint，重启后逐个no_claim恢复并确认新检查点持续推进。保留数据卷；没有空状态启动或生产部署。
 - 当前仅18个必要容器运行：13个marketing-r1常驻容器、现有权益目录适配服务、MySQL/Redis/Kafka/ClickHouse。额外停止13个无关容器，原17个langchain应用仍停止。实际容器内存合计约6.32GiB（单次快照，不代表容量压测）；容器/数据卷保留，可按记录恢复。
-- S12e发布中心完整分页与范围过滤已交付，3f22019精确CI44056163714三项PASS，正常FF main并完成本地Docker/真实双视口验收。S12f发布读取调用点2e2263f与S12g活动范围b3858e6也已精确CI并FF main、本地运行验收；S12h首页数据表述f0ab7cf已精确CI44063426678三项PASS、FF main并完成console增量运行/真实双视口验收；S12i历史Journey转换0c8aff8亦已精确CI/主干/console部署与两条本机演示定义v2追加校验验收；下一步资产列表分页，错误采集等仍未完成。真实会员/画像来源、裂变外部合同仍待确认，不改变拒绝保护。
+- S12e发布中心完整分页与范围过滤已交付，3f22019精确CI44056163714三项PASS，正常FF main并完成本地Docker/真实双视口验收。S12f发布读取调用点2e2263f与S12g活动范围b3858e6也已精确CI并FF main、本地运行验收；S12h首页数据表述f0ab7cf已精确CI44063426678三项PASS、FF main并完成console增量运行/真实双视口验收；S12i历史Journey转换0c8aff8亦已精确CI/主干/console部署与两条本机演示定义v2追加校验验收；S12j/k/l三类资产分页已交付，S12m错误采集正在验证。真实会员/画像来源、裂变外部合同仍待确认，不改变拒绝保护。
 
 ## 执行清单与验收
 
@@ -505,3 +505,24 @@
 ### S12k 真实运行交付
 - 精确607542e7353793a22b413b960b688b6a5dcd359f的CI44075059624三项PASS，正常FF main；仅benefit-funding-service与console更新，audience保持a260865。runtime-607542e回执PASS，18必要容器正常、16受保护容器不变、3个原Flink作业继续推进。
 - 真实4条权益limit1完整遍历与旧数组集合一致、后页ID搜索/非法参数/权限/租户拒绝通过；8084桌面/Pixel7详情、搜索、空结果、清除通过，无业务写入/API失败/页面错误，手机完整详情截图已查看。无数据库迁移/种子改动/外部SKU调用。S12l当前改动尚未部署。
+
+## S12m 前端错误采集（IN_PROGRESS）
+- 分支feat/client-error-collection基于S12l 166dc43；先交付模板再本片。模板精确CI44076660106三项PASS并正常FF main；runtime-166dc43已完整部署验收，后续本片使用独立制品。
+- 现状：report.ts经无认证sendBeacon发送任意message/租户/操作者/原路径，Nginx /client-error直接204丢弃。按已批准S12补齐真实采集：POST /api/v1/client-errors在现有Servlet Gateway内处理，经既有DEV/OIDC身份链和独立租户Redis配额（复用已有基础设施），异常收集不走递归API报错路径。
+- 最小事件合同：schemaVersion=1，source固定API/WINDOW/PROMISE/REACT/UNKNOWN，route固定模块枚举，httpStatus=0或100–599，backendTraceId可选32位十六进制；请求最多1KiB、拒绝额外字段/非法枚举。身份只取已验证上下文，不接受正文租户/操作者；不采集任意message、堆栈、URL、查询参数、token或业务ID。服务端参数化结构日志及低基数Micrometer计数，不新增业务数据库或集中采集产品；此片是有界诊断接入，不宣称长期留存或生产可观测性全完成。
+- 前端raw fetch keepalive携带当前认证（不用无认证beacon），限制本页每分钟上报次数，失败静默不递归；事件只含允许字段，已退出/DEMO缺身份跳过。旧 /client-error 明确退役，取消假204；edge-gateway本地日志按容量轮转，避免无界增长。新增公共契约、配置及运行说明。
+- 验证真实HTTP身份/入参/正文大小/独立限流/Redis故障关闭/日志及指标无敏感字段；前端OIDC/DEV/匿名/DEMO/事件隐私/节流/失败无递归；完整构建与合同/架构、精确CI、gateway+console真实Docker端到端采集。尚未实现。
+
+### S12l 真实运行交付
+- 166dc43f5ca29965b249c3a791803b8600d957fb的CI44076660106三项PASS，正常快进并推送main；仅engagement-service与console更新。runtime-166dc43最终PASS，18必要容器健康，16受保护容器未变化，3个原Flink作业检查点持续推进。
+- 真实4条模板limit1完整遍历与旧数组集合一致、后页ID搜索/非法参数/权限/租户隔离通过；8084桌面/Pixel7详情、搜索、空结果、清除通过，无业务写入/API失败/页面错误，手机截图已查看。无数据库迁移、重灌数据、消息发送或Flink重提。下一步S12m真实错误采集。
+
+### S12m 首轮实现与验证
+- Gateway固定事件合同/1KiB严格UTF-8 JSON/可信租户摘要/固定枚举指标、独立Redis配额及容量日志轮转已实现；前端改认证raw fetch、3秒截止、每页每分钟10条、退出清空上下文、无原始文本/路径/身份和重试。旧Nginx丢弃入口返回410。
+- 首轮7采集HTTP（含JWT decoder受控边界）、4原网关准入/超时、6租户身份、7合同、3架构测试通过；25前端定向测试、lint/build通过。完整浏览器86通过/10隔离环境项跳过，新采集2项失败仅因最后一步使用了不存在的“人群”标签，采集/隐私/10条上限断言已过；已修正为实际“Audience 快照”，待重跑。合同增加1项隐私白名单检查，完整最终验证仍待完成。
+- 原资产分页用例中业务写请求断言排除明确的诊断端点；诊断本身由新用例完整断言，未放宽业务写入判断。修复同步fetch异常时清理截止计时器，尚未提交/部署。
+
+### S12m 最终本地验证
+- 239前端测试/46文件、lint/build通过；完整浏览器88通过/10依赖隔离服务的既有项跳过（s12m-browser-diagnostics.log实际为完整套件）。新采集桌面和Pixel7均真实触发window error、捕获认证请求、503不递归、每页10条上限；旧业务断言保留。
+- Gateway 7项采集HTTP（含JWT验证器受控边界）和4项原有限流/超时、6租户上下文、8合同、架构规则通过；固定无HTTP状态常量在Hygiene复核后提取，需以s12m-gateway-final/package-final为最后后端证据。Hygiene无阻塞，项目未提供canonical formatter；已命名常量与不同业务模块的错误码短名提示经人工核对无需合并。
+- Compose模型校验通过；只调整本机网关日志容量，不改变共享依赖、业务表、权限规则或生产目标。当前待提交/精确CI及本机gateway+console部署；不把本地通过视为全部交付。

@@ -110,6 +110,8 @@ marketing:
     writes-burst: ${MARKETING_GATEWAY_WRITE_BURST:4000}
     reads-per-second: ${MARKETING_GATEWAY_READ_RATE:5000}
     reads-burst: ${MARKETING_GATEWAY_READ_BURST:10000}
+    client-errors-per-second: ${MARKETING_GATEWAY_CLIENT_ERROR_RATE:5}
+    client-errors-burst: ${MARKETING_GATEWAY_CLIENT_ERROR_BURST:10}
 resilience4j.circuitbreaker:
   configs.default:
     slidingWindowType: COUNT_BASED

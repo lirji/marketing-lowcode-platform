@@ -328,6 +328,9 @@ services:
 
   edge-gateway:
     <<: *java-service
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "3"}
     image: marketing/edge-gateway:${IMAGE_TAG:-local}
     build:
       context: ..

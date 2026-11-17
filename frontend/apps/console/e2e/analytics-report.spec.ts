@@ -6,7 +6,7 @@ const fixture = { counts: { CONVERSION_CONFIRMED: 3, '=unsafe()': 1 }, attribute
 test('analytics exports the selected report and recovers from query failure', async ({ page }, info) => {
   await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
   await page.route('**/api/v1/**', route => route.fulfill({ json: [] }))
-  await page.route('**/api/client-error', route => route.fulfill({ status: 204 }))
+  await page.route('**/api/v1/client-errors', route => route.fulfill({ status: 204 }))
   let failing = false
   const requests: URL[] = []
   await page.route('**/api/v1/measurements/**', async route => {
@@ -47,7 +47,7 @@ test('analytics reads and downloads the actual local measurement report', async 
   test.skip(process.env.MARKETING_LIVE_ANALYTICS !== '1', '需要已授权的本地网关与测量服务；仅GET查询')
   await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
   await page.route('**/api/v1/**', route => route.fulfill({ json: [] }))
-  await page.route('**/api/client-error', route => route.fulfill({ status: 204 }))
+  await page.route('**/api/v1/client-errors', route => route.fulfill({ status: 204 }))
   const receipts: { path: string; from: string | null; to: string | null; status: number; body: Record<string, unknown> }[] = [], errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.route('**/api/v1/measurements/**', async route => {
@@ -84,7 +84,7 @@ test('analytics reads and downloads the actual local measurement report', async 
 test('campaign selection requires a server-confirmed scope and preserves it in the downloaded CSV', async ({ page }, info) => {
   await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
   await page.route('**/api/v1/**', route => route.fulfill({ json: [] }))
-  await page.route('**/api/client-error', route => route.fulfill({ status: 204 }))
+  await page.route('**/api/v1/client-errors', route => route.fulfill({ status: 204 }))
   await page.route('**/api/v1/campaigns', route => route.fulfill({ json: [{ id: 'cmp-a', name: '活动甲', objective: '隔离筛选', status: 'DRAFT', createdAt: '2026-11-17T00:00:00Z' }, { id: 'cmp-b', name: '活动乙', objective: '旧服务拒绝', status: 'DRAFT', createdAt: '2026-11-17T00:00:00Z' }] }))
   await page.route('**/api/v1/measurements/**', route => {
     const url = new URL(route.request().url()), selected = url.searchParams.get('campaignId') || ''
@@ -116,7 +116,7 @@ test('actual campaign filtering excludes another campaign from MySQL totals and 
   const first = setup.campaigns[0], second = setup.campaigns[1]
   await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
   await page.route('**/api/v1/**', route => route.fulfill({ json: [] }))
-  await page.route('**/api/client-error', route => route.fulfill({ status: 204 }))
+  await page.route('**/api/v1/client-errors', route => route.fulfill({ status: 204 }))
   await page.route('**/api/v1/campaigns', async route => route.fulfill({ response: await route.fetch({ url: 'http://127.0.0.1:18080/api/v1/campaigns' }) }))
   const receipts: { path: string; campaignId: string; body: Record<string, unknown> }[] = [], errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))

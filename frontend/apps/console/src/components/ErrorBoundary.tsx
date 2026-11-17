@@ -12,7 +12,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error) {
-    reportUnknownError(error, { code: 'REACT_BOUNDARY', tenantId: this.props.tenantId, actorId: this.props.actorId, path: window.location.pathname })
+    reportUnknownError(error, { code: 'REACT_BOUNDARY', path: window.location.pathname })
   }
 
   render() {

@@ -12,7 +12,7 @@ test('saved Journey simulation uses explicit input and displays waiting and prop
       { id: 'c', sourceNodeId: 'send', sourcePort: 'next', targetNodeId: 'end', targetPort: 'in' }], variables: {}, annotations: {} }
   await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
   await page.route('**/api/v1/**', (route) => route.fulfill({ json: [] }))
-  await page.route('**/api/client-error', (route) => route.fulfill({ status: 204 }))
+  await page.route('**/api/v1/client-errors', (route) => route.fulfill({ status: 204 }))
   await page.route('**/api/v1/campaigns', (route) => route.fulfill({ json: [{ id: campaignId, name: 'Journey 仿真验收', objective: '等事件后发送', status: 'DRAFT', campaignType: 'STANDARD', createdAt: '2026-11-16T00:00:00Z' }] }))
   await page.route('**/api/v1/registries/nodes', (route) => route.fulfill({ json: graph.nodes.map((node) => ({ stableTypeId: node.stableTypeId, semanticVersion: '1.0.0', dialects: ['JOURNEY_STATE_MACHINE'], costWeight: 10 })) }))
   await page.route('**/api/v1/definitions/latest?*', (route) => route.fulfill({ json: { graph, version: 1, definitionId: graph.definitionId, campaignId, dialect: graph.dialect, status: 'DRAFT' } }))

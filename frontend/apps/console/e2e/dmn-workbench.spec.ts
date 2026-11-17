@@ -5,7 +5,7 @@ test('DMN edits, real-contract requests and failure recovery stay usable', async
     window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true }
   })
   await page.route('**/api/v1/**', (route) => route.fulfill({ json: [] }))
-  await page.route('**/api/client-error', (route) => route.fulfill({ status: 204 }))
+  await page.route('**/api/v1/client-errors', (route) => route.fulfill({ status: 204 }))
   let evaluations = 0
   await page.route('**/api/v1/dmn/analyze', async (route) => {
     const { table } = route.request().postDataJSON()

@@ -51,6 +51,7 @@ public final class ClusterRateLimitFilter extends OncePerRequestFilter {
     private final Limit decisions;
     private final Limit writes;
     private final Limit reads;
+    private final Limit clientErrors;
     private final Counter allowed;
     private final Counter throttled;
     private final Counter unavailable;
@@ -64,13 +65,16 @@ public final class ClusterRateLimitFilter extends OncePerRequestFilter {
             @Value("${marketing.gateway.rate-limit.writes-per-second:2000}") long writeRate,
             @Value("${marketing.gateway.rate-limit.writes-burst:4000}") long writeBurst,
             @Value("${marketing.gateway.rate-limit.reads-per-second:5000}") long readRate,
-            @Value("${marketing.gateway.rate-limit.reads-burst:10000}") long readBurst) {
+            @Value("${marketing.gateway.rate-limit.reads-burst:10000}") long readBurst,
+            @Value("${marketing.gateway.rate-limit.client-errors-per-second:5}") long clientErrorRate,
+            @Value("${marketing.gateway.rate-limit.client-errors-burst:10}") long clientErrorBurst) {
         this.redis = redis;
         this.enabled = enabled;
         this.events = new Limit("events", eventRate, eventBurst);
         this.decisions = new Limit("decisions", decisionRate, decisionBurst);
         this.writes = new Limit("writes", writeRate, writeBurst);
         this.reads = new Limit("reads", readRate, readBurst);
+        this.clientErrors = new Limit("client-errors", clientErrorRate, clientErrorBurst);
         this.allowed = Counter.builder("marketing.gateway.rate_limit.requests")
                 .tag("outcome", "allowed").register(meters);
         this.throttled = Counter.builder("marketing.gateway.rate_limit.requests")
@@ -130,6 +134,7 @@ public final class ClusterRateLimitFilter extends OncePerRequestFilter {
 
     private Limit classify(HttpServletRequest request) {
         String path = request.getRequestURI();
+        if (path.equals(ClientErrorController.PATH)) return clientErrors;
         if (path.equals("/api/v1/events")) return events;
         if (path.startsWith("/api/v1/decisions")) return decisions;
         return List.of("POST", "PUT", "PATCH", "DELETE").contains(request.getMethod()) ? writes : reads;

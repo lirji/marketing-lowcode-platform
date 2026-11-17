@@ -21,6 +21,7 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
 class ContractSpecificationsTest {
     private static final Path RESOURCES = Path.of("src/main/resources").toAbsolutePath().normalize();
     private static final Set<String> API_PATHS = Set.of(
+            "/api/v1/client-errors",
             "/api/v1/campaigns",
             "/api/v1/releases/{manifestId}/rollback-candidates",
             "/api/v1/referral-rewards/{rewardId}:reevaluate",
@@ -136,6 +137,18 @@ class ContractSpecificationsTest {
         var page = map(schemas.get("ReleasePage"));
         assertEquals(Set.of("items", "nextCursor", "hasMore", "state"), new HashSet<>((List<?>) page.get("required")));
         assertEquals(100, map(map(page.get("properties")).get("items")).get("maxItems"));
+    }
+
+    @Test
+    void clientDiagnosticsContractForbidsFreeTextAndIdentityFields() throws IOException {
+        var document = yaml(RESOURCES.resolve("openapi/marketing-api.yaml"));
+        var operation = map(map(map(document.get("paths")).get("/api/v1/client-errors")).get("post"));
+        assertTrue(map(operation.get("responses")).keySet().containsAll(Set.of("204", "400", "401", "429", "503")));
+        var schema = map(map(map(document.get("components")).get("schemas")).get("ClientErrorEvent"));
+        assertEquals(false, schema.get("additionalProperties"));
+        assertEquals(Set.of("schemaVersion", "source", "route", "httpStatus", "backendTraceId"), map(schema.get("properties")).keySet());
+        assertEquals(Set.of("schemaVersion", "source", "route", "httpStatus"), new HashSet<>((List<?>) schema.get("required")));
+        assertEquals(5, ((List<?>) map(map(schema.get("properties")).get("source")).get("enum")).size());
     }
 
     @Test

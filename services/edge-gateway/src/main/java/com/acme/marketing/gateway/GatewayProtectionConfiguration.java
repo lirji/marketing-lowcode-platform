@@ -21,9 +21,11 @@ public class GatewayProtectionConfiguration {
             @Value("${marketing.gateway.rate-limit.writes-per-second:2000}") long writeRate,
             @Value("${marketing.gateway.rate-limit.writes-burst:4000}") long writeBurst,
             @Value("${marketing.gateway.rate-limit.reads-per-second:5000}") long readRate,
-            @Value("${marketing.gateway.rate-limit.reads-burst:10000}") long readBurst) {
+            @Value("${marketing.gateway.rate-limit.reads-burst:10000}") long readBurst,
+            @Value("${marketing.gateway.rate-limit.client-errors-per-second:5}") long clientErrorRate,
+            @Value("${marketing.gateway.rate-limit.client-errors-burst:10}") long clientErrorBurst) {
         return new ClusterRateLimitFilter(redis, meters, enabled, eventRate, eventBurst,
-                decisionRate, decisionBurst, writeRate, writeBurst, readRate, readBurst);
+                decisionRate, decisionBurst, writeRate, writeBurst, readRate, readBurst, clientErrorRate, clientErrorBurst);
     }
 
     @Bean

@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 test('DMN draft save, reload and conflict recovery preserve user choices', async ({ page }, info) => {
   await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
   await page.route('**/api/v1/**', (route) => route.fulfill({ json: [] }))
-  await page.route('**/api/client-error', (route) => route.fulfill({ status: 204 }))
+  await page.route('**/api/v1/client-errors', (route) => route.fulfill({ status: 204 }))
   await page.route('**/api/v1/campaigns', (route) => route.fulfill({ json: [{ id: '85441433-eca9-4f49-ade5-b8fe795adf86', name: '草稿恢复测试活动', objective: 'test', status: 'DRAFT', campaignType: 'STANDARD', createdAt: '2026-11-16T00:00:00Z' }] }))
   let saved: unknown
   let version = 0

@@ -7,6 +7,7 @@ servers:
   - {url: http://localhost:8080, description: Local edge gateway}
 security: [{oidc: []}]
 tags:
+  - {name: Diagnostics}
   - {name: Control}
   - {name: Release}
   - {name: Compiler}
@@ -31,6 +32,29 @@ x-response-templates:
     '202': {$ref: '#/components/responses/JsonObject'}
     default: {$ref: '#/components/responses/Problem'}
 paths:
+  /api/v1/client-errors:
+    post:
+      tags: [Diagnostics]
+      operationId: collectClientError
+      description: >-
+        Best-effort authenticated console diagnostics. Tenant comes only from verified identity; no business permission is required.
+        Strict UTF-8 JSON, at most 1024 bytes including whitespace, no duplicate keys or trailing JSON.
+        Independent per-tenant Redis quota defaults to 5/sec, burst 10; Redis failure closes admission.
+        Arbitrary text, message, stack, URL, query, user/tenant/business IDs are forbidden.
+        204 means the instance invoked its diagnostic logger and counter; not durable storage or alert delivery.
+        No deduplication, automatic retry or idempotency key. Console limits itself to 10 events/minute/page.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ClientErrorEvent'}
+      responses:
+        '204': {description: Accepted by local diagnostic logger and counter; no response body}
+        '400': {description: CLIENT_ERROR_INPUT_INVALID or CLIENT_ERROR_REQUEST_TOO_LARGE}
+        '401': {$ref: '#/components/responses/Problem'}
+        '429': {description: TENANT_RATE_LIMITED; Retry-After is 1 second; console does not retry}
+        '503': {description: GATEWAY_RATE_LIMITER_UNAVAILABLE; console does not retry}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/referral-rewards/{rewardId}:reevaluate:
     $ref: './referral-operations.yaml#/paths/~1api~1v1~1referral-rewards~1{rewardId}:reevaluate'
   /api/v1/referral-campaigns/{campaignId}/participants:
@@ -852,6 +876,17 @@ components:
     JsonArray: {description: Successful collection, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/JsonObject'}}}}}
     Problem: {description: RFC 9457 problem response, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
   schemas:
+    ClientErrorEvent:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, source, route, httpStatus]
+      properties:
+        schemaVersion: {type: integer, const: 1}
+        source: {type: string, enum: [API, WINDOW, PROMISE, REACT, UNKNOWN]}
+        route: {type: string, enum: [HOME, CAMPAIGNS, DESIGNERS, ASSETS, RELEASES, GOVERNANCE, ANALYTICS, REFERRALS, AUTH, OPERATIONS, API, OTHER]}
+        httpStatus:
+          oneOf: [{type: integer, const: 0}, {type: integer, minimum: 100, maximum: 599}]
+        backendTraceId: {type: string, pattern: '^[0-9a-fA-F]{32}$', description: Optional backend trace reference; omit unknown or non-trace correlation IDs}
     ReleasePage:
       type: object
       required: [items, nextCursor, hasMore, state]

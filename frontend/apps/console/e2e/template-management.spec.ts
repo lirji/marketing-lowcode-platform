@@ -5,7 +5,7 @@ const existing = { templateId: 'welcome-message', version: 1, channel: 'SMS', co
 test('template versions retain inputs on conflict and protect unsaved edits', async ({ page }, info) => {
   await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
   await page.route('**/api/v1/**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/audiences/page') ? { items: [], nextCursor: null, hasMore: false, query: '' } : [] }))
-  await page.route('**/api/client-error', route => route.fulfill({ status: 204 }))
+  await page.route('**/api/v1/client-errors', route => route.fulfill({ status: 204 }))
   let value = existing, attempts = 0
   await page.route('**/api/v1/templates/catalog/page?**', async route => { await route.fulfill({ json: { items: [value], nextCursor: null, hasMore: false, query: new URL(route.request().url()).searchParams.get('q') ?? '' } }) })
   await page.route('**/api/v1/templates', async route => {

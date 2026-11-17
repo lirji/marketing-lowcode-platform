@@ -32,6 +32,7 @@ function DevAuthProvider({ children }: { children: ReactNode }) {
   const [sessionVersion, setSessionVersion] = useState(0)
   const [transitioning, setTransitioning] = useState(false)
   const clearSession = useCallback(async () => {
+    setIdentityProvider(() => ({}))
     invalidateApiSession()
     // 先卸载观察者，再清缓存，避免旧页面在退出途中重新发起查询并填回旧数据。
     flushSync(() => setTransitioning(true))

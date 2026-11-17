@@ -9,7 +9,7 @@ test('release rollback targets and uncertain command recovery stay usable', asyn
   const keys: string[] = []
   await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
   await page.route('**/api/v1/**', (route) => route.fulfill({ json: [] }))
-  await page.route('**/api/client-error', (route) => route.fulfill({ status: 204 }))
+  await page.route('**/api/v1/client-errors', (route) => route.fulfill({ status: 204 }))
   await page.route('**/api/v1/approvals/page?**', route => route.fulfill({ json: { items: [], hasMore: false, nextCursor: null, status: new URL(route.request().url()).searchParams.get('status') } }))
   await page.route('**/api/v1/releases/page?**', (route) => {
     const state = new URL(route.request().url()).searchParams.get('state')

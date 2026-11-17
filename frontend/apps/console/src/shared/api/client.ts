@@ -4,7 +4,7 @@ import type { ProblemDetail } from '@marketing/contracts'
 import { campaignCreateBody } from '../auth/scopeChoices'
 import { runtimeConfig } from '../config/runtime'
 import { getDevTenantId } from '../auth/devTenant'
-import { reportClientError } from '../observability/report'
+import { reportClientError, setClientErrorContextProvider } from '../observability/report'
 import {
   accountViewSchema,
   artifactViewSchema,
@@ -115,6 +115,14 @@ function identityHeaders(): Record<string, string> {
   }
 }
 
+// 采集必须有当前有效身份；DEV 退出后也不能继续借默认开发请求头上报。
+setClientErrorContextProvider(() => {
+  const identity = identityProvider()
+  if (!identity.tenantId || !identity.actorId) return undefined
+  const headers = identityHeaders()
+  return runtimeConfig.authMode === 'OIDC' && !headers.Authorization ? undefined : headers
+})
+
 function mergeHeaders(init?: RequestInit): Headers {
   const headers = new Headers(init?.headers)
   const identity = identityHeaders()
@@ -159,8 +167,7 @@ async function request<T>(path: string, init: RequestInit | undefined, parse: (v
         detail: '请求失败',
       }).parse(raw)
       if (response.status >= 500) {
-        const identity = identityProvider()
-        reportClientError({ code: problem.code ?? `HTTP_${response.status}`, message: problem.detail, tenantId: identity.tenantId, actorId: identity.actorId, path })
+        reportClientError({ source: 'API', httpStatus: response.status, backendTraceId: problem.traceId, path })
       }
       throw new ApiProblem(problem)
     }

@@ -37,7 +37,7 @@ test('create a real campaign type and author a complete explicit Offer graph', a
     })
   } else {
     await page.route('**/api/v1/**', (route) => route.fulfill({ json: [] }))
-    await page.route('**/api/client-error', (route) => route.fulfill({ status: 204 }))
+    await page.route('**/api/v1/client-errors', (route) => route.fulfill({ status: 204 }))
     const rows: object[] = []
     await page.route('**/api/v1/campaigns', async (route) => {
       if (route.request().method() === 'GET') return route.fulfill({ json: rows })

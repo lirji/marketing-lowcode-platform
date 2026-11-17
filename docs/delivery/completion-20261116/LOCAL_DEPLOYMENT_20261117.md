@@ -2,7 +2,12 @@
 
 以下最新状态优先于下文历史交付记录。
 
-## 最新增量交付：0c8aff8 / b3858e6
+## 当前运行版本
+- console与engagement-service为166dc43；benefit-funding-service为607542e；audience-service为a260865；marketing-control-service为b3858e6；其它应用沿用045dfd9。S12j/k/l验收均PASS，详细证据见下文同名章节。
+- 仅18个本项目必需容器运行；原3个Flink作业保持运行且检查点推进，基础设施和存量数据保留。下一项S12m尚未部署。
+
+
+## 历史增量交付：0c8aff8 / b3858e6
 - S12i源码0c8aff81e2fdb44239cfad1c5763259dcc21311c精确CI44067162029三项PASS并FF main，console更新至0c8aff8；control b3858e6、engagement c14289e、其它8应用045dfd9，控制库V7。
 - runtime-0c8aff8运行与真实双视口Journey转换/撤销PASS，18必要容器正常、其余17不变，Flink检查点推进。两个已核对本机演示租户的旧等待节点通过现有API追加v2，校验和纯仿真成功；原v1、审批、发布、运行定义/槽与发件箱计数散列不变，见s12i-seed-result.json。
 - 不重新应用旧脚本或覆盖已审批版本；本次新草稿未提交审批/发布，也未触达。数据快照/幂等计划只在本机0600证据目录保留。
@@ -77,3 +82,6 @@
 ## S12k 权益资产分页
 - 精确CI44075059624三项通过后FF main 607542e；benefit-funding-service与console更新，audience a260865、control b3858e6、engagement c14289e保留。runtime-607542e/{artifact-manifest,rollout-state,runtime-smoke,benefit-api,benefit-browser}.json PASS。
 - 实际4条权益limit1遍历完整、ID搜索/参数/权限/跨租户验证通过；桌面/Pixel7详情搜索清除通过，零业务写入/API失败。18必要容器正常、16其它容器未变、3个Flink原作业检查点推进。已停测试数据库/服务，保留隔离测试数据，不删除卷。
+
+## S12l 模板分页增量部署
+- main/engagement-service/console=166dc43；CI44076660106三项PASS，runtime-166dc43最终PASS。18必要容器健康、16受保护容器不变、3个Flink检查点推进。实际模板完整分页/搜索/授权/隔离和桌面/Pixel7只读浏览器通过。其他服务版本和数据保持原部署记录；未重提作业。

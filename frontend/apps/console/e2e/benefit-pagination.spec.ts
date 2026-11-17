@@ -7,9 +7,10 @@ test('benefit assets search across pages and recover the failed next page', asyn
   let allowNext = false
   const queries: { q: string; cursor: string | null }[] = [], errors: string[] = [], writes: string[] = []
   page.on('pageerror', error => errors.push(error.message))
-  page.on('request', request => { if (request.url().includes('/api/v1/') && request.method() !== 'GET') writes.push(request.url()) })
+  page.on('request', request => { if (request.url().includes('/api/v1/') && !new URL(request.url()).pathname.endsWith('/client-errors') && request.method() !== 'GET') writes.push(request.url()) })
   await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
   await page.route('**/api/v1/**', async route => {
+    if (new URL(route.request().url()).pathname.endsWith('/client-errors')) { await route.fulfill({ status: 204 }); return }
     const url = new URL(route.request().url()), path = url.pathname
     if (path.endsWith('/benefits/catalog/page')) {
       const q = url.searchParams.get('q') ?? '', cursor = url.searchParams.get('cursor'); queries.push({ q, cursor })

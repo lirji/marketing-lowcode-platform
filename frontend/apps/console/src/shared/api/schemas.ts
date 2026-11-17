@@ -9,6 +9,7 @@ export const problemDetailSchema: z.ZodType<ProblemDetail> = z.object({
   instance: z.string().optional(),
   code: z.string().optional(),
   retryable: z.boolean().optional(),
+  traceId: z.string().optional(),
 })
 
 export const campaignSchema = z.object({

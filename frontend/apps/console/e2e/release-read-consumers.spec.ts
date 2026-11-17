@@ -9,7 +9,7 @@ test('wizard follows its staged ID outside the list window and refuses stale rea
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
-  await page.route('**/api/client-error', route => route.fulfill({ status: 204 }))
+  await page.route('**/api/v1/client-errors', route => route.fulfill({ status: 204 }))
   await page.route('**/api/v1/**', async route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname
     if (path.endsWith(':ack') || path.endsWith(':activate')) { forbiddenWrites++; await route.fulfill({ status: 500 }); return }
