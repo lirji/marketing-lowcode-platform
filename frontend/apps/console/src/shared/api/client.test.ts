@@ -105,3 +105,26 @@ describe('single release contract', () => {
     expect(fetch.mock.calls[1][0]).toContain('/api/v1/releases/another%20manifest')
   })
 })
+
+
+describe('audience page contract', () => {
+  const item = { segmentId: 'segment-a', version: 1, name: '人群', status: 'ACTIVE' }
+  afterEach(() => vi.unstubAllGlobals())
+  it('encodes literal search and rejects a mismatched search or repeated cursor', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [item], nextCursor: null, hasMore: false, query: '100%_ 人群' })))
+    vi.stubGlobal('fetch', fetcher)
+    await api.audiencePage({ q: ' 100%_ 人群 ', limit: 25 })
+    expect(new URL(String(fetcher.mock.calls[0][0]), 'http://local').searchParams.get('q')).toBe('100%_ 人群')
+    fetcher.mockResolvedValueOnce(new Response(JSON.stringify({ items: [item], nextCursor: null, hasMore: false, query: '' })))
+    await expect(api.audiencePage({ q: 'needle' })).rejects.toThrow('人群服务未确认当前搜索')
+    fetcher.mockResolvedValueOnce(new Response(JSON.stringify({ items: [item], nextCursor: 'segment-a', hasMore: true, query: '' })))
+    await expect(api.audiencePage({ cursor: 'segment-a' })).rejects.toThrow('重复游标')
+  })
+  it('rejects missing pagination metadata and duplicate segment IDs', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ items: [item] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [item, item], nextCursor: null, hasMore: false, query: '' })))
+    vi.stubGlobal('fetch', fetcher)
+    await expect(api.audiencePage()).rejects.toThrow()
+    await expect(api.audiencePage()).rejects.toThrow()
+  })
+})

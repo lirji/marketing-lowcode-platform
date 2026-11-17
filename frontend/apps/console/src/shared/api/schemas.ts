@@ -387,6 +387,18 @@ export const audienceViewSchema = z.object({
   createdAt: z.string().optional(),
 })
 export type AudienceView = z.infer<typeof audienceViewSchema>
+export const AUDIENCE_PAGE_SIZES = { DEFAULT: 25, MAX: 100 } as const
+export const audiencePageSchema = z.object({
+  items: z.array(audienceViewSchema).max(AUDIENCE_PAGE_SIZES.MAX),
+  nextCursor: z.string().min(1).nullable(), hasMore: z.boolean(), query: z.string().max(128),
+}).superRefine((page, context) => {
+  if (page.hasMore !== (page.nextCursor !== null) || page.hasMore && page.items.at(-1)?.segmentId !== page.nextCursor
+      || new Set(page.items.map(item => item.segmentId)).size !== page.items.length) {
+    context.addIssue({ code: 'custom', message: '人群分页响应的记录或游标不一致' })
+  }
+})
+export type AudiencePage = z.infer<typeof audiencePageSchema>
+
 
 export const audiencePreviewSchema = z.object({
   estimatedCount: z.number(),

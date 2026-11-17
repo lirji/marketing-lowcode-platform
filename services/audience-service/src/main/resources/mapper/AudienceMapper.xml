@@ -117,6 +117,34 @@
         ORDER BY current.name, current.segment_id
     </select>
 
+    <!-- 创建时间为持久化UTC Instant；显示字段统一转北京时间，匹配前端可见文本。 -->
+    <select id="selectLatestSegmentPage"
+            resultType="com.acme.marketing.audience.infrastructure.persistence.mapper.AudienceMapper$SegmentRow">
+        SELECT current.segment_id AS segmentId, current.version_no AS versionNo, current.name,
+               current.state_name AS stateName, current.rule_json AS ruleJson,
+               current.rule_hash AS ruleHash, current.created_at AS createdAt
+        FROM mk_segment_definition current
+        WHERE current.tenant_id = #{tenantId}
+          AND current.version_no = (
+              SELECT MAX(latest.version_no) FROM mk_segment_definition latest
+              WHERE latest.tenant_id = current.tenant_id AND latest.segment_id = current.segment_id
+          )
+        <if test="cursor != null">AND current.segment_id &gt; #{cursor}</if>
+        <if test="query.length() > 0">
+          AND (
+LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(current.name) AS BINARY)) &gt; 0
+            OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(current.segment_id) AS BINARY)) &gt; 0
+            OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(CAST(current.version_no AS CHAR)) AS BINARY)) &gt; 0
+            OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(current.rule_hash) AS BINARY)) &gt; 0
+            OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(current.state_name) AS BINARY)) &gt; 0
+            OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(CASE current.state_name WHEN 'ACTIVE' THEN '已生效' WHEN 'READY' THEN '已就绪' WHEN 'DRAFT' THEN '草稿' WHEN 'STALE' THEN '已过期' ELSE current.state_name END) AS BINARY)) &gt; 0
+            OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(DATE_FORMAT(DATE_ADD(STR_TO_DATE(SUBSTRING(current.created_at, 1, 19), '%Y-%m-%dT%H:%i:%s'), INTERVAL 8 HOUR), '%Y/%m/%d %H:%i:%s')) AS BINARY)) &gt; 0
+          )
+        </if>
+        ORDER BY current.segment_id
+        LIMIT #{fetchSize}
+    </select>
+
     <select id="selectSegment"
             resultType="com.acme.marketing.audience.infrastructure.persistence.mapper.AudienceMapper$SegmentRow">
         SELECT

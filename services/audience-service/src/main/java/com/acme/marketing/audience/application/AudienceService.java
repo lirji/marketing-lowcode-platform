@@ -80,6 +80,26 @@ public class AudienceService {
         return repository.findLatestSegments(scope.tenantId().value());
     }
 
+    /** 最新版本与全字段搜索在SQL中先于LIMIT执行，禁止先取一页再过滤。 */
+    public AudiencePage audiencePage(Integer limit, String query, String cursor) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("audience:read");
+        var page = AudiencePaging.validate(limit, query, cursor);
+        String tenant = scope.tenantId().value();
+        if (page.cursor() != null && repository.findLatestSegmentVersion(tenant, page.cursor()).isEmpty()) {
+            throw AudiencePaging.invalidCursor();
+        }
+        List<SegmentView> fetched = repository.findLatestSegmentPage(tenant, page.query(), page.cursor(), page.limit() + 1);
+        boolean hasMore = fetched.size() > page.limit();
+        List<SegmentView> items = hasMore ? fetched.subList(0, page.limit()) : fetched;
+        return new AudiencePage(items, hasMore ? items.getLast().segmentId() : null, hasMore, page.query());
+    }
+
+    /** nextCursor仅在仍有下一页时提供；query回显规范化搜索，不能由客户端猜测结果范围。 */
+    public record AudiencePage(List<SegmentView> items, String nextCursor, boolean hasMore, String query) {
+        public AudiencePage { items = List.copyOf(items); }
+    }
+
     /** 使用请求内的样本人群预览规则命中结果。 */
     public Preview preview(String segmentId, long version, List<SubjectProfile> profiles) {
         var scope = TenantContextHolder.requireCurrent();

@@ -53,6 +53,13 @@ public class AudienceController {
         return service.audiences();
     }
 
+    /** 有界资产列表；当前身份的租户与权限在应用层再次检查。 */
+    @GetMapping("/audiences/page")
+    public AudienceService.AudiencePage audiencePage(@RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) String q, @RequestParam(required = false) String cursor) {
+        return service.audiencePage(limit, q, cursor);
+    }
+
     @PostMapping("/audiences/{segmentId}/versions/{version}:preview")
     public AudienceService.Preview preview(@PathVariable String segmentId, @PathVariable long version,
             @RequestBody List<AudienceService.SubjectProfile> profiles) {

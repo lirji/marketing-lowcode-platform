@@ -14,6 +14,7 @@ import {
   audiencePreviewSchema,
   audienceSnapshotSchema,
   audienceViewSchema,
+  audiencePageSchema,
   awardIntentViewSchema,
   awardFulfillmentSchema,
   benefitSkuSchema,
@@ -270,6 +271,20 @@ export const api = {
   recomputeAttribution: () =>
     request('/api/v1/measurements/attribution:recompute', { method: 'POST', headers: commandHeaders(), body: JSON.stringify({}) }, (value) => parseWith(recomputeSchema, value)),
   audiences: () => request('/api/v1/audiences', undefined, (value) => zArray(audienceViewSchema, value)),
+  audiencePage: (query: { q?: string; limit?: number; cursor?: string } = {}) => {
+    const params = new URLSearchParams()
+    const search = query.q?.trim() ?? ''
+    if (search) params.set('q', search)
+    if (query.limit !== undefined) params.set('limit', String(query.limit))
+    if (query.cursor !== undefined) params.set('cursor', query.cursor)
+    return request(`/api/v1/audiences/page?${params}`, undefined, (value) => {
+      const page = parseWith(audiencePageSchema, value)
+      if (page.query !== search || page.hasMore && page.nextCursor === query.cursor) {
+        throw new Error('人群服务未确认当前搜索或返回了重复游标，请刷新后重试。')
+      }
+      return page
+    })
+  },
   createAudience: (payload: { segmentId: string; name: string; rule: { match: string; conditions: { fieldId: string; operator: string; value: string }[] } }) =>
     request('/api/v1/audiences', { method: 'POST', headers: commandHeaders(), body: JSON.stringify(payload) }, (value) => parseWith(audienceViewSchema, value)),
   previewAudience: (segmentId: string, version: number, profiles: { subjectToken: string; attributes: Record<string, string> }[]) =>

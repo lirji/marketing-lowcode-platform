@@ -91,6 +91,11 @@ public class MybatisAudienceRepository implements AudienceRepository {
     }
 
     @Override
+    public List<SegmentView> findLatestSegmentPage(String tenantId, String query, String cursor, int fetchSize) {
+        return mapper.selectLatestSegmentPage(tenantId, query, cursor, fetchSize).stream().map(this::toSegment).toList();
+    }
+
+    @Override
     public Optional<SegmentView> findSegment(String tenantId, String segmentId, long version) {
         return Optional.ofNullable(mapper.selectSegment(tenantId, segmentId, version)).map(this::toSegment);
     }

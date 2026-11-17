@@ -33,6 +33,10 @@ public interface AudienceMapper {
     /** 查询每个人群定义的最新版本。 */
     List<SegmentRow> selectLatestSegments(@Param("tenantId") String tenantId);
 
+    /** 先限定租户、最新版本及搜索，再用主键ID顺序读取至多fetchSize条。 */
+    List<SegmentRow> selectLatestSegmentPage(@Param("tenantId") String tenantId, @Param("query") String query,
+            @Param("cursor") String cursor, @Param("fetchSize") int fetchSize);
+
     /** 查询指定人群定义版本。 */
     SegmentRow selectSegment(@Param("tenantId") String tenantId, @Param("segmentId") String segmentId,
             @Param("version") long version);

@@ -23,7 +23,7 @@ vi.mock('../../shared/api/client', async (importOriginal) => {
       get demoMode() {
         return false
       },
-      audiences: () => mocks.audiences(),
+      audiencePage: async ({ q = '' }: { q?: string }) => ({ items: await mocks.audiences(), nextCursor: null, hasMore: false, query: q }),
       benefits: () => mocks.benefits(),
       templates: () => mocks.templates(),
       fields: () => mocks.fields(),

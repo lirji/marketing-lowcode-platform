@@ -35,6 +35,9 @@ public interface AudienceRepository {
     /** 返回每个人群定义的最新版本。 */
     List<SegmentView> findLatestSegments(String tenantId);
 
+    /** 按稳定ID顺序查询当前租户最新版本，搜索与游标先于有界读取。 */
+    List<SegmentView> findLatestSegmentPage(String tenantId, String query, String cursor, int fetchSize);
+
     /** 按租户、人群标识和版本查询定义。 */
     Optional<SegmentView> findSegment(String tenantId, String segmentId, long version);
 
