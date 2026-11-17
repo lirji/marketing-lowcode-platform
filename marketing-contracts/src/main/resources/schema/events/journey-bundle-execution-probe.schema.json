@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/marketing/journey-bundle-execution-probe/1-0-0",
+  "type": "object",
+  "description": "Control-signed exact-source probe for a real Flink deployment; expires within five minutes. Not a business enrollment or applied receipt.",
+  "additionalProperties": false,
+  "required": [
+    "probeId",
+    "tenantId",
+    "campaignId",
+    "environment",
+    "cell",
+    "namespace",
+    "memberManifestId",
+    "activationSequence",
+    "activationSignature",
+    "targetJobId",
+    "targetParallelism",
+    "participationKeyId",
+    "issuedAt",
+    "expiresAt",
+    "signatureKeyId",
+    "signature"
+  ],
+  "properties": {
+    "probeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "tenantId": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "value": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        }
+      }
+    },
+    "campaignId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "environment": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32
+    },
+    "cell": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "namespace": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "memberManifestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "activationSequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "activationSignature": {
+      "type": "string",
+      "minLength": 86,
+      "maxLength": 86,
+      "pattern": "^[A-Za-z0-9_-]{86}$"
+    },
+    "targetJobId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{32}$"
+    },
+    "targetParallelism": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 128
+    },
+    "participationKeyId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_.:@-]+$"
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "signatureKeyId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_.:@-]+$"
+    },
+    "signature": {
+      "type": "string",
+      "minLength": 86,
+      "maxLength": 86,
+      "pattern": "^[A-Za-z0-9_-]{86}$"
+    }
+  }
+}

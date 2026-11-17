@@ -150,3 +150,12 @@ S11g2合同模块保持无JSON生产依赖，动作在wire中使用经Action.fro
 - 参与签发使用独立可选key-id/private/public配置，缺省不生成临时私钥且拒绝新签发；配套当前参与公钥信任必须能验证新签名。已有凭证只读恢复不需要私钥，但仍需可信公钥。生产密钥来源/轮换与保留期限、容量、灾备沿S13记录，不自动发放机器凭据或部署。
 - Owner=backend；范围：Decision V6/Mapper/Repository/应用/严格API/可选签发配置、共享错误目录/入参校验复用、OpenAPI和隔离MySQL并发/事务测试。验收：空库及仅RECORDED拒绝；同键并发同主体唯一凭证、不同主体唯一胜者；不同参与不互锁；共享锁与切换串行关系；重复固定旧源、权限/信任撤销拒绝、保存失败全回滚、真实重建读回；无共享库迁移或实际应用副作用。
 - 之后g6b实现带真实运行能力证据的完整应用协议，g6c接Control发起/查询/回滚及旧入口切换；g6a的测试专用APPLIED夹具不构成这些能力已交付的证据。
+
+## S11g6b1：真实Journey执行探针合同
+- 应用门禁必须取得实际消费者证据，Journey Web的安装ACK不能替代运行中Flink作业。先定义独立Control签名探针及独立Flink执行回执，之后接真实operator/现有Kafka通路/持久收集，再接整体应用。g6b1只交付合同与验证器，不写APPLIED位置。
+- `JourneyBundleExecutionProbe`固定probeId、tenant/campaign/environment/cell/namespace、精确memberManifestId、g2 activationSequence/activationSignature、目标Flink jobId/parallelism、准入参与公钥ID、issuedAt/expiresAt及Control签名。只带精确来源索引，完整授权仍从本地g3历史读取并重新验签，避免每个探针复制整个组合。有效期最多5分钟且不超过源组合期限；只在签发后执行，目标并行度有界1–128，超出范围保持拒绝。
+- `JourneyBundleExecutionAck`包含原探针、固定执行协议code、实际jobId/parallelism/subtaskIndex/attemptNumber、不可变作业JAR的SHA256、acknowledgedAt及专用执行签名。Job身份与并行度必须取实际Flink RuntimeContext，JAR摘要从实际提交制品计算，不能由Web就绪回执填入。执行钥匙与Control/编译/参与角色分离，缺配置不签回执。验证期望jobId/并行度/JAR摘要来自可信部署登记，不从待验ACK复制。
+- 签名用途分别为marketing.journey-bundle-execution-probe/v1和marketing.journey-bundle-execution-ack/v1；外层ACK覆盖原探针完整规范内容及其签名。验证器同时检查Control探针、原完整组合/成员/授权、本站Journey成员、当前目标部署身份/制品摘要、参与公钥ID及时间；单份有效ACK不等于所有subtask齐备或已应用。
+- 后续实际probe事件单独分支处理，不创建/修改enrollment状态，不触发业务效果。通过有界多路由键发送，在同一probeId下按实际subtaskIndex收集；只有0..parallelism-1全部不同下标的有效回执才齐备，不按消息条数或假定散列分布判成功。现有Kafka事务输出提供checkpoint后可见性；无回执/覆盖不全/目标变化均停止应用，允许有界重试。旧作业不能生成该新用途回执，旧消费组必须在真实部署时完成退出/恢复核验。
+- g6b1 Owner=contracts/backend；范围仅共享probe/ack/用途签名/作用域验证器、JSON schema与合同测试及文档。后续g6b2实现真实Flink探针处理和制品身份，g6b3实现可靠投递/持久收集与Decision执行证据，g6b4完成应用门禁/共享指针CAS；Control发起/回滚/查询另接g6c。无新服务、中间件、实际作业变更或生产部署。
+- 验收：篡改任一目标/来源/部署/任务下标/时间、混用旧ACK或角色密钥、历史probe重放、不同probe混用、源成员或完整签名损坏均拒绝；真实JSON往返与边界值保持稳定。当前片不宣称已探测任何运行作业或具备实际应用能力。

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/marketing/journey-bundle-execution-ack/1-0-0",
+  "type": "object",
+  "description": "One actual Flink subtask receipt; subtaskIndex must be less than parallelism, and all subtask indices must be collected before readiness.",
+  "additionalProperties": false,
+  "required": [
+    "probe",
+    "executionProtocol",
+    "jobId",
+    "parallelism",
+    "subtaskIndex",
+    "attemptNumber",
+    "buildDigest",
+    "acknowledgedAt",
+    "signatureKeyId",
+    "signature"
+  ],
+  "properties": {
+    "probe": {
+      "$ref": "https://schemas.example.invalid/marketing/journey-bundle-execution-probe/1-0-0"
+    },
+    "executionProtocol": {
+      "type": "string",
+      "const": "marketing.activity-bundle-execution/v1"
+    },
+    "jobId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{32}$"
+    },
+    "parallelism": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 128
+    },
+    "subtaskIndex": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 127
+    },
+    "attemptNumber": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "buildDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "acknowledgedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "signatureKeyId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_.:@-]+$"
+    },
+    "signature": {
+      "type": "string",
+      "minLength": 86,
+      "maxLength": 86,
+      "pattern": "^[A-Za-z0-9_-]{86}$"
+    }
+  }
+}

@@ -131,3 +131,8 @@ Decision V5/Journey V4会回填历史接收记录：已有active指针保持原g
 - 同一tenant/environment/cell/campaign/participationId永久绑定同一主体与完整组合，重试返回原签名；同键换主体409，不重签或换版本。READ_COMMITTED短事务以共享指针锁固定应用位置、唯一插入仲裁并发；实际切换需独占同一指针。不同参与可并发，失败不留下半份记录；旧组合过期不改变历史绑定，但新参与拒绝。返回之前仍检查当前权限/资源范围和签名信任。
 - 新签发必须配置独立`MARKETING_PARTICIPATION_SIGNING_KEY_ID/PRIVATE_KEY_BASE64/SIGNING_PUBLIC_KEY_BASE64`，并由现有参与公钥配置认可。默认不生成临时私钥；缺配置或私钥与当前信任不匹配均409，已存在参与只读恢复不需要私钥。密钥不得提交Git，生产密钥保管/轮换另按S13验证。
 - 表中保留主体用途摘要及签名事实，不保存明文subject；摘要不是匿名化。当前没有自动删除，保留/归档/撤销传播和容量仍待S13。独占测试数据库的APPLIED夹具只验证准入并发/恢复，不证明Control整体发布、实际运行能力或生产容量已完成；本轮未迁移共享库或部署。
+
+### 实际Flink执行证据合同（S11g6b1，尚未接实际作业）
+- JourneyBundleExecutionProbe由Control独立用途签名，固定租户/活动/运行位置、精确成员、整体授权序号及签名、目标jobId/parallelism、准入公钥ID与最多5分钟有效期。消费者必须读取并重验本地完整g3来源，不能仅靠探针索引或Web安装ACK发回成功。
+- JourneyBundleExecutionAck覆盖完整原探针及其签名，包含固定协议code、实际jobId/parallelism/subtaskIndex/attemptNumber、实际提交JAR的SHA256和时间；使用专门执行钥匙，不能用Control/普通READY签名替换。校验期望jobId、并行度和JAR摘要来自可信部署登记，禁止从待验回执复制。
+- 当前并行度合同上限128；越界拒绝。单份ACK不表示整个作业齐备，后续必须按同probeId收齐全部不同subtaskIndex，并检查当前部署、回执期限及真实应用门禁。合同模型/签名/JSON schema已具备，实际operator接线、可靠投递/收集、部署登记和应用写入仍未完成，本节不代表已探测运行中作业。

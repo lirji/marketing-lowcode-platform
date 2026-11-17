@@ -168,6 +168,26 @@ class ContractSpecificationsTest {
     }
 
     @Test
+    void executionProofSchemasCoverEveryFieldAndResolveTheProbeByItsCanonicalIdentity() throws IOException {
+        var mapper = new tools.jackson.databind.ObjectMapper();
+        var types = Map.of("probe", com.acme.marketing.contracts.release.JourneyBundleExecutionProbe.class,
+                "ack", com.acme.marketing.contracts.release.JourneyBundleExecutionAck.class);
+        for (var entry : types.entrySet()) {
+            var schema = mapper.readTree(Files.readString(RESOURCES.resolve("schema/events/journey-bundle-execution-" + entry.getKey() + ".schema.json")));
+            var names = java.util.Arrays.stream(entry.getValue().getRecordComponents()).map(java.lang.reflect.RecordComponent::getName).collect(java.util.stream.Collectors.toSet());
+            assertEquals(names, schema.path("properties").propertyNames());
+            Set<String> required = new HashSet<>(); schema.path("required").forEach(value -> required.add(value.asString()));
+            assertEquals(names, required); assertFalse(schema.path("additionalProperties").asBoolean());
+        }
+        var probe = mapper.readTree(Files.readString(RESOURCES.resolve("schema/events/journey-bundle-execution-probe.schema.json")));
+        var ack = mapper.readTree(Files.readString(RESOURCES.resolve("schema/events/journey-bundle-execution-ack.schema.json")));
+        assertEquals(probe.path("$id").asString(), ack.path("properties").path("probe").path("$ref").asString());
+        assertEquals("object", probe.path("properties").path("tenantId").path("type").asString());
+        assertEquals(com.acme.marketing.contracts.release.JourneyBundleExecutionAck.EXECUTION_PROTOCOL,
+                ack.path("properties").path("executionProtocol").path("const").asString());
+    }
+
+    @Test
     void openApiMatchesTheImplementedR1Surface() throws IOException {
         Path source = RESOURCES.resolve("openapi/marketing-api.yaml");
         Map<String, Object> document = yaml(source);

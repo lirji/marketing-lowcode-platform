@@ -15,7 +15,7 @@
 - 用户授权Docker只运行本项目组件；13个额外无关容器及原17个langchain应用保持停止，所有容器与数据卷保留。本轮只更新console，17个其它运行容器ID/镜像/启动时间不变；3个原Flink作业及检查点继续推进，禁止重复恢复或提交空作业。
 - 上一轮部署验证：271项前端测试、98项浏览器用例通过，10项既有独立服务用例跳过；lint/build/Hygiene无阻塞，未配置canonical formatter。真实Docker四类资产页在桌面与Pixel7的分页、搜索、详情及字段/节点读取回归通过，无业务写入、API失败或页面异常。运行回执与截图：私有证据目录 `runtime-dbe268b/`。
 - 上一轮部署可见结果：活动/首页/运营/资产的静态预览不显示假业务数据或旧缓存，资产刷新不能绕过读取门禁；OIDC身份范围变化、退出与过期清理旧请求/缓存/草稿，旧令牌401不退出已更新令牌，远端退出失败能恢复登录页。本机仍为DEV认证，真实IdP联调未验证。
-- 当前HEAD/远程任务分支631dce2，main/origin=d6c29c2。g5b精确CI44130020254三项SUCCESS；g6a唯一准入本地45模块/49合同/14JSON/10架构/Hygiene通过，待提交/精确CI。继续真实能力、实际应用与Control闭环；无部署或共享库迁移。
+- 当前HEAD/远程任务分支ad48a2a，main/origin=631dce2。g5b已通过精确CI并正常交付；g6a精确CI44132761406三项SUCCESS，待本片清洁提交后正常FF main。g6b1真实Journey执行探针合同本地验收通过，准备提交/精确CI；继续g6b2真实operator；真实operator/收集/应用门禁及Control闭环仍未完成。无部署或共享库迁移。
 
 ## 未完成项与恢复顺序
 
@@ -828,3 +828,12 @@
 - 完整Decision模块45项、合同49项及依赖回归PASS（s11g6a-modules-final.log），14JSON和10架构PASS（s11g6a-json-final.log、s11g6a-architecture-final.log）。补充不完整签发配置与不被当前参与公钥信任的私钥拒绝后，7项准入真实MySQL测试再次PASS（s11g6a-signing-final.log）；原模块其他结果仍适用。
 - 根代理单独复核READ_COMMITTED共享指针锁、实际切换等待、同键唯一仲裁/失败后读回、MyBatis写入清理会话缓存、提交前异常回滚、无远程/MQ事务副作用、先检查历史资源范围再报告主体冲突、时间/签名/Unicode边界、无私钥读取恢复以及空APPLIED默认拒绝。Hygiene/diff PASS（s11g6a-hygiene-final.json）；数值项为显式容量/事务预算常量，事务ADVISORY已有真实并发与回滚证据，无剩余阻断；仍无canonical formatter。
 - 本片没有实际应用写入口，V6不回填任何APPLIED记录；未迁移共享数据库或部署。准备逻辑提交/精确CI，随后正常交付已绿g5b；下一步g6b真实执行能力证据与应用协议，不能将测试APPLIED夹具当作线上原子发布完成。
+
+## S11g6b1 Journey实际执行证据
+- g6a提交ad48a2a，精确CI44132761406已启动；g5b已正常FF main/origin=631dce2。下一片先定义签名执行探针/回执及可信目标验证，区分真实Flink与Web安装ACK；设计已写，尚未实施合同。实际探测、可靠收集和应用指针仍待后续，不改正在运行的作业。
+- g6b1共享探针/ACK/独立签名/可信部署验证器已写并编译PASS（s11g6b1-compile.log）。首轮合同7项中4项通过：两处断言误用IllegalArgumentException（Jackson实际包装ValueInstantiationException），一处篡改成员夹具未同步组合contentHash，被构造器提前拒绝；均已按真实契约修正（s11g6b1-first.log）。新增两份JSON schema并使用与目标$id一致的绝对引用，补全字段/引用一致性测试；最终验证待跑。
+- g6b1最终合同57项PASS（s11g6b1-final.log），含7项执行证明行为与1项schema字段/规范$id引用检查；已有16份JSON，架构验证在执行（日志s11g6b1-architecture-final.log，恢复先查进程/日志）。g6a精确CI44132761406三项SUCCESS，待本片清洁提交后正常FF main。
+
+### S11g6b1 本地验收通过
+- 合同57项、16份JSON、10项架构检查全部PASS（s11g6b1-final.log、s11g6b1-json-final.log、s11g6b1-architecture-final.log）。根代理另行复核独立签名用途、全部字段覆盖、可信部署来源、完整源链、时限与实际子任务下标约束；单份回执不等于整个作业就绪。
+- Hygiene/diff通过（s11g6b1-hygiene.json）；5条ADVISORY均为已命名协议/容量/时钟常量，无阻断，仓库未配置canonical formatter。本片无真实probe投递、无APPLIED写入口、无共享库或运行作业变更。准备提交推送及精确CI，随后交付已绿g6a；下一片g6b2接实际Flink分支。
