@@ -2,14 +2,12 @@ package com.acme.marketing.journeyservice;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.acme.marketing.contracts.artifact.ArtifactAttestation;
 import com.acme.marketing.contracts.event.JourneyBundleExecutionAckEvent;
 import com.acme.marketing.contracts.release.*;
 import com.acme.marketing.journeyservice.application.*;
 import com.acme.marketing.journeyservice.application.JourneyExecutionProbeRepository.Key;
 import com.acme.marketing.journeyservice.infrastructure.persistence.MybatisJourneyExecutionProbeRepository;
 import com.acme.marketing.journeyservice.infrastructure.persistence.mapper.JourneyExecutionProbeMapper;
-import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.crypto.Ed25519;
 import com.acme.marketing.platform.error.ConflictException;
 import com.acme.marketing.platform.identity.TenantId;
@@ -473,27 +471,7 @@ class JourneyExecutionProbeIntegrationTest {
         return JourneyBundleExecutionProbeSigner.sign(RELEASE.getPrivate(), mapper.treeToValue(tree, JourneyBundleExecutionProbe.class));
     }
     private JourneyBundleExecutionProbe installedProbe(String id) throws Exception {
-        byte[] payload = mapper.writeValueAsBytes(new com.acme.marketing.journey.JourneyPlan("definition", 1, "end",
-                Map.of("end", new com.acme.marketing.journey.JourneyNode("end", com.acme.marketing.journey.JourneyNode.Type.END, Map.of(), Map.of())), 5, 1, Duration.ofDays(1)));
-        var member = member(payload, "journey", "main");
-        var installed = send(request("/api/v1/journey-runtime/manifest").PUT(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(
-                Map.of("releaseKeyId", "release-key", "manifest", member, "artifactBase64", encoded(payload))))));
-        assertEquals(200, installed.statusCode(), installed.body());
-        var members = List.of(member, member(new byte[]{4}, "decision", "other"));
-        var bundle = ReleaseBundleManifestSigner.sign(RELEASE.getPrivate(), new ReleaseBundleManifest("bundle", new TenantId(tenant), "campaign", 1,
-                "local", "cell-a", ReleaseBundleManifest.contentHash(tenant, "campaign", members), members, now, now.plusSeconds(600), "release-key", ""));
-        var directive = ReleaseBundleActivationSigner.sign(RELEASE.getPrivate(), new ReleaseBundleActivationDirective("directive", bundle, 1, "ACTIVATE", "org", "shop", now, "operator", "release-key", ""));
-        var received = send(request("/api/v1/journey-runtime/release-bundle-directives").POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(directive))));
-        assertEquals(200, received.statusCode(), received.body());
-        return JourneyBundleExecutionProbeSigner.sign(RELEASE.getPrivate(), new JourneyBundleExecutionProbe(id, new TenantId(tenant), "campaign", "local", "cell-a", "main",
-                member.manifestId(), 1, directive.signature(), JOB, 2, "participation", BASE, BASE.plusSeconds(120), "release-key", ""));
-    }
-    private ReleaseManifest member(byte[] payload, String runtime, String namespace) {
-        String id = runtime + "-1", checksum = "sha256:" + Digests.sha256Hex(payload), source = "sha256:" + "b".repeat(64);
-        String signature = ArtifactAttestation.sign(COMPILER.getPrivate(), tenant, id, "definition", 1, "JOURNEY_PLAN", "marketing-journey-plan/1", checksum, source);
-        var artifact = new ArtifactReference(id, "JOURNEY_PLAN", "s3://artifacts/" + id, checksum, source, "compiler-key", signature, "marketing-journey-plan/1", "definition", 1);
-        return new ReleaseManifestSigner().sign(new ReleaseManifest(id, new TenantId(tenant), "local", "cell-a", runtime, namespace, 1, 0, List.of(), List.of(), List.of(artifact),
-                Map.of(), 0, now, now.plusSeconds(600), "author", List.of("case"), now, ""), RELEASE.getPrivate());
+        return new JourneyProbeHttpFixture(port, tenant, mapper, RELEASE, COMPILER, http).install(id, JOB, now, BASE);
     }
     private JourneyBundleExecutionAck ack(JourneyBundleExecutionProbe probe, int subtask, int attempt) {
         return JourneyBundleExecutionAckSigner.sign(EXECUTION.getPrivate(), new JourneyBundleExecutionAck(probe, JourneyBundleExecutionAck.EXECUTION_PROTOCOL,

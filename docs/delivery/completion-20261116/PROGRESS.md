@@ -15,7 +15,7 @@
 - 用户授权Docker只运行本项目组件；13个额外无关容器及原17个langchain应用保持停止，所有容器与数据卷保留。本轮只更新console，17个其它运行容器ID/镜像/启动时间不变；3个原Flink作业及检查点继续推进，禁止重复恢复或提交空作业。
 - 上一轮部署验证：271项前端测试、98项浏览器用例通过，10项既有独立服务用例跳过；lint/build/Hygiene无阻塞，未配置canonical formatter。真实Docker四类资产页在桌面与Pixel7的分页、搜索、详情及字段/节点读取回归通过，无业务写入、API失败或页面异常。运行回执与截图：私有证据目录 `runtime-dbe268b/`。
 - 上一轮部署可见结果：活动/首页/运营/资产的静态预览不显示假业务数据或旧缓存，资产刷新不能绕过读取门禁；OIDC身份范围变化、退出与过期清理旧请求/缓存/草稿，旧令牌401不退出已更新令牌，远端退出失败能恢复登录页。本机仍为DEV认证，真实IdP联调未验证。
-- 当前HEAD/远程任务分支/main/origin均bd36e29；g6b3a精确CI44139430044三项SUCCESS并已正常FF交付。本地29服务/59合同/18JSON/10架构及8项重建复验/Hygiene通过。继续g6b3b可靠投递及失败恢复，设计已细化；Decision证据/实际应用/Control闭环仍未完成。无部署、真实探针或共享库迁移。
+- 2026-11-23 恢复核验：g6b3b 已正常合入并推送 main，精确提交 323688e 的 CI 44143684715 三项通过。当前从 S11g6b3c 隔离 Flink checkpoint 验证接续。
 
 ## 未完成项与恢复顺序
 
@@ -882,3 +882,11 @@
 - 根代理另行复核：完整租户/位置/原组织店铺权限、原登记不投递、受控topic、三段短事务锁序与事务外发送、当前签名/目标/制品复核、原期限、代次CAS和未知提交恢复、低基数指标/独立producer/单周期线程/有界停机；未发现当前片剩余阻断。旧服务默认关闭路径及原安装/来源/投影/迁移回归通过。真实Flink checkpoint、生产savepoint、混合版本/容量仍UNVERIFIED，测试签名不能替代真实集群证据。
 - Hygiene最终无阻断（s11g6b3b-hygiene-final.json）：事务ADVISORY已由并发/回滚/锁序和发送无事务断言核验；三个数值为已命名预算常量；投递State与裂变State属不同领域，不合并。testcontainers-kafka已按授权的隔离验证设计登记，版本沿用2.0.3；无canonical formatter为现有工具限制。diff检查PASS，26个相关文件已核对；无用户改动或新增worktree，忽略构建/测试/本机配置均保留，不清理。
 - 本片准备逻辑提交及精确CI；尚未部署、迁移共享库、发送真实运行probe或改变原3个Flink作业。之后继续实际Flink/Kafka checkpoint链路验证、Decision执行证据及g6b4应用门禁，再接Control整体闭环；S06–S13总目标仍PARTIAL。
+
+## S11g6b3c 真实 Flink checkpoint 回执验证
+
+- 已复用任务分支 feat/activity-release-bundles，原工作区干净，无待恢复的 Git 操作。g6b3b 既有本地证据继续有效。
+- 验收顺序为隔离库/消息系统启动、提交当前 Journey JAR、实际派发和读取未提交回执、手动触发 checkpoint、读取持久子任务覆盖。测试使用临时密钥和合成活动。
+- Docker Desktop 当前停止。优先使用已授权的任务分支 CI 验证，保留共享容器现场。S06–S13 仍部分完成。
+- 真实 checkpoint 用例及任务分支 CI 入口已写，本机隔离 test-compile 通过（s11g6b3c-compile.log）。验收使用本次提交 JAR 的 SHA-256、Flink CLI 返回的 jobId 和生产 HTTP/relay/consumer 链路。Docker 实跑结果待核实。
+- 处理函数回归复现 Flink 回执的三处日期时间使用数字格式，与事件 schema 不符（s11g6b3c-wire-first.log）。已单独修复该事件输出，探针、状态恢复及作业图共 11 项验证通过并重新打包（s11g6b3c-wire-final.log）。实际 checkpoint 验收在独立 CI 作业执行。

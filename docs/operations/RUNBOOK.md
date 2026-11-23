@@ -172,3 +172,7 @@ CONFIRM_GAME_DAY=marketing-r1-local ./scripts/game-day.sh kafka-restart
 ## 事故关闭
 
 恢复后至少观察一个业务峰值或 60 分钟（取更长），确认错误率/尾延迟、资金守恒、Flink checkpoint/lag、水位、DLQ 和重复副作用均稳定。24 小时内形成时间线；SEV-1/2 做无责复盘，行动项需有 owner、截止日和可验证测试。
+
+### Journey 探针的 checkpoint 隔离验收
+
+在可用的 Docker 引擎上运行 `./scripts/verify-journey-checkpoint.sh`。脚本打包当前 Journey 作业，使用 Testcontainers 的独立网络、MySQL、Kafka 和 Flink 会话。测试经 Journey 服务登记并派发探针，在 Kafka 未提交读下观察到两个子任务的回执，再触发该作业的 checkpoint。服务的持久查询须从 PENDING（0 份）变为 READY（2 份），业务激活和派发表应为空。测试结束后释放本次容器。运行耗时包括镜像拉取及 Maven 构建。
