@@ -261,6 +261,20 @@ export const reconciliationSchema = z.object({
 })
 export type ReconciliationReport = z.infer<typeof reconciliationSchema>
 
+export const subsidyPostingPageSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  campaignId: z.string().nullable(),
+  unassigned: z.boolean(),
+  hasMore: z.boolean(),
+  nextCursor: z.string().min(1).nullable(),
+  items: z.array(z.object({
+    ledgerId: z.string(), postedAt: z.string(), applicationId: z.string(), campaignId: z.string().nullable(),
+    currency: z.string(), resourceKey: z.string(), operation: z.enum(['CONFIRM', 'REFUND']),
+    amountMinor: z.string().regex(/^-?[1-9][0-9]*$/),
+  })).max(100),
+})
+
 export const traceEventSchema = z.object({
   at: z.string().optional(),
   type: z.string(),

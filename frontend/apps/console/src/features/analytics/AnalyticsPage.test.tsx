@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthStateContext, devAuthState, type AuthState } from '../../shared/auth/auth-context'
 import type { DashboardMetrics } from '../../shared/api/schemas'
@@ -13,7 +14,7 @@ import { AnalyticsPage } from './AnalyticsPage'
 const dashboard: DashboardMetrics = { counts: { CONVERSION_CONFIRMED: 3 }, attributedRevenueMinor: 12345, fundingCostMinor: 67, roi: '183.2537', completeThrough: new Date(Date.now() + 60_000).toISOString(), lag: { seconds: 12 } }
 function fixture() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  const tree = (identity: AuthState) => <QueryClientProvider client={client}><AuthStateContext.Provider value={identity}><AnalyticsPage /></AuthStateContext.Provider></QueryClientProvider>
+  const tree = (identity: AuthState) => <QueryClientProvider client={client}><AuthStateContext.Provider value={identity}><MemoryRouter><AnalyticsPage /></MemoryRouter></AuthStateContext.Provider></QueryClientProvider>
   const view = render(tree(devAuthState))
   return { ...view, switchIdentity: (identity: AuthState) => view.rerender(tree(identity)) }
 }

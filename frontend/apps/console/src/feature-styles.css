@@ -260,6 +260,8 @@
 .reconcile-hero strong { font-size:var(--text-metric); }
 .reconcile-hero span { color:var(--ink-400); font-size:var(--text-base); }
 .reconciliation-summary { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:0 0 12px; }
+.funding-reconciliation-panels { display:grid; gap:20px; min-width:0; }
+.subsidy-posting-actions { align-self:end; }
 .reconciliation-summary > div { padding:10px; border-radius:8px; background:#f5f8f7; }
 .reconciliation-summary dt { color:var(--ink-400); font-size:var(--text-base); }
 .reconciliation-summary dd { margin:4px 0 0; font-size:var(--text-base); overflow-wrap:anywhere; }

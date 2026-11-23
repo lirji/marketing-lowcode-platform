@@ -1,5 +1,6 @@
 import { displayTimestamp, displayTimeTick } from '../../components/dateTime'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Download, RefreshCw } from 'lucide-react'
 import { Badge, Button, EmptyState, PageHeader, Panel, PanelHeader, StateBanner } from '../../components/ui'
@@ -28,6 +29,8 @@ function AnalyticsWorkspace({ scope }: { scope: string }) {
   const canListCampaigns = canRead && auth.hasPermission('campaign:read')
   const campaigns = useQuery({ queryKey: ['analytics-campaign-options', scope], queryFn: api.campaigns, enabled: canListCampaigns })
   const { range, period } = selection
+  const postingParams = new URLSearchParams({ tab: 'funding', postingFrom: range.from, postingTo: range.to })
+  if (campaignId) postingParams.set('postingCampaignId', campaignId)
   const report = useQuery({
     queryKey: ['analytics-report', scope, range.from, range.to, range.granularity, campaignId],
     queryFn: async () => {
@@ -60,6 +63,7 @@ function AnalyticsWorkspace({ scope }: { scope: string }) {
     <PageHeader eyebrow="衡量分析" title="衡量分析" description="查看当前租户的投影汇总与时间序列；范围和数据水位随报告一起导出。" actions={<>
       <Button disabled={!canRead || report.isFetching} onClick={() => choose(period)}><RefreshCw size={15} />刷新数据</Button>
       <Button disabled={!current} onClick={exportCurrent}><Download size={15} />导出当前报告</Button>
+      {canRead && auth.hasPermission('funding:reconcile') && <Link className="button secondary" to={`/operations?${postingParams}`}>核对补贴流水</Link>}
       <Button disabled={!canRecompute || recompute.isPending} title="重算当前租户全部归因，不受页面日期窗口限制" onClick={() => recompute.mutate()}>{recompute.isPending ? '正在重算…' : '重算全部归因'}</Button>
     </>} />
     {api.demoMode ? <StateBanner tone="info" title="请连接演示数据源" detail="此页不内置业务示例。将种子数据写入隔离测试数据库并连接测量接口后，即可读取真实报告；静态演示模式不查询或重算。" /> : !canRead && <StateBanner tone="warn" title="没有查看权限" detail="需要 measurement:read 权限才能查询和导出报告。" />}

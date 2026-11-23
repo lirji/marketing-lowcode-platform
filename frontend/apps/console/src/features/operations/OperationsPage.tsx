@@ -13,6 +13,7 @@ import { useAuth } from '../../shared/auth/useAuth'
 import type { TraceView } from '../../shared/api/schemas'
 import { PageTabs } from '../../components/PageTabs'
 import { AwardIntentsPanel } from './AwardIntentsPanel'
+import { SubsidyPostingsPanel } from './SubsidyPostingsPanel'
 
 const PREVIEW_DETAIL = '当前为静态预览。连接营销服务后可查询已保存的记录及其实际结果。'
 
@@ -24,6 +25,7 @@ const tabs = ['全链路查询', 'Journey 实例', '触达记录', '发放', 'DL
 
 function tabFromQuery(tab: string | null): (typeof tabs)[number] | undefined {
   if (tab === 'awards') return '发放'
+  if (tab === 'funding') return '资金对账'
   return undefined
 }
 
@@ -43,6 +45,7 @@ export function OperationsPage() {
     setActive(tab)
     const next = new URLSearchParams(params)
     if (tab === '发放') next.set('tab', 'awards')
+    else if (tab === '资金对账') next.set('tab', 'funding')
     else next.delete('tab')
     setParams(next, { replace: true })
   }
@@ -52,7 +55,7 @@ export function OperationsPage() {
     {current === '触达记录' && <ContactAttempts />}
     {current === '发放' && <AwardIntentsPanel />}
     {current === 'DLQ / 隔离区' && <DeadLetters />}
-    {current === '资金对账' && <ReconciliationPanel />}
+    {current === '资金对账' && <div className="funding-reconciliation-panels"><ReconciliationPanel /><SubsidyPostingsPanel /></div>}
   </PageTabs></div>
 }
 

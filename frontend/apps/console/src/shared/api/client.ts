@@ -35,6 +35,7 @@ import {
   problemDetailSchema,
   quarantineViewSchema,
   reconciliationSchema,
+  subsidyPostingPageSchema,
   recomputeSchema,
   releaseViewSchema,
   releasePageSchema,
@@ -385,6 +386,21 @@ export const api = {
   replayQuarantine: (quarantineId: string) =>
     request(`/api/v1/quarantine/${encodeURIComponent(quarantineId)}:replay`, { method: 'POST', headers: commandHeaders() }, (value) => value),
   reconciliation: () => request('/api/v1/funding/reconciliation', undefined, (value) => parseWith(reconciliationSchema, value)),
+  subsidyPostings: (query: { from: string; to: string; campaignId?: string; unassigned?: boolean; cursor?: string }) => {
+    const params = new URLSearchParams({ from: query.from, to: query.to })
+    if (query.campaignId) params.set('campaignId', query.campaignId)
+    if (query.unassigned) params.set('unassigned', 'true')
+    if (query.cursor) params.set('cursor', query.cursor)
+    return request(`/api/v1/funding/subsidy-postings?${params}`, undefined, value => {
+      const page = parseWith(subsidyPostingPageSchema, value)
+      if (Date.parse(page.from) !== Date.parse(query.from) || Date.parse(page.to) !== Date.parse(query.to)
+        || page.campaignId !== (query.campaignId ?? null) || page.unassigned !== Boolean(query.unassigned)
+        || page.hasMore !== Boolean(page.nextCursor) || (page.hasMore && page.nextCursor === query.cursor)) {
+        throw new Error('资金服务未确认查询范围或返回了无效游标，请重新查询。')
+      }
+      return page
+    })
+  },
 }
 
 const REFERRAL_ID = /^[A-Za-z0-9._:-]{1,64}$/
