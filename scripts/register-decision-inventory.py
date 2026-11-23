@@ -39,6 +39,7 @@ def register(url, token, body, expected):
     try:
         recorded = request_position(url, token, "PUT", body, expected["digest"])
     except HTTPError as err:
+        err.close()
         if err.code < HTTPStatus.INTERNAL_SERVER_ERROR:
             raise
     except (URLError, TimeoutError, ConnectionError) as err:
