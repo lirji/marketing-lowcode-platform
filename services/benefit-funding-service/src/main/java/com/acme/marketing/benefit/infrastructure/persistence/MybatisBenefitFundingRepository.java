@@ -124,6 +124,9 @@ public class MybatisBenefitFundingRepository implements BenefitFundingRepository
             SubsidyPostingCursor cursor, int limit) {
         return mapper.selectSubsidyPostings(filter, cursor, limit);
     }
+    @Override public List<SubsidySummaryRow> summarizeSubsidyPostings(SubsidyPostingFilter filter) {
+        return mapper.summarizeSubsidyPostings(filter);
+    }
     @Override public List<ReconcileItemRow> findReconcileItems(String tenantId) {
         return mapper.selectReconcileItems(tenantId);
     }

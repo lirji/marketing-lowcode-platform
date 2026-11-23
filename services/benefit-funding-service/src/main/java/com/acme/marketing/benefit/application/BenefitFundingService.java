@@ -617,16 +617,10 @@ public class BenefitFundingService {
             Integer limit, String cursor) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission(RECONCILE_PERMISSION);
+        var filter = subsidyPostingFilter(scope, from, to, campaignId, unassigned);
         int pageSize = limit == null ? DEFAULT_POSTING_PAGE_SIZE : limit;
-        if (from == null || to == null || !from.isBefore(to) || Duration.between(from, to).compareTo(MAX_POSTING_RANGE) > 0
-                || format(from).length() != 30 || format(to).length() != 30) {
-            throw new IllegalArgumentException("subsidy posting time range must be positive and no more than 31 days");
-        }
         if (pageSize < 1 || pageSize > MAX_POSTING_PAGE_SIZE) {
             throw new IllegalArgumentException("subsidy posting page size must be between 1 and 100");
-        }
-        if (campaignId != null && (unassigned || !campaignId.matches("[A-Za-z0-9_.:-]{1,64}"))) {
-            throw new IllegalArgumentException("campaignId is invalid or combined with the unassigned filter");
         }
         if (cursor != null && !cursor.matches("[A-Za-z0-9_.:-]{1,64}")) {
             throw new IllegalArgumentException("subsidy posting cursor is invalid");
@@ -635,9 +629,6 @@ public class BenefitFundingService {
             if (cursor != null) throw new IllegalArgumentException("subsidy posting cursor is outside the current selection");
             return new SubsidyPostingPage(from, to, campaignId, unassigned, List.of(), null, false);
         }
-        var filter = new BenefitFundingRepository.SubsidyPostingFilter(scope.tenantId().value(), format(from), format(to),
-                campaignId, unassigned, scope.organizations().contains("*") ? null : scope.organizations(),
-                scope.shops().contains("*") ? null : json(scope.shops()));
         var position = cursor == null ? null : repository.findSubsidyPostingCursor(filter, cursor)
                 .orElseThrow(() -> new IllegalArgumentException("subsidy posting cursor is outside the current selection"));
         var rows = repository.findSubsidyPostings(filter, position, pageSize + 1);
@@ -650,6 +641,34 @@ public class BenefitFundingService {
         }).toList();
         return new SubsidyPostingPage(from, to, campaignId, unassigned, items,
                 hasMore ? items.getLast().ledgerId() : null, hasMore);
+    }
+
+    /** 在一次数据库读取中按币种汇总；选定活动时另列同窗口、授权范围内的待归属流水。 */
+    @Transactional(readOnly = true)
+    public SubsidyPostingSummary subsidyPostingSummary(Instant from, Instant to, String campaignId) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission(RECONCILE_PERMISSION);
+        var filter = subsidyPostingFilter(scope, from, to, campaignId, false);
+        List<SubsidySummaryGroup> groups = scope.organizations().isEmpty() || scope.shops().isEmpty()
+                ? List.of() : repository.summarizeSubsidyPostings(filter).stream().map(row -> new SubsidySummaryGroup(
+                        row.currency(), row.unassigned(), Long.toString(row.postingCount()),
+                        row.netAmountMinor().toPlainString())).toList();
+        return new SubsidyPostingSummary(filter.tenantId(), from, to, campaignId,
+                filter.organizations() == null && filter.allowedShopsJson() == null, clock.instant(), groups);
+    }
+
+    private BenefitFundingRepository.SubsidyPostingFilter subsidyPostingFilter(TenantScope scope, Instant from,
+            Instant to, String campaignId, boolean unassigned) {
+        if (from == null || to == null || !from.isBefore(to) || Duration.between(from, to).compareTo(MAX_POSTING_RANGE) > 0
+                || format(from).length() != 30 || format(to).length() != 30) {
+            throw new IllegalArgumentException("subsidy posting time range must be positive and no more than 31 days");
+        }
+        if (campaignId != null && (unassigned || !campaignId.matches("[A-Za-z0-9_.:-]{1,64}"))) {
+            throw new IllegalArgumentException("campaignId is invalid or combined with the unassigned filter");
+        }
+        return new BenefitFundingRepository.SubsidyPostingFilter(scope.tenantId().value(), format(from), format(to),
+                campaignId, unassigned, scope.organizations().contains("*") ? null : scope.organizations(),
+                scope.shops().contains("*") ? null : json(scope.shops()));
     }
 
     @Transactional(readOnly = true)
@@ -1294,6 +1313,14 @@ public class BenefitFundingService {
     public record SubsidyPostingPage(Instant from, Instant to, String campaignId, boolean unassigned,
             List<SubsidyPosting> items, String nextCursor, boolean hasMore) {
         public SubsidyPostingPage { items = List.copyOf(items); }
+    }
+    /** 金额和笔数均保留十进制字符串，汇总允许为负和零。 */
+    public record SubsidySummaryGroup(String currency, boolean unassigned, String postingCount, String netAmountMinor) { }
+
+    /** tenantWide 描述授权范围；readAt 记录读取时间，不代表数据源的完整水位。 */
+    public record SubsidyPostingSummary(String tenantId, Instant from, Instant to, String campaignId,
+            boolean tenantWide, Instant readAt, List<SubsidySummaryGroup> groups) {
+        public SubsidyPostingSummary { groups = List.copyOf(groups); }
     }
     public record ExpirationResult(int expiredCount, List<String> applicationIds, Instant completedAt) {
         public ExpirationResult { applicationIds = List.copyOf(applicationIds); }

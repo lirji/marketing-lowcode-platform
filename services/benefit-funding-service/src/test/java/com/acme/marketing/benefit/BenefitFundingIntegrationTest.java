@@ -772,6 +772,21 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         String nextDay = postings(BEIJING_MIDNIGHT, BEIJING_MIDNIGHT.plusSeconds(5)) + "&campaignId=campaign-ledger";
         assertEquals(1_000, totalPostings(firstDay));
         assertEquals(-200, totalPostings(nextDay));
+        String firstSummary = firstDay.replace("subsidy-postings?", "subsidy-postings/summary?");
+        var scopedSummary = get(firstSummary);
+        assertFalse(scopedSummary.path("tenantWide").asBoolean());
+        assertEquals("campaign-ledger", scopedSummary.path("campaignId").asString());
+        assertEquals("1000", scopedSummary.path("groups").get(0).path("netAmountMinor").asString());
+        assertEquals("3", scopedSummary.path("groups").get(0).path("postingCount").asString());
+        assertFalse(scopedSummary.path("groups").get(0).path("unassigned").asBoolean());
+        var tenantWide = exchange(base(firstSummary).setHeader("X-Dev-Organization-Ids", "*")
+                .setHeader("X-Dev-Shop-Ids", "*").GET().build());
+        assertTrue(tenantWide.path("tenantWide").asBoolean());
+        var otherShopSummary = exchange(base(firstSummary).setHeader("X-Dev-Shop-Ids", "shop-other").GET().build());
+        assertEquals(0, otherShopSummary.path("groups").size());
+        assertEquals(0, getTenant(firstSummary, "other-tenant").path("groups").size());
+        assertEquals("-200", get(nextDay.replace("subsidy-postings?", "subsidy-postings/summary?"))
+                .path("groups").get(0).path("netAmountMinor").asString());
         List<JsonNode> paged = getSubsidyPostings(firstDay + "&limit=1");
         assertEquals(3, paged.size());
         assertEquals(3, new HashSet<>(paged.stream().map(row -> row.path("ledgerId").asString()).toList()).size());
@@ -811,6 +826,10 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         assertEquals(3, unassigned.size());
         assertTrue(unassigned.get(0).path("campaignId").isNull());
         assertEquals(0, getTenant(day + "&campaignId=campaign-ledger", tenant).path("items").size());
+        var groups = getTenant(day.replace("subsidy-postings?", "subsidy-postings/summary?") + "&campaignId=campaign-ledger", tenant).path("groups");
+        assertEquals(1, groups.size());
+        assertTrue(groups.get(0).path("unassigned").asBoolean());
+        assertEquals("1000", groups.get(0).path("netAmountMinor").asString());
         assertEquals(0, getTenant(postings(BEIJING_MIDNIGHT.minusSeconds(1), BEIJING_MIDNIGHT), tenant).path("items").size());
     }
 

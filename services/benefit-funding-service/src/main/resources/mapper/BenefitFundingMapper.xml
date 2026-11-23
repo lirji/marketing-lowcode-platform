@@ -360,7 +360,7 @@
     </select>
 
     <!-- 游标按与列表相同的业务和授权范围定位，防止旧范围游标跳过可见流水。 -->
-    <sql id="subsidyPostingScope">
+    <sql id="subsidyPostingBaseScope">
         FROM mk_funding_ledger l
         JOIN mk_promotion_application a ON a.tenant_id = l.tenant_id AND a.application_id = l.application_id
         JOIN mk_reservation_item r ON r.tenant_id = l.tenant_id AND r.application_id = l.application_id
@@ -378,6 +378,9 @@
                 AND JSON_LENGTH(a.shop_ids_json) &gt; 0 AND JSON_CONTAINS(#{scope.allowedShopsJson}, a.shop_ids_json)
                 ELSE FALSE END
         </if>
+    </sql>
+    <sql id="subsidyPostingScope">
+        <include refid="subsidyPostingBaseScope"/>
         <if test="scope.campaignId != null">AND CAST(a.campaign_id AS BINARY) = CAST(#{scope.campaignId} AS BINARY)</if>
         <if test="scope.unassigned">AND a.campaign_id IS NULL</if>
     </sql>
@@ -399,6 +402,18 @@
         </if>
         ORDER BY l.posting_time_utc, l.ledger_id
         LIMIT #{limit}
+    </select>
+    <select id="summarizeSubsidyPostings"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$SubsidySummaryRow">
+        SELECT r.currency_code AS currency, a.campaign_id IS NULL AS unassigned, COUNT(*) AS postingCount,
+               SUM(CAST(CASE WHEN l.operation_name = 'REFUND' THEN -l.amount_value ELSE l.amount_value END
+                   AS DECIMAL(65, 0))) AS netAmountMinor
+        <include refid="subsidyPostingBaseScope"/>
+        <if test="scope.campaignId != null">
+            AND (CAST(a.campaign_id AS BINARY) = CAST(#{scope.campaignId} AS BINARY) OR a.campaign_id IS NULL)
+        </if>
+        GROUP BY r.currency_code, a.campaign_id IS NULL
+        ORDER BY currency, unassigned
     </select>
     <select id="selectReconcileItems"
             resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$ReconcileItemRow">

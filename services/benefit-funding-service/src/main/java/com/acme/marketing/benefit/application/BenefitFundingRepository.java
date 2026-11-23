@@ -4,6 +4,7 @@ import com.acme.marketing.benefit.domain.ResourceAccount;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.math.BigDecimal;
 
 /**
  * 权益定义、资源账户、预留结算和资金流水持久化端口。
@@ -60,6 +61,7 @@ public interface BenefitFundingRepository {
     List<LedgerRow> findLedger(String tenantId);
     Optional<SubsidyPostingCursor> findSubsidyPostingCursor(SubsidyPostingFilter filter, String ledgerId);
     List<SubsidyPostingRow> findSubsidyPostings(SubsidyPostingFilter filter, SubsidyPostingCursor cursor, int limit);
+    List<SubsidySummaryRow> summarizeSubsidyPostings(SubsidyPostingFilter filter);
     List<ReconcileItemRow> findReconcileItems(String tenantId);
     List<EscrowReconcileRow> findEscrowReconcileItems(String tenantId);
     List<OutboxTypeRow> findOutboxTypes(String tenantId);
@@ -154,6 +156,8 @@ public interface BenefitFundingRepository {
     record SubsidyPostingCursor(String ledgerId, String postingTime) { }
     record SubsidyPostingRow(String ledgerId, String postingTime, String applicationId, String campaignId,
             String resourceKey, String currency, String operation, long amount) { }
+    /** 跨流水汇总使用数据库精确十进制，允许结果超过单笔 long 金额范围。 */
+    record SubsidySummaryRow(String currency, boolean unassigned, long postingCount, BigDecimal netAmountMinor) { }
     record OutboxWrite(String tenantId, String eventId, String aggregateId, String eventType,
             String destinationTopic, String partitionKey, long streamSequence, String payloadJson,
             String nextAttemptAt, String createdAt) { }

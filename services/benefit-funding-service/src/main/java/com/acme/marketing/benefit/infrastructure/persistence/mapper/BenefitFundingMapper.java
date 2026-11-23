@@ -78,6 +78,8 @@ public interface BenefitFundingMapper {
     List<BenefitFundingRepository.SubsidyPostingRow> selectSubsidyPostings(
             @Param("scope") BenefitFundingRepository.SubsidyPostingFilter filter,
             @Param("cursor") BenefitFundingRepository.SubsidyPostingCursor cursor, @Param("limit") int limit);
+    List<BenefitFundingRepository.SubsidySummaryRow> summarizeSubsidyPostings(
+            @Param("scope") BenefitFundingRepository.SubsidyPostingFilter filter);
     List<BenefitFundingRepository.ReconcileItemRow> selectReconcileItems(@Param("tenantId") String tenantId);
     List<BenefitFundingRepository.EscrowReconcileRow> selectEscrowReconcileItems(
             @Param("tenantId") String tenantId);

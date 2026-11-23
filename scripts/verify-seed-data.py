@@ -146,6 +146,19 @@ def verify(output_dir):
         for sql in (base, retail, extra):
             mysql(sql)
         check("重复导入各表记录数不增长", first_counts == row_counts())
+        # 同一个订单的优惠应用事实按申请 ID 记录，转化事实按订单 ID 记录。
+        # 在隔离种子里用两条真实主键核对，避免把其他订单成本误计入差额。
+        subsidy = mysql("""
+            SELECT
+              (SELECT SUM(cost_delta_minor) FROM marketing_measurement.mk_dashboard_projection_delta
+               WHERE tenant_id='retail-cn' AND delta_id IN ('mock-delta-applied','mock-delta-conversion')),
+              (SELECT SUM(l.amount_value) FROM marketing_benefit.mk_funding_ledger l
+               JOIN marketing_benefit.mk_reservation_item r ON r.tenant_id=l.tenant_id
+                AND r.application_id=l.application_id AND r.resource_key=l.resource_key
+               WHERE l.tenant_id='retail-cn' AND l.application_id='mock-pa-ha-001'
+                 AND l.operation_name='CONFIRM' AND r.resource_type='BUDGET' AND r.currency_code='CNY');
+        """)
+        check("同一演示申请的事件成本 16000 分，资金账本确认 8000 分", subsidy == "16000\t8000")
         check("演示outbox终态一致且不会触发真实发布或背压", mysql("""
             SELECT COUNT(*) FROM marketing_events.mk_event_outbox
             WHERE publish_state <> 'PUBLISHED' OR published_at IS NULL
