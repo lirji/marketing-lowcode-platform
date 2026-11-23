@@ -54,6 +54,18 @@ spec:
             - {name: JOURNEY_RUNTIME_ENVIRONMENT, value: {{ $.Values.global.runtimeSlot.environment | quote }}}
             - {name: JOURNEY_RUNTIME_CELL, value: {{ $.Values.global.runtimeSlot.cell | quote }}}
             - {name: JOURNEY_RUNTIME_NAMESPACE, value: {{ $.Values.global.runtimeSlot.namespace | quote }}}
+            - name: JOURNEY_PARTICIPATION_TRUSTED_KEY_ID
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: journey-participation-trusted-key-id, optional: true}}
+            - name: JOURNEY_PARTICIPATION_PUBLIC_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: journey-participation-public-key-base64, optional: true}}
+            - name: JOURNEY_PARTICIPATION_TRUSTED_PUBLIC_KEYS
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: journey-participation-trusted-public-keys, optional: true}}
+            - name: JOURNEY_EXECUTION_ACK_KEY_ID
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: journey-execution-ack-key-id, optional: true}}
+            - name: JOURNEY_EXECUTION_ACK_PRIVATE_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: journey-execution-ack-private-key-base64, optional: true}}
+            - name: JOURNEY_EXECUTION_ACK_PUBLIC_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: journey-execution-ack-public-key-base64, optional: true}}
             - name: JOURNEY_RUNTIME_DB_URL
               value: {{ printf "jdbc:mysql://%s:%v/%s?%s" $.Values.external.mysql.host $.Values.external.mysql.port "marketing_journey" $.Values.external.mysql.parameters | quote }}
             - name: JOURNEY_RUNTIME_DB_USER

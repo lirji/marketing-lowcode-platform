@@ -61,7 +61,12 @@ spec:
       {{- end }}
       containers:
         - name: {{ $name }}
+          {{- if and (eq $name "offer-decision-service") $service.bundleExecutionIdentity }}
+          {{- if not (regexMatch "^sha256:[0-9a-f]{64}$" (default "" $service.bundleExecutionIdentity.imageDigest)) }}{{ fail "bundleExecutionIdentity requires immutable imageDigest" }}{{ end }}
+          image: {{ printf "%s/%s@%s" $.Values.global.imageRegistry $name $service.bundleExecutionIdentity.imageDigest | quote }}
+          {{- else }}
           image: {{ include "marketing.image" (dict "root" $ "name" $name) | quote }}
+          {{- end }}
           imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
           ports:
             - {name: http, containerPort: {{ $service.port }}, protocol: TCP}
@@ -157,6 +162,15 @@ spec:
               valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: runtime-ack-signing-public-key-base64}}
             - name: MARKETING_RUNTIME_ACK_TRUSTED_PUBLIC_KEYS
               valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: runtime-ack-trusted-public-keys, optional: true}}
+            - name: MARKETING_BUNDLE_RUNTIME_TARGETS
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: marketing-bundle-runtime-targets, optional: true}}
+            - name: MARKETING_BUNDLE_RUNTIME_BEARER_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: marketing-bundle-runtime-bearer-token, optional: true}}
+            - name: MARKETING_BUNDLE_BENEFIT_BEARER_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: marketing-bundle-benefit-bearer-token, optional: true}}
+            {{- with $service.benefitFundingBaseUrl }}
+            - {name: MARKETING_BENEFIT_FUNDING_BASE_URL, value: {{ . | quote }}}
+            {{- end }}
             - {name: MARKETING_RELEASE_MAX_READY_CAPACITY_PER_RUNTIME, value: {{ $.Values.releasePolicy.maxReadyCapacityPerRuntime | quote }}}
             - {name: MARKETING_RELEASE_ALLOWED_RUNTIME_BUILD_DIGEST, value: {{ $.Values.global.imageTag | quote }}}
             {{- end }}
@@ -171,6 +185,29 @@ spec:
             {{- if eq $name "offer-decision-service" }}
             - {name: MARKETING_KAFKA_CONSUMERS_ENABLED, value: "true"}
             - {name: MARKETING_DECISION_IDEMPOTENCY_STORE, value: REDIS}
+            - name: DECISION_EXECUTION_TRUSTED_PUBLIC_KEYS
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: decision-execution-trusted-public-keys, optional: true}}
+            - name: DECISION_JOURNEY_EXECUTION_TRUSTED_PUBLIC_KEYS
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: decision-journey-execution-trusted-public-keys, optional: true}}
+            - name: DECISION_JOURNEY_EXECUTION_TARGETS
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: decision-journey-execution-targets, optional: true}}
+            - name: MARKETING_PARTICIPATION_SIGNING_KEY_ID
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: marketing-participation-signing-key-id, optional: true}}
+            - name: MARKETING_PARTICIPATION_PRIVATE_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: marketing-participation-private-key-base64, optional: true}}
+            - name: MARKETING_PARTICIPATION_SIGNING_PUBLIC_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: marketing-participation-signing-public-key-base64, optional: true}}
+            - name: MARKETING_PARTICIPATION_TRUSTED_KEY_ID
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: marketing-participation-trusted-key-id, optional: true}}
+            - name: MARKETING_PARTICIPATION_PUBLIC_KEY_BASE64
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: marketing-participation-public-key-base64, optional: true}}
+            - name: MARKETING_PARTICIPATION_TRUSTED_PUBLIC_KEYS
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: marketing-participation-trusted-public-keys, optional: true}}
+            {{- with $service.bundleExecutionIdentity }}
+            - {name: DECISION_EXECUTION_INSTANCE_ID, valueFrom: {fieldRef: {fieldPath: metadata.uid}}}
+            - {name: DECISION_EXECUTION_IMAGE_DIGEST, value: {{ .imageDigest | quote }}}
+            - {name: SPRING_CONFIG_IMPORT, value: "configtree:/run/decision-identity/"}
+            {{- end }}
             - name: DECISION_DEPLOYMENT_TRUSTED_PUBLIC_KEYS
               valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: decision-deployment-trusted-public-keys, optional: true}}
             - name: DECISION_DEPLOYMENT_PIPELINE_TENANT
@@ -239,6 +276,18 @@ spec:
             {{- if eq $name "journey-service" }}
             - {name: MARKETING_KAFKA_CONSUMERS_ENABLED, value: "true"}
             - {name: MARKETING_JOURNEY_DISPATCH_ENABLED, value: "true"}
+            - name: JOURNEY_EXECUTION_TARGET_JOB_ID
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: journey-execution-target-job-id, optional: true}}
+            - name: JOURNEY_EXECUTION_TARGET_BUILD_DIGEST
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: journey-execution-target-build-digest, optional: true}}
+            - name: JOURNEY_EXECUTION_TARGET_PARTICIPATION_KEY_ID
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: journey-execution-target-participation-key-id, optional: true}}
+            - name: JOURNEY_EXECUTION_ACK_TRUSTED_PUBLIC_KEYS
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: journey-execution-ack-trusted-public-keys, optional: true}}
+            - name: JOURNEY_EXECUTION_TARGET_PARALLELISM
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: journey-execution-target-parallelism, optional: true}}
+            - name: JOURNEY_PROBE_DELIVERY_ENABLED
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: journey-probe-delivery-enabled, optional: true}}
             - {name: MARKETING_JOURNEY_EXECUTION_MODE, value: STREAM}
             - name: MARKETING_RELEASE_TRUSTED_KEY_ID
               valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: release-signing-key-id}}
@@ -307,7 +356,19 @@ spec:
             capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: tmp, mountPath: /tmp/marketing}
+            {{- if and (eq $name "offer-decision-service") $service.bundleExecutionIdentity }}
+            - {name: decision-identity, mountPath: /run/decision-identity, readOnly: true}
+            {{- end }}
       volumes:
+        {{- if and (eq $name "offer-decision-service") $service.bundleExecutionIdentity }}
+        - name: decision-identity
+          csi:
+            driver: {{ required "per-Pod identity CSI driver is required" $service.bundleExecutionIdentity.driver | quote }}
+            readOnly: true
+            {{- with $service.bundleExecutionIdentity.volumeAttributes }}
+            volumeAttributes: {{ toYaml . | nindent 14 }}
+            {{- end }}
+        {{- end }}
         - name: tmp
           emptyDir: {medium: Memory, sizeLimit: 128Mi}
       {{- with $.Values.global.nodeSelector }}

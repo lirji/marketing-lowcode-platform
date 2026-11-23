@@ -299,6 +299,28 @@ paths:
       responses:
         '200': {description: Deterministic compiler report, content: {application/json: {schema: {$ref: '#/components/schemas/CompileReport'}}}}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/campaigns/{campaignId}/release-bundles/schedules:
+    $ref: './bundle-schedules.yaml#/paths/~1api~1v1~1campaigns~1{campaignId}~1release-bundles~1schedules'
+  /api/v1/campaigns/{campaignId}/release-bundles/schedules/{scheduleId}:pause:
+    $ref: './bundle-schedules.yaml#/paths/~1api~1v1~1campaigns~1{campaignId}~1release-bundles~1schedules~1{scheduleId}:pause'
+  /api/v1/campaigns/{campaignId}/release-bundles/schedules/{scheduleId}:resume:
+    $ref: './bundle-schedules.yaml#/paths/~1api~1v1~1campaigns~1{campaignId}~1release-bundles~1schedules~1{scheduleId}:resume'
+  /internal/v1/release-bundle-schedules:tick:
+    $ref: './bundle-schedules.yaml#/paths/~1internal~1v1~1release-bundle-schedules:tick'
+  /api/v1/decisions/runtime/release-bundle-applications/{campaignId}/{sequence}/attest:
+    $ref: './bundle-application.yaml#/paths/~1api~1v1~1decisions~1runtime~1release-bundle-applications~1{campaignId}~1{sequence}~1attest'
+  /api/v1/decisions/runtime/release-bundle-applications/{campaignId}/{sequence}/apply:
+    $ref: './bundle-application.yaml#/paths/~1api~1v1~1decisions~1runtime~1release-bundle-applications~1{campaignId}~1{sequence}~1apply'
+  /api/v1/decisions/runtime/release-bundle-applications/{campaignId}/{sequence}:
+    $ref: './bundle-application.yaml#/paths/~1api~1v1~1decisions~1runtime~1release-bundle-applications~1{campaignId}~1{sequence}'
+  /api/v1/campaigns/{campaignId}/release-bundles/operations:
+    $ref: './bundle-release-operations.yaml#/paths/~1api~1v1~1campaigns~1{campaignId}~1release-bundles~1operations'
+  /api/v1/campaigns/{campaignId}/release-bundles/operations/{operationId}:
+    $ref: './bundle-release-operations.yaml#/paths/~1api~1v1~1campaigns~1{campaignId}~1release-bundles~1operations~1{operationId}'
+  /api/v1/campaigns/{campaignId}/release-bundles/operations/{operationId}:retry:
+    $ref: './bundle-release-operations.yaml#/paths/~1api~1v1~1campaigns~1{campaignId}~1release-bundles~1operations~1{operationId}:retry'
+  /api/v1/campaigns/{campaignId}/release-bundles/versions/{version}:prepare-runtime:
+    $ref: './bundle-release-operations.yaml#/paths/~1api~1v1~1campaigns~1{campaignId}~1release-bundles~1versions~1{version}:prepare-runtime'
   /api/v1/campaigns/{campaignId}/release-bundles:
     post:
       tags: [Release]

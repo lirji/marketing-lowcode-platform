@@ -189,3 +189,17 @@ CONFIRM_GAME_DAY=marketing-r1-local ./scripts/game-day.sh kafka-restart
 4. `PUT` 同一签名清单可重放。成功后再次 GET 核对原序号和摘要。若其他发布已推进位置，须重新观测拓扑。不能把旧清单改一个序号后重发。执行证据及整体应用进度另行查询。
 
 离线核验可使用 `scripts/decision-deployment-inventory.sh verify signed.json ENV CELL NAMESPACE SEQUENCE DIGEST`。设置部署公钥集合，序号和摘要从上述独立登记位置读取。登记成功仅说明流水线上报的部署事实已持久化。
+
+### 活动组合发布、定时执行与故障恢复
+
+控制台「发布中心 → 活动组合」按活动创建不可变版本。选择同一环境与区域的已暂存清单，准备运行端后核对每个成员的就绪状态。整体生效和整体回滚都显示操作编号及运行端确认的序号。客户端超时后查询或重试原操作。回滚目标须曾实际生效且当前仍有效，已参与用户继续使用入组时的版本。
+
+- **Control** 配置 `MARKETING_BUNDLE_RUNTIME_TARGETS`。按环境、cell、runtime、namespace 设置可信 URL。Decision 的 `urls` 提供逐实例访问地址，首地址亦负责共享库上的查询与应用。Journey 项包含实际 `jobId`、`parallelism` 和 `participationKeyId`。纯 Journey 组合需要同一位置配置 `admission: true` 的 Decision。生产使用 HTTPS，`MARKETING_BUNDLE_RUNTIME_BEARER_TOKEN` 提供本租户的 `runtime:warm`、`runtime:activate` 和 `bundle:apply` 机器权限。权益复验使用 `MARKETING_BENEFIT_FUNDING_BASE_URL` 和 `MARKETING_BUNDLE_BENEFIT_BEARER_TOKEN`，该资金服务身份需要 `release:write`。各身份须覆盖活动所属组织与店铺。机器令牌由部署环境提供。
+- **Decision** 对应每条签名部署记录配置 `DECISION_EXECUTION_INSTANCE_ID`、`DECISION_EXECUTION_IMAGE_DIGEST`、`DECISION_EXECUTION_KEY_ID` 与当前实例专属的 `DECISION_EXECUTION_PRIVATE_KEY_BASE64`。所有同 cell 准入实例连接同一 Decision 库，使用一致的部署方、实例执行、发布及参与公钥信任。配置 `DECISION_EXECUTION_TRUSTED_PUBLIC_KEYS`、`DECISION_JOURNEY_EXECUTION_TRUSTED_PUBLIC_KEYS` 和 `DECISION_JOURNEY_EXECUTION_TARGETS`，后者按 Journey namespace 保存真实 jobId、并行度与 JAR 摘要。参与签发和消费分别使用 `MARKETING_PARTICIPATION_SIGNING_*`、`MARKETING_PARTICIPATION_PRIVATE_KEY_BASE64` 与 `MARKETING_PARTICIPATION_TRUSTED_KEY_ID/PUBLIC_KEY_BASE64`。缩扩容、镜像或身份更替后发布新部署序号，再重新取证。
+- **Helm** 可在 `services.offer-decision-service.bundleExecutionIdentity` 中配置 `imageDigest`、`driver` 与 `volumeAttributes`。渲染的工作负载按 OCI 摘要拉取镜像，实例标识使用 Pod UID。部署方的只读 CSI 卷须根据 Pod 身份提供 `marketing.execution.key-id` 与 `marketing.execution.private-key` 两个文件供 Spring configtree 读取，每个接流量副本使用独立私钥。其余组合发布配置见 chart 的可选 Secret 引用。Compose 单实例可用环境变量注入，多实例部署必须分配独立身份和可定向访问的地址。
+- **Journey** 先由实际作业加载参与公钥与专用执行钥匙，再将其 jobId、并行度、作业 JAR 摘要、公钥和参与 keyId 配入 Journey 服务与 Decision。用 `JOURNEY_PROBE_DELIVERY_ENABLED=true` 开启隔离于业务效果的探针投递。混合版本切换前核对实际消费组中的所有作业和旧入口均已更新。应用要求每个子任务的 v2 回执，v1 可用于历史就绪查询。第一次接收组合指令后，所在 Journey slot 的新 START 必须携带参与凭证，既有旅程按已固定的计划继续。
+- **XXL-JOB** 在现有执行器中使用 GLUE(Python3) 运行 `scripts/xxl-bundle-schedule-tick.py`。每个目标租户配置一个触发任务，将受信控制服务 HTTPS 地址和短期 OIDC 令牌文件分别注入 `BUNDLE_SCHEDULER_CONTROL_ORIGIN` 与 `BUNDLE_SCHEDULER_TOKEN_FILE`。机器身份需要 `release:schedule:execute`、`release:activate`、`release:read` 和实际组织/店铺范围。每次触发领取一个到期任务；按业务吞吐配置调度频率和执行器并发。重复触发与接管复用同一命令键。窗口默认从计划时刻起五分钟，最大到成员有效期，可通过 `marketing.release-schedule.max-lateness-seconds` 配置。
+- **结果未知** 时按活动、组合版本和操作编号查询。窗口内的重试重新检查证据、审批、权益、停用和预期生效位置；窗口关闭后只查原提交。网络异常期间可能继续显示 RUNNING 或 PENDING，连通性恢复后再核实结果。暂停只能在首次领取前成功；代次冲突时刷新状态。
+- **隔离验收** 运行 `./scripts/verify-bundle-release.sh`。需要 Docker、Java 21、已安装依赖的 pnpm 工作区和 Chromium。如果 Docker 的默认网络地址池已满，可用 `JOURNEY_CHECKPOINT_TEST_SUBNET` 指定一个实际空闲的私有网段。已有共享业务作业与数据库独立于该测试。
+
+XXL-JOB 3.4.2 的 Python 3 运行模式与执行器命令见[官方实现](https://github.com/xuxueli/xxl-job/blob/3.4.2/xxl-job-core/src/main/java/com/xxl/job/core/glue/GlueTypeEnum.java)。
