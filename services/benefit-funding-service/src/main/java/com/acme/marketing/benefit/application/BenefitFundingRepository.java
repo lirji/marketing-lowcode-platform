@@ -50,6 +50,9 @@ public interface BenefitFundingRepository {
     int updateExpiryFailure(ExpiryFailureWrite write);
     int updateApplicationState(String tenantId, String applicationId, String stateName, String updatedAt);
     Optional<StoredApplicationRow> findApplicationForUpdate(String tenantId, String applicationId);
+    /** 锁定单个申请，避免并发补录覆盖首次审计记录。 */
+    Optional<AttributionEvidenceRow> findAttributionEvidenceForUpdate(String tenantId, String applicationId);
+    int updateCampaignAttribution(AttributionWrite write);
     List<ReservationItemRow> findReservationItems(String tenantId, String applicationId, boolean lock);
     Optional<ApplicationRow> findApplication(String tenantId, String applicationId);
     List<ItemRow> findItems(String tenantId, String applicationId);
@@ -62,6 +65,8 @@ public interface BenefitFundingRepository {
     Optional<SubsidyPostingCursor> findSubsidyPostingCursor(SubsidyPostingFilter filter, String ledgerId);
     List<SubsidyPostingRow> findSubsidyPostings(SubsidyPostingFilter filter, SubsidyPostingCursor cursor, int limit);
     List<SubsidySummaryRow> summarizeSubsidyPostings(SubsidyPostingFilter filter);
+    /** 全租户校验原始流水，识别无法走正常账本联接的记录。 */
+    long countUnmatchedSubsidyPostings(SubsidyPostingFilter filter);
     List<ReconcileItemRow> findReconcileItems(String tenantId);
     List<EscrowReconcileRow> findEscrowReconcileItems(String tenantId);
     List<OutboxTypeRow> findOutboxTypes(String tenantId);
@@ -118,6 +123,11 @@ public interface BenefitFundingRepository {
             long originalAmount, long reservedAmount, long consumedAmount, long refundedAmount,
             long releasedAmount, long reservationEpoch) { }
     record ExpiredApplicationRow(String tenantId, String applicationId) { }
+    record AttributionEvidenceRow(String applicationId, String organizationId, String shopIdsJson, String orderId,
+            String quoteId, String decisionRequestId, String cartDigest, String tokenDigest, long generation,
+            String campaignId, String createdAt, String expiresAt, String attributedAt) { }
+    record AttributionWrite(String tenantId, String applicationId, String campaignId, String actorId,
+            String attributedAt) { }
     record ExpiryFailureWrite(String tenantId, String applicationId, int attempts, String nextAttemptAt,
             String lastError) { }
     record StoredApplicationRow(String applicationId, String orderId, String organizationId,

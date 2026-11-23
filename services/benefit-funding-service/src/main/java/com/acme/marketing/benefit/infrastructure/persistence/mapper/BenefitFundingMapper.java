@@ -61,6 +61,9 @@ public interface BenefitFundingMapper {
             @Param("updatedAt") String updatedAt);
     BenefitFundingRepository.StoredApplicationRow selectApplicationForUpdate(@Param("tenantId") String tenantId,
             @Param("applicationId") String applicationId);
+    BenefitFundingRepository.AttributionEvidenceRow selectAttributionEvidenceForUpdate(
+            @Param("tenantId") String tenantId, @Param("applicationId") String applicationId);
+    int updateCampaignAttribution(BenefitFundingRepository.AttributionWrite write);
     List<BenefitFundingRepository.ReservationItemRow> selectReservationItems(@Param("tenantId") String tenantId,
             @Param("applicationId") String applicationId, @Param("lock") boolean lock);
     BenefitFundingRepository.ApplicationRow selectApplication(@Param("tenantId") String tenantId,
@@ -80,6 +83,7 @@ public interface BenefitFundingMapper {
             @Param("cursor") BenefitFundingRepository.SubsidyPostingCursor cursor, @Param("limit") int limit);
     List<BenefitFundingRepository.SubsidySummaryRow> summarizeSubsidyPostings(
             @Param("scope") BenefitFundingRepository.SubsidyPostingFilter filter);
+    long countUnmatchedSubsidyPostings(@Param("scope") BenefitFundingRepository.SubsidyPostingFilter filter);
     List<BenefitFundingRepository.ReconcileItemRow> selectReconcileItems(@Param("tenantId") String tenantId);
     List<BenefitFundingRepository.EscrowReconcileRow> selectEscrowReconcileItems(
             @Param("tenantId") String tenantId);

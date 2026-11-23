@@ -117,6 +117,13 @@ public class BenefitController {
         return service.reverse(applicationId, commandId, request);
     }
 
+    /** 单笔申请使用原始签名报价恢复活动归属。重试以资金申请和报价摘要为边界。 */
+    @PostMapping("/promotion-applications/{applicationId}:attribute-campaign")
+    public BenefitFundingService.SubsidyAttribution attributeSubsidyCampaign(@PathVariable String applicationId,
+            @RequestBody BenefitFundingService.SubsidyAttributionRequest request) {
+        return service.attributeSubsidyCampaign(applicationId, request);
+    }
+
     @PostMapping("/promotion-applications:expire")
     public BenefitFundingService.ExpirationResult expire(
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "100") int limit) {

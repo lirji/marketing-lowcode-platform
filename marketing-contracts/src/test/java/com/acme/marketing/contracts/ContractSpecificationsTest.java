@@ -84,6 +84,7 @@ class ContractSpecificationsTest {
             "/api/v1/promotion-applications/{applicationId}:cancel",
             "/api/v1/promotion-applications/{applicationId}:refund",
             "/api/v1/promotion-applications/{applicationId}:reverse",
+            "/api/v1/promotion-applications/{applicationId}:attribute-campaign",
             "/api/v1/promotion-applications:expire", "/api/v1/funding/reconciliation", "/api/v1/funding/subsidy-postings",
             "/api/v1/funding/subsidy-postings/summary",
             "/api/v1/events/sources", "/api/v1/events", "/api/v1/quarantine",

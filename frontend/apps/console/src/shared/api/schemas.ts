@@ -279,6 +279,7 @@ export const subsidyPostingPageSchema = z.object({
 export const subsidyPostingSummarySchema = z.object({
   tenantId: z.string(), from: z.string(), to: z.string(), campaignId: z.string().nullable(),
   tenantWide: z.boolean(), readAt: z.string(),
+  unmatchedPostingCount: z.string().regex(/^(0|[1-9][0-9]*)$/).nullish(),
   groups: z.array(z.object({
     currency: z.string().min(1), unassigned: z.boolean(),
     postingCount: z.string().regex(/^[1-9][0-9]*$/), netAmountMinor: z.string().regex(/^-?(0|[1-9][0-9]*)$/),

@@ -270,6 +270,23 @@
         WHERE tenant_id = #{tenantId} AND application_id = #{applicationId}
         FOR UPDATE
     </select>
+    <select id="selectAttributionEvidenceForUpdate"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$AttributionEvidenceRow">
+        SELECT application_id AS applicationId, organization_id AS organizationId, shop_ids_json AS shopIdsJson,
+               order_id AS orderId, quote_id AS quoteId, decision_request_id AS decisionRequestId,
+               cart_digest AS cartDigest, token_digest AS tokenDigest, generation_no AS generation,
+               campaign_id AS campaignId, created_at AS createdAt, expires_at AS expiresAt,
+               campaign_attributed_at AS attributedAt
+        FROM mk_promotion_application
+        WHERE tenant_id = #{tenantId} AND application_id = #{applicationId}
+        FOR UPDATE
+    </select>
+    <update id="updateCampaignAttribution">
+        UPDATE mk_promotion_application
+        SET campaign_id = #{campaignId}, campaign_attributed_by = #{actorId},
+            campaign_attributed_at = #{attributedAt}
+        WHERE tenant_id = #{tenantId} AND application_id = #{applicationId} AND campaign_id IS NULL
+    </update>
     <select id="selectReservationItems"
             resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$ReservationItemRow">
         SELECT resource_key AS resourceKey, original_amount AS originalAmount,
@@ -359,14 +376,17 @@
         ORDER BY resource_key, escrow_bucket_id, account_version, ledger_id
     </select>
 
+    <sql id="subsidyPostingWindow">
+        l.tenant_id = #{scope.tenantId} AND l.operation_name IN ('CONFIRM', 'REFUND')
+        AND l.posting_time_utc &gt;= #{scope.from} AND l.posting_time_utc &lt; #{scope.to}
+    </sql>
     <!-- 游标按与列表相同的业务和授权范围定位，防止旧范围游标跳过可见流水。 -->
     <sql id="subsidyPostingBaseScope">
         FROM mk_funding_ledger l
         JOIN mk_promotion_application a ON a.tenant_id = l.tenant_id AND a.application_id = l.application_id
         JOIN mk_reservation_item r ON r.tenant_id = l.tenant_id AND r.application_id = l.application_id
             AND r.resource_key = l.resource_key AND r.resource_type = 'BUDGET'
-        WHERE l.tenant_id = #{scope.tenantId} AND l.operation_name IN ('CONFIRM', 'REFUND')
-          AND l.posting_time_utc &gt;= #{scope.from} AND l.posting_time_utc &lt; #{scope.to}
+        WHERE <include refid="subsidyPostingWindow"/>
         <if test="scope.organizations != null">
             AND CAST(a.organization_id AS BINARY) IN
             <foreach collection="scope.organizations" item="organization" open="(" separator="," close=")">
@@ -414,6 +434,20 @@
         </if>
         GROUP BY r.currency_code, a.campaign_id IS NULL
         ORDER BY currency, unassigned
+    </select>
+    <!-- 资金类型可以从预留项或账户确认；两处都缺失时，无法排除该笔是预算流水。 -->
+    <select id="countUnmatchedSubsidyPostings" resultType="long">
+        SELECT COUNT(*)
+        FROM mk_funding_ledger l
+        LEFT JOIN mk_promotion_application a ON a.tenant_id = l.tenant_id AND a.application_id = l.application_id
+        LEFT JOIN mk_reservation_item r ON r.tenant_id = l.tenant_id AND r.application_id = l.application_id
+            AND r.resource_key = l.resource_key
+        LEFT JOIN mk_resource_account account ON account.tenant_id = l.tenant_id AND account.resource_key = l.resource_key
+        WHERE <include refid="subsidyPostingWindow"/>
+          AND (r.resource_type = 'BUDGET' OR account.resource_type = 'BUDGET'
+               OR (r.resource_type IS NULL AND account.resource_type IS NULL))
+          AND (a.application_id IS NULL OR r.resource_key IS NULL OR account.resource_key IS NULL
+               OR r.resource_type &lt;&gt; account.resource_type)
     </select>
     <select id="selectReconcileItems"
             resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$ReconcileItemRow">

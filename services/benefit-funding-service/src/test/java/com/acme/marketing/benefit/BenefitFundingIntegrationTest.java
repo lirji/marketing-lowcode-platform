@@ -782,6 +782,8 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         var tenantWide = exchange(base(firstSummary).setHeader("X-Dev-Organization-Ids", "*")
                 .setHeader("X-Dev-Shop-Ids", "*").GET().build());
         assertTrue(tenantWide.path("tenantWide").asBoolean());
+        assertEquals("0", tenantWide.path("unmatchedPostingCount").asString());
+        assertTrue(scopedSummary.path("unmatchedPostingCount").isNull());
         var otherShopSummary = exchange(base(firstSummary).setHeader("X-Dev-Shop-Ids", "shop-other").GET().build());
         assertEquals(0, otherShopSummary.path("groups").size());
         assertEquals(0, getTenant(firstSummary, "other-tenant").path("groups").size());
@@ -814,7 +816,8 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         createAccount("INVENTORY:benefit-v1", "INVENTORY", "UNIT", 10, tenant);
         createAccount("BUDGET:PLATFORM:platform:CNY", "BUDGET", "CNY", 10_000, tenant);
         createAccount("BUDGET:MERCHANT:shop-1:CNY", "BUDGET", "CNY", 10_000, tenant);
-        JsonNode reserved = postTenant("/api/v1/promotion-applications", Map.of("offerToken", token("2", null, tenant),
+        String legacyToken = token("2", null, tenant);
+        JsonNode reserved = postTenant("/api/v1/promotion-applications", Map.of("offerToken", legacyToken,
                 "cartDigest", CART_DIGEST, "orderId", "order-2", "expectedFencingEpochs", epochs), "legacy-posting-reserve", tenant);
         String applicationId = reserved.path("applicationId").asString();
         postTenant("/api/v1/promotion-applications/" + applicationId + ":confirm", Map.of("expectedFencingEpochs", epochs),
@@ -830,7 +833,111 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         assertEquals(1, groups.size());
         assertTrue(groups.get(0).path("unassigned").asBoolean());
         assertEquals("1000", groups.get(0).path("netAmountMinor").asString());
+        var legacy = postRaw("/api/v1/promotion-applications/" + applicationId + ":attribute-campaign",
+                Map.of("offerToken", legacyToken), null, tenant);
+        assertEquals(409, legacy.statusCode());
+        assertEquals("SUBSIDY_ATTRIBUTION_CAMPAIGN_MISSING", mapper.readTree(legacy.body()).path("code").asString());
+        assertEquals(3, getTenant(day + "&unassigned=true", tenant).path("items").size());
         assertEquals(0, getTenant(postings(BEIJING_MIDNIGHT.minusSeconds(1), BEIJING_MIDNIGHT), tenant).path("items").size());
+    }
+
+    @Test void onlyExactOriginalQuoteRecoversCampaignAndFirstAuditWinsConcurrentRetries() throws Exception {
+        POSTING_TIME.set(BEIJING_MIDNIGHT.minusSeconds(5));
+        String tenant = "tenant-recover-attribution";
+        createAccount("INVENTORY:benefit-v1", "INVENTORY", "UNIT", 10, tenant);
+        createAccount("BUDGET:PLATFORM:platform:CNY", "BUDGET", "CNY", 10_000, tenant);
+        createAccount("BUDGET:MERCHANT:shop-1:CNY", "BUDGET", "CNY", 10_000, tenant);
+        String original = token("reconcile", "recover-campaign", tenant);
+        String different = token("reconcile", "unrelated-campaign", tenant);
+        var epochs = writerEpochs(1);
+        String id = postTenant("/api/v1/promotion-applications", Map.of("offerToken", original,
+                "cartDigest", CART_DIGEST, "orderId", "order-reconcile", "expectedFencingEpochs", epochs),
+                "attribution-reserve", tenant).path("applicationId").asString();
+        String application = "/api/v1/promotion-applications/" + id;
+        // 模拟资金服务尚未保存签名中活动归属时写入的申请，其余凭证和账本走正常入口。
+        jdbc.update("UPDATE mk_promotion_application SET campaign_id=NULL WHERE tenant_id=? AND application_id=?", tenant, id);
+        postTenant(application + ":confirm", Map.of("expectedFencingEpochs", epochs), "attribution-confirm", tenant);
+        POSTING_TIME.set(BEIJING_MIDNIGHT);
+        postTenant(application + ":refund", Map.of("expectedFencingEpochs", epochs, "resourceAmounts",
+                Map.of("BUDGET:PLATFORM:platform:CNY", 200)), "attribution-refund", tenant);
+        String confirmWindow = postings(BEIJING_MIDNIGHT.minusSeconds(5), BEIJING_MIDNIGHT);
+        String refundWindow = postings(BEIJING_MIDNIGHT, BEIJING_MIDNIGHT.plusSeconds(1));
+        JsonNode before = getTenant(confirmWindow + "&unassigned=true", tenant).path("items");
+        assertEquals(3, before.size());
+
+        POSTING_TIME.set(BEIJING_MIDNIGHT.plusSeconds(600));
+        String path = application + ":attribute-campaign";
+        var mismatch = postRaw(path, Map.of("offerToken", different), null, tenant);
+        assertEquals(409, mismatch.statusCode());
+        assertEquals("SUBSIDY_ATTRIBUTION_EVIDENCE_MISMATCH", mapper.readTree(mismatch.body()).path("code").asString());
+        assertEquals(404, postRaw(path, Map.of("offerToken", original), null, "other-tenant").statusCode());
+        String body = mapper.writeValueAsString(Map.of("offerToken", original));
+        var denied = client.send(base(path, tenant).setHeader("X-Dev-Permissions", "funding:reconcile")
+                .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, denied.statusCode());
+        var wrongShop = client.send(base(path, tenant).setHeader("X-Dev-Shop-Ids", "shop-other")
+                .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(400, wrongShop.statusCode());
+
+        var first = client.sendAsync(base(path, tenant).setHeader("X-Dev-Actor-Id", "first-operator")
+                .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build(),
+                HttpResponse.BodyHandlers.ofString());
+        var second = client.sendAsync(base(path, tenant).setHeader("X-Dev-Actor-Id", "second-operator")
+                .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, first.get().statusCode(), first.get().body());
+        assertEquals(200, second.get().statusCode(), second.get().body());
+        var recovered = mapper.readTree(first.get().body());
+        assertEquals(recovered, mapper.readTree(second.get().body()));
+        assertEquals("recover-campaign", recovered.path("campaignId").asString());
+        assertEquals(POSTING_TIME.get(), Instant.parse(recovered.path("attributedAt").asString()));
+        String auditActor = jdbc.queryForObject("SELECT campaign_attributed_by FROM mk_promotion_application "
+                + "WHERE tenant_id=? AND application_id=?", String.class, tenant, id);
+        assertTrue(List.of("first-operator", "second-operator").contains(auditActor));
+        POSTING_TIME.set(BEIJING_MIDNIGHT.plusSeconds(900));
+        assertEquals(recovered, postTenant(path, Map.of("offerToken", original), null, tenant));
+        assertEquals(auditActor, jdbc.queryForObject("SELECT campaign_attributed_by FROM mk_promotion_application "
+                + "WHERE tenant_id=? AND application_id=?", String.class, tenant, id));
+        assertEquals(0, getTenant(confirmWindow + "&unassigned=true", tenant).path("items").size());
+        var confirmed = getTenant(confirmWindow + "&campaignId=recover-campaign", tenant).path("items");
+        assertEquals(before.size(), confirmed.size());
+        for (int index = 0; index < confirmed.size(); index++) {
+            for (String field : List.of("ledgerId", "postedAt", "amountMinor", "resourceKey")) {
+                assertEquals(before.get(index).path(field), confirmed.get(index).path(field));
+            }
+        }
+        assertEquals("-200", getTenant(refundWindow.replace("subsidy-postings?", "subsidy-postings/summary?")
+                + "&campaignId=recover-campaign", tenant).path("groups").get(0).path("netAmountMinor").asString());
+    }
+
+    @Test void ledgerCoverageCountsOnlyUnmatchedPotentialBudgetPostingsInItsTenantAndWindow() throws Exception {
+        String tenant = "tenant-unmatched-postings";
+        createAccount("BUDGET:PLATFORM:platform:CNY", "BUDGET", "CNY", 10_000, tenant);
+        createAccount("INVENTORY:benefit-v1", "INVENTORY", "UNIT", 10, tenant);
+        insertOrphanPosting(tenant, "BUDGET:PLATFORM:platform:CNY", "budget-confirm", "CONFIRM", BEIJING_MIDNIGHT);
+        insertOrphanPosting(tenant, "unknown-resource", "unknown-refund", "REFUND", BEIJING_MIDNIGHT);
+        insertOrphanPosting(tenant, "INVENTORY:benefit-v1", "inventory-confirm", "CONFIRM", BEIJING_MIDNIGHT);
+        insertOrphanPosting(tenant, "other-resource", "outside-window", "CONFIRM", BEIJING_MIDNIGHT.plusSeconds(1));
+        insertOrphanPosting(tenant, "reserved-resource", "reserve-only", "RESERVE", BEIJING_MIDNIGHT);
+        insertOrphanPosting("other-tenant", "unknown-resource", "other-tenant", "CONFIRM", BEIJING_MIDNIGHT);
+        String summary = postings(BEIJING_MIDNIGHT, BEIJING_MIDNIGHT.plusSeconds(1))
+                .replace("subsidy-postings?", "subsidy-postings/summary?") + "&campaignId=selected-campaign";
+        var completeScope = exchange(base(summary, tenant).setHeader("X-Dev-Organization-Ids", "*")
+                .setHeader("X-Dev-Shop-Ids", "*").GET().build());
+        assertEquals("2", completeScope.path("unmatchedPostingCount").asString());
+        assertEquals(0, completeScope.path("groups").size());
+        assertTrue(getTenant(summary, tenant).path("unmatchedPostingCount").isNull());
+    }
+
+    /** 制造历史流水缺少申请关联，确认统计未把缺行悄悄当零。 */
+    private void insertOrphanPosting(String tenant, String resourceKey, String ledgerId, String operation, Instant at) {
+        jdbc.update("""
+                INSERT INTO mk_funding_ledger (tenant_id, ledger_id, application_id, order_id, resource_key,
+                    operation_name, debit_bucket, credit_bucket, amount_value, account_version, occurred_at, escrow_bucket_id)
+                VALUES (?, ?, 'missing-application', 'example-order', ?, ?, 'RESERVED', 'CONSUMED', 1, 1, ?, 0)
+                """, tenant, ledgerId, resourceKey, operation, at.toString());
     }
 
     private static String postings(Instant from, Instant to) {

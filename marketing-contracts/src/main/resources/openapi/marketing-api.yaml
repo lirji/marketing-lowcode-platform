@@ -848,6 +848,36 @@ paths:
     post: {tags: [Benefit], operationId: refundPromotion, parameters: [{$ref: '#/components/parameters/ApplicationId'}, {$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
   /api/v1/promotion-applications/{applicationId}:reverse:
     post: {tags: [Benefit], operationId: reversePromotion, parameters: [{$ref: '#/components/parameters/ApplicationId'}, {$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /api/v1/promotion-applications/{applicationId}:attribute-campaign:
+    post:
+      tags: [Benefit]
+      operationId: attributeSubsidyCampaign
+      description: Recover activity attribution from the exact original signed quote while leaving ledger entries intact. Requires funding:attribute and access to the application's organization and all shops. The application and quote digest govern replay. The first audit time is returned on retry.
+      x-required-permission: funding:attribute
+      parameters: [{$ref: '#/components/parameters/ApplicationId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [offerToken]
+              properties:
+                offerToken: {type: string, minLength: 1, maxLength: 2000000, writeOnly: true}
+      responses:
+        '200':
+          description: Verified activity assignment
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [applicationId, campaignId, attributedAt]
+                properties:
+                  applicationId: {type: string}
+                  campaignId: {type: string}
+                  attributedAt: {type: [string, 'null'], format: date-time, description: Null if the activity was bound at reservation}
+        '409': {description: Original quote differs, lacks a signed activity, or would overwrite an existing assignment, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/promotion-applications:expire:
     post: {tags: [Benefit], operationId: expirePromotions, parameters: [{in: query, name: limit, required: false, schema: {type: integer, default: 100, minimum: 1}}], responses: *ok}
   /api/v1/funding/reconciliation:
@@ -902,7 +932,7 @@ paths:
               schema:
                 type: object
                 additionalProperties: false
-                required: [tenantId, from, to, campaignId, tenantWide, readAt, groups]
+                required: [tenantId, from, to, campaignId, tenantWide, readAt, groups, unmatchedPostingCount]
                 properties:
                   tenantId: {type: string}
                   from: {type: string, format: date-time}
@@ -910,6 +940,10 @@ paths:
                   campaignId: {type: [string, 'null']}
                   tenantWide: {type: boolean}
                   readAt: {type: string, format: date-time}
+                  unmatchedPostingCount:
+                    type: [string, 'null']
+                    pattern: '^(0|[1-9][0-9]*)$'
+                    description: Number of actual-window ledger rows across the tenant with missing or mismatched budget links. Null for restricted organization or shop scopes.
                   groups:
                     type: array
                     items:

@@ -98,6 +98,13 @@ public class MybatisBenefitFundingRepository implements BenefitFundingRepository
             String applicationId) {
         return Optional.ofNullable(mapper.selectApplicationForUpdate(tenantId, applicationId));
     }
+    @Override public Optional<AttributionEvidenceRow> findAttributionEvidenceForUpdate(String tenantId,
+            String applicationId) {
+        return Optional.ofNullable(mapper.selectAttributionEvidenceForUpdate(tenantId, applicationId));
+    }
+    @Override public int updateCampaignAttribution(AttributionWrite write) {
+        return mapper.updateCampaignAttribution(write);
+    }
     @Override public List<ReservationItemRow> findReservationItems(String tenantId, String applicationId,
             boolean lock) { return mapper.selectReservationItems(tenantId, applicationId, lock); }
     @Override public Optional<ApplicationRow> findApplication(String tenantId, String applicationId) {
@@ -126,6 +133,9 @@ public class MybatisBenefitFundingRepository implements BenefitFundingRepository
     }
     @Override public List<SubsidySummaryRow> summarizeSubsidyPostings(SubsidyPostingFilter filter) {
         return mapper.summarizeSubsidyPostings(filter);
+    }
+    @Override public long countUnmatchedSubsidyPostings(SubsidyPostingFilter filter) {
+        return mapper.countUnmatchedSubsidyPostings(filter);
     }
     @Override public List<ReconcileItemRow> findReconcileItems(String tenantId) {
         return mapper.selectReconcileItems(tenantId);

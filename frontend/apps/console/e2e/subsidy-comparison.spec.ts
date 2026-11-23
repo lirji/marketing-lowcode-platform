@@ -22,6 +22,8 @@ test('compares a historic activity with the ledger and withholds incompatible di
   const ledgerReads: URL[] = []
   let tenantWide = true
   let includePending = false
+  let includeGroups = true
+  let unmatchedPostingCount: string | undefined = '0'
   await page.route('**/api/v1/funding/subsidy-postings/summary?*', async route => {
     expect(route.request().method()).toBe('GET')
     const url = new URL(route.request().url())
@@ -29,7 +31,8 @@ test('compares a historic activity with the ledger and withholds incompatible di
     const assigned = { currency: 'CNY', postingCount: '2', netAmountMinor: '8000', unassigned: false }
     await route.fulfill({ json: { tenantId: 'retail-cn', from: url.searchParams.get('from'), to: url.searchParams.get('to'),
       campaignId: url.searchParams.get('campaignId'), readAt: '2026-09-23T03:00:00Z', tenantWide,
-      groups: includePending ? [assigned, { currency: 'CNY', postingCount: '2', netAmountMinor: '0', unassigned: true }] : [assigned],
+      unmatchedPostingCount: tenantWide ? unmatchedPostingCount : null,
+      groups: !includeGroups ? [] : includePending ? [assigned, { currency: 'CNY', postingCount: '2', netAmountMinor: '0', unassigned: true }] : [assigned],
     } })
   })
   await page.goto('/analytics')
@@ -59,5 +62,16 @@ test('compares a historic activity with the ledger and withholds incompatible di
   await expect(table.getByText('待归属', { exact: true })).toBeVisible()
   await expect(page.getByText(/窗口内还有待归属流水/)).toBeVisible()
   await expect(page.getByText('事件成本减账本净补贴')).toHaveCount(0)
+  includePending = false
+  unmatchedPostingCount = '2'
+  await page.getByRole('button', { name: '刷新账本汇总' }).click()
+  await expect(page.getByText(/有 2 笔流水缺少有效的资金关联/)).toBeVisible()
+  await expect(table.getByText('¥80.00', { exact: true })).toBeVisible()
+  await expect(page.getByText('事件成本减账本净补贴')).toHaveCount(0)
+  includeGroups = false
+  unmatchedPostingCount = undefined
+  await page.getByRole('button', { name: '刷新账本汇总' }).click()
+  await expect(page.getByText(/账本接口尚未返回流水关联校验结果/)).toBeVisible()
+  await expect(page.getByText('所选范围没有可见的补贴流水')).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
 })

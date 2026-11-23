@@ -19,6 +19,7 @@ import com.acme.marketing.platform.web.TenantContextHolder;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -33,6 +34,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.core.JacksonException;
@@ -44,6 +46,10 @@ public class BenefitFundingService {
     private static final int MAX_POSTING_PAGE_SIZE = 100;
     private static final Duration MAX_POSTING_RANGE = Duration.ofDays(31);
     private static final String RECONCILE_PERMISSION = "funding:reconcile";
+    private static final String ATTRIBUTION_PERMISSION = "funding:attribute";
+    private static final int MAX_ATTRIBUTION_TOKEN_LENGTH = 2_000_000;
+    private static final String ATTRIBUTION_MISMATCH = "SUBSIDY_ATTRIBUTION_EVIDENCE_MISMATCH";
+    private static final String ATTRIBUTION_MISMATCH_MESSAGE = "报价与资金申请保存的原始凭证不一致";
     private final BenefitFundingRepository repository;
     private final ObjectMapper mapper;
     private final Clock clock;
@@ -644,7 +650,7 @@ public class BenefitFundingService {
     }
 
     /** 在一次数据库读取中按币种汇总；选定活动时另列同窗口、授权范围内的待归属流水。 */
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public SubsidyPostingSummary subsidyPostingSummary(Instant from, Instant to, String campaignId) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission(RECONCILE_PERMISSION);
@@ -653,8 +659,59 @@ public class BenefitFundingService {
                 ? List.of() : repository.summarizeSubsidyPostings(filter).stream().map(row -> new SubsidySummaryGroup(
                         row.currency(), row.unassigned(), Long.toString(row.postingCount()),
                         row.netAmountMinor().toPlainString())).toList();
+        boolean tenantWide = filter.organizations() == null && filter.allowedShopsJson() == null;
+        // 覆盖校验与金额使用同一事务快照。受限身份无法安全归属脱链记录，不返回全租户计数。
+        String unmatchedCount = tenantWide ? Long.toString(repository.countUnmatchedSubsidyPostings(filter)) : null;
         return new SubsidyPostingSummary(filter.tenantId(), from, to, campaignId,
-                filter.organizations() == null && filter.allowedShopsJson() == null, clock.instant(), groups);
+                tenantWide, clock.instant(), groups, unmatchedCount);
+    }
+
+    /** 只接受与历史申请绑定的原始签名报价，首次补录固定审计记录，不改动任何入账流水。 */
+    @Transactional
+    public SubsidyAttribution attributeSubsidyCampaign(String applicationId, SubsidyAttributionRequest request) {
+        TenantScope scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission(ATTRIBUTION_PERMISSION);
+        String token = request.offerToken();
+        if (token == null || token.isBlank() || token.length() > MAX_ATTRIBUTION_TOKEN_LENGTH) {
+            throw new IllegalArgumentException("请提供长度合法的原始签名报价");
+        }
+        String tenantId = scope.tenantId().value();
+        var row = repository.findAttributionEvidenceForUpdate(tenantId, applicationId)
+                .filter(evidence -> evidence.applicationId().equals(applicationId))
+                .orElseThrow(() -> new NotFoundException("APPLICATION_NOT_FOUND", "promotion application not found"));
+        scope.requireOrganization(row.organizationId());
+        Set<String> shops = stringSet(row.shopIdsJson());
+        shops.forEach(scope::requireShop);
+        if (shops.isEmpty() || !row.tokenDigest().equals(Digests.sha256Hex(token))) {
+            throw new ConflictException(ATTRIBUTION_MISMATCH, ATTRIBUTION_MISMATCH_MESSAGE);
+        }
+        // 摘要匹配后，以已保存的预留时间验签。此处只恢复归属，不让过期报价重新参与预留。
+        OfferTokenClaims claims = OfferTokenCodec.verify(token, tokenTrust::resolve, scope.tenantId(),
+                row.cartDigest(), Clock.fixed(Instant.parse(row.createdAt()), ZoneOffset.UTC));
+        if (!row.quoteId().equals(claims.quoteId()) || !row.decisionRequestId().equals(claims.decisionRequestId())
+                || !row.organizationId().equals(claims.organizationId()) || !shops.equals(Set.copyOf(claims.shopIds()))
+                || (!claims.orderId().isBlank() && !row.orderId().equals(claims.orderId()))
+                || row.generation() != claims.generation() || !Instant.parse(row.expiresAt()).equals(claims.expiresAt())) {
+            throw new ConflictException(ATTRIBUTION_MISMATCH, ATTRIBUTION_MISMATCH_MESSAGE);
+        }
+        String campaignId = claims.campaignId();
+        if (campaignId == null) {
+            throw new ConflictException("SUBSIDY_ATTRIBUTION_CAMPAIGN_MISSING", "原始签名报价未声明活动归属");
+        }
+        if (row.campaignId() != null) {
+            if (!row.campaignId().equals(campaignId)) {
+                throw new ConflictException("SUBSIDY_ATTRIBUTION_ALREADY_ASSIGNED", "资金申请已绑定其他活动");
+            }
+            return new SubsidyAttribution(applicationId, campaignId,
+                    row.attributedAt() == null ? null : Instant.parse(row.attributedAt()));
+        }
+        Instant attributedAt = clock.instant();
+        int updated = repository.updateCampaignAttribution(new BenefitFundingRepository.AttributionWrite(
+                tenantId, applicationId, campaignId, scope.actorId(), format(attributedAt)));
+        if (updated != 1) {
+            throw new ConflictException("SUBSIDY_ATTRIBUTION_CONCURRENT_MODIFICATION", "资金申请归属已变更，请重新查询");
+        }
+        return new SubsidyAttribution(applicationId, campaignId, attributedAt);
     }
 
     private BenefitFundingRepository.SubsidyPostingFilter subsidyPostingFilter(TenantScope scope, Instant from,
@@ -1319,9 +1376,15 @@ public class BenefitFundingService {
 
     /** tenantWide 描述授权范围；readAt 记录读取时间，不代表数据源的完整水位。 */
     public record SubsidyPostingSummary(String tenantId, Instant from, Instant to, String campaignId,
-            boolean tenantWide, Instant readAt, List<SubsidySummaryGroup> groups) {
+            boolean tenantWide, Instant readAt, List<SubsidySummaryGroup> groups, String unmatchedPostingCount) {
         public SubsidyPostingSummary { groups = List.copyOf(groups); }
     }
+    /** 原始报价仅用于验签，避免请求对象被日志记录时泄露凭证。 */
+    public record SubsidyAttributionRequest(String offerToken) {
+        @Override public String toString() { return "SubsidyAttributionRequest[offerToken=REDACTED]"; }
+    }
+    /** 与已归属申请重试时返回相同时间；在预留时已归属则时间为空。 */
+    public record SubsidyAttribution(String applicationId, String campaignId, Instant attributedAt) { }
     public record ExpirationResult(int expiredCount, List<String> applicationIds, Instant completedAt) {
         public ExpirationResult { applicationIds = List.copyOf(applicationIds); }
     }
