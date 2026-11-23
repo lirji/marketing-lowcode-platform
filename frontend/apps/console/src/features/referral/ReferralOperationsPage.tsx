@@ -1,12 +1,13 @@
 import { RecordTable, RecordTime } from '../../components/RecordTable'
 import { Select } from '../../components/Select'
 import { PageTabs } from '../../components/PageTabs'
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { Badge, Button, EmptyState, PageHeader, Panel, StateBanner } from '../../components/ui'
-import { api } from '../../shared/api/client'
+import { api, ApiProblem } from '../../shared/api/client'
 import { problemDetail } from '../../shared/api/problem'
+import { CAMPAIGN_TYPE, isKnownCampaignType } from '../../shared/model/campaignType'
 import { useAuth } from '../../shared/auth/useAuth'
 import { deliveryLabel, formatNullableCount, qualificationLabel, watermarkText } from './referralOperationsStatus'
 
@@ -24,51 +25,50 @@ export function ReferralOperationsPage() {
   const [params, setParams] = useSearchParams()
   const tab = (TABS.find((item) => item.id === params.get('tab')) ?? TABS[0]).id
   const campaignId = params.get('campaignId')?.trim() ?? ''
-  const [after, setAfter] = useState<string>()
   const live = !api.demoMode
+  const canRead = auth.hasPermission('campaign:read') && auth.hasPermission('referral:read')
+  const scope = [auth.tenantId, auth.subject, auth.organizations, auth.shops, auth.permissions]
   const campaigns = useQuery({
-    queryKey: ['campaigns', auth.tenantId, auth.organizations, auth.shops],
+    queryKey: ['referral-campaign-options', ...scope],
     queryFn: api.campaigns,
-    enabled: live,
+    enabled: live && canRead,
   })
-  const options = useMemo(() => {
-    const rows = live ? campaigns.data ?? [] : []
-    const referral = rows.filter((item) => item.campaignType === 'REFERRAL')
-    return referral.length > 0 ? referral : rows
-  }, [campaigns.data, live])
-
-  const scopeKey = `${auth.tenantId}|${auth.organizations.join(',')}|${auth.shops.join(',')}`
-  useEffect(() => {
-    setAfter(undefined)
-  }, [campaignId, tab, scopeKey])
-
-  const enabled = live && Boolean(campaignId) && tab !== 'exceptions'
+  const options = live && canRead && campaigns.isSuccess ? campaigns.data.filter((item) => item.campaignType === CAMPAIGN_TYPE.REFERRAL) : []
+  const confirmed = options.some(item => item.id === campaignId)
+  const scopeKey = JSON.stringify([scope, campaignId, tab])
+  const [cursor, setCursor] = useState<{ scopeKey: string; after?: string }>()
+  const after = cursor?.scopeKey === scopeKey ? cursor.after : undefined
+  const setAfter = (value?: string) => setCursor({ scopeKey, after: value })
+  const enabled = confirmed && tab !== 'exceptions'
   const participants = useQuery({
-    queryKey: ['referral-ops', 'participants', auth.tenantId, auth.organizations, auth.shops, campaignId, after],
+    queryKey: ['referral-ops', 'participants', ...scope, campaignId, after],
     queryFn: () => api.referralParticipants(campaignId, after, PAGE_SIZE),
     enabled: enabled && tab === 'participants',
   })
   const relations = useQuery({
-    queryKey: ['referral-ops', 'relations', auth.tenantId, auth.organizations, auth.shops, campaignId, after],
+    queryKey: ['referral-ops', 'relations', ...scope, campaignId, after],
     queryFn: () => api.referralRelations(campaignId, after, PAGE_SIZE),
     enabled: enabled && tab === 'relations',
   })
   const rewards = useQuery({
-    queryKey: ['referral-ops', 'rewards', auth.tenantId, auth.organizations, auth.shops, campaignId, after],
+    queryKey: ['referral-ops', 'rewards', ...scope, campaignId, after],
     queryFn: () => api.referralRewards(campaignId, after, PAGE_SIZE),
     enabled: enabled && tab === 'rewards',
   })
   const active = tab === 'participants' ? participants : tab === 'relations' ? relations : rewards
+  const serviceUnavailable = active.error instanceof ApiProblem && active.error.status >= 500
   const watermark = enabled
     ? watermarkText(active.data?.asOf, active.data?.consistency)
     : '数据水位：未知'
 
   const setTab = (next: (typeof TABS)[number]['id']) => {
+    setAfter(undefined)
     const copy = new URLSearchParams(params)
     copy.set('tab', next)
     setParams(copy, { replace: true })
   }
   const setCampaign = (next: string) => {
+    setAfter(undefined)
     const copy = new URLSearchParams(params)
     if (next) copy.set('campaignId', next)
     else copy.delete('campaignId')
@@ -87,7 +87,7 @@ export function ReferralOperationsPage() {
       <div className="toolbar">
         <label className="compact-select">
           <span className="sr-only">活动</span>
-          <Select aria-label="活动" value={campaignId} disabled={!live} onChange={(event) => setCampaign(event.target.value)}>
+          <Select aria-label="活动" value={confirmed ? campaignId : ''} disabled={options.length === 0} onChange={(event) => setCampaign(event.target.value)}>
             <option value="">选择活动</option>
             {options.map((item) => (
               <option key={item.id} value={item.id}>{item.name} · {item.id}</option>
@@ -95,21 +95,26 @@ export function ReferralOperationsPage() {
           </Select>
         </label>
       </div>
-      {live && campaigns.data && campaigns.data.length > 0 && !campaigns.data.some((item) => item.campaignType === 'REFERRAL') && (
-        <StateBanner tone="info" title="未返回 campaignType" detail="后端尚未持久化活动类型时列出全部活动，不会把名称当成裂变类型。" />
-      )}
       <PageTabs label="裂变运营页签" items={TABS.map((item) => ({ value: item.id, label: item.label }))} value={tab} onChange={setTab}>
       <Panel className="table-panel">
         {tab === 'exceptions' ? (
           <EmptyState title="异常待接入" detail="BE-03 的 summary / 异常合同尚未开放。缺接口保持待接入，不显示假成功。" />
         ) : !live ? (
           <EmptyState title="未查询真实数据" detail="演示模式没有参与人、关系或奖励行。" />
-        ) : !campaignId ? (
-          <EmptyState title="先选择活动" detail="三类查询都按 campaignId 隔离。切换活动会丢弃上一页游标。" />
+        ) : !canRead ? (
+          <EmptyState title="没有查看邀请有礼的权限" detail="需要同时具备活动读取和裂变运营读取权限。" />
+        ) : campaigns.isError ? (
+          <Button onClick={() => void campaigns.refetch()} disabled={campaigns.isFetching}>重试活动列表</Button>
+        ) : campaigns.isPending ? (
+          <StateBanner tone="loading" title="正在读取活动列表" detail="正在确认当前范围内的邀请有礼活动。" />
+        ) : options.length === 0 ? (
+          <EmptyState title="暂无可查询的邀请有礼活动" detail={campaigns.data?.some(item => !isKnownCampaignType(item.campaignType)) ? '部分活动的类型尚未确认。' : '当前可见范围没有邀请有礼活动。'} />
+        ) : !confirmed ? (
+          <EmptyState title={campaignId ? '无法查询所选活动' : '先选择活动'} detail={campaignId ? '请从上方选择当前范围内的邀请有礼活动。' : '请选择邀请有礼活动后查询。'} />
         ) : active.isPending ? (
           <StateBanner tone="loading" title="正在读取主库" detail="返回值以 OpenAPI/DTO 解析，不会把空进度显示成已验证的 0。" />
         ) : active.isError ? (
-          <StateBanner tone="error" title="运营查询失败" detail={problemDetail(active.error)} />
+          <><StateBanner tone="error" title={serviceUnavailable ? '裂变服务暂不可用' : '运营查询失败'} detail={serviceUnavailable ? '暂时无法读取该活动的裂变记录，请稍后重试。' : problemDetail(active.error)} /><Button onClick={() => void active.refetch()} disabled={active.isFetching}>重试查询</Button></>
         ) : (active.data?.items.length ?? 0) === 0 ? (
           <EmptyState title="没有记录" detail="当前租户、组织和门店范围内没有返回行。" />
         ) : tab === 'participants' ? (

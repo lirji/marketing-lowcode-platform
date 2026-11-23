@@ -103,6 +103,16 @@ describe('ReferralOperationsPage', () => {
     expect(screen.queryByText('已到账')).not.toBeInTheDocument()
   })
 
+  it('ignores standard and unclassified activities even when opened with a direct link', async () => {
+    demoMode = false
+    const standard: Campaign = { id: 'standard', name: '普通活动', objective: '转化', status: 'ACTIVE', createdAt: '2026-09-01T00:00:00Z', campaignType: 'STANDARD' }
+    mocks.campaigns.mockResolvedValue([standard, { ...standard, id: 'legacy', campaignType: undefined }])
+    renderPage('?campaignId=standard&tab=participants')
+    expect(await screen.findByText('暂无可查询的邀请有礼活动')).toBeInTheDocument()
+    expect(screen.getByText('部分活动的类型尚未确认。')).toBeInTheDocument()
+    expect(mocks.referralParticipants).not.toHaveBeenCalled()
+  })
+
   it('labels accepted rewards as local accept, not paid', async () => {
     demoMode = false
     mocks.campaigns.mockResolvedValue([{
