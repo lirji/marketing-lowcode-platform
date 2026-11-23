@@ -504,6 +504,11 @@ export const awardIntentViewSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   sentAt: z.string().nullable().optional(),
+  fulfillment: z.object({
+    status: awardFulfillmentSchema.shape.centerStatus,
+    checkedAt: awardFulfillmentSchema.shape.checkedAt,
+    latestCheckFailed: z.boolean(),
+  }).optional(),
 })
 export type AwardIntentView = z.infer<typeof awardIntentViewSchema>
 

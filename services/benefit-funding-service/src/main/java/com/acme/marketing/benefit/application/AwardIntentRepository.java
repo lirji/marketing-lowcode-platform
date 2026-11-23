@@ -55,7 +55,8 @@ public interface AwardIntentRepository {
             long definitionVersion, String subjectHash, String deliveryMode, String requestHash,
             String internalStatus, String deliveryResult, int attempts, String benefitOrderNo,
             String lastError, String createdAt, String updatedAt, String sentAt,
-            String riskAction, String riskReason, String riskDecisionId) { }
+            String riskAction, String riskReason, String riskDecisionId,
+            String observedStatus, String observedAt, String observationError) { }
     record CursorRow(String createdAt, String intentId) { }
     record ExpectedEventWrite(String tenantId, String eventId, String aggregateId, String eventType,
             String destinationTopic, String partitionKey, long streamSequence, String payloadJson,

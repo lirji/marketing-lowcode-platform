@@ -98,14 +98,14 @@
     </sql>
     <select id="selectIntentBySource"
             resultType="com.acme.marketing.benefit.application.AwardIntentRepository$IntentRow">
-        SELECT <include refid="intentColumns"/>
+        SELECT <include refid="intentColumns"/>, NULL AS observedStatus, NULL AS observedAt, NULL AS observationError
         FROM mk_award_intent_outbox
         WHERE tenant_id = #{tenantId} AND source_system = #{sourceSystem}
           AND source_request_id = #{sourceRequestId}
     </select>
     <select id="selectBlockBySource"
             resultType="com.acme.marketing.benefit.application.AwardIntentRepository$IntentRow">
-        SELECT <include refid="blockColumns"/>
+        SELECT <include refid="blockColumns"/>, NULL AS observedStatus, NULL AS observedAt, NULL AS observationError
         FROM mk_award_intent_block
         WHERE tenant_id = #{tenantId} AND source_system = #{sourceSystem}
           AND source_request_id = #{sourceRequestId}
@@ -122,22 +122,29 @@
     </select>
     <select id="selectByCampaign"
             resultType="com.acme.marketing.benefit.application.AwardIntentRepository$IntentRow">
-        SELECT *
+        SELECT page.*, obs.center_status AS observedStatus, obs.checked_at AS observedAt,
+               obs.error_code AS observationError
         FROM (
-            SELECT <include refid="intentColumns"/>
-            FROM mk_award_intent_outbox
-            WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId}
-            UNION ALL
-            SELECT <include refid="blockColumns"/>
-            FROM mk_award_intent_block
-            WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId}
-        ) combined
-        <if test="createdBefore != null">
-            WHERE createdAt &lt; #{createdBefore}
-               OR (createdAt = #{createdBefore} AND intentId &lt; #{cursorIntentId})
-        </if>
-        ORDER BY createdAt DESC, intentId DESC
-        LIMIT #{limit}
+            SELECT *
+            FROM (
+                SELECT <include refid="intentColumns"/>
+                FROM mk_award_intent_outbox
+                WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId}
+                UNION ALL
+                SELECT <include refid="blockColumns"/>
+                FROM mk_award_intent_block
+                WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId}
+            ) combined
+            <if test="createdBefore != null">
+                WHERE createdAt &lt; #{createdBefore}
+                   OR (createdAt = #{createdBefore} AND intentId &lt; #{cursorIntentId})
+            </if>
+            ORDER BY createdAt DESC, intentId DESC
+            LIMIT #{limit}
+        ) page
+        LEFT JOIN mk_award_fulfillment obs ON obs.tenant_id = #{tenantId} AND obs.intent_id = page.intentId
+            AND page.deliveryMode = 'CENTER' AND page.internalStatus &lt;&gt; 'RISK_BLOCKED'
+        ORDER BY page.createdAt DESC, page.intentId DESC
     </select>
 
     <insert id="insertExpectedPosition">

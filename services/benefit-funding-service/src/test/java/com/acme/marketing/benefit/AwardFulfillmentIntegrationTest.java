@@ -90,6 +90,15 @@ class AwardFulfillmentIntegrationTest {
         assertEquals(first.path("checkedAt"), failed.path("checkedAt"));
         assertEquals("SUCCEEDED", failed.path("centerStatus").asString());
         assertEquals("AWARD_CENTER_ORDER_NOT_FOUND", failed.path("errorCode").asString());
+        JsonNode list = list("tenant-observe");
+        assertEquals(1, list.size());
+        JsonNode listed = list.get(0);
+        assertEquals(id, listed.path("intentId").asString());
+        assertEquals("PENDING", listed.path("status").asString());
+        assertEquals("SUCCEEDED", listed.path("fulfillment").path("status").asString());
+        assertEquals(first.path("checkedAt"), listed.path("fulfillment").path("checkedAt"));
+        assertTrue(listed.path("fulfillment").path("latestCheckFailed").asBoolean());
+        assertTrue(list("tenant-without-awards").isEmpty());
         due(id); service.runBatch();
         assertEquals("PAUSED", repository.find("tenant-observe", id).orElseThrow().state());
         assertEquals(202, refresh(id, "tenant-observe", "trace:read").statusCode());
@@ -203,6 +212,15 @@ class AwardFulfillmentIntegrationTest {
     private JsonNode get(String id, String tenant, String permission, int expected) throws Exception {
         var response = http.send(base(id, tenant, permission).GET().build(), HttpResponse.BodyHandlers.ofString());
         assertEquals(expected, response.statusCode(), response.body()); return mapper.readTree(response.body());
+    }
+    /** 逐项检查列表只返回带当前租户范围的履约摘要，投递字段维持独立。 */
+    private JsonNode list(String tenant) throws Exception {
+        var request = base("unused", tenant, "trace:read")
+                .uri(URI.create("http://127.0.0.1:" + port + "/api/v1/award-intents?campaignId=campaign"))
+                .GET().build();
+        var response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode(), response.body());
+        return mapper.readTree(response.body());
     }
     private HttpResponse<String> refresh(String id, String tenant, String permission) throws Exception {
         var builder = base(id, tenant, permission);

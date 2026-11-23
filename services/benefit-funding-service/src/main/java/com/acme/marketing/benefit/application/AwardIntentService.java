@@ -384,12 +384,16 @@ public class AwardIntentService {
 
     private static AwardIntentView view(AwardIntentRepository.IntentRow row) {
         String publicStatus = "SENDING".equals(row.internalStatus()) ? "PENDING" : row.internalStatus();
+        // 履约记录与投递状态各自更新。保留上次成功查询的结果和最近错误，供运营判断数据时效。
+        FulfillmentSummary observation = row.observationError() == null ? null : new FulfillmentSummary(
+                row.observedStatus(), row.observedAt() == null ? null : Instant.parse(row.observedAt()),
+                !row.observationError().isBlank());
         return new AwardIntentView(row.intentId(), row.sourceSystem(), row.sourceRequestId(), row.campaignId(),
                 row.definitionVersion(), row.subjectHash(), DeliveryMode.valueOf(row.deliveryMode()), publicStatus,
                 row.deliveryResult(), row.attempts(), row.benefitOrderNo(), row.lastError(),
                 Instant.parse(row.createdAt()), Instant.parse(row.updatedAt()),
                 row.sentAt() == null ? null : Instant.parse(row.sentAt()),
-                row.riskAction(), row.riskReason(), row.riskDecisionId());
+                row.riskAction(), row.riskReason(), row.riskDecisionId(), observation);
     }
 
     private String json(Object value) {
@@ -438,5 +442,9 @@ public class AwardIntentService {
             Instant createdAt, Instant updatedAt, Instant sentAt,
             @JsonInclude(JsonInclude.Include.NON_NULL) String riskAction,
             @JsonInclude(JsonInclude.Include.NON_NULL) String riskReason,
-            @JsonInclude(JsonInclude.Include.NON_NULL) String riskDecisionId) { }
+            @JsonInclude(JsonInclude.Include.NON_NULL) String riskDecisionId,
+            @JsonInclude(JsonInclude.Include.NON_NULL) FulfillmentSummary fulfillment) { }
+
+    /** 仅用于列表速览，权益项和详细查询状态仍从履约详情读取。 */
+    public record FulfillmentSummary(String status, Instant checkedAt, boolean latestCheckFailed) { }
 }

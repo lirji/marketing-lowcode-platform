@@ -5,13 +5,10 @@ import { RecordTable, RecordTime } from '../../components/RecordTable'
 import { awardFulfillmentSchema } from '../../shared/api/schemas'
 import { api } from '../../shared/api/client'
 import { problemDetail } from '../../shared/api/problem'
+import { AWARD_ORDER_LABELS } from './awardFulfillmentStatus'
 
 const ORDER_STATUS = awardFulfillmentSchema.shape.centerStatus.unwrap().enum
 const SYNC_STATUS = awardFulfillmentSchema.shape.synchronizationState.enum
-const ORDER_LABELS: Record<string, string> = {
-  ACCEPTED: '已受理', PROCESSING: '发放中', SUCCEEDED: '发放成功', PARTIAL_SUCCEEDED: '部分成功',
-  FAILED: '发放失败', REMEDIATING: '补偿中', REVERSING: '撤销中', REVERSED: '已撤销', PARTIALLY_REVERSED: '部分撤销',
-}
 const SYNC_LABELS = { UNOBSERVED: '尚未查询', PENDING: '等待查询', RUNNING: '查询中', PAUSED: '自动查询已暂停' }
 
 /** 展示带时间的权威查询记录，刷新只查询结果，不发送或撤销发奖。 */
@@ -30,10 +27,13 @@ export function AwardFulfillmentPanel({ intentId, onClose }: { intentId: string;
     onSuccess: () => { void client.invalidateQueries({ queryKey }) },
   })
   const value = query.data
+  useEffect(() => {
+    if (value) void client.invalidateQueries({ queryKey: ['award-intents'] })
+  }, [client, value])
   return <section id={`award-fulfillment-${intentId}`} ref={region} tabIndex={-1} aria-label="发放结果详情" className="award-fulfillment-region"><Panel>
     <PanelHeader eyebrow="FULFILLMENT" title="发放结果" aside={<Button onClick={onClose}>关闭结果</Button>} />
     <p>指令 ID：{intentId}</p>
-    <p>投递已送达仅表示权益中心受理。以下显示最近一次成功查询的结果，后续补偿或撤销可能使结果变化。</p>
+    <p>以下显示最近一次成功查询的结果。权益中心受理后仍需核验发放，后续补偿或撤销可能使结果变化。</p>
     {query.isPending && <p role="status">正在读取查询记录…</p>}
     {query.isError && <StateBanner tone="error" title="查询记录读取失败" detail={problemDetail(query.error)} />}
     {refresh.isError && <StateBanner tone="error" title="请求刷新失败" detail={problemDetail(refresh.error)} />}
@@ -41,7 +41,7 @@ export function AwardFulfillmentPanel({ intentId, onClose }: { intentId: string;
     {value && <>
       <RecordTable label="履约观察" columns={['权益订单号', '最近发放结果', '查询时间（北京时间）', '同步状态', '连续查询失败次数']}>
         <tr><td>{value.benefitOrderNo ?? '尚未查到'}</td>
-          <td><Badge tone={value.centerStatus === ORDER_STATUS.SUCCEEDED ? 'good' : value.centerStatus === ORDER_STATUS.FAILED ? 'danger' : 'info'}>{value.centerStatus ? ORDER_LABELS[value.centerStatus] : '尚无可信结果'}</Badge></td>
+          <td><Badge tone={value.centerStatus === ORDER_STATUS.SUCCEEDED ? 'good' : value.centerStatus === ORDER_STATUS.FAILED ? 'danger' : 'info'}>{value.centerStatus ? AWARD_ORDER_LABELS[value.centerStatus] : '尚无可信结果'}</Badge></td>
           <td><RecordTime value={value.checkedAt} /></td><td>{SYNC_LABELS[value.synchronizationState]}</td><td>{value.consecutiveFailures}</td></tr>
       </RecordTable>
       {value.errorCode && <StateBanner tone="warn" title="最近一次查询未成功" detail={`${value.errorCode}。保留之前的查询结果；该错误不代表权益发放失败或已取消。`} />}

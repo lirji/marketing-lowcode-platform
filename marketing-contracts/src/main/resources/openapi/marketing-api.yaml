@@ -1669,6 +1669,15 @@ components:
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
         sentAt: {type: [string, 'null'], format: date-time}
+        fulfillment:
+          type: object
+          description: Latest successful fulfillment observation and whether the most recent check failed.
+          additionalProperties: false
+          required: [status, checkedAt, latestCheckFailed]
+          properties:
+            status: {type: [string, 'null'], enum: [ACCEPTED, PROCESSING, SUCCEEDED, PARTIAL_SUCCEEDED, FAILED, REMEDIATING, REVERSING, REVERSED, PARTIALLY_REVERSED, null]}
+            checkedAt: {type: [string, 'null'], format: date-time}
+            latestCheckFailed: {type: boolean}
     CreateCampaign:
       type: object
       additionalProperties: false

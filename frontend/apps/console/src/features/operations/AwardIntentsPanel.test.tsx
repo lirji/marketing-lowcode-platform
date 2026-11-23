@@ -130,22 +130,23 @@ describe('AwardIntentsPanel', () => {
 
   it('loads one selected result and keeps prior success when synchronization has failed', async () => {
     demoMode = false
-    mocks.awardIntents.mockResolvedValue([{ ...deadIntent, status: 'SENT' }])
+    mocks.awardIntents.mockResolvedValue([{ ...deadIntent, status: 'SENT', deliveryResult: 'CENTER_ACCEPTED', fulfillment: { status: 'SUCCEEDED', checkedAt: '2026-11-16T01:00:00Z', latestCheckFailed: true } }])
     const observation = { intentId: deadIntent.intentId, synchronizationState: 'PAUSED', benefitOrderNo: 'benefit-order-1',
       centerStatus: 'SUCCEEDED', checkedAt: '2026-11-16T01:00:00Z', errorCode: 'AWARD_CENTER_QUERY_TIMEOUT', consecutiveFailures: 10,
       refreshEnabled: true, items: [{ clientItemId: 'item-1', skuId: 'sku-1', skuVersion: 3, quantity: 1, status: 'SUCCEEDED' }] }
     mocks.awardFulfillment.mockResolvedValue(observation)
     mocks.refreshAwardFulfillment.mockResolvedValue({ ...observation, synchronizationState: 'PENDING', consecutiveFailures: 0 })
     renderPanel('/operations?tab=awards&campaignId=CMP-1')
-    expect(await screen.findByText('已送达')).toBeInTheDocument()
+    expect(await screen.findByText('权益中心已受理')).toBeInTheDocument()
+    expect(screen.getByText('（最近查询失败）')).toBeInTheDocument()
     expect(mocks.awardFulfillment).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: '查看发放结果' }))
-    expect(await screen.findByText('发放成功')).toBeInTheDocument()
+    expect(await screen.findByText('自动查询已暂停')).toBeInTheDocument()
     expect(screen.getByText('自动查询已暂停')).toBeInTheDocument()
     expect(screen.getByText(/保留之前的查询结果/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '重新查询权益中心' }))
     expect(await screen.findByText('已请求重新查询')).toBeInTheDocument()
-    expect(screen.getByText('发放成功')).toBeInTheDocument()
+    expect(screen.getAllByText('发放成功')).toHaveLength(2)
     expect(mocks.refreshAwardFulfillment).toHaveBeenCalledWith(deadIntent.intentId)
   })
 

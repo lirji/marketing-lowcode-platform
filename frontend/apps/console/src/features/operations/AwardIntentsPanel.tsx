@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { AwardFulfillmentPanel } from './AwardFulfillmentPanel'
+import { AWARD_ORDER_LABELS } from './awardFulfillmentStatus'
 import { RecordTable, RecordTime } from '../../components/RecordTable'
 import { Select } from '../../components/Select'
 import { useSearchParams } from 'react-router-dom'
@@ -22,11 +23,20 @@ function statusTone(status: AwardIntentView['status']) {
   return 'warn' as const
 }
 
-function statusLabel(status: AwardIntentView['status']) {
-  if (status === DELIVERY_STATUS.RISK_BLOCKED) return '风控拦截'
-  if (status === DELIVERY_STATUS.SENT) return '已送达'
-  return status
+function statusLabel(item: AwardIntentView) {
+  switch (item.status) {
+    case DELIVERY_STATUS.RISK_BLOCKED: return '风控拦截'
+    case DELIVERY_STATUS.DEAD: return '投递已停止'
+    case DELIVERY_STATUS.PENDING: return '等待投递'
+    case DELIVERY_STATUS.SENT:
+      if (item.deliveryResult === 'CENTER_ACCEPTED') return '权益中心已受理'
+      if (item.deliveryResult === 'LEGACY_OWNED') return '由原系统处理'
+      if (item.deliveryResult === 'SHADOW_RECORDED') return '仅记录'
+      return '投递结果待核实'
+  }
 }
+
+const DELIVERY_LABELS = { LEGACY_OWNED: '原系统负责', SHADOW_RECORDED: '影子记录', CENTER_ENQUEUED: '已入投递队列', CENTER_ACCEPTED: '受理回执已返回' } as const
 
 function riskBannerTitle(action?: AwardIntentView['riskAction']) {
   if (action === 'REJECT') return '风控拒绝，未写出发放指令'
@@ -100,7 +110,7 @@ export function AwardIntentsPanel() {
           />
         )}
         {rows.length > 0 && (
-          <RecordTable label="发放指令" columns={['来源请求 ID', '指令 ID', '活动 ID', '来源系统', '定义版本', '发放模式', '投递状态', '主体摘要（脱敏）', '投递结果', '尝试次数', '权益订单号', '风控处置', '风控原因', '风控决策 ID', '最近错误', '创建时间（北京时间）', '更新时间（北京时间）', '发送时间（北京时间）', '操作']} actions>
+          <RecordTable label="发放指令" columns={['来源请求 ID', '指令 ID', '活动 ID', '来源系统', '定义版本', '发放模式', '投递状态', '最近发放结果', '核验时间（北京时间）', '主体摘要（脱敏）', '投递回执', '尝试次数', '权益订单号', '风控处置', '风控原因', '风控决策 ID', '最近错误', '创建时间（北京时间）', '更新时间（北京时间）', '发送时间（北京时间）', '操作']} actions>
             {rows.map((item) => <AwardIntentRow key={item.intentId} item={item} expanded={selectedIntent === item.intentId} onObserve={(trigger) => { resultTrigger.current = trigger; setSelectedIntent(item.intentId) }} />)}
           </RecordTable>
         )}
@@ -119,15 +129,20 @@ function AwardIntentRow({ item, expanded, onObserve }: { item: AwardIntentView; 
   const orderHref = benefitOrderHref(item)
   const riskHref = riskDecisionHref(item)
   const blocked = item.status === DELIVERY_STATUS.RISK_BLOCKED
+  const canObserve = item.deliveryMode === DELIVERY_MODE.CENTER && !blocked
+  const observation = canObserve ? item.fulfillment : undefined
+  const observedLabel = observation?.status ? AWARD_ORDER_LABELS[observation.status] : '结果未知'
   return (
     <tr>
       <td>{item.sourceRequestId}</td><td>{item.intentId}</td><td>{item.campaignId}</td><td>{item.sourceSystem}</td><td>{item.definitionVersion}</td><td>{item.deliveryMode}</td>
-      <td><Badge tone={statusTone(item.status)}>{statusLabel(item.status)}</Badge></td>
-      <td>{shortHash(item.subjectHash)}</td><td>{item.deliveryResult ?? '—'}</td><td>{item.attempts}</td><td>{item.benefitOrderNo ?? '—'}</td>
+      <td><Badge tone={statusTone(item.status)}>{statusLabel(item)}</Badge></td>
+      <td>{canObserve ? <>{observedLabel}{observation?.latestCheckFailed && <small className="muted">（最近查询失败）</small>}</> : '不适用'}</td>
+      <td><RecordTime value={observation?.checkedAt} /></td>
+      <td>{shortHash(item.subjectHash)}</td><td>{item.deliveryResult ? DELIVERY_LABELS[item.deliveryResult] : '—'}</td><td>{item.attempts}</td><td>{item.benefitOrderNo ?? '—'}</td>
       <td>{blocked ? riskBannerTitle(item.riskAction) : item.riskAction ?? '—'}</td><td>{item.riskReason || (blocked ? '发放指令未进入出站队列。' : '—')}</td><td>{item.riskDecisionId ?? '—'}</td><td>{item.lastError || '—'}</td>
       <td><RecordTime value={item.createdAt} /></td><td><RecordTime value={item.updatedAt} /></td><td><RecordTime value={item.sentAt} /></td>
       <td><div className="record-actions">
-        {item.deliveryMode === DELIVERY_MODE.CENTER && !blocked && <button className="row-action" type="button" aria-expanded={expanded} aria-controls={`award-fulfillment-${item.intentId}`} onClick={(event) => onObserve(event.currentTarget)}>查看发放结果</button>}
+        {canObserve && <button className="row-action" type="button" aria-expanded={expanded} aria-controls={`award-fulfillment-${item.intentId}`} onClick={(event) => onObserve(event.currentTarget)}>查看发放结果</button>}
         <button className="row-action" type="button" onClick={() => void navigator.clipboard.writeText(item.sourceRequestId)}>
           <Copy size={13} />复制 sourceRequestId
         </button>

@@ -21,7 +21,7 @@ test('award delivery and observed fulfillment stay separate through refresh fail
     return route.fulfill({ status: 503, json: { type: 'about:blank', title: '暂不可用', status: 503, code: 'QUERY_UNAVAILABLE', detail: '查询暂不可用，请稍后重试', retryable: true } })
   })
   await page.goto('/operations?tab=awards&campaignId=award-campaign')
-  await expect(page.getByText('已送达', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('权益中心已受理', { exact: true }).first()).toBeVisible()
   const trigger = page.getByRole('button', { name: '查看发放结果' }).first()
   await trigger.click()
   await expect(page.getByRole('region', { name: '发放结果详情' })).toBeFocused()
