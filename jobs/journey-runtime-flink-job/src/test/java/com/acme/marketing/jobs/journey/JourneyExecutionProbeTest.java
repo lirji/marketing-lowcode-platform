@@ -55,6 +55,10 @@ class JourneyExecutionProbeTest {
         function.processElement(input(0), context, output);
         assertEquals(3, results.size()); assertTrue(results.stream().noneMatch(KafkaJobOutput::deadLetter));
         for (var result : results) {
+            var wire = JsonCodec.read(result.payload(), com.fasterxml.jackson.databind.JsonNode.class).path("ack");
+            assertEquals(fixture.now.toString(), wire.path("acknowledgedAt").textValue());
+            assertEquals(fixture.probe().issuedAt().toString(), wire.path("probe").path("issuedAt").textValue());
+            assertEquals(fixture.probe().expiresAt().toString(), wire.path("probe").path("expiresAt").textValue());
             var ack = JsonCodec.read(result.payload(), JourneyBundleExecutionAckEvent.class).ack();
             assertTrue(JourneyBundleExecutionAckSigner.verify(keys.getPublic(), ack));
             assertEquals("1".repeat(32), ack.jobId()); assertEquals(2, ack.parallelism());

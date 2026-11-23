@@ -93,8 +93,8 @@ public final class JourneyRuntimeProcessFunction
         KafkaJobOutput result;
         try {
             var ack = probes.acknowledge(plans, message.probe(), Instant.ofEpochMilli(context.timerService().currentProcessingTime()));
-            result = KafkaJobOutput.data(message.partitionKey(), new JourneyBundleExecutionAckEvent(
-                    JourneyBundleExecutionAckEvent.EVENT_TYPE, ack));
+            var event = new JourneyBundleExecutionAckEvent(JourneyBundleExecutionAckEvent.EVENT_TYPE, ack);
+            result = new KafkaJobOutput(message.partitionKey(), JsonCodec.writeWithIsoDates(event), false);
         } catch (RuntimeException unavailable) {
             // 只读探测失败由持久发布任务重试；不向DLT泄漏数据库/密钥异常详情。
             result = KafkaJobOutput.deadLetter(message.partitionKey(), input,
