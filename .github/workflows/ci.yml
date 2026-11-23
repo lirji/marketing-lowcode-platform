@@ -50,6 +50,22 @@ jobs:
       - name: Submit the packaged Journey job and verify committed receipts
         run: ./scripts/verify-journey-checkpoint.sh
 
+  bundle-release:
+    name: Campaign bundle activation and rollback
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: "21", cache: maven}
+      - uses: pnpm/action-setup@v4
+        with: {version: 9.15.9}
+      - uses: actions/setup-node@v4
+        with: {node-version: "24.7.0", cache: pnpm}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @marketing/console exec playwright install --with-deps chromium
+      - run: ./scripts/verify-bundle-release.sh
+
   frontend:
     name: Console lint, unit, build and browser tests
     runs-on: ubuntu-24.04

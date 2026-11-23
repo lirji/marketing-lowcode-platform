@@ -66,6 +66,7 @@ class JourneyProbeCheckpointIT {
             """;
     private static final KeyPair RELEASE = Ed25519.generateKeyPair(), COMPILER = Ed25519.generateKeyPair();
     private static final KeyPair EXECUTION = Ed25519.generateKeyPair(), PARTICIPATION = Ed25519.generateKeyPair();
+    private static final KeyPair RUNTIME_ACK = Ed25519.generateKeyPair();
     private static final Network NETWORK = isolatedNetwork();
     private static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4.11")
             .withNetwork(NETWORK).withNetworkAliases(DB_ALIAS)
@@ -106,7 +107,8 @@ class JourneyProbeCheckpointIT {
         JM.withEnv("KAFKA_BOOTSTRAP_SERVERS", BROKER)
                 .withEnv("JOURNEY_INPUT_TOPIC", INPUT).withEnv("JOURNEY_OUTPUT_TOPIC", OUTPUT)
                 // Flink 的首次周期触发延迟在 min-pause 与 interval 之间随机，两个边界都须移出观测窗口。
-                .withEnv("FLINK_CHECKPOINT_INTERVAL_MS", "600000").withEnv("FLINK_CHECKPOINT_MIN_PAUSE_MS", "600000")
+                .withEnv("FLINK_CHECKPOINT_INTERVAL_MS", Boolean.getBoolean("bundle.acceptance") ? "1500" : "600000")
+                .withEnv("FLINK_CHECKPOINT_MIN_PAUSE_MS", Boolean.getBoolean("bundle.acceptance") ? "1000" : "600000")
                 .withEnv("JOURNEY_RUNTIME_DB_URL", "jdbc:mysql://" + DB_ALIAS + ":3306/" + MYSQL.getDatabaseName()
                         + "?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC")
                 .withEnv("JOURNEY_RUNTIME_DB_USER", MYSQL.getUsername()).withEnv("JOURNEY_RUNTIME_DB_PASSWORD", MYSQL.getPassword())
@@ -129,6 +131,9 @@ class JourneyProbeCheckpointIT {
         r.add("spring.flyway.user", MYSQL::getUsername);
         r.add("spring.flyway.password", MYSQL::getPassword);
         r.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
+        r.add("marketing.runtime-ack.signing-key-id", () -> "runtime-ack");
+        r.add("marketing.runtime-ack.private-key-base64", () -> Base64.getEncoder().encodeToString(RUNTIME_ACK.getPrivate().getEncoded()));
+        r.add("marketing.runtime-ack.public-key-base64", () -> publicKey(RUNTIME_ACK));
         r.add("marketing.release.trusted-key-id", () -> "release-key");
         r.add("marketing.release.public-key-base64", () -> publicKey(RELEASE));
         r.add("marketing.compiler.trusted-key-id", () -> "compiler-key");
@@ -214,6 +219,16 @@ class JourneyProbeCheckpointIT {
         assertEquals(1, acks.get(1).path("subtaskIndex").asInt());
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM mk_journey_dispatch_outbox", Integer.class));
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM mk_journey_runtime_activation", Integer.class));
+    }
+
+    /** 单独运行此场景，以真实周期 checkpoint 推进控制台、准入和定时发布。 */
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfSystemProperty(named = "bundle.acceptance", matches = "true")
+    void appliesAndRollsBackCampaignAsOneVersion() throws Exception {
+        try (var scenario = new BundleReleaseScenario(MYSQL, port, jobId, digest, KAFKA.getBootstrapServers(), INPUT, mapper,
+                RELEASE, COMPILER, PARTICIPATION, EXECUTION, RUNTIME_ACK)) {
+            scenario.verify();
+        }
     }
 
     private JsonNode checked(JourneyProbeHttpFixture fixture, HttpRequest.Builder request) throws Exception {
