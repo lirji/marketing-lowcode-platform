@@ -171,6 +171,12 @@ spec:
             {{- if eq $name "offer-decision-service" }}
             - {name: MARKETING_KAFKA_CONSUMERS_ENABLED, value: "true"}
             - {name: MARKETING_DECISION_IDEMPOTENCY_STORE, value: REDIS}
+            - name: DECISION_DEPLOYMENT_TRUSTED_PUBLIC_KEYS
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: decision-deployment-trusted-public-keys, optional: true}}
+            - name: DECISION_DEPLOYMENT_PIPELINE_TENANT
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: decision-deployment-pipeline-tenant, optional: true}}
+            - name: DECISION_DEPLOYMENT_PIPELINE_ACTOR
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: decision-deployment-pipeline-actor, optional: true}}
             - name: MARKETING_OFFER_SIGNING_KEY_ID
               valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: offer-signing-key-id}}
             - name: MARKETING_OFFER_PRIVATE_KEY_BASE64

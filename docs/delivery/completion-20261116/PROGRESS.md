@@ -904,3 +904,4 @@
 - 完整 Decision 47 项、合同 64 项及依赖回归通过（s11g6b3d-modules.log），10 项架构检查通过（s11g6b3d-final-gates.log）。增加真实 head 更新故障，验证历史插入回滚后可重试成功；最终 2 项数据库联合测试及 4 项清单测试通过并重打包（s11g6b3d-rollback.log、s11g6b3d-package-final.log）。
 - 可执行 JAR 签发/验签及时间/位置/内容边界、4 项登记客户端成功/拒绝/未知结果恢复测试和 actionlint 通过。Hygiene 最终无阻断，事务已复核锁与回滚、无网络副作用，仓库未配置规范格式化工具。真实环境登记仍需受保护部署环境、实际观测和机器身份；此时 GitHub 仓库已配置 Environment 数为 0。没有实际部署或写共享数据。
 - 下一片为 Decision 逐副本执行回执，与本站当前部署位置、活动指令、实际求值/准入能力关联。应用门禁与 Control 闭环继续待实现；当前流水线登记成功不得推进业务指针。
+- 常规 Compose 和 Helm 模板已将流水线租户、actor 与验签公钥仅注入 Decision，三项默认关闭。四种 Compose 模型、Helm lint/渲染、Prometheus 规则及 Python 回归通过（s11g6b3d-render.log）；实际 env 覆盖值和三份可选 Secret 引用已检查。登记客户端在失败分支释放响应，四项复验通过。

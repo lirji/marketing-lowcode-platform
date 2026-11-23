@@ -6,6 +6,8 @@
 
 同一 Secret 还需包含 `kafka-sasl-jaas-config`、`offer-signing-key-id`、`offer-signing-private-key-base64`、`offer-signing-public-key-base64`、`release-signing-key-id`、`release-signing-private-key-base64`、`release-signing-public-key-base64`、`compiler-signing-key-id`、`compiler-signing-private-key-base64`、`compiler-signing-public-key-base64`、`runtime-ack-signing-key-id`、`runtime-ack-signing-private-key-base64`、`runtime-ack-signing-public-key-base64`、`routing-secret`、`provider-hmac-secret` 和 `risk-platform-bearer-token`。风控 token 必须属于营销服务账号、面向 risk evaluation audience，并具有 `risk.evaluate` 权限。轮换窗口可选提供 `offer-trusted-public-keys`、`release-trusted-public-keys`、`compiler-trusted-public-keys`、`runtime-ack-trusted-public-keys`，格式为逗号、分号或换行分隔的 `key-id=base64-x509-public-key`。先发布包含新旧公钥的信任集，再切换签名私钥，最后在所有旧制品与 token 过期后移除旧公钥。
 
+Decision 启用部署清单登记时，在同一 Secret 中同时提供 `decision-deployment-trusted-public-keys`、`decision-deployment-pipeline-tenant`、`decision-deployment-pipeline-actor`。三项仅注入 Decision，清单签发私钥由部署流水线持有。
+
 签名私钥建议由 KMS/HSM adapter 替换文件型私钥；当前 Secret 接口用于 production-candidate 集成。不要把明文 values 提交到 Git。模板按职责只向 Compiler 注入 compiler 私钥、向 Control 注入 release 私钥、向 Decision 注入 offer 与 runtime ACK 私钥；Control 与 Decision 只获得 compiler 公钥，Control 只获得 runtime ACK 公钥，Benefit 只获得 offer 公钥。
 
 ```bash
