@@ -7,7 +7,7 @@
 - 审计证据：`/Users/liruijun/.local/share/marketing-audits/20261116-completeness/`；Docker 启动与恢复证据：`/Users/liruijun/.local/share/marketing-deployments/20261116-start/`。
 - 规范：`~/.codex/architecture-standards.md` 业务建模、持久化、接口契约、并发安全；`personal-tech-stack.md` 并发、线程池、日志、状态机；engineering-workflows/backend-implementation/continue-approved-delivery/task-git-delivery。前端、Runtime 专项随切片读取。
 
-## 当前状态（2026-11-23，持续执行）
+## 前序交付与本机部署记录（截至 2026-11-23 本轮开始前）
 - 用户已确认同一活动组合整体生效/回滚，并要求继续流程；会员/画像优先Commerce、交易证据优先交易中心、认证Auth的方向进入增量接入设计。具体技术合同和机器凭据仍按真实系统核对，不再重复询问来源选型。当前分支 `feat/activity-release-bundles` 基于 `d57a572`，S11e/f/g1–g4a已交付，g4b运行端slot保护精确CI通过，g5a Flink固定参与执行本地验证通过，继续真实准入与整体应用闭环；设计与切片见 [活动组合增量设计](ATOMIC_RELEASE_DESIGN.md)。
 - 先执行依赖齐备的S11e不可变组合准备与成员发布保护，再推进运行端和整体切换；上游缺少机器快照/主体映射的部分保留依赖状态。当前未修改其他仓库、未部署或迁移共享库。文档提交 `d57a572` 的CI `44095478630` 已核实三项SUCCESS，原pending记录失效。
 - S01–S05已完成；S06–S13仍按下表保留未完成范围。S12c–S12q已交付；上一轮已部署产品提交 `dbe268b5ed25004c5ee35af171ceb147e2509e55` 已正常快进合入并推送main，精确CI `44092826351` 的Java/合同/架构、前端、Compose/Helm三项全部通过。该阶段分支为 `fix/asset-preview-reads`，其后交付回执仅改文档，运行制品仍固定该产品提交。
@@ -17,9 +17,11 @@
 - 上一轮部署可见结果：活动/首页/运营/资产的静态预览不显示假业务数据或旧缓存，资产刷新不能绕过读取门禁；OIDC身份范围变化、退出与过期清理旧请求/缓存/草稿，旧令牌401不退出已更新令牌，远端退出失败能恢复登录页。本机仍为DEV认证，真实IdP联调未验证。
 - 2026-11-23 恢复核验：g6b3b 已正常合入并推送 main，精确提交 323688e 的 CI 44143684715 三项通过。S11g6b3c 真实 checkpoint 首验通过，后续结果及恢复顺序见文末。
 
-## 当前优先交付：活动组合发布
+## 当前交付结果：活动组合发布
 
 用户要求先完成 S11g–i。基线 main/846b9be，复用 feat/activity-release-bundles。验收依次为逐副本精确执行取证、Journey 与 Decision 联合验证及原子准入切换、Control 可恢复操作与回滚、控制台真实操作、定时到期重验和暂停恢复。验证使用隔离实例，不触及原共享作业或正式部署。本机 S11g–i 整链验收通过。真实 Chromium 从空活动创建 v1 并激活，两个独立 Decision 进程通过各自签名验证，共享库保存同一参与。排期暂停后到点未执行，恢复后应用 v2，再以序号 3 回滚到 v1；旧参与和新参与随后均由实际 Flink 作业执行固定的定义并写回 Journey。最小部署配置的解析问题已修复。权益资金服务、MySQL 和 Kafka 均运行真实实现，跨仓 SKU 目录使用隔离 HTTP 夹具；XXL-JOB 触发按仓库脚本接入，正式 IdP、密钥、流量观测与生产调度未部署。
+
+产品及验收提交 `57da27a` 的五项 CI 全部通过，覆盖后端全量、控制台、组合端到端、独立 Journey checkpoint 和部署渲染。[CI 运行记录](https://github.com/lirji/marketing-lowcode-platform/actions/runs/45136575100)
 
 重复验收入口 `scripts/verify-bundle-release.sh`。证据目录 `~/.local/share/marketing-delivery/completion-20261116/` 的 `s11hi-real-console/`、`s11ghi-integrated.log`、`s11ghi-guards.log`。全量前端 271 项单测、104 项桌面/手机浏览器回归通过；12 项默认依赖指定环境的用例跳过，真实组合 Chromium 独立运行通过。
 
@@ -36,7 +38,7 @@
 
 旧目标合同存在同路径不同入参的冲突；本轮已查交易中心真实代码：批量查询保留 `/internal/v1/order-referral-evidence:query`，首单补查另有 `/internal/v1/first-order-referral-evidence:query`。两者使用交易原生memberId，营销canonicalSubject适配仍Pending；首次确认支付与目标结算首单口径尚需显式映射。下一步据实际接口修订消费者合同，不把旧规划或源码存在当真实上游联调成功。
 
-恢复入口：先读本节和根CODEX_PROGRESS，再核对Git/main及 `runtime-dbe268b/rollout-state.json`；已有通过证据与产品散列未变化时不重跑部署。按活动组合增量设计继续S11e–i，同时保留S06b/S08真实上游合同依赖；无需用户反复授权继续。
+恢复入口见根 `CODEX_PROGRESS.md`。S11e–i 的实现与隔离验收见“当前交付结果”。本机业务作业在 Docker 重启后为零，旧部署回执仅用于核对历史。S06b/S08 真实上游合同及本表其余项目保留在原计划中。
 
 ## 执行清单与验收
 
@@ -909,5 +911,5 @@
 - Journey c6d5f7a 精确 CI 45130097152 四项通过并正常快进推送 main；本机独立子网适配提交 e68ca2b 于任务分支，随本片交付。共享 Flink REST 仍为空列表，未恢复业务作业。
 - 完整 Decision 47 项、合同 64 项及依赖回归通过（s11g6b3d-modules.log），10 项架构检查通过（s11g6b3d-final-gates.log）。增加真实 head 更新故障，验证历史插入回滚后可重试成功；最终 2 项数据库联合测试及 4 项清单测试通过并重打包（s11g6b3d-rollback.log、s11g6b3d-package-final.log）。
 - 可执行 JAR 签发/验签及时间/位置/内容边界、4 项登记客户端成功/拒绝/未知结果恢复测试和 actionlint 通过。Hygiene 最终无阻断，事务已复核锁与回滚、无网络副作用，仓库未配置规范格式化工具。真实环境登记仍需受保护部署环境、实际观测和机器身份；此时 GitHub 仓库已配置 Environment 数为 0。没有实际部署或写共享数据。
-- 下一片为 Decision 逐副本执行回执，与本站当前部署位置、活动指令、实际求值/准入能力关联。应用门禁与 Control 闭环继续待实现；当前流水线登记成功不得推进业务指针。
+- 该片仅交付部署清单登记。后续逐副本执行回执、应用门禁、Control 与控制台的验收结果见本文件“当前交付结果”。
 - 常规 Compose 和 Helm 模板已将流水线租户、actor 与验签公钥仅注入 Decision，三项默认关闭。四种 Compose 模型、Helm lint/渲染、Prometheus 规则及 Python 回归通过（s11g6b3d-render.log）；实际 env 覆盖值和三份可选 Secret 引用已检查。登记客户端在失败分支释放响应，四项复验通过。
