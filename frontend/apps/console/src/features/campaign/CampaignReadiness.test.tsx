@@ -29,7 +29,7 @@ describe('CampaignCreateReadiness', () => {
   it('lists required campaign assets as not ready without inventing data', () => {
     render(<CampaignCreateReadiness />)
     expect(screen.getByLabelText('活动就绪清单')).toBeInTheDocument()
-    expect(screen.getByText(/权益：已绑定 ACTIVE SKU/)).toBeInTheDocument()
+    expect(screen.getByText(/权益：按活动引用的固定版本和 SKU 核对/)).toBeInTheDocument()
     expect(screen.getByText(/发布：在发布中心编译并暂存本活动定义/)).toBeInTheDocument()
     expect(screen.getAllByText('未就绪').length).toBeGreaterThanOrEqual(5)
   })
@@ -49,19 +49,21 @@ describe('CampaignCreateReadiness', () => {
 })
 
 
-const mocks = vi.hoisted(() => ({ releasePage: vi.fn(), latestDefinition: vi.fn() }))
+const mocks = vi.hoisted(() => ({ releasePage: vi.fn(), latestDefinition: vi.fn(), benefits: vi.fn(), benefitSkus: vi.fn() }))
 vi.mock('../../shared/api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../shared/api/client')>()
   return { ...actual, api: { ...actual.api, demoMode: false, releasePage: mocks.releasePage, latestDefinition: mocks.latestDefinition,
-    benefits: async () => [], benefitSkus: async () => [], audiences: async () => [] } }
+    benefits: mocks.benefits, benefitSkus: mocks.benefitSkus } }
 })
 
 describe('campaign release traversal', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    mocks.benefits.mockResolvedValue([])
+    mocks.benefitSkus.mockResolvedValue([])
     mocks.latestDefinition.mockImplementation((_id, dialect) => Promise.resolve(dialect === 'OFFER_DECISION_DAG' ? definition('offer-42', 3) : dialect === 'JOURNEY_STATE_MACHINE' ? definition('journey-42', 2) : undefined))
   })
-  const wrap = (canRead = true) => <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><AuthStateContext.Provider value={{ ...devAuthState, hasPermission: (p) => canRead || p !== 'release:read' }}><CampaignReadiness campaignId="campaign-42" /></AuthStateContext.Provider></QueryClientProvider>
+  const wrap = (canRead = true) => <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><AuthStateContext.Provider value={{ ...devAuthState, hasPermission: (p) => canRead || p !== 'release:read' }}><CampaignReadiness campaignId="campaign-42" campaignType="STANDARD" /></AuthStateContext.Provider></QueryClientProvider>
 
   it('keeps incomplete results unknown, retains the first page after failure, then finds older matching versions', async () => {
     let fail = true
@@ -70,14 +72,14 @@ describe('campaign release traversal', () => {
       : Promise.resolve({ items: [release('other', 1)], nextCursor: 'manifest-other', hasMore: true, state: null }))
     render(wrap()); const user = userEvent.setup()
     await screen.findByText('发布（尚未核实完整清单）')
-    expect(screen.getByText('待核实')).toBeInTheDocument()
+    expect(screen.getAllByText('待核实')[0]).toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: '继续核对发布清单' }))
     await screen.findByText('next page unavailable')
     expect(screen.getByText('已核对 1 条发布清单')).toBeInTheDocument()
     fail = false
     await user.click(screen.getByRole('button', { name: '重试后续发布清单' }))
     await screen.findByText('发布（已发现对应版本的暂存或激活清单）')
-    await waitFor(() => expect(screen.queryByText('待核实')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('发布（已发现对应版本的暂存或激活清单）').closest('li')).toHaveTextContent('就绪'))
     expect(screen.getByText('已核对 3 条发布清单')).toBeInTheDocument()
     expect(mocks.releasePage).toHaveBeenLastCalledWith({ state: undefined, limit: 25, cursor: 'manifest-other' })
   })
@@ -86,7 +88,20 @@ describe('campaign release traversal', () => {
     render(wrap(false))
     await screen.findByText('发布（缺少 release:read）')
     expect(mocks.releasePage).not.toHaveBeenCalled()
-    expect(screen.getByText('待核实')).toBeInTheDocument()
+    expect(screen.getAllByText('待核实')[0]).toBeInTheDocument()
     expect(screen.queryByText('发布（未在发布中心编译）')).not.toBeInTheDocument()
+  })
+
+  it('keeps another activity’s catalog entries and unresolved snapshot from satisfying readiness', async () => {
+    mocks.latestDefinition.mockImplementation(async (_id, dialect) => dialect === 'OFFER_DECISION_DAG'
+      ? { ...definition('offer-42', 3), graph: { nodes: [{ stableTypeId: 'offer.fixed', config: { benefitDefinitionVersion: 'required-benefit@2', requiredAudienceSnapshotId: 'required-snapshot' } }] } }
+      : null)
+    mocks.benefits.mockResolvedValue([{ benefitId: 'other-benefit', version: 2, status: 'ACTIVE', benefitSkuId: 'active-sku' }])
+    mocks.benefitSkus.mockResolvedValue([{ skuId: 'active-sku', status: 'ACTIVE' }])
+    mocks.releasePage.mockResolvedValue({ items: [], nextCursor: null, hasMore: false, state: null })
+    render(wrap())
+    expect((await screen.findByText(/快照 required-snapshot/)).closest('li')).toHaveTextContent('待核实')
+    await waitFor(() => expect(mocks.benefitSkus).toHaveBeenCalledTimes(1))
+    expect(screen.getByText('权益（待核对本活动引用）').closest('li')).toHaveTextContent('待核实')
   })
 })

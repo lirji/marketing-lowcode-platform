@@ -109,7 +109,7 @@ export function CampaignsPage() {
                 { label: 'Journey 旅程', to: `/designers/journey?campaignId=${encodeURIComponent(item.id)}`, state: { campaignName: item.name } },
               ]} /></div></td>
             </tr>
-            {readyId === item.id && <tr className="readiness-row"><td colSpan={11}><div id={`readiness-${item.id}`}><CampaignReadiness campaignId={item.id} /></div></td></tr>}
+            {readyId === item.id && <tr className="readiness-row"><td colSpan={11}><div id={`readiness-${item.id}`}><CampaignReadiness campaignId={item.id} campaignType={item.campaignType} /></div></td></tr>}
           </Fragment>)}
       </RecordTable>}
     </>}

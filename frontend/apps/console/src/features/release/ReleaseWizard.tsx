@@ -10,7 +10,8 @@ import { useAuth } from '../../shared/auth/useAuth'
 import { releaseScopeKey } from '../../shared/api/useReleasePages'
 import { approvalScopeKey, APPROVAL_STATUS, useApprovalPages } from '../../shared/api/useApprovalPages'
 import { ReleaseState } from '../../shared/api/schemas'
-import type { ApprovalView, ArtifactReference, DefinitionBundle, GraphDefinition, ReleaseView } from '../../shared/api/schemas'
+import type { ApprovalView, ArtifactReference, DefinitionBundle, ReleaseView } from '../../shared/api/schemas'
+import { benefitReferences } from '../../shared/model/offerGraphReferences'
 
 type RuntimeChoice = {
   runtime: 'decision' | 'journey'
@@ -36,14 +37,6 @@ function releaseChoice(dialect: string): RuntimeChoice | undefined {
   if (dialect === 'OFFER_DECISION_DAG') return { runtime: 'decision', format: 'OFFER_POLICY' }
   if (dialect === 'JOURNEY_STATE_MACHINE') return { runtime: 'journey', format: 'JOURNEY_PLAN' }
   return undefined
-}
-
-function benefitReferences(graph?: GraphDefinition): string[] {
-  if (!graph) return []
-  return [...new Set(graph.nodes
-    .filter((node) => node.stableTypeId === 'offer.fixed' || node.stableTypeId === 'offer.percentage')
-    .map((node) => node.config.benefitDefinitionVersion)
-    .filter((value): value is string => Boolean(value?.trim())))]
 }
 
 function problemHint(error: unknown): string {
