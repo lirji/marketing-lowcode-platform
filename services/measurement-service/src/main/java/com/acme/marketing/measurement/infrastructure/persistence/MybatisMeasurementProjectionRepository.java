@@ -35,7 +35,8 @@ public class MybatisMeasurementProjectionRepository implements MeasurementProjec
     @Override public Amounts sumAmounts(String tenantId, String from, String to, String campaignId) {
         return mapper.selectProjectionAmounts(tenantId, from, to, campaignId);
     }
-    @Override public List<SeriesBucket> sumSeries(String tenantId, String from, String to, boolean hourly, String campaignId) {
-        return mapper.selectProjectionSeries(tenantId, from, to, hourly, campaignId);
+    @Override public List<SeriesBucket> sumSeries(String tenantId, String from, String to, boolean hourly,
+            int dayOffsetHours, String campaignId) {
+        return mapper.selectProjectionSeries(tenantId, from, to, hourly, dayOffsetHours, campaignId);
     }
 }

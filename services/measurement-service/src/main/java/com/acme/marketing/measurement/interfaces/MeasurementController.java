@@ -68,8 +68,9 @@ public class MeasurementController {
     /** 时序使用与汇总一致的活动范围并回显，避免客户端误用全量数据。 */
     @GetMapping("/measurements/series")
     public MeasurementService.Series series(@RequestParam Instant from, @RequestParam Instant to,
-            @RequestParam String granularity, @RequestParam(required = false) String campaignId) {
-        return service.series(from, to, granularity, campaignId);
+            @RequestParam String granularity, @RequestParam(required = false) String campaignId,
+            @RequestParam(required = false) String dayOffset) {
+        return service.series(from, to, granularity, campaignId, dayOffset);
     }
 
     @PostMapping("/measurements/attribution:recompute")

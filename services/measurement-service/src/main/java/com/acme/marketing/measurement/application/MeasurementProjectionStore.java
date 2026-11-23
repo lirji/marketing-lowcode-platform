@@ -7,6 +7,8 @@ import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.error.ConflictException;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.TreeMap;
@@ -77,15 +79,17 @@ public class MeasurementProjectionStore {
     }
 
     /** 按小时或自然日汇总看板时序指标。 */
-    public Map<Instant, SeriesAmounts> series(String tenantId, Instant from, Instant to, boolean hourly, String campaignId) {
+    public Map<Instant, SeriesAmounts> series(String tenantId, Instant from, Instant to, boolean hourly,
+            ZoneOffset dayOffset, String campaignId) {
         Map<Instant, SeriesAmounts> points = new TreeMap<>();
-        repository.sumSeries(tenantId, format(from), format(to), hourly, campaignId).forEach(row -> {
-            Instant at = Instant.parse(hourly
-                    ? row.bucketValue() + ":00:00.000000000Z"
-                    : row.bucketValue() + "T00:00:00.000000000Z");
+        var rows = repository.sumSeries(tenantId, format(from), format(to), hourly,
+                dayOffset.getTotalSeconds() / 3600, campaignId);
+        for (var row : rows) {
+            Instant at = hourly ? Instant.parse(row.bucketValue() + ":00:00Z")
+                    : LocalDate.parse(row.bucketValue()).atStartOfDay(dayOffset).toInstant();
             points.put(at, new SeriesAmounts(row.revenue().longValueExact(), row.cost().longValueExact(),
                     row.conversions().longValueExact()));
-        });
+        }
         return Map.copyOf(points);
     }
 

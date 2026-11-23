@@ -144,13 +144,14 @@ describe('AnalyticsPage', () => {
     expect(screen.getByRole('combobox', { name: '活动筛选' })).toBeDisabled()
     expect(mocks.campaigns).toHaveBeenCalledTimes(1)
   })
-  it('labels recompute as tenant-wide and refreshes the report after success', async () => {
+  it('explains that tenant-wide attribution recompute updates attribution details', async () => {
     fixture(); await expectReady()
     const run = screen.getByRole('button', { name: '重算全部归因' })
     expect(run).toHaveAttribute('title', expect.stringContaining('不受页面日期窗口限制'))
     await userEvent.click(run)
     expect(await screen.findByText('当前租户归因已重算')).toBeInTheDocument()
-    await waitFor(() => expect(mocks.dashboard).toHaveBeenCalledTimes(2))
+    expect(screen.getByText(/报告仍按事件金额汇总/)).toBeInTheDocument()
+    expect(mocks.dashboard).toHaveBeenCalledTimes(1)
   })
 })
 async function expectReady() {

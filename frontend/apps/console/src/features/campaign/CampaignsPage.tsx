@@ -5,7 +5,7 @@ import { Select } from '../../components/Select'
 import { Fragment, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Filter, Plus } from 'lucide-react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { z } from 'zod'
 import { api } from '../../shared/api/client'
 import type { Campaign } from '../../shared/model/types'
@@ -107,7 +107,7 @@ export function CampaignsPage() {
               ] : [
                 { label: 'Offer 规则', to: `/designers/offer?campaignId=${encodeURIComponent(item.id)}`, state: { campaignName: item.name } },
                 { label: 'Journey 旅程', to: `/designers/journey?campaignId=${encodeURIComponent(item.id)}`, state: { campaignName: item.name } },
-              ]} /></div></td>
+              ]} />{auth.hasPermission('measurement:read') && <Link className="text-button" to={`/analytics?campaignId=${encodeURIComponent(item.id)}`} aria-label={`查看${item.name}的报表`}>查看报表</Link>}</div></td>
             </tr>
             {readyId === item.id && <tr className="readiness-row"><td colSpan={11}><div id={`readiness-${item.id}`}><CampaignReadiness campaignId={item.id} campaignType={item.campaignType} /></div></td></tr>}
           </Fragment>)}

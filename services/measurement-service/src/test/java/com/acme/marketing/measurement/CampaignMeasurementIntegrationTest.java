@@ -80,6 +80,41 @@ class CampaignMeasurementIntegrationTest extends MySqlIntegrationTest {
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM information_schema.statistics WHERE table_schema=database() AND table_name='mk_dashboard_projection_delta' AND index_name='ix_dashboard_projection_campaign_range' AND seq_in_index=2 AND column_name='campaign_id'", Integer.class));
     }
 
+    @Test void beijingDayBucketsSplitAtMidnightAndKeepTheSameInclusiveExclusiveWindow() throws Exception {
+        Instant midnight = Instant.parse("2026-11-16T16:00:00Z");
+        Instant from = midnight.minusMillis(1);
+        Instant to = midnight.plusSeconds(86_400);
+        seed(tenant, "a", "before-beijing-midnight", 1, 100, 10, from);
+        seed(tenant, "a", "at-beijing-midnight", 1, 200, 20, midnight);
+        seed(tenant, "a", "before-window-end", 1, 300, 30, to.minusMillis(1));
+        seed(tenant, "a", "at-window-end", 1, 1_000, 100, to);
+        seed(tenant, "b", "other-campaign", 1, 2_000, 200, midnight);
+        String window = "?from=" + from + "&to=" + to + "&campaignId=a";
+        String series = "series" + window + "&granularity=day";
+        var response = send(series + "&dayOffset=%2B08%3A00", "measurement:read");
+        assertEquals(200, response.statusCode(), response.body());
+        JsonNode beijing = mapper.readTree(response.body());
+        assertEquals("+08:00", beijing.path("dayOffset").asString());
+        assertEquals("a", beijing.path("campaignId").asString());
+        var points = beijing.path("points");
+        assertEquals(2, points.size());
+        assertEquals(midnight.minusSeconds(86_400), Instant.parse(points.get(0).path("at").asString()));
+        assertEquals(midnight, Instant.parse(points.get(1).path("at").asString()));
+        assertEquals(100, points.get(0).path("revenueMinor").asLong());
+        assertEquals(500, points.get(1).path("revenueMinor").asLong());
+        assertEquals(50, points.get(1).path("costMinor").asLong());
+        assertEquals(2, points.get(1).path("conversions").asLong());
+        var dashboard = mapper.readTree(send("dashboard" + window, "measurement:read").body());
+        assertEquals(600, dashboard.path("attributedRevenueMinor").asLong());
+
+        var utc = mapper.readTree(send(series, "measurement:read").body());
+        assertEquals("Z", utc.path("dayOffset").asString());
+        assertEquals(300, utc.path("points").get(0).path("revenueMinor").asLong());
+        assertEquals(300, utc.path("points").get(1).path("revenueMinor").asLong());
+        assertEquals(400, send(series + "&dayOffset=%2B09%3A00", "measurement:read").statusCode());
+        assertEquals(400, send("series" + window + "&granularity=hour&dayOffset=Z", "measurement:read").statusCode());
+    }
+
     private void seed(String tenantId, String campaignId, String id, long count, long revenue, long cost, Instant at) {
         projection.apply(new MeasurementProjectionDelta("MEASUREMENT_PROJECTION_DELTA", id, tenantId, id, id, 1,
                 count == 1 ? MeasurementProjectionDelta.Operation.APPLY : MeasurementProjectionDelta.Operation.REVERSE,
@@ -94,7 +129,11 @@ class CampaignMeasurementIntegrationTest extends MySqlIntegrationTest {
     private HttpResponse<String> send(String resource, String campaignId, String permissions) throws Exception {
         String query = "?from=" + FROM + "&to=" + TO + (resource.equals("series") ? "&granularity=hour" : "")
                 + (campaignId == null ? "" : "&campaignId=" + URLEncoder.encode(campaignId, StandardCharsets.UTF_8));
-        var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/v1/measurements/" + resource + query))
+        return send(resource + query, permissions);
+    }
+
+    private HttpResponse<String> send(String path, String permissions) throws Exception {
+        var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/v1/measurements/" + path))
                 .header("X-Dev-Tenant-Id", tenant).header("X-Dev-Organization-Ids", "test-org").header("X-Dev-Shop-Ids", "test-shop")
                 .header("X-Dev-Actor-Id", "tester").header("X-Dev-Permissions", permissions).GET().build();
         return http.send(request, HttpResponse.BodyHandlers.ofString());

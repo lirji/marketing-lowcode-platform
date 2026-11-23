@@ -19,7 +19,7 @@ test('dashboard shows stale data age and suppresses unverified amounts without l
   await expect(page.getByText('¥0.01', { exact: true })).toHaveCount(0)
   await expect(page.getByText('已加载活动', { exact: true })).toBeVisible()
   await expect(page.getByText(/在线活动|增长脉搏稳定|实时经营/)).toHaveCount(0)
-  await expect(page.getByLabel('今日小时归因收入')).toHaveCount(0)
+  await expect(page.getByLabel('今日小时事件收入')).toHaveCount(0)
   await page.screenshot({ path: info.outputPath('dashboard-data-age.png'), fullPage: true })
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width + 1)
   expect(errors).toEqual([])

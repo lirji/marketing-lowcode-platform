@@ -397,6 +397,10 @@
         SELECT
             <choose>
                 <when test="hourly">SUBSTRING(occurred_at, 1, 13)</when>
+                <!-- 只改变日分桶表达式，窗口条件继续走 UTC 范围索引。固定偏移无需 MySQL 时区表。 -->
+                <when test="dayOffsetHours != 0">
+                    DATE(DATE_ADD(CAST(LEFT(occurred_at, 19) AS DATETIME), INTERVAL #{dayOffsetHours} HOUR))
+                </when>
                 <otherwise>SUBSTRING(occurred_at, 1, 10)</otherwise>
             </choose> AS bucketValue,
             COALESCE(SUM(CAST(revenue_delta_minor AS DECIMAL(65, 0))), 0) AS revenue,

@@ -251,6 +251,11 @@ public class MeasurementService {
 
     /** 聚合与补零共享活动条件，不能将全量时间序列附到已筛选的汇总下。 */
     public Series series(Instant from, Instant to, String granularity, String campaignId) {
+        return series(from, to, granularity, campaignId, null);
+    }
+
+    /** 日序列可选北京时间零点。沿用原请求窗口和活动过滤，旧调用继续按 UTC 分桶。 */
+    public Series series(Instant from, Instant to, String granularity, String campaignId, String dayOffset) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("measurement:read");
         if (from == null || to == null || !from.isBefore(to)
@@ -265,10 +270,11 @@ public class MeasurementService {
         }
         String filter = MeasurementQueryFilter.campaignId(campaignId);
         boolean hourly = parsed == Granularity.HOUR;
+        ZoneOffset offset = seriesDayOffset(hourly, dayOffset);
         Map<Instant, MeasurementProjectionStore.SeriesAmounts> totals = projection.series(
-                scope.tenantId().value(), from, to, hourly, filter);
+                scope.tenantId().value(), from, to, hourly, offset, filter);
         Instant cursor = hourly ? from.truncatedTo(ChronoUnit.HOURS)
-                : from.atZone(ZoneOffset.UTC).toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant();
+                : from.atOffset(offset).toLocalDate().atStartOfDay(offset).toInstant();
         List<SeriesPoint> points = new ArrayList<>();
         while (cursor.isBefore(to)) {
             MeasurementProjectionStore.SeriesAmounts amounts = totals.getOrDefault(cursor,
@@ -276,7 +282,17 @@ public class MeasurementService {
             points.add(new SeriesPoint(cursor, amounts.revenueMinor(), amounts.costMinor(), amounts.conversions()));
             cursor = hourly ? cursor.plus(1, ChronoUnit.HOURS) : cursor.plus(1, ChronoUnit.DAYS);
         }
-        return new Series(points, filter);
+        return new Series(points, filter, hourly ? null : offset.getId());
+    }
+
+    private static ZoneOffset seriesDayOffset(boolean hourly, String dayOffset) {
+        if (dayOffset == null) return ZoneOffset.UTC;
+        if (hourly) throw new IllegalArgumentException("dayOffset is available only for day granularity");
+        return switch (dayOffset) {
+            case "Z" -> ZoneOffset.UTC;
+            case "+08:00" -> ZoneOffset.ofHours(8);
+            default -> throw new IllegalArgumentException("dayOffset must be Z or +08:00");
+        };
     }
 
     public AttributionResult attribute(String conversionEventId, AttributionPolicy policy, long windowSeconds) {
@@ -555,7 +571,9 @@ public class MeasurementService {
             Map<String, BigDecimal> touchCredits, long revenueMinor, Instant calculatedAt) {
         public AttributionResult { touchCredits = Map.copyOf(touchCredits); }
     }
-    public record Series(List<SeriesPoint> points, String campaignId) { public Series { points = List.copyOf(points); } }
+    public record Series(List<SeriesPoint> points, String campaignId, String dayOffset) {
+        public Series { points = List.copyOf(points); }
+    }
     public record SeriesPoint(Instant at, long revenueMinor, long costMinor, long conversions) { }
     public record AttributionRecomputeResult(int conversions, int credits, Instant completedAt) { }
     public record SrmReport(String experimentId, String version, long sampleSize, Map<String, Long> observed,

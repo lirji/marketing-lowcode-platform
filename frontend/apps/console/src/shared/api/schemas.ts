@@ -244,9 +244,9 @@ export const killSwitchViewSchema = z.object({
 
 export const dashboardSchema = z.object({
   campaignId: z.string().optional(),
-  counts: z.record(z.string(), z.number()).default({}),
-  attributedRevenueMinor: z.number().default(0),
-  fundingCostMinor: z.number().default(0),
+  counts: z.record(z.string(), z.number()),
+  attributedRevenueMinor: z.number(),
+  fundingCostMinor: z.number(),
   roi: z.union([z.number(), z.string()]).optional(),
   completeThrough: z.string().optional(),
   lag: z.object({ seconds: z.number() }).optional(),
@@ -392,6 +392,7 @@ export const seriesPointSchema = z.object({
 })
 export const seriesSchema = z.object({
   campaignId: z.string().optional(),
+  dayOffset: z.enum(['Z', '+08:00']).nullish(),
   points: z.array(seriesPointSchema).default([]),
 })
 export type SeriesPoint = z.infer<typeof seriesPointSchema>

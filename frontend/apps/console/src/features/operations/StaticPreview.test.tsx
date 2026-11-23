@@ -44,7 +44,7 @@ describe('static preview has no business evidence', () => {
     expect(within(metrics).getAllByText('—')).toHaveLength(4)
     expect(screen.getByText('收入序列需要连接服务')).toBeInTheDocument()
     expect(screen.getByText('发布状态需要连接服务')).toBeInTheDocument()
-    expect(screen.queryByLabelText('今日小时归因收入')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('今日小时事件收入')).not.toBeInTheDocument()
     expect(screen.queryByRole('table', { name: 'Cell 就绪度' })).not.toBeInTheDocument()
     expect(screen.queryByText(/9,876,543|998,877|旧缓存活动|1842/)).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: '查看活动入口' })).toHaveAttribute('href', '/campaigns')

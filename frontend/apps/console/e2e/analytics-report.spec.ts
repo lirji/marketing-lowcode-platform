@@ -8,11 +8,15 @@ test('analytics exports the selected report and recovers from query failure', as
   await page.route('**/api/v1/**', route => route.fulfill({ json: [] }))
   await page.route('**/api/v1/client-errors', route => route.fulfill({ status: 204 }))
   let failing = false
+  let legacySeries = false
   const requests: URL[] = []
   await page.route('**/api/v1/measurements/**', async route => {
     const url = new URL(route.request().url()); requests.push(url)
     if (failing) { await route.fulfill({ status: 503, json: { status: 503, title: 'Unavailable', detail: '隔离故障验证', type: 'about:blank' } }); return }
-    await route.fulfill({ json: url.pathname.endsWith('/dashboard') ? { ...fixture, completeThrough: url.searchParams.get('to') } : { points: [{ at: url.searchParams.get('from'), revenueMinor: 12345, costMinor: 67, conversions: 3 }] } })
+    await route.fulfill({ json: url.pathname.endsWith('/dashboard')
+      ? { ...fixture, completeThrough: url.searchParams.get('to') }
+      : { dayOffset: legacySeries ? undefined : url.searchParams.get('dayOffset'),
+          points: [{ at: url.searchParams.get('from'), revenueMinor: 12345, costMinor: 67, conversions: 3 }] } })
   })
   await page.goto('/analytics')
   await expect(page.getByRole('button', { name: '导出当前报告' })).toBeEnabled()
@@ -21,13 +25,16 @@ test('analytics exports the selected report and recovers from query failure', as
   expect(requests[0].searchParams.get('to')).toBe(requests[1].searchParams.get('to'))
   await page.getByRole('button', { name: '30 天', exact: true }).click()
   await expect(page.getByRole('button', { name: '导出当前报告' })).toBeEnabled()
+  expect(requests.find(url => url.searchParams.get('granularity') === 'day')?.searchParams.get('dayOffset')).toBe('+08:00')
+  await expect(page.getByText(/按北京时间自然日分桶/)).toBeVisible()
   const downloadEvent = page.waitForEvent('download')
   await page.getByRole('button', { name: '导出当前报告' }).click()
   const download = await downloadEvent
   const csv = await readFile((await download.path())!, 'utf8')
-  expect(csv).toContain('"归因收入","12345","分"')
+  expect(csv).toContain('"事件收入","12345","分"')
   expect(csv).toContain('"\'=unsafe()"')
   expect(csv).toContain('"时间粒度","day"')
+  expect(csv).toContain('按北京时间自然日分桶')
   expect(download.suggestedFilename()).toMatch(/^marketing-report-.*\.csv$/)
   await page.screenshot({ path: info.outputPath('analytics-report.png'), fullPage: true })
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width + 1)
@@ -38,8 +45,10 @@ test('analytics exports the selected report and recovers from query failure', as
   await expect(page.getByText('123.45', { exact: true })).toHaveCount(0)
   await page.screenshot({ path: info.outputPath('analytics-failure.png') })
   failing = false
+  legacySeries = true
   await page.getByRole('button', { name: '刷新数据' }).click()
   await expect(page.getByRole('button', { name: '导出当前报告' })).toBeEnabled()
+  await expect(page.getByText(/按 UTC 自然日分桶/)).toBeVisible()
   await expect(page.getByRole('button', { name: '7 天', exact: true })).toHaveAttribute('aria-pressed', 'true')
 })
 
@@ -80,8 +89,8 @@ test('analytics reads and downloads the actual local measurement report', async 
   await page.getByRole('button', { name: '导出当前报告' }).click()
   const download = await downloadEvent
   const csv = await readFile((await download.path())!, 'utf8')
-  expect(csv).toContain(`"归因收入","${dashboard.body.attributedRevenueMinor}","分"`)
-  expect(csv).toContain(`"补贴成本","${dashboard.body.fundingCostMinor}","分"`)
+  expect(csv).toContain(`"事件收入","${dashboard.body.attributedRevenueMinor}","分"`)
+  expect(csv).toContain(`"事件补贴成本","${dashboard.body.fundingCostMinor}","分"`)
   const pointCount = (series.body.points as unknown[]).length
   expect(csv.match(/"时间序列"/g)?.length ?? 0).toBe(pointCount * 3)
   expect(errors).toEqual([])
@@ -96,16 +105,18 @@ test('campaign selection requires a server-confirmed scope and preserves it in t
   await page.route('**/api/v1/**', route => route.fulfill({ json: [] }))
   await page.route('**/api/v1/client-errors', route => route.fulfill({ status: 204 }))
   await page.route('**/api/v1/campaigns', route => route.fulfill({ json: [{ id: 'cmp-a', name: '活动甲', objective: '隔离筛选', status: 'DRAFT', createdAt: '2026-11-17T00:00:00Z' }, { id: 'cmp-b', name: '活动乙', objective: '旧服务拒绝', status: 'DRAFT', createdAt: '2026-11-17T00:00:00Z' }] }))
+  const requestedScopes: string[] = []
   await page.route('**/api/v1/measurements/**', route => {
     const url = new URL(route.request().url()), selected = url.searchParams.get('campaignId') || ''
+    requestedScopes.push(selected)
     const echo = selected === 'cmp-b' ? {} : { campaignId: selected }
     return route.fulfill({ json: url.pathname.endsWith('/dashboard') ? { ...fixture, ...echo, completeThrough: url.searchParams.get('to'), attributedRevenueMinor: selected ? 100 : 12345 } : { points: [], ...echo } })
   })
-  await page.goto('/analytics')
-  await expect(page.getByRole('button', { name: '导出当前报告' })).toBeEnabled()
-  await page.getByRole('combobox', { name: '活动筛选' }).click()
-  await page.getByRole('option', { name: '活动甲 · cmp-a' }).click()
+  await page.goto('/campaigns')
+  await page.getByRole('link', { name: '查看活动甲的报表' }).click()
+  await expect(page).toHaveURL(/\/analytics\?campaignId=cmp-a$/)
   await expect(page.getByText('1.00', { exact: true })).toBeVisible()
+  expect(requestedScopes).toEqual(['cmp-a', 'cmp-a'])
   const downloadEvent = page.waitForEvent('download')
   await page.getByRole('button', { name: '导出当前报告' }).click()
   expect(await readFile((await (await downloadEvent).path())!, 'utf8')).toContain('"活动","cmp-a"')
@@ -116,6 +127,14 @@ test('campaign selection requires a server-confirmed scope and preserves it in t
   await expect(page.getByRole('button', { name: '导出当前报告' })).toBeDisabled()
   await page.getByRole('combobox', { name: '活动筛选' }).click()
   await page.getByRole('option', { name: '全部活动' }).click()
+  await expect(page.getByText('123.45', { exact: true })).toBeVisible()
+  const requestsBeforeUnavailable = requestedScopes.length
+  await page.goto('/analytics?campaignId=unavailable')
+  await expect(page.getByText('当前无法查看此活动报告')).toBeVisible()
+  await expect(page.getByRole('button', { name: '导出当前报告' })).toBeDisabled()
+  await expect(page.getByText('123.45', { exact: true })).toHaveCount(0)
+  expect(requestedScopes).toHaveLength(requestsBeforeUnavailable)
+  await page.getByRole('button', { name: '查看全部活动报告' }).click()
   await expect(page.getByText('123.45', { exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width + 1)
 })
@@ -151,7 +170,7 @@ test('actual campaign filtering excludes another campaign from MySQL totals and 
   const download = await downloadEvent
   const csv = await readFile((await download.path())!, 'utf8')
   expect(csv).toContain(`"活动","${first.id}"`)
-  expect(csv).toContain('"归因收入","10000","分"')
+  expect(csv).toContain('"事件收入","10000","分"')
   expect(csv).not.toContain(second.id)
   await download.saveAs(info.outputPath('filtered-actual-report.csv'))
   await page.screenshot({ path: info.outputPath('analytics-campaign-live.png'), fullPage: true })

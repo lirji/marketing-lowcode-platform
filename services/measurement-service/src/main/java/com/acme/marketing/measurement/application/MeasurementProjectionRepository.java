@@ -23,7 +23,8 @@ public interface MeasurementProjectionRepository {
     Amounts sumAmounts(String tenantId, String from, String to, String campaignId);
 
     /** 按小时或自然日汇总时序数据。 */
-    List<SeriesBucket> sumSeries(String tenantId, String from, String to, boolean hourly, String campaignId);
+    List<SeriesBucket> sumSeries(String tenantId, String from, String to, boolean hourly, int dayOffsetHours,
+            String campaignId);
 
     record StoredDelta(String payloadHash, String topic, Integer partition, Long offset) {
         /** 是否来自具有完整坐标的 Kafka 记录。 */

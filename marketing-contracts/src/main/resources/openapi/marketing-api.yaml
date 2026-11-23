@@ -1223,11 +1223,12 @@ paths:
     get:
       tags: [Measurement]
       operationId: getMeasurementSeries
-      description: Requires measurement:read. Uses the same tenant/time/campaign predicate as dashboard, with zero-filled hour or UTC calendar-day buckets and a maximum range of 366 days. Returns campaignId echo. Neither endpoint filters by attribution policy.
+      description: Requires measurement:read. Uses the same tenant/time/campaign predicate as dashboard, with zero-filled hour or calendar-day buckets and a maximum range of 366 days. Daily buckets default to UTC and optionally use the Beijing business offset. The response echoes campaignId and the applied dayOffset for daily buckets.
       parameters:
         - {in: query, name: from, required: true, schema: {type: string, format: date-time}}
         - {in: query, name: to, required: true, schema: {type: string, format: date-time}}
         - {in: query, name: granularity, required: true, schema: {type: string, enum: [hour, day]}}
+        - {in: query, name: dayOffset, required: false, description: Only valid for day granularity. Encode the plus sign in +08:00., schema: {type: string, enum: ['Z', '+08:00']}}
         - {$ref: '#/components/parameters/MeasurementCampaignFilter'}
       responses:
         '200': {description: Filtered series including empty buckets, content: {application/json: {schema: {$ref: '#/components/schemas/MeasurementSeries'}}}}
@@ -2231,6 +2232,7 @@ components:
       required: [campaignId, points]
       properties:
         campaignId: {type: string, description: Applied campaign filter; empty means all campaigns}
+        dayOffset: {type: [string, 'null'], enum: ['Z', '+08:00', null], description: Calendar day offset or null for hourly data}
         points:
           type: array
           items:

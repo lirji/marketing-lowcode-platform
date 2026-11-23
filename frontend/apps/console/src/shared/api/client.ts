@@ -283,7 +283,9 @@ export const api = {
   dashboard: (from: string, to: string, campaignId?: string) =>
     request(`/api/v1/measurements/dashboard?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${campaignId ? `&campaignId=${encodeURIComponent(campaignId)}` : ''}`, undefined, (value) => parseWith(dashboardSchema, value)),
   series: (from: string, to: string, granularity: 'hour' | 'day', campaignId?: string) =>
-    request(`/api/v1/measurements/series?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&granularity=${granularity}${campaignId ? `&campaignId=${encodeURIComponent(campaignId)}` : ''}`, undefined, (value) => parseWith(seriesSchema, value)),
+    request(`/api/v1/measurements/series?${new URLSearchParams({ from, to, granularity,
+      ...(campaignId ? { campaignId } : {}), ...(granularity === 'day' ? { dayOffset: '+08:00' } : {}),
+    })}`, undefined, (value) => parseWith(seriesSchema, value)),
   recomputeAttribution: () =>
     request('/api/v1/measurements/attribution:recompute', { method: 'POST', headers: commandHeaders(), body: JSON.stringify({}) }, (value) => parseWith(recomputeSchema, value)),
   audiences: () => request('/api/v1/audiences', undefined, (value) => zArray(audienceViewSchema, value)),

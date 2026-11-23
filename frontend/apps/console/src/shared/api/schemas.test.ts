@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { isReferralSimulation, parseSimulationResult, referralParticipantPageSchema } from './schemas'
+import { dashboardSchema, isReferralSimulation, parseSimulationResult, referralParticipantPageSchema } from './schemas'
+
+describe('measurement dashboard', () => {
+  it('preserves explicit zero values and rejects missing event amounts', () => {
+    const metrics = { counts: {}, attributedRevenueMinor: 0, fundingCostMinor: 0 }
+    expect(dashboardSchema.parse(metrics)).toEqual(metrics)
+    expect(dashboardSchema.safeParse({ ...metrics, attributedRevenueMinor: undefined }).success).toBe(false)
+    expect(dashboardSchema.safeParse({ ...metrics, fundingCostMinor: undefined }).success).toBe(false)
+  })
+})
 
 describe('simulation result union', () => {
   it('keeps the old offer dialect parseable', () => {

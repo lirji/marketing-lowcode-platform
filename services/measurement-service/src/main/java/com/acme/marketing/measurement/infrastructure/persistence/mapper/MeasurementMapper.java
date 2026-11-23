@@ -86,5 +86,6 @@ public interface MeasurementMapper {
             @Param("from") String from, @Param("to") String to, @Param("campaignId") String campaignId);
     List<MeasurementProjectionRepository.SeriesBucket> selectProjectionSeries(
             @Param("tenantId") String tenantId, @Param("from") String from, @Param("to") String to,
-            @Param("hourly") boolean hourly, @Param("campaignId") String campaignId);
+            @Param("hourly") boolean hourly, @Param("dayOffsetHours") int dayOffsetHours,
+            @Param("campaignId") String campaignId);
 }
