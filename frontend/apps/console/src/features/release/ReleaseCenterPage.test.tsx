@@ -1,3 +1,4 @@
+import { MemoryRouter } from 'react-router-dom'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -17,7 +18,7 @@ const release = (id: string, generation: number, status: string): ReleaseView =>
   environment: 'test', cell: 'cell-a', runtime: 'journey', namespace: 'main', artifacts: [], signature: 'signed' }, state: status, readyReplicas: 1, readyCapacity: 1 })
 const candidate = (generation = 4): RollbackCandidate => ({ manifestId: `target-${generation}`, generation, expiresAt: '2026-12-01T00:00:00Z', artifacts: [] })
 function renderPage() {
-  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><ReleaseCenterPage /></QueryClientProvider>)
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><MemoryRouter><ReleaseCenterPage /></MemoryRouter></QueryClientProvider>)
 }
 async function openRollback(id = 'active-9') {
   const user = userEvent.setup()
@@ -174,7 +175,7 @@ describe('ReleaseCenter complete scoped pages', () => {
     vi.mocked(api.releasePage).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
       .mockResolvedValue({ items: [release('new-scope', 1, 'ACTIVE')], nextCursor: null, hasMore: false, state: null })
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const tree = () => <QueryClientProvider client={client}><ReleaseCenterPage /></QueryClientProvider>
+    const tree = () => <QueryClientProvider client={client}><MemoryRouter><ReleaseCenterPage /></MemoryRouter></QueryClientProvider>
     const view = render(tree()); await waitFor(() => expect(api.releasePage).toHaveBeenCalledTimes(1))
     state.tenant = 'tenant-b'; view.rerender(tree())
     expect(await screen.findByRole('button', { name: '回滚 new-scope' })).toBeVisible()

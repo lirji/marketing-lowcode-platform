@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { RecordTable, RecordTime } from '../../components/RecordTable'
 import { Select } from '../../components/Select'
 import { FieldHint } from '../../components/FieldHint'
@@ -78,6 +79,7 @@ function ReleaseCenter() {
 
   return <div className="workspace release-page">
     <PageHeader eyebrow="RELEASE CENTER" title="发布中心" description="在对应清单行选择操作，核对环境、运行类型、命名空间和实际回滚目标后再提交。" actions={<>
+      <Link className="button primary" to="/releases/bundles">活动组合发布</Link>
       <Button onClick={() => setWizardOpen(true)} disabled={api.demoMode || !canOpenWizard} title={api.demoMode ? '演示模式不编译' : canOpenWizard ? '选择批准版本并编译暂存' : `缺少 ${wizardMissingPermissions.join('、')}`}><PackageCheck size={15} />编译并暂存</Button>
     </>} />
     <DemoBanner />

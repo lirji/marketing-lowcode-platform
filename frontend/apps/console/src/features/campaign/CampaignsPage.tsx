@@ -102,7 +102,7 @@ export function CampaignsPage() {
               <td>{item.shopId === undefined ? '未提供' : item.shopId || '全部店铺'}</td>
               <td><RecordTime value={item.createdAt} /></td>
               <td><RecordTime value={item.updatedAt} /></td>
-              <td><div className="row-actions"><button type="button" className="row-action" aria-expanded={readyId === item.id} aria-controls={readyId === item.id ? `readiness-${item.id}` : undefined} onClick={() => setReadyId((current) => current === item.id ? null : item.id)}>{readyId === item.id ? '收起就绪' : '查看就绪'}</button><ActionMenu label="设计" subject={item.name} items={item.campaignType === CAMPAIGN_TYPE.REFERRAL ? [
+              <td><div className="row-actions"><button type="button" className="row-action" aria-expanded={readyId === item.id} aria-controls={readyId === item.id ? `readiness-${item.id}` : undefined} onClick={() => setReadyId((current) => current === item.id ? null : item.id)}>{readyId === item.id ? '收起就绪' : '查看就绪'}</button>{canRead && auth.hasPermission('release:read') && item.campaignType === CAMPAIGN_TYPE.STANDARD && <button className="text-button" onClick={() => navigate(`/releases/bundles?campaignId=${encodeURIComponent(item.id)}`)}>组合发布</button>}<ActionMenu label="设计" subject={item.name} items={item.campaignType === CAMPAIGN_TYPE.REFERRAL ? [
                 { label: '邀请有礼', to: `/designers/referral?campaignId=${encodeURIComponent(item.id)}`, state: { campaignName: item.name } },
               ] : [
                 { label: 'Offer 规则', to: `/designers/offer?campaignId=${encodeURIComponent(item.id)}`, state: { campaignName: item.name } },

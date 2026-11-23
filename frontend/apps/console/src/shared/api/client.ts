@@ -1,3 +1,4 @@
+import { releaseBundleClient } from './releaseBundles'
 import type { CampaignType } from '../model/campaignType'
 import { dmnAnalysisSchema, dmnEvaluationSchema, dmnDraftSchema, type DmnTable } from './dmn'
 import type { ProblemDetail } from '@marketing/contracts'
@@ -196,6 +197,7 @@ function commandHeaders(idempotencyKey?: string): Record<string, string> {
 }
 
 export const api = {
+  ...releaseBundleClient(request, commandHeaders),
   demoMode: runtimeConfig.demoMode,
   campaigns: () => request('/api/v1/campaigns', undefined, (value) => zArray(campaignSchema, value)),
   createCampaign: (payload: { name: string; objective: string; organizationId: string; shopId: string; campaignType: CampaignType }) =>

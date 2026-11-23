@@ -18,6 +18,7 @@ const BenefitEditorPage = lazy(() => import('./features/designers/BenefitEditorP
 const ReferralDesignerPage = lazy(() => import('./features/referral/ReferralDesignerPage').then((module) => ({ default: module.ReferralDesignerPage })))
 const ReferralOperationsPage = lazy(() => import('./features/referral/ReferralOperationsPage').then((module) => ({ default: module.ReferralOperationsPage })))
 const GovernancePage = lazy(() => import('./features/governance/GovernancePage').then((module) => ({ default: module.GovernancePage })))
+const ReleaseBundlesPage = lazy(() => import('./features/release/ReleaseBundlesPage').then((module) => ({ default: module.ReleaseBundlesPage })))
 const ReleaseCenterPage = lazy(() => import('./features/release/ReleaseCenterPage').then((module) => ({ default: module.ReleaseCenterPage })))
 const OperationsPage = lazy(() => import('./features/operations/OperationsPage').then((module) => ({ default: module.OperationsPage })))
 const AnalyticsPage = lazy(() => import('./features/analytics/AnalyticsPage').then((module) => ({ default: module.AnalyticsPage })))
@@ -49,6 +50,7 @@ export default function App() {
           <Route path="designers/referral" element={<RequirePermission anyOf={['definition:read', 'definition:write']}><ReferralDesignerPage /></RequirePermission>} />
           <Route path="assets" element={<RequirePermission anyOf={['audience:read', 'benefit:read', 'template:read', 'audience-field:read', 'definition:read']}><AssetsPage /></RequirePermission>} />
           <Route path="governance" element={<RequirePermission anyOf={['approval:business', 'approval:finance', 'approval:compliance', 'approval:merchant', 'definition:read']}><GovernancePage /></RequirePermission>} />
+          <Route path="releases/bundles" element={<RequirePermission anyOf={['release:read']}><ReleaseBundlesPage /></RequirePermission>} />
           <Route path="releases" element={<RequirePermission anyOf={['release:read']}><ReleaseCenterPage /></RequirePermission>} />
           <Route path="operations" element={<RequirePermission anyOf={['trace:read', 'journey:read', 'contact:read', 'event:read', 'funding:reconcile']}><OperationsPage /></RequirePermission>} />
           <Route path="referral-operations" element={<RequirePermission anyOf={['referral:read', 'campaign:read', 'trace:read']}><ReferralOperationsPage /></RequirePermission>} />
