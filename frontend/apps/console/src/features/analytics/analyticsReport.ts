@@ -1,6 +1,7 @@
 import { businessDayStart, displayTimestamp } from '../../components/dateTime'
 import type { DashboardMetrics, SeriesPoint } from '../../shared/api/schemas'
 import { measurementCoverage } from '../../shared/model/measurementCoverage'
+import { displayMeasurementRoi } from '../../shared/model/measurementRoi'
 
 export const ANALYTICS_PERIODS = { TODAY: '今天', WEEK: '7 天', MONTH: '30 天' } as const
 export type AnalyticsPeriod = keyof typeof ANALYTICS_PERIODS
@@ -57,7 +58,7 @@ export function reportCsv(report: AnalyticsReport) {
     ['数据状态', '水位延迟', dashboard.lag?.seconds ?? '未知', '秒', '接口读取时的延迟'],
     ['汇总', '归因收入', dashboard.attributedRevenueMinor, '分', '接口返回值'],
     ['汇总', '补贴成本', dashboard.fundingCostMinor, '分', '接口返回值'],
-    ['汇总', 'ROI', dashboard.roi ?? '未知', '比值', '接口返回值；非百分比'],
+    ['汇总', 'ROI', displayMeasurementRoi(dashboard, '未知'), '比值', '净补贴成本为正时展示接口比值'],
     ...Object.entries(dashboard.counts).sort(([left], [right]) => left.localeCompare(right)).map(([type, count]) => ['事实计数', type, count, '条', '净投影计数']),
     ...points.flatMap(point => [
       ['时间序列', displayTimestamp(point.at), point.revenueMinor, '分', '归因收入'],

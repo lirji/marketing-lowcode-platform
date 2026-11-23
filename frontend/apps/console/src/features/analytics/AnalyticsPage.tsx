@@ -10,6 +10,7 @@ import { api } from '../../shared/api/client'
 import { problemDetail } from '../../shared/api/problem'
 import { useAuth } from '../../shared/auth/useAuth'
 import { measurementCoverage } from '../../shared/model/measurementCoverage'
+import { displayMeasurementRoi } from '../../shared/model/measurementRoi'
 import { ANALYTICS_PERIODS, analyticsRange, displayMinor, downloadReport, validateReport, type AnalyticsPeriod } from './analyticsReport'
 
 export function AnalyticsPage() {
@@ -84,7 +85,7 @@ function AnalyticsWorkspace({ scope }: { scope: string }) {
     <section className="analytics-metrics">{[
       ['归因收入（元）', dashboard ? displayMinor(dashboard.attributedRevenueMinor) : '—'],
       ['补贴成本（元）', dashboard ? displayMinor(dashboard.fundingCostMinor) : '—'],
-      ['ROI', String(dashboard?.roi ?? '—')],
+      ['ROI', dashboard ? displayMeasurementRoi(dashboard) : '—'],
       ['水位延迟（秒）', String(watermark ? loaded?.dashboard.lag?.seconds ?? '—' : '—')],
     ].map(([label, value]) => <Panel key={label}><p>{label}</p><strong>{value}</strong></Panel>)}</section>
     <p className="field-hint">投影完整水位：{displayTimestamp(watermark)}。CSV包含已覆盖范围、接口原始分值和时间序列。</p>

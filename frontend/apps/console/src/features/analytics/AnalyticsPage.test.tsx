@@ -59,6 +59,7 @@ describe('AnalyticsPage', () => {
     await userEvent.click(screen.getByRole('button', { name: '查看已覆盖范围' }))
     await waitFor(() => expect(screen.getByRole('button', { name: '导出当前报告' })).toBeEnabled())
     expect(screen.getAllByText('0.00')).toHaveLength(2)
+    expect(screen.getByText('不适用')).toBeInTheDocument()
     expect(mocks.dashboard.mock.calls.at(-1)?.[1]).toBe(through)
     expect(mocks.series.mock.calls.at(-1)?.[1]).toBe(through)
   })

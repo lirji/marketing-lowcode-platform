@@ -23,6 +23,7 @@ describe('analytics report values', () => {
     expect(csv).toContain('"\'\t=HYPERLINK(""unsafe"")"')
     expect(csv).toContain('"A,""B""\nC","-1"')
     expect(csv).toContain('"归因收入","12345","分"')
+    expect(reportCsv({ ...report, dashboard: { ...report.dashboard, fundingCostMinor: 0, roi: 0 } })).toContain('"ROI","不适用"')
     expect(csv.match(/"时间序列"/g)).toHaveLength(6)
     expect(csv).toContain('北京时间')
     expect(csv).toContain('非数据库原子快照')

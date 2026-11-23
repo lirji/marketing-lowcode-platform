@@ -9,6 +9,7 @@ import { api } from '../../shared/api/client'
 import { ReleaseState } from '../../shared/api/schemas'
 import { useReleasePages } from '../../shared/api/useReleasePages'
 import { measurementCoverage } from '../../shared/model/measurementCoverage'
+import { displayMeasurementRoi } from '../../shared/model/measurementRoi'
 
 const emptyMetrics = [
   { label: '今日归因成交', value: '—', delta: '', icon: CircleDollarSign },
@@ -53,7 +54,7 @@ export function DashboardPage() {
           { label: '今日归因成交', value: coverage === 'complete' ? formatMinor(totals.attributedRevenueMinor) : '—', delta: `完整数据截至 ${displayTimestamp(watermark)}`, icon: CircleDollarSign },
           { label: '已加载活动', value: campaigns.isSuccess ? String(campaigns.data?.length ?? 0) : '—', delta: '包含当前可见范围内的各类活动状态', icon: Megaphone },
           { label: '营销成本', value: coverage === 'complete' ? formatMinor(totals.fundingCostMinor) : '—', delta: '', icon: Sparkles },
-          { label: '水位延迟', value: displayElapsedSeconds(watermark ? totals.lag?.seconds : undefined), delta: `${watermark && totals.lag ? `接口读取时延迟：${totals.lag.seconds.toLocaleString('zh-CN')} 秒` : '完整时间未知'}${coverage === 'complete' && totals.roi != null ? `；ROI ${totals.roi}` : ''}`, icon: UsersRound },
+          { label: '水位延迟', value: displayElapsedSeconds(watermark ? totals.lag?.seconds : undefined), delta: `${watermark && totals.lag ? `接口读取时延迟：${totals.lag.seconds.toLocaleString('zh-CN')} 秒` : '完整时间未知'}${coverage === 'complete' ? `；ROI ${displayMeasurementRoi(totals)}` : ''}`, icon: UsersRound },
         ]
       : emptyMetrics
   const points = coverage === 'complete' && series.isSuccess ? series.data.points : []
