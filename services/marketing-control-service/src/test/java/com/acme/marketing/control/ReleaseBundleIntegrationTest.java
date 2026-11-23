@@ -349,6 +349,39 @@ class ReleaseBundleIntegrationTest {
         return jdbc.queryForObject("select count(*) from mk_release_slot where tenant_id=? and bundle_managed=true", Integer.class, tenant);
     }
 
+    /** 同键恢复、暂停时钟、租约接管和过期查证以真实锁、代次及数据库时序为准。 */
+    @Test void scheduledWindowAndLeaseSurviveRetries() throws Exception {
+        String campaign = campaign(); var members = members(campaign);
+        assertEquals(201,save(campaign,0,members,"schedule-prepare").statusCode());
+        String base = path(campaign) + "/schedules";
+        String payload = mapper.writeValueAsString(Map.of("version",1,"expectedAppliedSequence",0,
+                "dueAt",Instant.now().plusSeconds(90).toString()));
+        var created = send(write(base,payload,"schedule-replay"));
+        assertEquals(201,created.statusCode(),created.body());
+        assertEquals(mapper.readTree(created.body()),mapper.readTree(send(write(base,payload,"schedule-replay")).body()));
+        String item = base + "/" + mapper.readTree(created.body()).path("scheduleId").asString();
+        var paused = send(request(item + ":pause?expectedRevision=1").POST(HttpRequest.BodyPublishers.noBody()));
+        assertEquals("PAUSED",mapper.readTree(paused.body()).path("state").asString(),paused.body());
+        assertCode(409,"RELEASE_SCHEDULE_CHANGED",send(request(item + ":resume?expectedRevision=1").POST(HttpRequest.BodyPublishers.noBody())));
+        assertEquals(200,send(request(item + ":resume?expectedRevision=2").POST(HttpRequest.BodyPublishers.noBody())).statusCode());
+        String now = com.acme.marketing.platform.time.SqlTime.format(Instant.now().minusSeconds(3));
+        jdbc.update("UPDATE mk_bundle_activation_schedule SET state_name='RUNNING',due_at=?,apply_before=?,next_attempt_at=? WHERE tenant_id=?",
+                com.acme.marketing.platform.time.SqlTime.format(Instant.now().minusSeconds(60)),now,now,tenant);
+        // 模拟上一次领取后进程退出、尚未创建发布命令。恢复不能重启一个已过期的发布。
+        // 同一个外部键已经被手工发布使用，调度接管也不能将其认领为自己的结果。
+        String taskId = mapper.readTree(created.body()).path("scheduleId").asString();
+        var manual = send(write(path(campaign) + "/operations",mapper.writeValueAsString(
+                Map.of("action","ACTIVATE","version",1,"expectedAppliedSequence",0)),taskId));
+        assertTrue(manual.statusCode() >= 200 && manual.statusCode() < 300,manual.body());
+        String tick = "/internal/v1/release-bundle-schedules:tick";
+        assertEquals(200,send(request(tick).POST(HttpRequest.BodyPublishers.noBody())).statusCode());
+        var history = mapper.readTree(send(request(base + "?version=1").GET()).body());
+        assertEquals("EXPIRED",history.get(0).path("state").asString(),history.toString());
+        assertTrue(history.get(0).path("operationId").isNull());
+        assertFalse(mapper.readTree(send(request(tick).POST(HttpRequest.BodyPublishers.noBody())).body()).path("claimed").asBoolean());
+        assertEquals(1,count("mk_bundle_release_operation"));
+    }
+
     private String campaign() {
         String id = UUID.randomUUID().toString();
         repository.saveCampaign(new ControlRepository.CampaignWrite(tenant, id, "组合测试", "隔离验收", "DRAFT",

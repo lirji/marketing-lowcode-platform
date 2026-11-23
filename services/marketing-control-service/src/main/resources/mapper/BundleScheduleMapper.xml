@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.control.infrastructure.persistence.mapper.BundleScheduleMapper">
+    <sql id="columns">
+        s.tenant_id AS tenant,s.campaign_id AS campaignId,s.schedule_id AS scheduleId,s.command_key AS commandKey,
+        s.version_no AS version,s.expected_sequence AS expectedAppliedSequence,s.due_at AS dueAt,
+        s.apply_before AS applyBefore,s.state_name AS state,s.revision,s.next_attempt_at AS nextAttemptAt,
+        s.operation_id AS operationId,s.reason_code AS reasonCode,s.created_by AS createdBy,
+        s.created_at AS createdAt,s.updated_at AS updatedAt
+    </sql>
+    <select id="byCommand" resultType="com.acme.marketing.control.application.BundleScheduleStore$Row">
+        SELECT <include refid="columns"/> FROM mk_bundle_activation_schedule s
+        WHERE tenant_id=#{tenant} AND BINARY tenant_id=BINARY #{tenant} AND campaign_id=#{campaignId} AND BINARY campaign_id=BINARY #{campaignId} AND command_key=#{commandKey}
+    </select>
+    <select id="byId" resultType="com.acme.marketing.control.application.BundleScheduleStore$Row">
+        SELECT <include refid="columns"/> FROM mk_bundle_activation_schedule s
+        WHERE tenant_id=#{tenant} AND BINARY tenant_id=BINARY #{tenant} AND campaign_id=#{campaignId} AND BINARY campaign_id=BINARY #{campaignId} AND schedule_id=#{scheduleId}
+    </select>
+    <select id="recent" resultType="com.acme.marketing.control.application.BundleScheduleStore$Row">
+        SELECT <include refid="columns"/> FROM mk_bundle_activation_schedule s
+        WHERE tenant_id=#{tenant} AND BINARY tenant_id=BINARY #{tenant} AND campaign_id=#{campaignId} AND BINARY campaign_id=BINARY #{campaignId} AND version_no=#{version}
+        ORDER BY created_at DESC,schedule_id DESC LIMIT 20
+    </select>
+    <select id="claimable" resultType="com.acme.marketing.control.application.BundleScheduleStore$Row">
+        SELECT <include refid="columns"/> FROM mk_bundle_activation_schedule s
+        JOIN mk_campaign c ON c.tenant_id=s.tenant_id AND c.campaign_id=s.campaign_id
+        WHERE s.tenant_id=#{tenant} AND BINARY s.tenant_id=BINARY #{tenant} AND s.state_name IN ('SCHEDULED','RUNNING') AND s.next_attempt_at &lt;= #{now}
+        <if test='!organizations.contains("*")'>
+          AND BINARY c.organization_id IN <foreach collection="organizations" item="org" open="(" separator="," close=")">#{org}</foreach>
+        </if>
+        <if test='!shops.contains("*")'>
+          AND (c.shop_id IS NULL OR c.shop_id='' <if test="!shops.isEmpty()">OR BINARY c.shop_id IN
+            <foreach collection="shops" item="shop" open="(" separator="," close=")">#{shop}</foreach></if>)
+        </if>
+        ORDER BY s.next_attempt_at,s.schedule_id LIMIT 1 FOR UPDATE OF s SKIP LOCKED
+    </select>
+    <insert id="insert">
+        INSERT INTO mk_bundle_activation_schedule
+        (tenant_id,campaign_id,schedule_id,command_key,version_no,expected_sequence,due_at,apply_before,state_name,
+         revision,next_attempt_at,operation_id,reason_code,created_by,created_at,updated_at)
+        VALUES (#{tenant},#{campaignId},#{scheduleId},#{commandKey},#{version},#{expectedAppliedSequence},
+        #{dueAt},#{applyBefore},#{state},#{revision},#{nextAttemptAt},#{operationId},#{reasonCode},#{createdBy},#{createdAt},#{updatedAt})
+    </insert>
+    <update id="advance">
+        UPDATE mk_bundle_activation_schedule SET state_name=#{state}, revision=revision+1,next_attempt_at=#{nextAttemptAt},
+        operation_id=#{operationId},reason_code=#{reasonCode},updated_at=#{updatedAt}
+        WHERE tenant_id=#{tenant} AND BINARY tenant_id=BINARY #{tenant} AND campaign_id=#{campaignId} AND BINARY campaign_id=BINARY #{campaignId} AND schedule_id=#{scheduleId} AND revision=#{revision}
+    </update>
+</mapper>

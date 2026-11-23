@@ -6,6 +6,10 @@ import com.acme.marketing.platform.error.NotFoundException;
 
 /** 活动组合的稳定错误目录，沿用平台 ProblemDetail 映射。 */
 public enum ReleaseBundleError {
+    SCHEDULE_INVALID("RELEASE_SCHEDULE_INVALID", "请指定有效组合、当前生效序号和组合有效期内的未来时刻"),
+    SCHEDULE_MISSING("RELEASE_SCHEDULE_NOT_FOUND", "找不到该活动的定时发布"),
+    SCHEDULE_CHANGED("RELEASE_SCHEDULE_CHANGED", "计划已更新，请刷新后核对"),
+    SCHEDULE_COMMAND_CONFLICT("IDEMPOTENCY_PAYLOAD_CONFLICT", "该幂等键已用于其他定时发布请求"),
     INPUT_INVALID("RELEASE_BUNDLE_INPUT_INVALID", "组合请求必须包含有效基准版本和2至8个不同的发布清单"),
     REQUEST_TOO_LARGE("RELEASE_BUNDLE_REQUEST_TOO_LARGE", "组合请求或冻结内容超过允许大小"),
     NOT_FOUND("RELEASE_BUNDLE_NOT_FOUND", "该活动尚无所请求的发布组合版本"),

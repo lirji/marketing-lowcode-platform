@@ -1,0 +1,25 @@
+CREATE TABLE mk_bundle_activation_schedule (
+    tenant_id VARCHAR(64) NOT NULL COMMENT '可信租户',
+    campaign_id VARCHAR(64) NOT NULL COMMENT '活动及授权范围',
+    schedule_id CHAR(36) NOT NULL COMMENT '永久调度编号，也是执行命令幂等键',
+    command_key VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL COMMENT '活动内创建命令幂等键',
+    version_no BIGINT NOT NULL COMMENT '不可变目标组合版本',
+    expected_sequence BIGINT NOT NULL COMMENT '排期时确认的生效位置，执行时比较',
+    due_at VARCHAR(40) NOT NULL COMMENT '允许开始应用的 UTC 时刻',
+    apply_before VARCHAR(40) NOT NULL COMMENT '应用排他截止点，取容许延迟与组合有效期较早者',
+    state_name VARCHAR(16) NOT NULL COMMENT 'SCHEDULED、PAUSED、RUNNING、APPLIED、REJECTED 或 EXPIRED',
+    revision BIGINT NOT NULL COMMENT '暂停恢复和工作者写回的并发代次',
+    next_attempt_at VARCHAR(40) NOT NULL COMMENT '可领取时刻，已领取时表示租约截止时间',
+    operation_id VARCHAR(128) NULL COMMENT '已登记的整体发布命令编号',
+    reason_code VARCHAR(128) NULL COMMENT '最近一次操作原因的稳定编号',
+    created_by VARCHAR(128) NOT NULL COMMENT '已验证的排期发起人',
+    created_at VARCHAR(40) NOT NULL COMMENT '创建 UTC 时间',
+    updated_at VARCHAR(40) NOT NULL COMMENT '最近状态变更 UTC 时间',
+    PRIMARY KEY (tenant_id,campaign_id,schedule_id),
+    UNIQUE KEY uk_bundle_schedule_command (tenant_id,campaign_id,command_key),
+    KEY ix_bundle_schedule_scan (tenant_id,state_name,next_attempt_at),
+    KEY ix_bundle_schedule_version (tenant_id,campaign_id,version_no,created_at),
+    CONSTRAINT fk_bundle_schedule_version FOREIGN KEY (tenant_id,campaign_id,version_no)
+        REFERENCES mk_release_bundle (tenant_id,campaign_id,version_no),
+    CONSTRAINT ck_bundle_schedule_window CHECK (due_at < apply_before AND expected_sequence >= 0 AND revision > 0)
+) COMMENT '活动组合定时发布及重启恢复位置';

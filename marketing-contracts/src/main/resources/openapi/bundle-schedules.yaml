@@ -1,0 +1,78 @@
+openapi: 3.1.0
+info: {title: 活动组合定时发布, version: 1.0.0}
+security: [{oidc: []}]
+paths:
+  /api/v1/campaigns/{campaignId}/release-bundles/schedules:
+    parameters: [{$ref: '#/components/parameters/Campaign'}]
+    post:
+      operationId: scheduleBundleActivation
+      description: 以 release:activate 权限排期，首次建立的 UTC 执行窗口、基准位置和目标版本永久绑定该命令键。
+      parameters: [{$ref: './marketing-api.yaml#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version, expectedAppliedSequence, dueAt]
+              properties:
+                version: {type: integer, minimum: 1}
+                expectedAppliedSequence: {type: integer, minimum: 0}
+                dueAt: {type: string, format: date-time}
+      responses:
+        '201': {$ref: '#/components/responses/Task'}
+        default: {$ref: './marketing-api.yaml#/components/responses/Problem'}
+    get:
+      operationId: listBundleSchedules
+      description: 按创建时间倒序返回此版本最新二十条，读取需要 release:read。
+      parameters: [{name: version, in: query, required: true, schema: {type: integer, minimum: 1}}]
+      responses:
+        '200': {description: 带当前代次的排期列表, content: {application/json: {schema: {type: array, maxItems: 20, items: {$ref: '#/components/schemas/Schedule'}}}}}
+        default: {$ref: './marketing-api.yaml#/components/responses/Problem'}
+  /api/v1/campaigns/{campaignId}/release-bundles/schedules/{scheduleId}:pause:
+    parameters: [{$ref: '#/components/parameters/Campaign'}, {$ref: '#/components/parameters/Task'}, {$ref: '#/components/parameters/Revision'}]
+    post:
+      operationId: pauseBundleSchedule
+      responses:
+        '200': {$ref: '#/components/responses/Task'}
+        default: {$ref: './marketing-api.yaml#/components/responses/Problem'}
+  /api/v1/campaigns/{campaignId}/release-bundles/schedules/{scheduleId}:resume:
+    parameters: [{$ref: '#/components/parameters/Campaign'}, {$ref: '#/components/parameters/Task'}, {$ref: '#/components/parameters/Revision'}]
+    post:
+      operationId: resumeBundleSchedule
+      responses:
+        '200': {$ref: '#/components/responses/Task'}
+        default: {$ref: './marketing-api.yaml#/components/responses/Problem'}
+  /internal/v1/release-bundle-schedules:tick:
+    post:
+      operationId: tickBundleSchedules
+      description: XXL-JOB 机器身份在自己租户和业务范围内领取并推进一个任务；需 release:schedule:execute、release:read 与 release:activate。
+      responses:
+        '200': {description: 领取和写回结果, content: {application/json: {schema: {type: object, required: [claimed, recorded], properties: {claimed: {type: boolean}, recorded: {type: boolean}}}}}}
+        default: {$ref: './marketing-api.yaml#/components/responses/Problem'}
+components:
+  securitySchemes:
+    oidc: {$ref: './marketing-api.yaml#/components/securitySchemes/oidc'}
+  parameters:
+    Campaign: {in: path, name: campaignId, required: true, schema: {type: string, maxLength: 64}}
+    Task: {in: path, name: scheduleId, required: true, schema: {type: string, format: uuid}}
+    Revision: {in: query, name: expectedRevision, required: true, schema: {type: integer, minimum: 1}}
+  responses:
+    Task: {description: 当前持久排期, content: {application/json: {schema: {$ref: '#/components/schemas/Schedule'}}}}
+  schemas:
+    Schedule:
+      type: object
+      required: [scheduleId, campaignId, version, expectedAppliedSequence, dueAt, applyBefore, state, revision, createdAt, updatedAt]
+      properties:
+        scheduleId: {type: string, format: uuid}
+        campaignId: {type: string}
+        version: {type: integer}
+        expectedAppliedSequence: {type: integer}
+        dueAt: {type: string, format: date-time}
+        applyBefore: {type: string, format: date-time}
+        state: {enum: [SCHEDULED, PAUSED, RUNNING, APPLIED, REJECTED, EXPIRED]}
+        revision: {type: integer}
+        operationId: {type: [string, 'null']}
+        reasonCode: {type: [string, 'null']}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
