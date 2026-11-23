@@ -6,13 +6,18 @@ import { Download, RefreshCw } from 'lucide-react'
 import { Badge, Button, EmptyState, PageHeader, Panel, PanelHeader, StateBanner } from '../../components/ui'
 import { Select } from '../../components/Select'
 import { RecordTable } from '../../components/RecordTable'
+import { DateTimePicker } from '../../components/DateTimePicker'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { api } from '../../shared/api/client'
 import { problemDetail } from '../../shared/api/problem'
+import { MAX_SUBSIDY_RANGE_MS } from '../../shared/api/schemas'
 import { useAuth } from '../../shared/auth/useAuth'
 import { measurementCoverage } from '../../shared/model/measurementCoverage'
 import { displayMeasurementRoi } from '../../shared/model/measurementRoi'
-import { ANALYTICS_PERIODS, analyticsRange, displayMinor, downloadReport, validateReport, type AnalyticsPeriod } from './analyticsReport'
+import { ANALYTICS_PERIODS, MAX_ANALYTICS_RANGE_MS, analyticsRange, displayMinor, downloadReport, validateReport, type AnalyticsPeriod, type AnalyticsRange } from './analyticsReport'
+import { SubsidyComparisonPanel } from './SubsidyComparisonPanel'
+
+const HOURLY_RANGE_LIMIT_MS = 24 * 60 * 60 * 1000
 
 export function AnalyticsPage() {
   const auth = useAuth()
@@ -22,13 +27,16 @@ export function AnalyticsPage() {
 
 function AnalyticsWorkspace({ scope }: { scope: string }) {
   const auth = useAuth()
-  const [selection, setSelection] = useState(() => ({ period: 'TODAY' as AnalyticsPeriod, range: analyticsRange('TODAY') }))
+  const [selection, setSelection] = useState<{ period: AnalyticsPeriod | 'CUSTOM'; range: AnalyticsRange }>(() => ({ period: 'TODAY', range: analyticsRange('TODAY') }))
+  const [customOpen, setCustomOpen] = useState(false)
   const [campaignId, setCampaignId] = useState('')
   const [downloadError, setDownloadError] = useState<string>()
   const canRead = !api.demoMode && auth.hasPermission('measurement:read')
   const canListCampaigns = canRead && auth.hasPermission('campaign:read')
   const campaigns = useQuery({ queryKey: ['analytics-campaign-options', scope], queryFn: api.campaigns, enabled: canListCampaigns })
   const { range, period } = selection
+  const canReconcile = canRead && auth.hasPermission('funding:reconcile')
+  const withinLedgerWindow = Date.parse(range.to) - Date.parse(range.from) <= MAX_SUBSIDY_RANGE_MS
   const postingParams = new URLSearchParams({ tab: 'funding', postingFrom: range.from, postingTo: range.to })
   if (campaignId) postingParams.set('postingCampaignId', campaignId)
   const report = useQuery({
@@ -51,8 +59,16 @@ function AnalyticsWorkspace({ scope }: { scope: string }) {
   const dashboard = current?.dashboard
   const watermark = coverage === 'unknown' ? undefined : loaded?.dashboard.completeThrough
   const chart = (current?.points ?? []).map(point => ({ time: displayTimeTick(point.at, range.granularity), revenue: point.revenueMinor / 100, cost: point.costMinor / 100 }))
-  const choose = (next: AnalyticsPeriod) => { setDownloadError(undefined); setSelection({ period: next, range: analyticsRange(next) }) }
-  const recompute = useMutation({ mutationFn: api.recomputeAttribution, onSuccess: () => setSelection(current => ({ period: current.period, range: analyticsRange(current.period) })) })
+  const choose = (next: AnalyticsPeriod) => {
+    setCustomOpen(false)
+    setDownloadError(undefined)
+    setSelection({ period: next, range: analyticsRange(next) })
+  }
+  const refresh = () => {
+    if (period === 'CUSTOM') { setDownloadError(undefined); void report.refetch() }
+    else choose(period)
+  }
+  const recompute = useMutation({ mutationFn: api.recomputeAttribution, onSuccess: refresh })
   const canRecompute = !api.demoMode && auth.hasPermission('measurement:ingest')
   const exportCurrent = () => {
     if (!current) return
@@ -61,9 +77,9 @@ function AnalyticsWorkspace({ scope }: { scope: string }) {
 
   return <div className="workspace analytics-page">
     <PageHeader eyebrow="衡量分析" title="衡量分析" description="查看当前租户的投影汇总与时间序列；范围和数据水位随报告一起导出。" actions={<>
-      <Button disabled={!canRead || report.isFetching} onClick={() => choose(period)}><RefreshCw size={15} />刷新数据</Button>
+      <Button disabled={!canRead || report.isFetching} onClick={refresh}><RefreshCw size={15} />刷新数据</Button>
       <Button disabled={!current} onClick={exportCurrent}><Download size={15} />导出当前报告</Button>
-      {canRead && auth.hasPermission('funding:reconcile') && <Link className="button secondary" to={`/operations?${postingParams}`}>核对补贴流水</Link>}
+      {canReconcile && withinLedgerWindow && <Link className="button secondary" to={`/operations?${postingParams}`}>核对补贴流水</Link>}
       <Button disabled={!canRecompute || recompute.isPending} title="重算当前租户全部归因，不受页面日期窗口限制" onClick={() => recompute.mutate()}>{recompute.isPending ? '正在重算…' : '重算全部归因'}</Button>
     </>} />
     {api.demoMode ? <StateBanner tone="info" title="请连接演示数据源" detail="此页不内置业务示例。将种子数据写入隔离测试数据库并连接测量接口后，即可读取真实报告；静态演示模式不查询或重算。" /> : !canRead && <StateBanner tone="warn" title="没有查看权限" detail="需要 measurement:read 权限才能查询和导出报告。" />}
@@ -74,9 +90,10 @@ function AnalyticsWorkspace({ scope }: { scope: string }) {
     {downloadError && <StateBanner tone="error" title="报告导出失败" detail={downloadError} />}
     {recompute.isError && <StateBanner tone="error" title="归因重算失败" detail={problemDetail(recompute.error)} />}
     {recompute.data && <StateBanner tone="success" title="当前租户归因已重算" detail={`转化 ${recompute.data.conversions} 次，贡献 ${recompute.data.credits} 条；完成时间：${displayTimestamp(recompute.data.completedAt)}`} />}
-    <div className="analytics-filter"><div className="segmented" aria-label="报告时间范围">{Object.entries(ANALYTICS_PERIODS).map(([code, label]) => <button type="button" aria-pressed={period === code} className={period === code ? 'active' : ''} disabled={!canRead} onClick={() => choose(code as AnalyticsPeriod)} key={code}>{label}</button>)}</div><label className="field analytics-campaign-filter"><span>活动筛选</span><Select aria-label="活动筛选" aria-describedby="analytics-campaign-help" value={campaignId} disabled={!canListCampaigns || campaigns.isPending} onChange={event => { setCampaignId(event.target.value); setDownloadError(undefined) }}>
+    <div className="analytics-filter"><div className="segmented" aria-label="报告时间范围">{Object.entries(ANALYTICS_PERIODS).map(([code, label]) => <button type="button" aria-pressed={period === code} className={period === code ? 'active' : ''} disabled={!canRead} onClick={() => choose(code as AnalyticsPeriod)} key={code}>{label}</button>)}</div><Button disabled={!canRead} aria-expanded={customOpen} onClick={() => setCustomOpen(open => !open)}>自定义时间</Button><label className="field analytics-campaign-filter"><span>活动筛选</span><Select aria-label="活动筛选" aria-describedby="analytics-campaign-help" value={campaignId} disabled={!canListCampaigns || campaigns.isPending} onChange={event => { setCampaignId(event.target.value); setDownloadError(undefined) }}>
       <option value="">全部活动</option>{(canListCampaigns ? campaigns.data ?? [] : []).map(campaign => <option key={campaign.id} value={campaign.id}>{campaign.name} · {campaign.id}</option>)}
     </Select></label><Badge tone="info">{range.granularity === 'hour' ? '小时序列' : '日序列'}</Badge></div>
+    {canRead && customOpen && <CustomAnalyticsRange range={range} apply={next => { setSelection({ period: 'CUSTOM', range: next }); setCustomOpen(false); setDownloadError(undefined) }} />}
     <p className="field-hint" id="analytics-campaign-help">{canListCampaigns ? '按所选活动ID匹配投影数据；无匹配返回零值。全部活动包含未关联活动的事实。' : '选择活动需要 campaign:read 权限；全租户统计仍由 measurement:read 控制。'}</p>
     <p className="field-hint">查询范围：{displayTimestamp(range.from)} 至 {displayTimestamp(range.to)}（不含结束时间）。7天和30天为滚动窗口。当前范围：{campaignId || '全部活动'}；尚不支持归因策略筛选。</p>
     <p className="field-hint">{range.granularity === 'day' ? '日序列按后端UTC自然日分桶，显示北京时间；首尾可能是不完整桶。' : '时间序列按小时分桶，显示北京时间。'}汇总与序列采用相同窗口，读取并非数据库原子快照。</p>
@@ -88,11 +105,14 @@ function AnalyticsWorkspace({ scope }: { scope: string }) {
     </>}
     <section className="analytics-metrics">{[
       ['归因收入（元）', dashboard ? displayMinor(dashboard.attributedRevenueMinor) : '—'],
-      ['补贴成本（元）', dashboard ? displayMinor(dashboard.fundingCostMinor) : '—'],
+      ['事件补贴成本（元）', dashboard ? displayMinor(dashboard.fundingCostMinor) : '—'],
       ['ROI', dashboard ? displayMeasurementRoi(dashboard) : '—'],
       ['水位延迟（秒）', String(watermark ? loaded?.dashboard.lag?.seconds ?? '—' : '—')],
     ].map(([label, value]) => <Panel key={label}><p>{label}</p><strong>{value}</strong></Panel>)}</section>
     <p className="field-hint">投影完整水位：{displayTimestamp(watermark)}。CSV包含已覆盖范围、接口原始分值和时间序列。</p>
+    {canReconcile && withinLedgerWindow && <SubsidyComparisonPanel key={JSON.stringify([range.from, range.to, campaignId])}
+      scope={scope} tenantId={auth.tenantId} range={range} campaignId={campaignId} eventCost={dashboard?.fundingCostMinor} eventReadAt={current?.fetchedAt} />}
+    {canReconcile && !withinLedgerWindow && <p className="field-hint">账本对账窗口最长 31 天，请缩小时间范围后查询。</p>}
     {current && <div className="analytics-grid">
       <Panel className="trend-chart"><PanelHeader eyebrow="REVENUE / COST" title="归因收入与补贴成本（北京时间）" aside={<Badge tone="info">元</Badge>} />{chart.length === 0 ? <EmptyState title="暂无时间序列" detail="当前范围内没有返回数据点，可调整日期范围后重试。" /> : <div className="chart-container"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chart}><defs><linearGradient id="revenueFillLive" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#168b80" stopOpacity={0.35}/><stop offset="100%" stopColor="#168b80" stopOpacity={0.02}/></linearGradient></defs><CartesianGrid stroke="#e9eeee" vertical={false}/><XAxis dataKey="time" tick={{ fontSize: 'var(--text-xs)' }} axisLine={false}/><YAxis tick={{ fontSize: 'var(--text-xs)' }} axisLine={false}/><Tooltip labelFormatter={label => `${label}（北京时间）`} /><Legend/><Area type="monotone" dataKey="revenue" name="归因收入" stroke="#168b80" fill="url(#revenueFillLive)" strokeWidth={2}/><Area type="monotone" dataKey="cost" name="补贴成本" stroke="#d18a27" fill="transparent" strokeWidth={2}/></AreaChart></ResponsiveContainer></div>}</Panel>
       <Panel><PanelHeader eyebrow="COUNTS" title="事实类型计数" />{Object.keys(current.dashboard.counts).length === 0 ? <EmptyState title="暂无事实计数" detail="当前窗口未返回事实计数。" /> : <RecordTable label="事实类型计数" columns={['事实类型', '净计数']}>
@@ -100,4 +120,20 @@ function AnalyticsWorkspace({ scope }: { scope: string }) {
       </RecordTable>}</Panel>
     </div>}
   </div>
+}
+
+function CustomAnalyticsRange({ range, apply }: { range: AnalyticsRange; apply: (range: AnalyticsRange) => void }) {
+  const [from, setFrom] = useState(range.from)
+  const [to, setTo] = useState(range.to)
+  const span = Date.parse(to) - Date.parse(from)
+  const valid = span > 0 && span <= MAX_ANALYTICS_RANGE_MS
+  return <form className="form-grid analytics-custom-range" onSubmit={event => {
+    event.preventDefault()
+    if (valid) apply({ from, to, granularity: span <= HOURLY_RANGE_LIMIT_MS ? 'hour' : 'day' })
+  }}>
+    <div className="field"><span>报告开始</span><DateTimePicker label="报告开始" value={from} onChange={setFrom} describedBy="analytics-custom-help" /></div>
+    <div className="field"><span>报告结束</span><DateTimePicker label="报告结束" value={to} onChange={setTo} describedBy="analytics-custom-help" /></div>
+    <p className="field-hint span-2" id="analytics-custom-help">{valid ? '按北京时间选择，包含开始时间，结束时间不计入，最长 366 天。' : '请选择有效范围，结束须晚于开始，且跨度最长 366 天。'}</p>
+    <div className="toolbar span-2"><Button type="submit" tone="primary" disabled={!valid}>查询自定义范围</Button></div>
+  </form>
 }

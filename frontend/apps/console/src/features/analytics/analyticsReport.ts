@@ -9,6 +9,7 @@ export type AnalyticsRange = { from: string; to: string; granularity: 'hour' | '
 export type AnalyticsReport = { tenantId: string; campaignId?: string; range: AnalyticsRange; dashboard: DashboardMetrics; points: SeriesPoint[]; fetchedAt: string }
 const REPORT_VALUE_ERROR = '报告包含超出精确范围的金额或计数，无法可靠显示或导出'
 const DAY_MS = 24 * 60 * 60 * 1000
+export const MAX_ANALYTICS_RANGE_MS = 366 * DAY_MS
 
 /** 两个统计接口共享同一组时间值，渲染和下载不会隐式改变查询范围。 */
 export function analyticsRange(period: AnalyticsPeriod, now = new Date()): AnalyticsRange {
@@ -17,8 +18,8 @@ export function analyticsRange(period: AnalyticsPeriod, now = new Date()): Analy
 }
 
 /** 金额仍以接口分值为准；非法或超出JS精确整数范围时不展示近似金额。 */
-export function displayMinor(value: number) {
-  if (!Number.isSafeInteger(value)) return '金额超出精确显示范围'
+export function displayMinor(value: number | bigint) {
+  if (typeof value === 'number' && !Number.isSafeInteger(value)) return '金额超出精确显示范围'
   const minor = BigInt(value), absolute = minor < 0n ? -minor : minor
   return `${minor < 0n ? '-' : ''}${absolute / 100n}.${String(absolute % 100n).padStart(2, '0')}`
 }

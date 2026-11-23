@@ -261,6 +261,7 @@ export const reconciliationSchema = z.object({
 })
 export type ReconciliationReport = z.infer<typeof reconciliationSchema>
 
+export const MAX_SUBSIDY_RANGE_MS = 31 * 24 * 60 * 60 * 1000
 export const subsidyPostingPageSchema = z.object({
   from: z.string(),
   to: z.string(),
@@ -274,6 +275,16 @@ export const subsidyPostingPageSchema = z.object({
     amountMinor: z.string().regex(/^-?[1-9][0-9]*$/),
   })).max(100),
 })
+
+export const subsidyPostingSummarySchema = z.object({
+  tenantId: z.string(), from: z.string(), to: z.string(), campaignId: z.string().nullable(),
+  tenantWide: z.boolean(), readAt: z.string(),
+  groups: z.array(z.object({
+    currency: z.string().min(1), unassigned: z.boolean(),
+    postingCount: z.string().regex(/^[1-9][0-9]*$/), netAmountMinor: z.string().regex(/^-?(0|[1-9][0-9]*)$/),
+  })),
+})
+export type SubsidyPostingSummary = z.infer<typeof subsidyPostingSummarySchema>
 
 export const traceEventSchema = z.object({
   at: z.string().optional(),

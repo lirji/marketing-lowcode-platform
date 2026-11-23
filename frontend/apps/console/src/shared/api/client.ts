@@ -36,6 +36,7 @@ import {
   quarantineViewSchema,
   reconciliationSchema,
   subsidyPostingPageSchema,
+  subsidyPostingSummarySchema,
   recomputeSchema,
   releaseViewSchema,
   releasePageSchema,
@@ -386,6 +387,18 @@ export const api = {
   replayQuarantine: (quarantineId: string) =>
     request(`/api/v1/quarantine/${encodeURIComponent(quarantineId)}:replay`, { method: 'POST', headers: commandHeaders() }, (value) => value),
   reconciliation: () => request('/api/v1/funding/reconciliation', undefined, (value) => parseWith(reconciliationSchema, value)),
+  subsidyPostingSummary: (query: { tenantId: string; from: string; to: string; campaignId?: string }) => {
+    const params = new URLSearchParams({ from: query.from, to: query.to })
+    if (query.campaignId) params.set('campaignId', query.campaignId)
+    return request(`/api/v1/funding/subsidy-postings/summary?${params}`, undefined, value => {
+      const summary = parseWith(subsidyPostingSummarySchema, value)
+      if (summary.tenantId !== query.tenantId || Date.parse(summary.from) !== Date.parse(query.from)
+        || Date.parse(summary.to) !== Date.parse(query.to) || summary.campaignId !== (query.campaignId ?? null)) {
+        throw new Error('资金服务未确认本次对账范围，请重新查询。')
+      }
+      return summary
+    })
+  },
   subsidyPostings: (query: { from: string; to: string; campaignId?: string; unassigned?: boolean; cursor?: string }) => {
     const params = new URLSearchParams({ from: query.from, to: query.to })
     if (query.campaignId) params.set('campaignId', query.campaignId)

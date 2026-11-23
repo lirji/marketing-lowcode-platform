@@ -9,9 +9,9 @@ import { Select } from '../../components/Select'
 import { Button, EmptyState, Panel, PanelHeader, StateBanner } from '../../components/ui'
 import { api } from '../../shared/api/client'
 import { problemDetail } from '../../shared/api/problem'
+import { MAX_SUBSIDY_RANGE_MS } from '../../shared/api/schemas'
 import { useAuth } from '../../shared/auth/useAuth'
 
-const MAX_RANGE_MS = 31 * 24 * 60 * 60 * 1000
 const UNASSIGNED = '!unassigned'
 const OPERATIONS = { CONFIRM: '补贴确认', REFUND: '退款或冲正' } as const
 
@@ -28,7 +28,7 @@ function SubsidyPostingSearch({ scope }: { scope: string }) {
   const initialTo = params.get('postingTo') ?? ''
   const initialCampaign = params.get('postingCampaignId') ?? ''
   const initialSpan = Date.parse(initialTo) - Date.parse(initialFrom)
-  const linkedRange = initialSpan > 0 && initialSpan <= MAX_RANGE_MS && /^[A-Za-z0-9_.:-]{0,64}$/.test(initialCampaign)
+  const linkedRange = initialSpan > 0 && initialSpan <= MAX_SUBSIDY_RANGE_MS && /^[A-Za-z0-9_.:-]{0,64}$/.test(initialCampaign)
   const canList = useAuth().hasPermission('campaign:read')
   const campaigns = useQuery({ queryKey: ['subsidy-campaigns', scope], queryFn: api.campaigns, enabled: canList, retry: false })
   const [form, setForm] = useState(() => {
@@ -40,7 +40,7 @@ function SubsidyPostingSearch({ scope }: { scope: string }) {
     linkedRange ? { ...form, revision: 0 } : undefined
   ))
   const span = Date.parse(form.to) - Date.parse(form.from)
-  const valid = span > 0 && span <= MAX_RANGE_MS
+  const valid = span > 0 && span <= MAX_SUBSIDY_RANGE_MS
   const postings = useInfiniteQuery({
     queryKey: ['subsidy-postings', scope, applied],
     initialPageParam: undefined as string | undefined,
@@ -73,7 +73,7 @@ function SubsidyPostingSearch({ scope }: { scope: string }) {
         {campaigns.data?.map(campaign => <option key={campaign.id} value={campaign.id}>{campaign.name} · {campaign.id}</option>)}
       </Select></label>
       <div className="toolbar subsidy-posting-actions"><Button tone="primary" type="submit" disabled={!valid || postings.isFetching}>查询补贴流水</Button></div>
-      {!valid && <p className="field-hint span-2" role="status">{span > MAX_RANGE_MS ? '查询范围最长 31 天。' : '请填写有效的开始和结束时间，且结束须晚于开始。'}</p>}
+      {!valid && <p className="field-hint span-2" role="status">{span > MAX_SUBSIDY_RANGE_MS ? '查询范围最长 31 天。' : '请填写有效的开始和结束时间，且结束须晚于开始。'}</p>}
     </form>
     {campaigns.isError && <p className="field-hint">活动列表读取失败，仍可查询全部可见或待归属流水。 <Button onClick={() => void campaigns.refetch()}>重试活动列表</Button></p>}
     {applied && <p className="field-hint">已查询范围 {displayTimestamp(applied.from)} 至 {displayTimestamp(applied.to)}。{applied.selection === UNASSIGNED ? '仅待归属流水' : applied.selection ? activityLabel(applied.selection) : '全部可见流水'}。</p>}
