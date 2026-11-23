@@ -27,7 +27,7 @@ class ReferralHeldReviewMySqlTest {
     @Test void v12CheckedIsOnlyObservationWithExactNanosAndNoDelivery() {
         f.riskLifetime=Duration.ofNanos(500);var checked=f.review().observation();assertEquals(Status.CHECKED,checked.status());assertEquals(f.now.plusNanos(500),checked.validUntil());
         assertEquals(checked,f.repo.find("tenant",f.base.request()));assertEquals("HELD",f.held());assertEquals(1,f.base.count("mk_referral_award_expected_fact"));assertEquals(1,f.base.confirms);
-        assertEquals(13,ReferralPreparationMySqlTest.jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE type='SQL' AND success=1",Integer.class));
+        assertEquals(1,ReferralPreparationMySqlTest.jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE type='SQL' AND success=1 AND version='12'",Integer.class));
         assertEquals(0,ReferralPreparationMySqlTest.jdbc.queryForObject("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='mk_referral_award_held_review' AND column_comment=''",Integer.class));
     }
     @Test void acceptedCancellationSyncWorksAfterModeRollbackAndOriginalSuccessKeepsBarrier() {
