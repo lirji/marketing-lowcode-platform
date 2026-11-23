@@ -23,17 +23,17 @@ describe('dashboard evidence-based status', () => {
     mocks.campaigns.mockResolvedValue([{ id: 'draft', status: 'DRAFT' }, { id: 'running', status: 'ACTIVE' }])
     mocks.series.mockResolvedValue({ points: [{ at: '2026-11-17T01:00:00Z', revenueMinor: 0 }, { at: '2026-11-17T02:00:00Z', revenueMinor: 100 }] })
   })
-  it('labels loaded campaigns and old watermark truthfully while preserving cents and a zero bar', async () => {
+  it('hides amounts and hourly points when the watermark does not cover today', async () => {
     show()
     await screen.findByText('61 天 18 小时')
     expect(screen.getByRole('heading', { name: '查看当前运营数据' })).toBeInTheDocument()
     expect(screen.queryByText(/增长脉搏稳定|在线活动|实时经营/)).not.toBeInTheDocument()
     expect(metric('已加载活动').getByText('2')).toBeInTheDocument()
-    expect(metric('今日归因成交').getByText('¥0.01')).toBeInTheDocument()
-    expect(screen.getByText(/2026\/09\/16 23:28:22/)).toBeInTheDocument()
-    const bars = screen.getByLabelText('今日小时归因收入').querySelectorAll('span')
-    expect(bars[0].style.getPropertyValue('--height')).toBe('0%')
-    expect(bars[1].style.getPropertyValue('--height')).toBe('100%')
+    expect(metric('今日归因成交').getByText('—')).toBeInTheDocument()
+    expect(screen.getByText('今日数据未就绪')).toBeInTheDocument()
+    expect(screen.getAllByText(/2026\/09\/16 23:28:22/)).not.toHaveLength(0)
+    expect(screen.queryByLabelText('今日小时归因收入')).not.toBeInTheDocument()
+    expect(mocks.series).not.toHaveBeenCalled()
   })
   it('does not turn missing lag or a failed campaign query into zero', async () => {
     mocks.dashboard.mockResolvedValue({ counts: {}, attributedRevenueMinor: 0, fundingCostMinor: 0 })
@@ -44,6 +44,7 @@ describe('dashboard evidence-based status', () => {
     expect(metric('已加载活动').getByText('—')).toBeInTheDocument()
   })
   it('renders signed hourly amounts as a table when the simple positive bar chart cannot represent them', async () => {
+    mocks.dashboard.mockImplementation(async (_from, to) => ({ counts: {}, attributedRevenueMinor: 0, fundingCostMinor: 0, completeThrough: to }))
     mocks.series.mockResolvedValue({ points: [{ at: '2026-11-17T01:00:00Z', revenueMinor: -50 }, { at: '2026-11-17T02:00:00Z', revenueMinor: 100 }] })
     show()
     const table = await screen.findByRole('table', { name: '小时归因收入明细' })

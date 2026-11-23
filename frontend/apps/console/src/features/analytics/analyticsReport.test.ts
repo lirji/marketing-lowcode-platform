@@ -16,7 +16,7 @@ describe('analytics report values', () => {
   })
   it('exports all returned points, metadata and raw cents with CSV escaping and formula protection', () => {
     const report: AnalyticsReport = { tenantId: 'report-tenant', range: analyticsRange('WEEK', new Date('2026-11-17T03:04:05Z')), fetchedAt: '2026-11-17T03:04:06Z',
-      dashboard: { counts: { '\t=HYPERLINK("unsafe")': 2, 'A,"B"\nC': -1 }, attributedRevenueMinor: 12345, fundingCostMinor: 67, roi: '1.2345', completeThrough: '2026-11-17T01:00:00Z', lag: { seconds: 3600 } },
+      dashboard: { counts: { '\t=HYPERLINK("unsafe")': 2, 'A,"B"\nC': -1 }, attributedRevenueMinor: 12345, fundingCostMinor: 67, roi: '1.2345', completeThrough: '2026-11-17T03:04:05Z', lag: { seconds: 3600 } },
       points: [{ at: '2026-11-16T00:00:00Z', revenueMinor: 10000, costMinor: 66, conversions: 1 }, { at: '2026-11-17T00:00:00Z', revenueMinor: 2345, costMinor: 1, conversions: 2 }] }
     const csv = reportCsv(report)
     expect(csv.startsWith('\uFEFF')).toBe(true)
@@ -28,6 +28,7 @@ describe('analytics report values', () => {
     expect(csv).toContain('非数据库原子快照')
     expect(csv).toContain('后端UTC自然日分桶')
     expect(csv).not.toContain('¥ 18.43M')
+    expect(() => reportCsv({ ...report, dashboard: { ...report.dashboard, completeThrough: '2026-11-17T02:00:00Z' } })).toThrow('所选范围的数据尚未齐全')
     expect(() => reportCsv({ ...report, dashboard: { ...report.dashboard, attributedRevenueMinor: 2 ** 53 } })).toThrow('无法可靠显示或导出')
   })
 })

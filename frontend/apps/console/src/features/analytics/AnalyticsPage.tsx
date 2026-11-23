@@ -9,6 +9,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { api } from '../../shared/api/client'
 import { problemDetail } from '../../shared/api/problem'
 import { useAuth } from '../../shared/auth/useAuth'
+import { measurementCoverage } from '../../shared/model/measurementCoverage'
 import { ANALYTICS_PERIODS, analyticsRange, displayMinor, downloadReport, validateReport, type AnalyticsPeriod } from './analyticsReport'
 
 export function AnalyticsPage() {
@@ -40,8 +41,11 @@ function AnalyticsWorkspace({ scope }: { scope: string }) {
     refetchOnWindowFocus: false,
   })
   // 刷新失败、请求未完整返回时不导出缓存的旧数据，避免被误读为当前成功结果。
-  const current = canRead && report.isSuccess && !report.isFetching ? report.data : undefined
+  const loaded = canRead && report.isSuccess && !report.isFetching ? report.data : undefined
+  const coverage = loaded && measurementCoverage(range.from, range.to, loaded.dashboard.completeThrough)
+  const current = coverage === 'complete' ? loaded : undefined
   const dashboard = current?.dashboard
+  const watermark = coverage === 'unknown' ? undefined : loaded?.dashboard.completeThrough
   const chart = (current?.points ?? []).map(point => ({ time: displayTimeTick(point.at, range.granularity), revenue: point.revenueMinor / 100, cost: point.costMinor / 100 }))
   const choose = (next: AnalyticsPeriod) => { setDownloadError(undefined); setSelection({ period: next, range: analyticsRange(next) }) }
   const recompute = useMutation({ mutationFn: api.recomputeAttribution, onSuccess: () => setSelection(current => ({ period: current.period, range: analyticsRange(current.period) })) })
@@ -72,14 +76,18 @@ function AnalyticsWorkspace({ scope }: { scope: string }) {
     <p className="field-hint">查询范围：{displayTimestamp(range.from)} 至 {displayTimestamp(range.to)}（不含结束时间）。7天和30天为滚动窗口。当前范围：{campaignId || '全部活动'}；尚不支持归因策略筛选。</p>
     <p className="field-hint">{range.granularity === 'day' ? '日序列按后端UTC自然日分桶，显示北京时间；首尾可能是不完整桶。' : '时间序列按小时分桶，显示北京时间。'}汇总与序列采用相同窗口，读取并非数据库原子快照。</p>
     <p className="field-hint">读取完成：{displayTimestamp(current?.fetchedAt)}。重算全部归因会处理当前租户全部转化，不受页面日期范围限制。</p>
-    {dashboard?.completeThrough && Date.parse(dashboard.completeThrough) < Date.parse(range.from) && <StateBanner tone="warn" title="当前水位尚未覆盖所选窗口" detail="以下数值是当前已读取的投影结果，不能据此认定整个窗口内没有业务发生；请等待数据推进后刷新。" />}
+    {(coverage === 'unknown' || coverage === 'uncovered') && <StateBanner tone="warn" title="数据未就绪" detail={coverage === 'unknown' ? '数据完整时间未知，请稍后刷新。' : `完整数据截至 ${displayTimestamp(watermark)}，尚未覆盖所选范围。`} />}
+    {coverage === 'partial' && watermark && <>
+      <StateBanner tone="warn" title="所选范围的数据尚未齐全" detail={`完整数据截至 ${displayTimestamp(watermark)}。可重新查询已覆盖的范围并导出。`} />
+      <Button onClick={() => { setDownloadError(undefined); setSelection({ period, range: { ...range, to: watermark } }) }}>查看已覆盖范围</Button>
+    </>}
     <section className="analytics-metrics">{[
       ['归因收入（元）', dashboard ? displayMinor(dashboard.attributedRevenueMinor) : '—'],
       ['补贴成本（元）', dashboard ? displayMinor(dashboard.fundingCostMinor) : '—'],
       ['ROI', String(dashboard?.roi ?? '—')],
-      ['水位延迟（秒）', String(dashboard?.lag?.seconds ?? '—')],
+      ['水位延迟（秒）', String(watermark ? loaded?.dashboard.lag?.seconds ?? '—' : '—')],
     ].map(([label, value]) => <Panel key={label}><p>{label}</p><strong>{value}</strong></Panel>)}</section>
-    <p className="field-hint">投影完整水位：{displayTimestamp(dashboard?.completeThrough)}。CSV包含接口原始分值、完整返回序列和范围信息。</p>
+    <p className="field-hint">投影完整水位：{displayTimestamp(watermark)}。CSV包含已覆盖范围、接口原始分值和时间序列。</p>
     {current && <div className="analytics-grid">
       <Panel className="trend-chart"><PanelHeader eyebrow="REVENUE / COST" title="归因收入与补贴成本（北京时间）" aside={<Badge tone="info">元</Badge>} />{chart.length === 0 ? <EmptyState title="暂无时间序列" detail="当前范围内没有返回数据点，可调整日期范围后重试。" /> : <div className="chart-container"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chart}><defs><linearGradient id="revenueFillLive" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#168b80" stopOpacity={0.35}/><stop offset="100%" stopColor="#168b80" stopOpacity={0.02}/></linearGradient></defs><CartesianGrid stroke="#e9eeee" vertical={false}/><XAxis dataKey="time" tick={{ fontSize: 'var(--text-xs)' }} axisLine={false}/><YAxis tick={{ fontSize: 'var(--text-xs)' }} axisLine={false}/><Tooltip labelFormatter={label => `${label}（北京时间）`} /><Legend/><Area type="monotone" dataKey="revenue" name="归因收入" stroke="#168b80" fill="url(#revenueFillLive)" strokeWidth={2}/><Area type="monotone" dataKey="cost" name="补贴成本" stroke="#d18a27" fill="transparent" strokeWidth={2}/></AreaChart></ResponsiveContainer></div>}</Panel>
       <Panel><PanelHeader eyebrow="COUNTS" title="事实类型计数" />{Object.keys(current.dashboard.counts).length === 0 ? <EmptyState title="暂无事实计数" detail="当前窗口未返回事实计数。" /> : <RecordTable label="事实类型计数" columns={['事实类型', '净计数']}>

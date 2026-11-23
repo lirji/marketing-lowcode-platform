@@ -8,6 +8,7 @@ import { problemDetail } from '../../shared/api/problem'
 import { api } from '../../shared/api/client'
 import { ReleaseState } from '../../shared/api/schemas'
 import { useReleasePages } from '../../shared/api/useReleasePages'
+import { measurementCoverage } from '../../shared/model/measurementCoverage'
 
 const emptyMetrics = [
   { label: '今日归因成交', value: '—', delta: '', icon: CircleDollarSign },
@@ -21,17 +22,24 @@ function formatMinor(value: number) {
 }
 
 export function DashboardPage() {
-  const from = businessDayStart()
-  const to = new Date()
   const dashboard = useQuery({
     queryKey: ['dashboard'],
-    queryFn: () => api.dashboard(from.toISOString(), to.toISOString()),
+    queryFn: async () => {
+      const now = new Date()
+      const from = businessDayStart(now).toISOString()
+      const to = now.toISOString()
+      return { from, to, totals: await api.dashboard(from, to) }
+    },
     enabled: !api.demoMode,
   })
+  const window = dashboard.isSuccess && !dashboard.isFetching ? dashboard.data : undefined
+  const totals = window?.totals
+  const coverage = window && measurementCoverage(window.from, window.to, totals?.completeThrough)
+  const watermark = coverage === 'unknown' ? undefined : totals?.completeThrough
   const series = useQuery({
-    queryKey: ['series', 'hour', 'today'],
-    queryFn: () => api.series(from.toISOString(), to.toISOString(), 'hour'),
-    enabled: !api.demoMode,
+    queryKey: ['series', 'hour', 'today', window?.from, window?.to],
+    queryFn: () => api.series(window!.from, window!.to, 'hour'),
+    enabled: !api.demoMode && coverage === 'complete',
   })
   const campaigns = useQuery({ queryKey: ['campaigns'], queryFn: api.campaigns, enabled: !api.demoMode })
   const releases = useReleasePages()
@@ -40,15 +48,15 @@ export function DashboardPage() {
     : releases.isError ? '发布清单读取失败'
       : releases.isPending ? '发布清单加载中'
         : `已加载 ${releases.items.length} 条发布清单${releases.hasNextPage ? '，还有更多可在发布中心查看' : ''}`
-  const metrics = !api.demoMode && dashboard.data
+  const metrics = !api.demoMode && totals
       ? [
-          { label: '今日归因成交', value: formatMinor(dashboard.data.attributedRevenueMinor), delta: `数据截至：${displayTimestamp(dashboard.data.completeThrough)}`, icon: CircleDollarSign },
+          { label: '今日归因成交', value: coverage === 'complete' ? formatMinor(totals.attributedRevenueMinor) : '—', delta: `完整数据截至 ${displayTimestamp(watermark)}`, icon: CircleDollarSign },
           { label: '已加载活动', value: campaigns.isSuccess ? String(campaigns.data?.length ?? 0) : '—', delta: '包含当前可见范围内的各类活动状态', icon: Megaphone },
-          { label: '营销成本', value: formatMinor(dashboard.data.fundingCostMinor), delta: '', icon: Sparkles },
-          { label: '水位延迟', value: displayElapsedSeconds(dashboard.data.lag?.seconds), delta: `${dashboard.data.lag ? `接口读取时延迟：${dashboard.data.lag.seconds.toLocaleString('zh-CN')} 秒` : '接口未返回延迟'}${dashboard.data.roi != null ? `；ROI ${dashboard.data.roi}` : ''}`, icon: UsersRound },
+          { label: '营销成本', value: coverage === 'complete' ? formatMinor(totals.fundingCostMinor) : '—', delta: '', icon: Sparkles },
+          { label: '水位延迟', value: displayElapsedSeconds(watermark ? totals.lag?.seconds : undefined), delta: `${watermark && totals.lag ? `接口读取时延迟：${totals.lag.seconds.toLocaleString('zh-CN')} 秒` : '完整时间未知'}${coverage === 'complete' && totals.roi != null ? `；ROI ${totals.roi}` : ''}`, icon: UsersRound },
         ]
       : emptyMetrics
-  const points = api.demoMode ? [] : series.data?.points ?? []
+  const points = coverage === 'complete' && series.isSuccess ? series.data.points : []
   const peak = Math.max(1, ...points.map((point) => point.revenueMinor))
 
   return <div className="workspace">
@@ -58,6 +66,7 @@ export function DashboardPage() {
     {!api.demoMode && dashboard.isError && <StateBanner tone="error" title="指标加载失败" detail={problemDetail(dashboard.error)} />}
     {!api.demoMode && releases.isError && <StateBanner tone="error" title="发布清单加载失败" detail={problemDetail(releases.error)} />}
     {!api.demoMode && series.isError && <StateBanner tone="error" title="序列加载失败" detail={problemDetail(series.error)} />}
+    {coverage && coverage !== 'complete' && <StateBanner tone="warn" title={coverage === 'partial' ? '今日数据尚未齐全' : '今日数据未就绪'} detail={watermark ? `完整数据截至 ${displayTimestamp(watermark)}。` : '数据完整时间未知。'} />}
     <section className="metric-grid" aria-label="核心指标">
       {metrics.map(({ label, value, delta, icon: Icon }) => <article className="metric-card" key={label}><div className="metric-icon"><Icon size={18} /></div><p>{label}</p><strong>{value}</strong><span>{delta}</span></article>)}
     </section>
@@ -65,6 +74,8 @@ export function DashboardPage() {
       <Panel className="pulse-panel"><PanelHeader eyebrow="经营数据" title="小时归因收入" aside={<Badge tone={points.length ? 'good' : 'info'}>{points.length ? 'API' : '暂无序列'}</Badge>} />
         {api.demoMode
           ? <EmptyState title="收入序列需要连接服务" detail="静态预览不展示经营数据；连接后按实际归因结果绘制。" />
+          : coverage && coverage !== 'complete'
+            ? <EmptyState title="今日小时数据尚未齐全" detail="在衡量分析中可查询已覆盖的范围。" action={<Link className="button secondary" to="/analytics">打开衡量分析</Link>} />
           : points.length === 0
             ? <EmptyState title="暂无小时序列" detail="GET /api/v1/measurements/series 尚未返回数据点。" />
             : points.some((point) => point.revenueMinor < 0)

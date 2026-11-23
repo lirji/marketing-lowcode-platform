@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
 
-const fixture = { counts: { CONVERSION_CONFIRMED: 3, '=unsafe()': 1 }, attributedRevenueMinor: 12345, fundingCostMinor: 67, roi: '183.2537', completeThrough: '2026-11-17T00:00:00Z', lag: { seconds: 12 } }
+const fixture = { counts: { CONVERSION_CONFIRMED: 3, '=unsafe()': 1 }, attributedRevenueMinor: 12345, fundingCostMinor: 67, roi: '183.2537', lag: { seconds: 12 } }
 
 test('analytics exports the selected report and recovers from query failure', async ({ page }, info) => {
   await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
@@ -12,7 +12,7 @@ test('analytics exports the selected report and recovers from query failure', as
   await page.route('**/api/v1/measurements/**', async route => {
     const url = new URL(route.request().url()); requests.push(url)
     if (failing) { await route.fulfill({ status: 503, json: { status: 503, title: 'Unavailable', detail: '隔离故障验证', type: 'about:blank' } }); return }
-    await route.fulfill({ json: url.pathname.endsWith('/dashboard') ? fixture : { points: [{ at: url.searchParams.get('from'), revenueMinor: 12345, costMinor: 67, conversions: 3 }] } })
+    await route.fulfill({ json: url.pathname.endsWith('/dashboard') ? { ...fixture, completeThrough: url.searchParams.get('to') } : { points: [{ at: url.searchParams.get('from'), revenueMinor: 12345, costMinor: 67, conversions: 3 }] } })
   })
   await page.goto('/analytics')
   await expect(page.getByRole('button', { name: '导出当前报告' })).toBeEnabled()
@@ -59,8 +59,18 @@ test('analytics reads and downloads the actual local measurement report', async 
     await route.fulfill({ response })
   })
   await page.goto('/analytics')
-  await expect(page.getByRole('button', { name: '导出当前报告' })).toBeEnabled({ timeout: 20000 })
+  await expect.poll(() => receipts.filter(row => row.path.endsWith('/dashboard')).length).toBeGreaterThan(0)
   await page.getByRole('button', { name: '7 天', exact: true }).click()
+  await expect.poll(() => receipts.filter(row => row.path.endsWith('/dashboard')).length).toBeGreaterThan(1)
+  const loaded = receipts.filter(row => row.path.endsWith('/dashboard')).at(-1)!
+  expect(loaded.status).toBe(200)
+  const watermark = Date.parse(String(loaded.body.completeThrough))
+  if (!Number.isFinite(watermark) || watermark <= Date.parse(loaded.from!)) {
+    await expect(page.getByText('数据未就绪', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: '导出当前报告' })).toBeDisabled()
+    return
+  }
+  if (watermark < Date.parse(loaded.to!)) await page.getByRole('button', { name: '查看已覆盖范围' }).click()
   await expect(page.getByRole('button', { name: '导出当前报告' })).toBeEnabled({ timeout: 20000 })
   const dashboard = receipts.filter(row => row.path.endsWith('/dashboard')).at(-1)!
   const series = receipts.filter(row => row.path.endsWith('/series')).at(-1)!
@@ -89,7 +99,7 @@ test('campaign selection requires a server-confirmed scope and preserves it in t
   await page.route('**/api/v1/measurements/**', route => {
     const url = new URL(route.request().url()), selected = url.searchParams.get('campaignId') || ''
     const echo = selected === 'cmp-b' ? {} : { campaignId: selected }
-    return route.fulfill({ json: url.pathname.endsWith('/dashboard') ? { ...fixture, ...echo, attributedRevenueMinor: selected ? 100 : 12345 } : { points: [], ...echo } })
+    return route.fulfill({ json: url.pathname.endsWith('/dashboard') ? { ...fixture, ...echo, completeThrough: url.searchParams.get('to'), attributedRevenueMinor: selected ? 100 : 12345 } : { points: [], ...echo } })
   })
   await page.goto('/analytics')
   await expect(page.getByRole('button', { name: '导出当前报告' })).toBeEnabled()

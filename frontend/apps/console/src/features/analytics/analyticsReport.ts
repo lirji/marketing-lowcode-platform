@@ -1,5 +1,6 @@
 import { businessDayStart, displayTimestamp } from '../../components/dateTime'
 import type { DashboardMetrics, SeriesPoint } from '../../shared/api/schemas'
+import { measurementCoverage } from '../../shared/model/measurementCoverage'
 
 export const ANALYTICS_PERIODS = { TODAY: '今天', WEEK: '7 天', MONTH: '30 天' } as const
 export type AnalyticsPeriod = keyof typeof ANALYTICS_PERIODS
@@ -41,6 +42,9 @@ export function validateReport(report: AnalyticsReport) {
 export function reportCsv(report: AnalyticsReport) {
   validateReport(report)
   const { range, dashboard, points, fetchedAt } = report
+  if (measurementCoverage(range.from, range.to, dashboard.completeThrough) !== 'complete') {
+    throw new Error('所选范围的数据尚未齐全，请查询已覆盖范围后导出')
+  }
   const rows: (string | number)[][] = [
     ['分类', '字段或时间', '值', '单位', '说明'],
     ['查询范围', '租户', report.tenantId, '', '当前认证租户'],

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('dashboard shows data age and real zero values without live-health claims', async ({ page }, info) => {
+test('dashboard shows stale data age and suppresses unverified amounts without live-health claims', async ({ page }, info) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
@@ -15,10 +15,11 @@ test('dashboard shows data age and real zero values without live-health claims',
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '查看当前运营数据' })).toBeVisible()
   await expect(page.getByText('61 天 18 小时', { exact: true })).toBeVisible()
-  await expect(page.getByText('¥0.01', { exact: true })).toBeVisible()
+  await expect(page.getByText('今日数据未就绪', { exact: true })).toBeVisible()
+  await expect(page.getByText('¥0.01', { exact: true })).toHaveCount(0)
   await expect(page.getByText('已加载活动', { exact: true })).toBeVisible()
   await expect(page.getByText(/在线活动|增长脉搏稳定|实时经营/)).toHaveCount(0)
-  await expect(page.getByLabel('今日小时归因收入').locator('span').first()).toHaveCSS('height', '0px')
+  await expect(page.getByLabel('今日小时归因收入')).toHaveCount(0)
   await page.screenshot({ path: info.outputPath('dashboard-data-age.png'), fullPage: true })
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width + 1)
   expect(errors).toEqual([])

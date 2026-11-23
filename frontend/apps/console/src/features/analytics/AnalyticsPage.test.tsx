@@ -10,7 +10,7 @@ vi.mock('../../shared/api/client', () => ({ api: { get demoMode() { return mocks
 vi.mock('./analyticsReport', async importOriginal => ({ ...await importOriginal<typeof import('./analyticsReport')>(), downloadReport: mocks.download }))
 import { AnalyticsPage } from './AnalyticsPage'
 
-const dashboard: DashboardMetrics = { counts: { CONVERSION_CONFIRMED: 3 }, attributedRevenueMinor: 12345, fundingCostMinor: 67, roi: '183.2537', completeThrough: '2026-11-17T00:00:00Z', lag: { seconds: 12 } }
+const dashboard: DashboardMetrics = { counts: { CONVERSION_CONFIRMED: 3 }, attributedRevenueMinor: 12345, fundingCostMinor: 67, roi: '183.2537', completeThrough: new Date(Date.now() + 60_000).toISOString(), lag: { seconds: 12 } }
 function fixture() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   const tree = (identity: AuthState) => <QueryClientProvider client={client}><AuthStateContext.Provider value={identity}><AnalyticsPage /></AuthStateContext.Provider></QueryClientProvider>
@@ -44,6 +44,23 @@ describe('AnalyticsPage', () => {
     expect(mocks.dashboard).toHaveBeenCalledTimes(1)
     expect(screen.getByText('0.67')).toBeInTheDocument()
     expect(screen.queryByText('双11家电主会场')).not.toBeInTheDocument()
+  })
+  it('shows unknown coverage instead of zero, and exports a freshly queried covered window', async () => {
+    mocks.dashboard.mockResolvedValue({ ...dashboard, attributedRevenueMinor: 0, fundingCostMinor: 0, completeThrough: '1970-01-01T00:00:00Z' })
+    fixture()
+    expect(await screen.findByText('数据未就绪')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '导出当前报告' })).toBeDisabled()
+    expect(screen.queryByText('0.00')).not.toBeInTheDocument()
+    const through = new Date(Date.now() - 60_000).toISOString()
+    mocks.dashboard.mockResolvedValue({ ...dashboard, attributedRevenueMinor: 0, fundingCostMinor: 0, completeThrough: through })
+    await userEvent.click(screen.getByRole('button', { name: '7 天' }))
+    expect(await screen.findByText('所选范围的数据尚未齐全')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '导出当前报告' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: '查看已覆盖范围' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '导出当前报告' })).toBeEnabled())
+    expect(screen.getAllByText('0.00')).toHaveLength(2)
+    expect(mocks.dashboard.mock.calls.at(-1)?.[1]).toBe(through)
+    expect(mocks.series.mock.calls.at(-1)?.[1]).toBe(through)
   })
   it('switches range while old requests are pending and ignores the late previous report', async () => {
     const old = deferred<DashboardMetrics>()
