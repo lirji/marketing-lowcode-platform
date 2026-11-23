@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.acme.marketing.contracts.event.JourneyBundleExecutionAckEvent;
 import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.crypto.Ed25519;
+import com.github.dockerjava.api.model.Network.Ipam;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.nio.file.Files;
@@ -65,7 +66,7 @@ class JourneyProbeCheckpointIT {
             """;
     private static final KeyPair RELEASE = Ed25519.generateKeyPair(), COMPILER = Ed25519.generateKeyPair();
     private static final KeyPair EXECUTION = Ed25519.generateKeyPair(), PARTICIPATION = Ed25519.generateKeyPair();
-    private static final Network NETWORK = Network.newNetwork();
+    private static final Network NETWORK = isolatedNetwork();
     private static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4.11")
             .withNetwork(NETWORK).withNetworkAliases(DB_ALIAS)
             .withCommand("--performance-schema=OFF", "--innodb-buffer-pool-size=64M")
@@ -78,6 +79,14 @@ class JourneyProbeCheckpointIT {
     private static final GenericContainer<?> TM = flink("taskmanager");
     private static String jobId;
     private static String digest;
+
+    /** 默认由 Docker 分配；本机默认池已满时允许指定空闲子网，仍创建独占网络。 */
+    private static Network isolatedNetwork() {
+        String subnet = System.getenv("JOURNEY_CHECKPOINT_TEST_SUBNET");
+        if (subnet == null || subnet.isBlank()) return Network.newNetwork();
+        return Network.builder().createNetworkCmdModifier(cmd ->
+                cmd.withIpam(new Ipam().withConfig(new Ipam.Config().withSubnet(subnet)))).build();
+    }
 
     private static GenericContainer<?> flink(String role) {
         return new GenericContainer<>(FLINK_IMAGE).withNetwork(NETWORK)

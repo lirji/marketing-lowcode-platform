@@ -892,4 +892,6 @@
 - 处理函数回归复现 Flink 回执的三处日期时间使用数字格式，与事件 schema 不符（s11g6b3c-wire-first.log）。已单独修复该事件输出，探针、状态恢复及作业图共 11 项验证通过并重新打包（s11g6b3c-wire-final.log）。实际 checkpoint 验收在独立 CI 作业执行。
 - 任务分支 0be4ffc（含时间编码修复 241152f）的 GitHub 托管隔离验收实际执行 1 项、0 失败/跳过。作业 137542590883 用时 53 秒，触发前 PENDING/0，触发后 READY/2，业务激活和派发表均空。私有日志 s11g6b3c-checkpoint-first.log。共享环境未启动。
 - 二轮在未提交读已看到的回执位点上增加 broker READ_COMMITTED 末端检查，同时把首次周期 checkpoint 的最短延迟固定在验收窗口之外。二轮 test-compile 通过，远端实跑及其余 CI 状态以该 revision 的 Actions 记录为准。
-- 下一项 Decision 执行证据需覆盖接收业务流量的实例。现有 Helm 从 metadata.name 和镜像标签配置运行身份，Compose 使用固定名称和 local 值。正式名单与不可变制品身份的权威来源待用户确定，应用指针继续关闭。
+- 下一项 Decision 执行证据需覆盖接收业务流量的实例。现有 Helm 从 metadata.name 和镜像标签配置运行身份，Compose 使用固定名称和 local 值。用户已确认由部署流水线出具签名清单，兼容 Compose 和 Kubernetes。
+- 获准启动本机 Docker Desktop 后第一次本地验收因默认地址池耗尽而停在网络创建。已支持显式独占测试子网并用无冲突的 10.254.211.0/28 复验，日志 s11g6b3c-checkpoint-local-subnet.log。共享 REST 在引擎启动后返回空作业列表，本次只读核对。
+- 本机显式独占子网复验 1 项通过（s11g6b3c-checkpoint-local-subnet.log），服务模块耗时约 46 秒；c6d5f7a 的远程 checkpoint 作业 137543496937 通过。两端均验证实际回执和提交前 broker 位点。

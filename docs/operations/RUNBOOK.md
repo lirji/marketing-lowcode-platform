@@ -176,3 +176,5 @@ CONFIRM_GAME_DAY=marketing-r1-local ./scripts/game-day.sh kafka-restart
 ### Journey 探针的 checkpoint 隔离验收
 
 在可用的 Docker 引擎上运行 `./scripts/verify-journey-checkpoint.sh`。脚本打包当前 Journey 作业，使用 Testcontainers 的独立网络、MySQL、Kafka 和 Flink 会话。测试经 Journey 服务登记并派发探针，在 Kafka 未提交读下观察到两个子任务的回执，再触发该作业的 checkpoint。服务的持久查询须从 PENDING（0 份）变为 READY（2 份），业务激活和派发表应为空。测试结束后释放本次容器。运行耗时包括镜像拉取及 Maven 构建。
+
+本机 Docker 默认地址池耗尽时，可将环境变量 `JOURNEY_CHECKPOINT_TEST_SUBNET` 设为与现有路由和 Docker 网络不重叠的空闲 CIDR，再运行同一脚本。
