@@ -3,6 +3,7 @@ package com.acme.marketing.benefit.application;
 import com.acme.marketing.benefit.domain.ResourceAccount;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 权益定义、资源账户、预留结算和资金流水持久化端口。
@@ -57,6 +58,8 @@ public interface BenefitFundingRepository {
     int updateEscrowAllocationAmounts(EscrowMutation write);
 
     List<LedgerRow> findLedger(String tenantId);
+    Optional<SubsidyPostingCursor> findSubsidyPostingCursor(SubsidyPostingFilter filter, String ledgerId);
+    List<SubsidyPostingRow> findSubsidyPostings(SubsidyPostingFilter filter, SubsidyPostingCursor cursor, int limit);
     List<ReconcileItemRow> findReconcileItems(String tenantId);
     List<EscrowReconcileRow> findEscrowReconcileItems(String tenantId);
     List<OutboxTypeRow> findOutboxTypes(String tenantId);
@@ -105,7 +108,7 @@ public interface BenefitFundingRepository {
     record ApplicationWrite(String tenantId, String applicationId, String quoteId, String decisionRequestId,
             String orderId, String organizationId, String shopIdsJson, String cartDigest, String tokenDigest,
             long generationNo, String stateName, long totalDiscount, String currencyCode, String expiresAt,
-            String createdAt, String updatedAt, String expiryNextAttemptAt) { }
+            String createdAt, String updatedAt, String expiryNextAttemptAt, String campaignId) { }
     record ReservationItemWrite(String tenantId, String applicationId, String resourceKey, String resourceType,
             String currencyCode, long originalAmount, long reservedAmount, long consumedAmount,
             long refundedAmount, long releasedAmount, long reservationEpoch) { }
@@ -145,6 +148,12 @@ public interface BenefitFundingRepository {
     record LedgerWrite(String tenantId, String ledgerId, String applicationId, String orderId,
             String resourceKey, int escrowBucketId, String operation, String debitBucket,
             String creditBucket, long amount, long accountVersion, String correctionOf, String occurredAt) { }
+    /** 查询条件由服务端根据当前身份构造。空值才代表该维度具有全域权限。 */
+    record SubsidyPostingFilter(String tenantId, String from, String to, String campaignId, boolean unassigned,
+            Set<String> organizations, String allowedShopsJson) { }
+    record SubsidyPostingCursor(String ledgerId, String postingTime) { }
+    record SubsidyPostingRow(String ledgerId, String postingTime, String applicationId, String campaignId,
+            String resourceKey, String currency, String operation, long amount) { }
     record OutboxWrite(String tenantId, String eventId, String aggregateId, String eventType,
             String destinationTopic, String partitionKey, long streamSequence, String payloadJson,
             String nextAttemptAt, String createdAt) { }

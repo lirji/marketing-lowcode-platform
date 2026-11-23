@@ -26,9 +26,14 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.security.KeyPair;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.InstantSource;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -40,9 +45,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -54,6 +63,8 @@ import tools.jackson.databind.ObjectMapper;
 class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
     private static final KeyPair OFFER_KEYS = Ed25519.generateKeyPair();
     private static final String CART_DIGEST = "sha256:" + "c".repeat(64);
+    private static final Instant BEIJING_MIDNIGHT = Instant.parse("2026-09-16T16:00:00Z");
+    private static final AtomicReference<Instant> POSTING_TIME = new AtomicReference<>();
     private static final AtomicInteger BENEFIT_SKU_REQUESTS = new AtomicInteger();
     private static final AtomicInteger BENEFIT_CATALOG_STATUS = new AtomicInteger(200);
     private static final AtomicBoolean SKU_ACTIVE = new AtomicBoolean(true);
@@ -83,6 +94,20 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
     @Autowired private BenefitSkuCatalog benefitSkuCatalog;
     @Autowired private AwardIntentRelay awardIntentRelay;
     private final HttpClient client = HttpClient.newHttpClient();
+
+    /** 默认使用真实时钟，仅账本验证固定在北京时间零点两侧入账。 */
+    @TestConfiguration
+    static class PostingTimeConfiguration {
+        @Bean @Primary Clock testClock() {
+            InstantSource source = () -> {
+                Instant fixed = POSTING_TIME.get();
+                return fixed == null ? Instant.now() : fixed;
+            };
+            return source.withZone(ZoneOffset.UTC);
+        }
+    }
+
+    @AfterEach void useSystemTime() { POSTING_TIME.set(null); }
 
     private static Map<String, Integer> writerEpochs(int inventoryEpoch) {
         return Map.of("INVENTORY:benefit-v1", inventoryEpoch,
@@ -679,7 +704,8 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         assertEquals("coupon-80", get("/api/v1/benefits/coupon-80").get("benefitId").asString());
         assertTrue(get("/api/v1/benefits").isArray());
 
-        String token = token();
+        POSTING_TIME.set(BEIJING_MIDNIGHT.minusSeconds(10));
+        String token = token("1", "campaign-ledger", "tenant-a");
         Map<String, Object> reserve = Map.of("offerToken", token, "cartDigest", CART_DIGEST,
                 "orderId", "order-1", "expectedFencingEpochs", writerEpochs(1));
         JsonNode first = post("/api/v1/promotion-applications", reserve, "reserve-command-001");
@@ -707,16 +733,27 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         post("/api/v1/funding/accounts/INVENTORY:benefit-v1:advance-fence",
                 Map.of("expectedEpoch", 1, "state", "ACTIVE"), null);
 
-        JsonNode confirmed = post("/api/v1/promotion-applications/" + applicationId + ":confirm",
+        String operations = "/api/v1/promotion-applications/" + applicationId;
+        JsonNode confirmed = post(operations + ":confirm",
                 Map.of("expectedFencingEpochs", writerEpochs(2)), "confirm-command-001");
         assertEquals("CONFIRMED", confirmed.get("state").asString());
-        JsonNode partial = post("/api/v1/promotion-applications/" + applicationId + ":refund",
-                Map.of("resourceAmounts", Map.of("BUDGET:PLATFORM:platform:CNY", 200),
-                        "expectedFencingEpochs", writerEpochs(2)), "refund-command-001");
+        assertEquals(confirmed, post(operations + ":confirm",
+                Map.of("expectedFencingEpochs", writerEpochs(2)), "confirm-command-001"));
+
+        POSTING_TIME.set(BEIJING_MIDNIGHT);
+        var refund = Map.of("resourceAmounts", Map.of("BUDGET:PLATFORM:platform:CNY", 200),
+                "expectedFencingEpochs", writerEpochs(2));
+        JsonNode partial = post(operations + ":refund", refund, "refund-command-001");
         assertEquals("PARTIALLY_REFUNDED", partial.get("state").asString());
-        JsonNode reversed = post("/api/v1/promotion-applications/" + applicationId + ":reverse",
+        assertEquals(partial, post(operations + ":refund", refund, "refund-command-001"));
+        assertSubsidyPostings(applicationId);
+
+        POSTING_TIME.set(BEIJING_MIDNIGHT.plusSeconds(3));
+        JsonNode reversed = post(operations + ":reverse",
                 Map.of("expectedFencingEpochs", writerEpochs(2)), "reverse-command-001");
         assertEquals("REVERSED", reversed.get("state").asString());
+        assertEquals(-800, totalPostings(postings(BEIJING_MIDNIGHT.plusSeconds(3), BEIJING_MIDNIGHT.plusSeconds(4))
+                + "&campaignId=campaign-ledger"));
 
         JsonNode reconciliation = get("/api/v1/funding/reconciliation");
         assertTrue(reconciliation.get("balanced").asBoolean());
@@ -727,6 +764,73 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         JsonNode tampered = get("/api/v1/funding/reconciliation");
         assertEquals(false, tampered.get("balanced").asBoolean());
         assertTrue(tampered.get("violations").toString().contains("OUTBOX_INCOMPLETE"));
+    }
+
+    /** 实际两天的请求分别读确认和部分退款，分页、权限及历史归属沿用同一账本。 */
+    private void assertSubsidyPostings(String applicationId) throws Exception {
+        String firstDay = postings(BEIJING_MIDNIGHT.minusSeconds(20), BEIJING_MIDNIGHT) + "&campaignId=campaign-ledger";
+        String nextDay = postings(BEIJING_MIDNIGHT, BEIJING_MIDNIGHT.plusSeconds(5)) + "&campaignId=campaign-ledger";
+        assertEquals(1_000, totalPostings(firstDay));
+        assertEquals(-200, totalPostings(nextDay));
+        List<JsonNode> paged = getSubsidyPostings(firstDay + "&limit=1");
+        assertEquals(3, paged.size());
+        assertEquals(3, new HashSet<>(paged.stream().map(row -> row.path("ledgerId").asString()).toList()).size());
+        assertTrue(paged.stream().allMatch(row -> applicationId.equals(row.path("applicationId").asString())
+                && "CNY".equals(row.path("currency").asString()) && "CONFIRM".equals(row.path("operation").asString())));
+        assertEquals(700, paged.stream().filter(row -> row.path("resourceKey").asString().startsWith("BUDGET:PLATFORM:"))
+                .mapToLong(row -> row.path("amountMinor").asLong()).sum());
+        assertEquals(0, getTenant(firstDay, "other-tenant").path("items").size());
+        var otherShop = exchange(base(firstDay).setHeader("X-Dev-Shop-Ids", "shop-other").GET().build());
+        assertEquals(0, otherShop.path("items").size());
+        var otherOrg = exchange(base(firstDay).setHeader("X-Dev-Organization-Ids", "Org-a").GET().build());
+        assertEquals(0, otherOrg.path("items").size());
+        var denied = client.send(base(firstDay).setHeader("X-Dev-Permissions", "measurement:read").GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, denied.statusCode());
+        var cursorFromOtherDay = client.send(base(nextDay + "&cursor=" + paged.getFirst().path("ledgerId").asString())
+                .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(400, cursorFromOtherDay.statusCode());
+    }
+
+    @Test void olderOffersStayUnassignedAndRetainLegacyPostingPrecision() throws Exception {
+        POSTING_TIME.set(BEIJING_MIDNIGHT);
+        Map<String, Integer> epochs = writerEpochs(1);
+        String tenant = "tenant-legacy-postings";
+        createAccount("INVENTORY:benefit-v1", "INVENTORY", "UNIT", 10, tenant);
+        createAccount("BUDGET:PLATFORM:platform:CNY", "BUDGET", "CNY", 10_000, tenant);
+        createAccount("BUDGET:MERCHANT:shop-1:CNY", "BUDGET", "CNY", 10_000, tenant);
+        JsonNode reserved = postTenant("/api/v1/promotion-applications", Map.of("offerToken", token("2", null, tenant),
+                "cartDigest", CART_DIGEST, "orderId", "order-2", "expectedFencingEpochs", epochs), "legacy-posting-reserve", tenant);
+        String applicationId = reserved.path("applicationId").asString();
+        postTenant("/api/v1/promotion-applications/" + applicationId + ":confirm", Map.of("expectedFencingEpochs", epochs),
+                "legacy-posting-confirm", tenant);
+        jdbc.update("update mk_funding_ledger set occurred_at=? where tenant_id=? and application_id=? and operation_name='CONFIRM'",
+                BEIJING_MIDNIGHT.toString(), tenant, applicationId);
+        String day = postings(BEIJING_MIDNIGHT, BEIJING_MIDNIGHT.plusNanos(1));
+        var unassigned = getTenant(day + "&unassigned=true", tenant).path("items");
+        assertEquals(3, unassigned.size());
+        assertTrue(unassigned.get(0).path("campaignId").isNull());
+        assertEquals(0, getTenant(day + "&campaignId=campaign-ledger", tenant).path("items").size());
+        assertEquals(0, getTenant(postings(BEIJING_MIDNIGHT.minusSeconds(1), BEIJING_MIDNIGHT), tenant).path("items").size());
+    }
+
+    private static String postings(Instant from, Instant to) {
+        return "/api/v1/funding/subsidy-postings?from=" + from + "&to=" + to;
+    }
+
+    private long totalPostings(String path) throws Exception {
+        return getSubsidyPostings(path).stream().mapToLong(row -> row.path("amountMinor").asLong()).sum();
+    }
+
+    private List<JsonNode> getSubsidyPostings(String path) throws Exception {
+        List<JsonNode> rows = new ArrayList<>();
+        JsonNode response = get(path);
+        while (true) {
+            response.path("items").forEach(rows::add);
+            if (!response.path("hasMore").asBoolean()) return rows;
+            assertTrue(rows.size() < 20, "fee fixture should use fewer than 20 records");
+            response = get(path + "&cursor=" + response.path("nextCursor").asString());
+        }
     }
 
     @Test
@@ -807,20 +911,24 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
     }
 
     private void createAccount(String key, String type, String currency, long authorized) throws Exception {
-        post("/api/v1/funding/accounts", Map.of("resourceKey", key, "type", type, "currency", currency,
-                "authorized", authorized, "fencingEpoch", 1),
-                "account-" + Digests.sha256Hex(key).substring(0, 16));
+        createAccount(key, type, currency, authorized, "tenant-a");
     }
 
-    private static String token() {
-        Instant now = Instant.now();
+    private void createAccount(String key, String type, String currency, long authorized, String tenant) throws Exception {
+        postTenant("/api/v1/funding/accounts", Map.of("resourceKey", key, "type", type, "currency", currency,
+                "authorized", authorized, "fencingEpoch", 1),
+                "account-" + Digests.sha256Hex(key).substring(0, 16), tenant);
+    }
+
+    private static String token(String suffix, String campaignId, String tenant) {
+        Instant now = POSTING_TIME.get();
         OfferLineClaim line = new OfferLineClaim("offer-1", "benefit-v1", "CNY", 1_000, 1,
                 List.of(new FundingShareClaim("PLATFORM", "platform", "CNY", 700),
                         new FundingShareClaim("MERCHANT", "shop-1", "CNY", 300)));
-        OfferTokenClaims claims = new OfferTokenClaims("decision", new TenantId("tenant-a"), "org-a", "subject-1",
-                "order-1", List.of("shop-1"), CART_DIGEST, "quote-1", "request-1", 1,
+        OfferTokenClaims claims = new OfferTokenClaims("decision", new TenantId(tenant), "org-a", "subject-1",
+                "order-" + suffix, List.of("shop-1"), CART_DIGEST, "quote-" + suffix, "request-" + suffix, 1,
                 List.of("artifact-1"), List.of(line),
-                "terms-v1", now.minusSeconds(1), now.plusSeconds(300), "nonce-1", List.of());
+                "terms-v1", now.minusSeconds(1), now.plusSeconds(300), "nonce-" + suffix, List.of(), campaignId);
         return OfferTokenCodec.encode("offer-test-key", OFFER_KEYS.getPrivate(), claims);
     }
 

@@ -148,12 +148,15 @@ public final class DecisionApplicationService {
                 applied.discount().minorUnits(), 1, applied.funding().stream().map(funding ->
                         new FundingShareClaim(funding.funderType(), funding.funderId(),
                                 funding.amount().currency(), funding.amount().minorUnits())).toList())).toList();
+        // 进入这里前已用组合凭证解析精确运行计划，活动归属只能来自该已验证凭证。
+        String campaignId = request.bundleContext() == null ? null : request.bundleContext().participation().campaignId();
         OfferTokenClaims claims = new OfferTokenClaims("offer-decision-service", scope.tenantId(),
                 request.organizationId(), request.subjectToken(), request.orderId(),
                 request.cart().lines().stream().map(line -> line.shopId()).distinct().sorted().toList(),
                 request.cart().digest(), quoteId,
                 request.requestId(), snapshot.generation(), snapshot.artifactIds(), offers, snapshot.termsVersion(),
-                now, now.plusSeconds(300), UUID.randomUUID().toString(), request.audienceSnapshotIds().stream().sorted().toList());
+                now, now.plusSeconds(300), UUID.randomUUID().toString(),
+                request.audienceSnapshotIds().stream().sorted().toList(), campaignId);
         return OfferTokenCodec.encode(offerKeys.activeKeyId(), offerKeys.activePrivateKey(), claims);
     }
 

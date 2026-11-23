@@ -4,6 +4,7 @@ import com.acme.marketing.platform.identity.TenantId;
 import java.time.Instant;
 import java.util.List;
 
+/** 签名报价固定优惠条款。可信组合报价额外保留活动归属，供成交后的补贴对账使用。 */
 public record OfferTokenClaims(
         String issuer,
         TenantId tenantId,
@@ -21,7 +22,18 @@ public record OfferTokenClaims(
         Instant issuedAt,
         Instant expiresAt,
         String nonce,
-        List<String> audienceVersions) {
+        List<String> audienceVersions,
+        String campaignId) {
+    /** 旧报价及未绑定组合的调用继续生成原有声明。 */
+    public OfferTokenClaims(String issuer, TenantId tenantId, String organizationId, String subjectToken,
+            String orderId, List<String> shopIds, String cartDigest, String quoteId, String decisionRequestId,
+            long generation, List<String> artifactIds, List<OfferLineClaim> offerLines, String termsVersion,
+            Instant issuedAt, Instant expiresAt, String nonce, List<String> audienceVersions) {
+        this(issuer, tenantId, organizationId, subjectToken, orderId, shopIds, cartDigest, quoteId,
+                decisionRequestId, generation, artifactIds, offerLines, termsVersion, issuedAt, expiresAt,
+                nonce, audienceVersions, null);
+    }
+
     public OfferTokenClaims {
         issuer = requireText(issuer, "issuer");
         if (tenantId == null) {
@@ -54,6 +66,9 @@ public record OfferTokenClaims(
         }
         nonce = requireText(nonce, "nonce");
         audienceVersions = List.copyOf(audienceVersions == null ? List.of() : audienceVersions);
+        if (campaignId != null && !campaignId.matches("[A-Za-z0-9_.:-]{1,64}")) {
+            throw new IllegalArgumentException("campaignId is invalid");
+        }
     }
 
     public long totalDiscountMinorUnits() {

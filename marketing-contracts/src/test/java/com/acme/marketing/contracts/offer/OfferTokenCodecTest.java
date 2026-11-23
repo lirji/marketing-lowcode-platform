@@ -1,6 +1,7 @@
 package com.acme.marketing.contracts.offer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.acme.marketing.platform.crypto.Ed25519;
@@ -34,6 +35,7 @@ class OfferTokenCodecTest {
 
         assertEquals(42, verified.generation());
         assertEquals(8000, verified.totalDiscountMinorUnits());
+        assertNull(verified.campaignId());
         assertThrows(OfferTokenException.class, () -> OfferTokenCodec.verify(token, ignored -> pair.getPublic(),
                 tenant, "sha256:" + "b".repeat(64), Clock.fixed(NOW, ZoneOffset.UTC)));
     }

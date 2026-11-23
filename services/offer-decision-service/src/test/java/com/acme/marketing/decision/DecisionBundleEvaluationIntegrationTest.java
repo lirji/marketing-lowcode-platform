@@ -1,5 +1,8 @@
 package com.acme.marketing.decision;
 
+import com.acme.marketing.contracts.offer.OfferTokenCodec;
+import com.acme.marketing.platform.crypto.SigningKeyRing;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.acme.marketing.contracts.artifact.ArtifactAttestation;
@@ -101,6 +104,7 @@ class DecisionBundleEvaluationIntegrationTest {
     @BeforeEach void resetClock() { TIME.now = NOW; }
     @LocalServerPort int port;
     @Autowired ObjectMapper mapper;
+    @Autowired @org.springframework.beans.factory.annotation.Qualifier("offerSigningKeyRing") SigningKeyRing offerKeys;
     @Autowired JdbcTemplate jdbc;
     @Autowired RuntimeManifestRegistry runtime;
     @Autowired DecisionApplicationService decisions;
@@ -172,8 +176,11 @@ class DecisionBundleEvaluationIntegrationTest {
     @Test void historicalManifestExpiryDoesNotExtendCurrentPolicyValidity() throws Exception {
         var source = installed(1); var proof = proof(source, "binding", "participation", "subject");
         TIME.now = NOW.plusSeconds(601);
-        var response = send(decision(proof)); assertEquals(200, response.statusCode(), response.body());
-        assertFalse(mapper.readTree(response.body()).path("offerToken").asString().isEmpty());
+        var input = decision(proof);
+        var response = send(input); assertEquals(200, response.statusCode(), response.body());
+        String token = mapper.readTree(response.body()).path("offerToken").asString();
+        var verified = OfferTokenCodec.verify(token, offerKeys::publicKey, proof.tenantId(), input.cart().digest(), TIME);
+        assertEquals(proof.campaignId(), verified.campaignId());
         TIME.now = NOW.plusSeconds(3601);
         var expiredPolicy = send(decision(proof)); assertEquals(200, expiredPolicy.statusCode(), expiredPolicy.body());
         assertEquals("", mapper.readTree(expiredPolicy.body()).path("offerToken").asString());

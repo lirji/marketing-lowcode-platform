@@ -117,6 +117,13 @@ public class MybatisBenefitFundingRepository implements BenefitFundingRepository
         return mapper.updateEscrowAllocationAmounts(write);
     }
     @Override public List<LedgerRow> findLedger(String tenantId) { return mapper.selectLedger(tenantId); }
+    @Override public Optional<SubsidyPostingCursor> findSubsidyPostingCursor(SubsidyPostingFilter filter, String ledgerId) {
+        return Optional.ofNullable(mapper.selectSubsidyPostingCursor(filter, ledgerId));
+    }
+    @Override public List<SubsidyPostingRow> findSubsidyPostings(SubsidyPostingFilter filter,
+            SubsidyPostingCursor cursor, int limit) {
+        return mapper.selectSubsidyPostings(filter, cursor, limit);
+    }
     @Override public List<ReconcileItemRow> findReconcileItems(String tenantId) {
         return mapper.selectReconcileItems(tenantId);
     }

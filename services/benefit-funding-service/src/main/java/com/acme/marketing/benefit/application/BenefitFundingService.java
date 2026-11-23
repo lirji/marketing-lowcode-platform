@@ -17,6 +17,7 @@ import com.acme.marketing.platform.identity.TenantId;
 import com.acme.marketing.platform.identity.TenantScope;
 import com.acme.marketing.platform.web.TenantContextHolder;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -39,6 +40,10 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class BenefitFundingService {
+    private static final int DEFAULT_POSTING_PAGE_SIZE = 50;
+    private static final int MAX_POSTING_PAGE_SIZE = 100;
+    private static final Duration MAX_POSTING_RANGE = Duration.ofDays(31);
+    private static final String RECONCILE_PERMISSION = "funding:reconcile";
     private final BenefitFundingRepository repository;
     private final ObjectMapper mapper;
     private final Clock clock;
@@ -340,7 +345,7 @@ public class BenefitFundingService {
                 claims.organizationId(), json(new java.util.TreeSet<>(claims.shopIds())), request.cartDigest(),
                 Digests.sha256Hex(request.offerToken()), claims.generation(), ApplicationState.RESERVED.name(),
                 claims.totalDiscountMinorUnits(), claims.offerLines().getFirst().currency(),
-                format(claims.expiresAt()), format(now), format(now), format(now)));
+                format(claims.expiresAt()), format(now), format(now), format(now), claims.campaignId()));
         if (!created) {
             throw new ConflictException("OFFER_TOKEN_REPLAYED", "offer token quote was already reserved");
         }
@@ -606,10 +611,51 @@ public class BenefitFundingService {
         if (updated != 1) throw new ConflictException("ESCROW_ALLOCATION_CONCURRENT_MODIFICATION", resourceKey);
     }
 
+    /** 按实际入账时点读取预算确认及退款流水，留存无可信活动归属的历史记录供核对。 */
+    @Transactional(readOnly = true)
+    public SubsidyPostingPage subsidyPostings(Instant from, Instant to, String campaignId, boolean unassigned,
+            Integer limit, String cursor) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission(RECONCILE_PERMISSION);
+        int pageSize = limit == null ? DEFAULT_POSTING_PAGE_SIZE : limit;
+        if (from == null || to == null || !from.isBefore(to) || Duration.between(from, to).compareTo(MAX_POSTING_RANGE) > 0
+                || format(from).length() != 30 || format(to).length() != 30) {
+            throw new IllegalArgumentException("subsidy posting time range must be positive and no more than 31 days");
+        }
+        if (pageSize < 1 || pageSize > MAX_POSTING_PAGE_SIZE) {
+            throw new IllegalArgumentException("subsidy posting page size must be between 1 and 100");
+        }
+        if (campaignId != null && (unassigned || !campaignId.matches("[A-Za-z0-9_.:-]{1,64}"))) {
+            throw new IllegalArgumentException("campaignId is invalid or combined with the unassigned filter");
+        }
+        if (cursor != null && !cursor.matches("[A-Za-z0-9_.:-]{1,64}")) {
+            throw new IllegalArgumentException("subsidy posting cursor is invalid");
+        }
+        if (scope.organizations().isEmpty() || scope.shops().isEmpty()) {
+            if (cursor != null) throw new IllegalArgumentException("subsidy posting cursor is outside the current selection");
+            return new SubsidyPostingPage(from, to, campaignId, unassigned, List.of(), null, false);
+        }
+        var filter = new BenefitFundingRepository.SubsidyPostingFilter(scope.tenantId().value(), format(from), format(to),
+                campaignId, unassigned, scope.organizations().contains("*") ? null : scope.organizations(),
+                scope.shops().contains("*") ? null : json(scope.shops()));
+        var position = cursor == null ? null : repository.findSubsidyPostingCursor(filter, cursor)
+                .orElseThrow(() -> new IllegalArgumentException("subsidy posting cursor is outside the current selection"));
+        var rows = repository.findSubsidyPostings(filter, position, pageSize + 1);
+        boolean hasMore = rows.size() > pageSize;
+        List<SubsidyPosting> items = rows.stream().limit(pageSize).map(row -> {
+            // 退款与已确认申请的冲正共用 REFUND 流水，金额在各自入账日为负。
+            long signedAmount = Operation.REFUND.name().equals(row.operation()) ? -row.amount() : row.amount();
+            return new SubsidyPosting(row.ledgerId(), Instant.parse(row.postingTime()), row.applicationId(),
+                    row.campaignId(), row.resourceKey(), row.currency(), row.operation(), Long.toString(signedAmount));
+        }).toList();
+        return new SubsidyPostingPage(from, to, campaignId, unassigned, items,
+                hasMore ? items.getLast().ledgerId() : null, hasMore);
+    }
+
     @Transactional(readOnly = true)
     public ReconciliationReport reconcile() {
         var scope = TenantContextHolder.requireCurrent();
-        scope.requirePermission("funding:reconcile");
+        scope.requirePermission(RECONCILE_PERMISSION);
         String tenantId = scope.tenantId().value();
         List<String> violations = new ArrayList<>();
         List<ResourceAccount> roots = repository.findAccounts(tenantId, false);
@@ -1239,6 +1285,15 @@ public class BenefitFundingService {
     public record ReconciliationReport(boolean balanced, List<String> violations, long ledgerMovement,
             Instant checkedAt) {
         public ReconciliationReport { violations = List.copyOf(violations); }
+    }
+    /** 出资资源键保留账本标识。分值用十进制字符串传输，避免客户端浮点舍入。 */
+    public record SubsidyPosting(String ledgerId, Instant postedAt, String applicationId, String campaignId,
+            String resourceKey, String currency, String operation, String amountMinor) { }
+
+    /** 一页已提交流水，下一页按实际入账时点与流水ID继续。 */
+    public record SubsidyPostingPage(Instant from, Instant to, String campaignId, boolean unassigned,
+            List<SubsidyPosting> items, String nextCursor, boolean hasMore) {
+        public SubsidyPostingPage { items = List.copyOf(items); }
     }
     public record ExpirationResult(int expiredCount, List<String> applicationIds, Instant completedAt) {
         public ExpirationResult { applicationIds = List.copyOf(applicationIds); }

@@ -18,6 +18,7 @@ import java.util.function.Function;
 public final class OfferTokenCodec {
     private static final Base64.Encoder ENCODER = Base64.getUrlEncoder().withoutPadding();
     private static final Base64.Decoder DECODER = Base64.getUrlDecoder();
+    private static final String CAMPAIGN_CLAIM = "campaignId";
 
     private OfferTokenCodec() {
     }
@@ -71,6 +72,8 @@ public final class OfferTokenCodec {
         map.put("expiresAt", claims.expiresAt().toString());
         map.put("nonce", claims.nonce());
         map.put("audiences", encodeStrings(claims.audienceVersions()));
+        // 旧线路没有可信活动归属，省略字段以维持原声明格式和签名输入。
+        if (claims.campaignId() != null) map.put(CAMPAIGN_CLAIM, claims.campaignId());
         return map;
     }
 
@@ -92,7 +95,7 @@ public final class OfferTokenCodec {
                 Instant.parse(required(map, "issuedAt")),
                 Instant.parse(required(map, "expiresAt")),
                 required(map, "nonce"),
-                decodeStrings(required(map, "audiences")));
+                decodeStrings(required(map, "audiences")), map.get(CAMPAIGN_CLAIM));
     }
 
     private static String encodeOffers(List<OfferLineClaim> lines) {

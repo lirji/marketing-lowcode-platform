@@ -212,11 +212,11 @@
         INSERT INTO mk_promotion_application
             (tenant_id, application_id, quote_id, decision_request_id, order_id, organization_id,
              shop_ids_json, cart_digest, token_digest, generation_no, state_name, total_discount,
-             currency_code, expires_at, created_at, updated_at, expiry_next_attempt_at)
+             currency_code, expires_at, created_at, updated_at, expiry_next_attempt_at, campaign_id)
         VALUES
             (#{tenantId}, #{applicationId}, #{quoteId}, #{decisionRequestId}, #{orderId}, #{organizationId},
              #{shopIdsJson}, #{cartDigest}, #{tokenDigest}, #{generationNo}, #{stateName}, #{totalDiscount},
-             #{currencyCode}, #{expiresAt}, #{createdAt}, #{updatedAt}, #{expiryNextAttemptAt})
+             #{currencyCode}, #{expiresAt}, #{createdAt}, #{updatedAt}, #{expiryNextAttemptAt}, #{campaignId})
     </insert>
     <insert id="insertReservationItem">
         INSERT INTO mk_reservation_item
@@ -357,6 +357,48 @@
                amount_value AS amount, account_version AS accountVersion
         FROM mk_funding_ledger WHERE tenant_id = #{tenantId}
         ORDER BY resource_key, escrow_bucket_id, account_version, ledger_id
+    </select>
+
+    <!-- 游标按与列表相同的业务和授权范围定位，防止旧范围游标跳过可见流水。 -->
+    <sql id="subsidyPostingScope">
+        FROM mk_funding_ledger l
+        JOIN mk_promotion_application a ON a.tenant_id = l.tenant_id AND a.application_id = l.application_id
+        JOIN mk_reservation_item r ON r.tenant_id = l.tenant_id AND r.application_id = l.application_id
+            AND r.resource_key = l.resource_key AND r.resource_type = 'BUDGET'
+        WHERE l.tenant_id = #{scope.tenantId} AND l.operation_name IN ('CONFIRM', 'REFUND')
+          AND l.posting_time_utc &gt;= #{scope.from} AND l.posting_time_utc &lt; #{scope.to}
+        <if test="scope.organizations != null">
+            AND CAST(a.organization_id AS BINARY) IN
+            <foreach collection="scope.organizations" item="organization" open="(" separator="," close=")">
+                CAST(#{organization} AS BINARY)
+            </foreach>
+        </if>
+        <if test="scope.allowedShopsJson != null">
+            AND CASE WHEN JSON_VALID(a.shop_ids_json) THEN JSON_TYPE(a.shop_ids_json) = 'ARRAY'
+                AND JSON_LENGTH(a.shop_ids_json) &gt; 0 AND JSON_CONTAINS(#{scope.allowedShopsJson}, a.shop_ids_json)
+                ELSE FALSE END
+        </if>
+        <if test="scope.campaignId != null">AND CAST(a.campaign_id AS BINARY) = CAST(#{scope.campaignId} AS BINARY)</if>
+        <if test="scope.unassigned">AND a.campaign_id IS NULL</if>
+    </sql>
+    <select id="selectSubsidyPostingCursor"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$SubsidyPostingCursor">
+        SELECT l.ledger_id AS ledgerId, l.posting_time_utc AS postingTime
+        <include refid="subsidyPostingScope"/>
+        AND l.ledger_id = #{ledgerId}
+    </select>
+    <select id="selectSubsidyPostings"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$SubsidyPostingRow">
+        SELECT l.ledger_id AS ledgerId, l.posting_time_utc AS postingTime, l.application_id AS applicationId,
+               a.campaign_id AS campaignId, l.resource_key AS resourceKey, r.currency_code AS currency,
+               l.operation_name AS operation, l.amount_value AS amount
+        <include refid="subsidyPostingScope"/>
+        <if test="cursor != null">
+            AND (l.posting_time_utc &gt; #{cursor.postingTime}
+                OR (l.posting_time_utc = #{cursor.postingTime} AND l.ledger_id &gt; #{cursor.ledgerId}))
+        </if>
+        ORDER BY l.posting_time_utc, l.ledger_id
+        LIMIT #{limit}
     </select>
     <select id="selectReconcileItems"
             resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$ReconcileItemRow">

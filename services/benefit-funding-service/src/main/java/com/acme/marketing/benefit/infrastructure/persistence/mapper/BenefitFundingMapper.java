@@ -73,6 +73,11 @@ public interface BenefitFundingMapper {
     int updateReservationAmounts(BenefitFundingRepository.ReservationMutation write);
     int updateEscrowAllocationAmounts(BenefitFundingRepository.EscrowMutation write);
     List<BenefitFundingRepository.LedgerRow> selectLedger(@Param("tenantId") String tenantId);
+    BenefitFundingRepository.SubsidyPostingCursor selectSubsidyPostingCursor(
+            @Param("scope") BenefitFundingRepository.SubsidyPostingFilter filter, @Param("ledgerId") String ledgerId);
+    List<BenefitFundingRepository.SubsidyPostingRow> selectSubsidyPostings(
+            @Param("scope") BenefitFundingRepository.SubsidyPostingFilter filter,
+            @Param("cursor") BenefitFundingRepository.SubsidyPostingCursor cursor, @Param("limit") int limit);
     List<BenefitFundingRepository.ReconcileItemRow> selectReconcileItems(@Param("tenantId") String tenantId);
     List<BenefitFundingRepository.EscrowReconcileRow> selectEscrowReconcileItems(
             @Param("tenantId") String tenantId);

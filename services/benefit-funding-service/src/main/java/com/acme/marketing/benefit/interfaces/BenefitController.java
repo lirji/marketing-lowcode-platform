@@ -6,6 +6,7 @@ import com.acme.marketing.benefit.application.BenefitSkuCatalog.SkuStatus;
 import com.acme.marketing.platform.web.PersistentIdempotentCommandExecutor;
 import com.acme.marketing.platform.web.TenantContextHolder;
 import jakarta.validation.Valid;
+import java.time.Instant;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -124,4 +125,12 @@ public class BenefitController {
 
     @GetMapping("/funding/reconciliation")
     public BenefitFundingService.ReconciliationReport reconcile() { return service.reconcile(); }
+
+    /** 逐笔提供已入账的补贴确认与退款，供运营和报表侧核对。 */
+    @GetMapping("/funding/subsidy-postings")
+    public BenefitFundingService.SubsidyPostingPage subsidyPostings(@RequestParam Instant from, @RequestParam Instant to,
+            @RequestParam(required = false) String campaignId, @RequestParam(defaultValue = "false") boolean unassigned,
+            @RequestParam(required = false) Integer limit, @RequestParam(required = false) String cursor) {
+        return service.subsidyPostings(from, to, campaignId, unassigned, limit, cursor);
+    }
 }
