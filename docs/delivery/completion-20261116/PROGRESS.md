@@ -7,7 +7,7 @@
 - 审计证据：`/Users/liruijun/.local/share/marketing-audits/20261116-completeness/`；Docker 启动与恢复证据：`/Users/liruijun/.local/share/marketing-deployments/20261116-start/`。
 - 规范：`~/.codex/architecture-standards.md` 业务建模、持久化、接口契约、并发安全；`personal-tech-stack.md` 并发、线程池、日志、状态机；engineering-workflows/backend-implementation/continue-approved-delivery/task-git-delivery。前端、Runtime 专项随切片读取。
 
-## 当前状态（2026-11-18，持续执行）
+## 当前状态（2026-11-23，持续执行）
 - 用户已确认同一活动组合整体生效/回滚，并要求继续流程；会员/画像优先Commerce、交易证据优先交易中心、认证Auth的方向进入增量接入设计。具体技术合同和机器凭据仍按真实系统核对，不再重复询问来源选型。当前分支 `feat/activity-release-bundles` 基于 `d57a572`，S11e/f/g1–g4a已交付，g4b运行端slot保护精确CI通过，g5a Flink固定参与执行本地验证通过，继续真实准入与整体应用闭环；设计与切片见 [活动组合增量设计](ATOMIC_RELEASE_DESIGN.md)。
 - 先执行依赖齐备的S11e不可变组合准备与成员发布保护，再推进运行端和整体切换；上游缺少机器快照/主体映射的部分保留依赖状态。当前未修改其他仓库、未部署或迁移共享库。文档提交 `d57a572` 的CI `44095478630` 已核实三项SUCCESS，原pending记录失效。
 - S01–S05已完成；S06–S13仍按下表保留未完成范围。S12c–S12q已交付；上一轮已部署产品提交 `dbe268b5ed25004c5ee35af171ceb147e2509e55` 已正常快进合入并推送main，精确CI `44092826351` 的Java/合同/架构、前端、Compose/Helm三项全部通过。该阶段分支为 `fix/asset-preview-reads`，其后交付回执仅改文档，运行制品仍固定该产品提交。
@@ -15,7 +15,7 @@
 - 用户授权Docker只运行本项目组件；13个额外无关容器及原17个langchain应用保持停止，所有容器与数据卷保留。本轮只更新console，17个其它运行容器ID/镜像/启动时间不变；3个原Flink作业及检查点继续推进，禁止重复恢复或提交空作业。
 - 上一轮部署验证：271项前端测试、98项浏览器用例通过，10项既有独立服务用例跳过；lint/build/Hygiene无阻塞，未配置canonical formatter。真实Docker四类资产页在桌面与Pixel7的分页、搜索、详情及字段/节点读取回归通过，无业务写入、API失败或页面异常。运行回执与截图：私有证据目录 `runtime-dbe268b/`。
 - 上一轮部署可见结果：活动/首页/运营/资产的静态预览不显示假业务数据或旧缓存，资产刷新不能绕过读取门禁；OIDC身份范围变化、退出与过期清理旧请求/缓存/草稿，旧令牌401不退出已更新令牌，远端退出失败能恢复登录页。本机仍为DEV认证，真实IdP联调未验证。
-- 2026-11-23 恢复核验：g6b3b 已正常合入并推送 main，精确提交 323688e 的 CI 44143684715 三项通过。当前从 S11g6b3c 隔离 Flink checkpoint 验证接续。
+- 2026-11-23 恢复核验：g6b3b 已正常合入并推送 main，精确提交 323688e 的 CI 44143684715 三项通过。S11g6b3c 真实 checkpoint 首验通过，后续结果及恢复顺序见文末。
 
 ## 未完成项与恢复顺序
 
@@ -890,3 +890,6 @@
 - Docker Desktop 当前停止。优先使用已授权的任务分支 CI 验证，保留共享容器现场。S06–S13 仍部分完成。
 - 真实 checkpoint 用例及任务分支 CI 入口已写，本机隔离 test-compile 通过（s11g6b3c-compile.log）。验收使用本次提交 JAR 的 SHA-256、Flink CLI 返回的 jobId 和生产 HTTP/relay/consumer 链路。Docker 实跑结果待核实。
 - 处理函数回归复现 Flink 回执的三处日期时间使用数字格式，与事件 schema 不符（s11g6b3c-wire-first.log）。已单独修复该事件输出，探针、状态恢复及作业图共 11 项验证通过并重新打包（s11g6b3c-wire-final.log）。实际 checkpoint 验收在独立 CI 作业执行。
+- 任务分支 0be4ffc（含时间编码修复 241152f）的 GitHub 托管隔离验收实际执行 1 项、0 失败/跳过。作业 137542590883 用时 53 秒，触发前 PENDING/0，触发后 READY/2，业务激活和派发表均空。私有日志 s11g6b3c-checkpoint-first.log。共享环境未启动。
+- 二轮在未提交读已看到的回执位点上增加 broker READ_COMMITTED 末端检查，同时把首次周期 checkpoint 的最短延迟固定在验收窗口之外。二轮 test-compile 通过，远端实跑及其余 CI 状态以该 revision 的 Actions 记录为准。
+- 下一项 Decision 执行证据需覆盖接收业务流量的实例。现有 Helm 从 metadata.name 和镜像标签配置运行身份，Compose 使用固定名称和 local 值。正式名单与不可变制品身份的权威来源待用户确定，应用指针继续关闭。

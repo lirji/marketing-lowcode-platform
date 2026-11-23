@@ -13,6 +13,7 @@ import java.security.KeyPair;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -20,8 +21,11 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.ListOffsetsOptions;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.admin.OffsetSpec;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.Test;
@@ -92,7 +96,8 @@ class JourneyProbeCheckpointIT {
         }
         JM.withEnv("KAFKA_BOOTSTRAP_SERVERS", BROKER)
                 .withEnv("JOURNEY_INPUT_TOPIC", INPUT).withEnv("JOURNEY_OUTPUT_TOPIC", OUTPUT)
-                .withEnv("FLINK_CHECKPOINT_INTERVAL_MS", "600000")
+                // Flink 的首次周期触发延迟在 min-pause 与 interval 之间随机，两个边界都须移出观测窗口。
+                .withEnv("FLINK_CHECKPOINT_INTERVAL_MS", "600000").withEnv("FLINK_CHECKPOINT_MIN_PAUSE_MS", "600000")
                 .withEnv("JOURNEY_RUNTIME_DB_URL", "jdbc:mysql://" + DB_ALIAS + ":3306/" + MYSQL.getDatabaseName()
                         + "?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC")
                 .withEnv("JOURNEY_RUNTIME_DB_USER", MYSQL.getUsername()).withEnv("JOURNEY_RUNTIME_DB_PASSWORD", MYSQL.getPassword())
@@ -155,6 +160,7 @@ class JourneyProbeCheckpointIT {
 
         // 旁路只读消费者看到同一探针的两个真实子任务输出后，服务仍须等待事务提交。
         Set<Integer> subtasks = new HashSet<>();
+        Map<TopicPartition, Long> firstAckOffsets = new HashMap<>();
         try (var observer = new KafkaConsumer<String, String>(Map.of("bootstrap.servers", KAFKA.getBootstrapServers(),
                 "isolation.level", "read_uncommitted", "enable.auto.commit", false, "auto.offset.reset", "earliest"),
                 new StringDeserializer(), new StringDeserializer())) {
@@ -166,10 +172,19 @@ class JourneyProbeCheckpointIT {
                     var ack = mapper.readValue(record.value(), JourneyBundleExecutionAckEvent.class).ack();
                     assertEquals(probe, ack.probe()); assertEquals(jobId, ack.jobId()); assertEquals(digest, ack.buildDigest());
                     subtasks.add(ack.subtaskIndex());
+                    firstAckOffsets.merge(new TopicPartition(record.topic(), record.partition()), record.offset(), Math::min);
                 }
             }
         }
         assertEquals(Set.of(0, 1), subtasks);
+        // 直接核对 broker 的已提交读末端，避免消费者启动较慢导致零行的假阳性。
+        try (var admin = Admin.create(Map.of("bootstrap.servers", KAFKA.getBootstrapServers()))) {
+            Map<TopicPartition, OffsetSpec> queries = new HashMap<>();
+            firstAckOffsets.keySet().forEach(partition -> queries.put(partition, OffsetSpec.latest()));
+            var committed = admin.listOffsets(queries, new ListOffsetsOptions(IsolationLevel.READ_COMMITTED))
+                    .all().get(5, TimeUnit.SECONDS);
+            firstAckOffsets.forEach((partition, first) -> assertTrue(committed.get(partition).offset() <= first));
+        }
         var pending = checked(fixture, fixture.request(receiptPath).GET());
         assertEquals("PENDING", pending.path("state").asString());
         assertEquals(0, pending.path("acknowledgements").size());
