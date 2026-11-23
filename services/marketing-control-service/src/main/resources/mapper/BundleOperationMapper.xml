@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.control.infrastructure.persistence.mapper.BundleOperationMapper">
+  <sql id="fields">tenant_id tenantId, operation_id operationId, campaign_id campaignId, environment_name environment,
+    cell_id cell, bundle_id bundleId, version_no version, action_name action, expected_sequence expectedSequence,
+    activation_sequence activationSequence, command_key commandKey, requested_deadline requestedDeadline,
+    apply_before applyBefore, created_by createdBy, state_name state, reason_code reasonCode, directive_json directiveJson,
+    created_at createdAt, updated_at updatedAt</sql>
+  <sql id="position">tenant_id=#{tenantId} and campaign_id=#{campaignId} and environment_name=#{environment} and cell_id=#{cell}</sql>
+  <select id="operation" resultType="com.acme.marketing.control.application.BundleOperationStore$Row">
+    select <include refid="fields"/> from mk_bundle_release_operation where tenant_id=#{tenantId} and operation_id=#{value}
+  </select>
+  <select id="byKey" resultType="com.acme.marketing.control.application.BundleOperationStore$Row">
+    select <include refid="fields"/> from mk_bundle_release_operation where tenant_id=#{tenantId} and command_key=#{value}
+  </select>
+  <select id="latest" resultType="com.acme.marketing.control.application.BundleOperationStore$Row">
+    select <include refid="fields"/> from mk_bundle_release_operation where <include refid="position"/> order by activation_sequence desc limit 1
+  </select>
+  <select id="applied" resultType="com.acme.marketing.control.application.BundleOperationStore$Row">
+    select <include refid="fields"/> from mk_bundle_release_operation where <include refid="position"/> and state_name='APPLIED' order by activation_sequence desc limit 1
+  </select>
+  <select id="previouslyApplied" resultType="boolean">
+    select exists(select 1 from mk_bundle_release_operation where tenant_id=#{tenantId} and bundle_id=#{value} and state_name='APPLIED')
+  </select>
+  <select id="killed" resultType="boolean">
+    select exists(select 1 from mk_kill_switch where tenant_id=#{tenantId} and namespace_name=#{value} and enabled_value=true)
+  </select>
+  <insert id="insert">
+    insert into mk_bundle_release_operation (tenant_id,operation_id,campaign_id,environment_name,cell_id,bundle_id,version_no,
+      action_name,expected_sequence,activation_sequence,command_key,requested_deadline,apply_before,created_by,state_name,created_at,updated_at)
+    values (#{tenantId},#{operationId},#{campaignId},#{environment},#{cell},#{bundleId},#{version},#{action},#{expectedSequence},
+      #{activationSequence},#{commandKey},#{requestedDeadline},#{applyBefore},#{createdBy},#{state},#{createdAt},#{updatedAt})
+  </insert>
+  <update id="sign">
+    update mk_bundle_release_operation set directive_json=#{directiveJson},updated_at=#{updatedAt}
+    where tenant_id=#{tenantId} and operation_id=#{operationId} and directive_json is null and state_name='PENDING'
+  </update>
+  <update id="update">
+    update mk_bundle_release_operation set state_name=#{state},reason_code=#{reasonCode},updated_at=#{updatedAt}
+    where tenant_id=#{tenantId} and operation_id=#{operationId} and state_name='PENDING'
+  </update>
+</mapper>

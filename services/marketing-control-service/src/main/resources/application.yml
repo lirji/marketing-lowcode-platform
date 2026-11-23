@@ -45,3 +45,8 @@ management.opentelemetry.tracing.limits.max-attributes: 64
 management.opentelemetry.tracing.limits.max-attribute-value-length: 256
 management.opentelemetry.tracing.export.max-queue-size: 2048
 management.opentelemetry.tracing.export.max-batch-size: 256
+marketing.bundle-runtime:
+  operation-timeout: ${MARKETING_BUNDLE_RUNTIME_OPERATION_TIMEOUT:PT10M}
+  targets: '${MARKETING_BUNDLE_RUNTIME_TARGETS:[]}'
+  bearer-token: ${MARKETING_BUNDLE_RUNTIME_BEARER_TOKEN:}
+  benefit-bearer-token: ${MARKETING_BUNDLE_BENEFIT_BEARER_TOKEN:}

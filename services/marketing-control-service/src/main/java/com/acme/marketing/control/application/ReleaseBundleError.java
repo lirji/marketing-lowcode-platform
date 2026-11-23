@@ -19,11 +19,24 @@ public enum ReleaseBundleError {
     ACK_INVALID("RELEASE_BUNDLE_ACK_INVALID", "组合就绪证据的签名、成员、时间或容量不符合发布策略"),
     ACK_CONFLICT("RELEASE_BUNDLE_ACK_CONFLICT", "同一运行身份在相同时间提供了不同的就绪证据"),
     ACK_LIMIT("RELEASE_BUNDLE_ACK_LIMIT", "当前组合成员的运行身份数量已达到允许上限"),
+    OPERATION_INVALID("RELEASE_BUNDLE_OPERATION_INVALID", "请提供有效的发布动作、组合版本、幂等键及基准序号"),
+    OPERATION_NOT_FOUND("RELEASE_BUNDLE_OPERATION_NOT_FOUND", "未找到本活动的组合发布操作"),
+    OPERATION_CONFLICT("RELEASE_BUNDLE_OPERATION_CONFLICT", "当前位置已有待确认命令或实际生效版本已经变化"),
+    OPERATION_KEY_CONFLICT("RELEASE_BUNDLE_OPERATION_KEY_CONFLICT", "该幂等键已用于不同的发布操作"),
+    OPERATION_TARGET_INVALID("RELEASE_BUNDLE_OPERATION_TARGET_INVALID", "目标组合版本不符合发布或回滚前提"),
+    OPERATION_EXPIRED("RELEASE_BUNDLE_OPERATION_EXPIRED", "组合发布窗口已经结束"),
+    OPERATION_NOT_READY("RELEASE_BUNDLE_OPERATION_NOT_READY", "组合成员的就绪证据尚未覆盖所需副本或容量"),
+    OPERATION_KILLED("RELEASE_BUNDLE_OPERATION_KILLED", "组合成员已被紧急停用"),
+    RUNTIME_UNAVAILABLE("RELEASE_BUNDLE_RUNTIME_UNAVAILABLE", "运行端暂时无法核实原命令结果"),
+    RUNTIME_CONFIG("RELEASE_BUNDLE_RUNTIME_CONFIG", "目标运行位置缺少完整的部署连接配置"),
+    RUNTIME_EVIDENCE("RELEASE_BUNDLE_RUNTIME_EVIDENCE", "运行端响应与本次组合授权不匹配"),
+    PROBE_PENDING("RELEASE_BUNDLE_PROBE_PENDING", "等待 Journey 作业提交全部子任务的执行回执"),
     CONTENT_INVALID("RELEASE_BUNDLE_CONTENT_INVALID", "持久化组合内容与版本记录不一致");
 
     private final String code;
     private final String message;
     ReleaseBundleError(String code, String message) { this.code = code; this.message = message; }
+    public String code() { return code; }
     /** 输入错误不改变平台既有400合同。 */
     public DomainException invalid() { return new DomainException(code, message); }
     /** 状态竞争由调用者重新读取业务状态，不隐式重放新命令。 */

@@ -1,0 +1,107 @@
+openapi: 3.1.0
+info:
+  title: 活动组合整体发布
+  version: 1.0.0
+security: [{oidc: []}]
+paths:
+  /api/v1/campaigns/{campaignId}/release-bundles/operations:
+    parameters:
+      - {$ref: '#/components/parameters/Campaign'}
+    post:
+      operationId: startBundleRelease
+      description: 发布需要 release:activate，回滚需要 release:rollback。服务端从已审批的组合和运行证据构造授权。相同租户、幂等键、身份和载荷可恢复原命令。超时后先查询位置或用原键恢复。
+      parameters:
+        - {$ref: './marketing-api.yaml#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version, action, expectedAppliedSequence]
+              properties:
+                version: {type: integer, format: int64, minimum: 1}
+                action: {type: string, enum: [ACTIVATE, ROLLBACK]}
+                expectedAppliedSequence: {type: integer, format: int64, minimum: 0}
+      responses:
+        '200': {$ref: '#/components/responses/Operation'}
+        '409': {description: 基准序号、前序操作、幂等键或目标版本不满足发布条件}
+    get:
+      operationId: getBundleReleasePosition
+      description: release:read；返回该活动位置的实际应用投影、最新操作及所选版本的回滚历史资格。读请求可查证并修复丢失回执的投影。
+      parameters:
+        - {name: environment, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 32}}
+        - {name: cell, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 64}}
+        - {name: version, in: query, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200':
+          description: 首次发布之前 appliedSequence 为 0，appliedVersion 为 null。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [appliedSequence, appliedVersion, latestOperation, rollbackEligible]
+                properties:
+                  appliedSequence: {type: integer, format: int64, minimum: 0}
+                  appliedVersion: {type: [integer, 'null'], format: int64}
+                  latestOperation: {oneOf: [{$ref: '#/components/schemas/Operation'}, {type: 'null'}]}
+                  rollbackEligible: {type: boolean}
+  /api/v1/campaigns/{campaignId}/release-bundles/operations/{operationId}:
+    parameters:
+      - {$ref: '#/components/parameters/Campaign'}
+      - {$ref: '#/components/parameters/OperationId'}
+    get:
+      operationId: getBundleReleaseOperation
+      description: release:read；只查证同一指令已经提交的运行结果。
+      responses:
+        '200': {$ref: '#/components/responses/Operation'}
+        '404': {description: 未找到操作}
+  /api/v1/campaigns/{campaignId}/release-bundles/operations/{operationId}:retry:
+    parameters:
+      - {$ref: '#/components/parameters/Campaign'}
+      - {$ref: '#/components/parameters/OperationId'}
+    post:
+      operationId: retryBundleReleaseOperation
+      description: 按原动作复核发布或回滚权限。恢复原命令、原序号及原到期时间，运行端证据不全时返回 PENDING。
+      responses:
+        '200': {$ref: '#/components/responses/Operation'}
+  /api/v1/campaigns/{campaignId}/release-bundles/versions/{version}:prepare-runtime:
+    parameters:
+      - {$ref: '#/components/parameters/Campaign'}
+      - {$ref: './marketing-api.yaml#/components/parameters/Version'}
+    post:
+      operationId: prepareBundleReleaseRuntimes
+      description: release:activate；依次向已配置运行位置收集精确制品就绪回执，每条记录通过现有验签后持久化。
+      responses:
+        '200':
+          description: 各成员当前准备情况
+          content:
+            application/json:
+              schema: {$ref: './marketing-api.yaml#/components/schemas/BundleReadinessView'}
+components:
+  securitySchemes:
+    oidc: {$ref: './marketing-api.yaml#/components/securitySchemes/oidc'}
+  parameters:
+    Campaign: {name: campaignId, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 64}}
+    OperationId: {name: operationId, in: path, required: true, schema: {type: string, format: uuid}}
+  responses:
+    Operation:
+      description: PENDING 表示正在等待证据或需要按原因码恢复，APPLIED 表示已核实原授权真实提交。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Operation'}
+  schemas:
+    Operation:
+      type: object
+      required: [operationId, campaignId, version, action, activationSequence, state, reasonCode, createdAt, updatedAt]
+      properties:
+        operationId: {type: string, format: uuid}
+        campaignId: {type: string}
+        version: {type: integer, format: int64, minimum: 1}
+        action: {type: string, enum: [ACTIVATE, ROLLBACK]}
+        activationSequence: {type: integer, format: int64, minimum: 1}
+        state: {type: string, enum: [PENDING, APPLIED, EXPIRED, REJECTED]}
+        reasonCode: {type: [string, 'null']}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}

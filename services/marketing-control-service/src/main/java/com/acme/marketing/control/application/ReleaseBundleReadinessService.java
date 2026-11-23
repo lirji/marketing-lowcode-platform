@@ -73,6 +73,13 @@ public class ReleaseBundleReadinessService {
     public BundleReadinessView acknowledge(String campaignId, long version, ReleaseBundleAck ack) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("runtime:ack");
+        return collect(campaignId, version, ack);
+    }
+
+    /** 控制面主动向受信位置收集时复用同一验签、锁和存储，调用入口已经检查发布权限。 */
+    @Transactional(timeout = 10)
+    public BundleReadinessView collect(String campaignId, long version, ReleaseBundleAck ack) {
+        var scope = TenantContextHolder.requireCurrent();
         if (version < 1) throw ReleaseBundleError.INPUT_INVALID.invalid();
         var row = repository.lockReleaseBundle(scope.tenantId().value(), campaignId, version)
                 .orElseThrow(ReleaseBundleError.NOT_FOUND::notFound);
@@ -108,6 +115,13 @@ public class ReleaseBundleReadinessService {
     public BundleReadinessView readiness(String campaignId, long version) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("release:read");
+        return evaluateOperation(campaignId, version);
+    }
+
+    /** 使用当前信任与时钟重新计算；调用方已验证实际业务动作权限。 */
+    @Transactional(readOnly = true, timeout = 10)
+    public BundleReadinessView evaluateOperation(String campaignId, long version) {
+        var scope = TenantContextHolder.requireCurrent();
         if (version < 1) throw ReleaseBundleError.INPUT_INVALID.invalid();
         ControlCampaignScope.require(repository, scope, campaignId, false);
         BundleView bundle = read(repository.findReleaseBundle(scope.tenantId().value(), campaignId, version)

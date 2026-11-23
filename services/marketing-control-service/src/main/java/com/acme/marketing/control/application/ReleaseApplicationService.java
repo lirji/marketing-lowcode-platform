@@ -492,8 +492,21 @@ public class ReleaseApplicationService {
      */
     private void assertBenefitClosure(TenantScope scope, StageReleaseRequest request) {
         if (!"decision".equals(request.runtime())) return;
-        String graphJson = repository.findApprovedGraphJson(scope.tenantId().value(),
-                request.definitionId(), request.definitionVersion()).orElse(null);
+        Set<String> references = benefitReferences(scope, request.definitionId(), request.definitionVersion(), request.artifacts());
+        benefitReleaseGate.assertReleasable(scope, references);
+    }
+
+    /** 定时和人工应用前重新读取冻结来源及当前 SKU 状态，远程核验在签名/投影事务外。 */
+    void assertBundleBenefitClosure(TenantScope scope, ReleaseManifest member) {
+        if (!"decision".equals(member.runtime())) return;
+        var references = new LinkedHashSet<String>();
+        for (ArtifactReference artifact : member.artifacts())
+            references.addAll(benefitReferences(scope, artifact.definitionId(), artifact.definitionVersion(), List.of(artifact)));
+        benefitReleaseGate.assertBundleReleasable(scope, Set.copyOf(references));
+    }
+
+    private Set<String> benefitReferences(TenantScope scope, String definitionId, long version, List<ArtifactReference> artifacts) {
+        String graphJson = repository.findApprovedGraphJson(scope.tenantId().value(), definitionId, version).orElse(null);
         if (graphJson == null) {
             throw new ConflictException("RELEASE_NOT_APPROVED", "approved release graph is unavailable");
         }
@@ -504,7 +517,7 @@ public class ReleaseApplicationService {
             throw new IllegalStateException("approved release graph is invalid", invalid);
         }
         com.acme.marketing.lowcode.validation.OfferGraphInputGuard.requireSupported(graph);
-        request.artifacts().forEach(artifact -> requireOfferCompilation(graph, artifact));
+        artifacts.forEach(artifact -> requireOfferCompilation(graph, artifact));
         Set<String> references = graph.nodes().stream()
                 .filter(node -> "offer.fixed".equals(node.stableTypeId())
                         || "offer.percentage".equals(node.stableTypeId()))
@@ -520,11 +533,11 @@ public class ReleaseApplicationService {
             throw new ConflictException("BENEFIT_RELEASE_UNBOUND",
                     "every offer artifact must reference a BenefitDefinition version bound to an ACTIVE SKU");
         }
-        benefitReleaseGate.assertReleasable(scope, Set.copyOf(references));
+        return Set.copyOf(references);
     }
 
     /** 旧版本已审批/暂存的图也需重新检查，避免绕过新增的编译输入护栏。 */
-    private void requireExecutableOfferSources(String tenantId, ReleaseManifest manifest) {
+    void requireExecutableOfferSources(String tenantId, ReleaseManifest manifest) {
         if (!"decision".equals(manifest.runtime())) return;
         for (var artifact : manifest.artifacts()) {
             String json = repository.findApprovedGraphJson(tenantId, artifact.definitionId(),

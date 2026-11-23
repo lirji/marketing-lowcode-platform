@@ -122,7 +122,18 @@ public class ReleaseBundleService {
 
     /** 重新鉴权后导出冻结内容；签名不修改准备版本，也不提供运行端激活授权。 */
     public ReleaseBundleManifest manifest(String campaignId, long version) {
-        BundleView stored = version(campaignId, version);
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("release:read");
+        return manifestForOperation(campaignId, version);
+    }
+
+    /** 操作路径独立检查具体发布权限，公共读接口仍只允许运营读取权限。 */
+    ReleaseBundleManifest manifestForOperation(String campaignId, long version) {
+        if (version < 1) throw ReleaseBundleError.INPUT_INVALID.invalid();
+        var scope = TenantContextHolder.requireCurrent();
+        campaign(scope, campaignId, false);
+        BundleView stored = read(repository.findReleaseBundle(scope.tenantId().value(), campaignId, version)
+                .orElseThrow(ReleaseBundleError.NOT_FOUND::notFound));
         Instant expiresAt = stored.members().stream().map(ReleaseManifest::expiresAt).min(Instant::compareTo).orElseThrow();
         // 重新核验成员，避免存储损坏或已退出信任集合的旧密钥被外层新签名重新背书。
         if (!expiresAt.isAfter(clock.instant()) || stored.members().stream().anyMatch(member ->
@@ -143,7 +154,7 @@ public class ReleaseBundleService {
         ControlCampaignScope.require(repository, scope, campaignId, lock);
     }
 
-    private void validateMember(TenantScope scope, String campaignId, String id, String state,
+    void validateMember(TenantScope scope, String campaignId, String id, String state,
             ReleaseManifest manifest, Instant now) {
         if (!ReleaseApplicationService.State.STAGED.code().equals(state)
                 || !scope.tenantId().equals(manifest.tenantId()) || !id.equals(manifest.manifestId())

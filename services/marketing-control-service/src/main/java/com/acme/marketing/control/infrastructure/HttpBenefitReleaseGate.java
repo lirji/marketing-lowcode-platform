@@ -32,11 +32,17 @@ public final class HttpBenefitReleaseGate implements BenefitReleaseGate {
     private final ObjectMapper mapper;
     private final String endpoint;
     private final Duration requestTimeout;
+    private final boolean dev;
+    private final BundleMachineCredential bundleCredentials;
 
     public HttpBenefitReleaseGate(ObjectMapper mapper,
             @Value("${marketing.benefit-funding.base-url:http://127.0.0.1:8085}") String baseUrl,
             @Value("${marketing.benefit-funding.connect-timeout-ms:1000}") long connectTimeoutMs,
-            @Value("${marketing.benefit-funding.request-timeout-ms:2000}") long requestTimeoutMs) {
+            @Value("${marketing.benefit-funding.request-timeout-ms:2000}") long requestTimeoutMs,
+            @Value("${marketing.security.mode:DEV}") String securityMode,
+            @Value("${marketing.bundle-runtime.benefit-bearer-token:}") String bundleToken) {
+        this.dev = "DEV".equalsIgnoreCase(securityMode);
+        this.bundleCredentials = new BundleMachineCredential(mapper, bundleToken);
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         if (baseUrl == null || baseUrl.isBlank() || connectTimeoutMs < 1 || requestTimeoutMs < 1) {
             throw new IllegalArgumentException("benefit release gate configuration is invalid");
@@ -49,6 +55,18 @@ public final class HttpBenefitReleaseGate implements BenefitReleaseGate {
 
     @Override
     public void assertReleasable(TenantScope scope, Set<String> benefitDefinitionVersions) {
+        check(scope, benefitDefinitionVersions, currentAuthorization(), false);
+    }
+
+    /** 组合由控制服务的受限机器身份查询，调度器无需存储操作人的令牌。 */
+    @Override
+    public void assertBundleReleasable(TenantScope scope, Set<String> references) {
+        if (!dev && !"https".equals(URI.create(endpoint).getScheme()))
+            throw unavailable("benefit release machine credential or HTTPS endpoint is missing", null);
+        check(scope, references, bundleCredentials.authorization(scope.tenantId().value(), dev), true);
+    }
+
+    private void check(TenantScope scope, Set<String> benefitDefinitionVersions, String authorization, boolean confirmReferences) {
         try {
             HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(endpoint))
                     .timeout(requestTimeout)
@@ -56,7 +74,6 @@ public final class HttpBenefitReleaseGate implements BenefitReleaseGate {
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(
                             Map.of("references", benefitDefinitionVersions))));
-            String authorization = currentAuthorization();
             if (authorization != null) {
                 request.header("Authorization", authorization);
             } else {
@@ -65,7 +82,12 @@ public final class HttpBenefitReleaseGate implements BenefitReleaseGate {
                         .header("X-Dev-Permissions", "release:write");
             }
             HttpResponse<String> response = http.send(request.build(), HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() >= 200 && response.statusCode() < 300) return;
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                if (!confirmReferences) return;
+                var result = mapper.readValue(response.body(), Eligibility.class);
+                if (result != null && result.releasable() && benefitDefinitionVersions.equals(result.references())) return;
+                throw unavailable("benefit release response did not cover the requested versions", null);
+            }
             Problem problem = problem(response.body());
             if (response.statusCode() == 401) {
                 throw new UnauthorizedException("BENEFIT_RELEASE_GATE_AUTH_REQUIRED",
@@ -114,5 +136,6 @@ public final class HttpBenefitReleaseGate implements BenefitReleaseGate {
         return exception;
     }
 
+    private record Eligibility(boolean releasable, Set<String> references) { }
     private record Problem(String code, String detail) { }
 }

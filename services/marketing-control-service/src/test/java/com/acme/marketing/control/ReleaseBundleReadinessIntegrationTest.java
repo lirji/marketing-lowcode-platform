@@ -4,6 +4,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.acme.marketing.contracts.release.*;
 import com.acme.marketing.control.application.ControlRepository;
+import com.acme.marketing.control.application.BundleReleaseOperations;
+import com.acme.marketing.control.application.BundleReleaseRuntime;
+import com.acme.marketing.control.application.ReleaseBundleError;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 import com.acme.marketing.control.application.ReleaseBundleReadinessService;
 import com.acme.marketing.control.application.ReleaseBundleService;
 import com.acme.marketing.platform.crypto.Ed25519;
@@ -83,6 +89,7 @@ class ReleaseBundleReadinessIntegrationTest {
     @Autowired ObjectMapper mapper;
     @Autowired SigningKeyRing releaseKeys;
     @Autowired MutableClock clock;
+    @MockitoBean BundleReleaseRuntime bundleRuntime;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
     private final String tenant = "ready-" + UUID.randomUUID();
     @BeforeEach void resetClock() { clock.now = NOW; }
@@ -221,12 +228,148 @@ class ReleaseBundleReadinessIntegrationTest {
         assertCode(409, "RELEASE_BUNDLE_CONTENT_INVALID", get(left));
     }
 
+    /** 模拟机器响应丢失，真实数据库/HTTP 验证发布投影只从精确运行回执恢复。 */
+    @Test void lostApplyResponseIsRecoveredWithoutResendingAndRollbackKeepsSequence() throws Exception {
+        var bundle = bundle();
+        String endpoint = "/api/v1/campaigns/" + bundle.campaignId() + "/release-bundles/operations";
+        var applied = new java.util.concurrent.ConcurrentHashMap<String, BundleReleaseRuntime.Applied>();
+        when(bundleRuntime.prepare(any())).thenReturn(List.of());
+        when(bundleRuntime.findApplied(any(), nullable(Instant.class))).thenAnswer(call -> {
+            ReleaseBundleActivationDirective value = call.getArgument(0);
+            return java.util.Optional.ofNullable(applied.get(value.directiveId()));
+        });
+        when(bundleRuntime.apply(any(), anyLong(), any(), any())).thenAnswer(call -> {
+            ((Runnable)call.getArgument(3)).run();
+            ReleaseBundleActivationDirective d = call.getArgument(0);
+            var receipt = new BundleReleaseRuntime.Applied("APPLIED", d, clock.instant(), d.activationSequence());
+            applied.put(d.directiveId(), receipt);
+            if (d.activationSequence() == 1) throw ReleaseBundleError.RUNTIME_UNAVAILABLE.conflict();
+            return receipt;
+        });
+        var request = new BundleReleaseOperations.Request(1, "ACTIVATE", 0);
+        assertEquals(403, send(raw(endpoint, mapper.writeValueAsString(request)).header("Idempotency-Key", "publish-v1")
+                .setHeader("X-Dev-Permissions", "release:write")).statusCode());
+        var pending = command(endpoint, "publish-v1", request);
+        assertEquals("PENDING", pending.state()); assertEquals(ReleaseBundleError.OPERATION_NOT_READY.code(), pending.reasonCode());
+        verify(bundleRuntime, never()).apply(any(), anyLong(), any(), any());
+        warm(bundle);
+        var uncertain = command(endpoint, "publish-v1", request);
+        assertEquals("PENDING", uncertain.state()); assertEquals(pending.operationId(), uncertain.operationId());
+        assertEquals(1, applied.size());
+        var confirmed = send(request(endpoint + "/" + pending.operationId()).GET());
+        assertEquals("APPLIED", mapper.readTree(confirmed.body()).path("state").asString());
+        assertEquals("APPLIED", command(endpoint, "publish-v1", request).state());
+        verify(bundleRuntime, times(1)).apply(any(), anyLong(), any(), any());
+        assertCode(409, ReleaseBundleError.OPERATION_KEY_CONFLICT.code(), send(raw(endpoint, mapper.writeValueAsString(
+                new BundleReleaseOperations.Request(2, "ACTIVATE", 1))).header("Idempotency-Key", "publish-v1")));
+        var second = nextBundle(bundle.campaignId(), 1);
+        warm(second);
+        var switched = command(endpoint, "publish-v2", new BundleReleaseOperations.Request(2, "ACTIVATE", 1));
+        assertEquals("APPLIED", switched.state()); assertEquals(2, switched.activationSequence());
+        var summary = mapper.readTree(send(request(endpoint + "?environment=local&cell=cell-a&version=1").GET()).body());
+        assertTrue(summary.path("rollbackEligible").asBoolean());
+        var rolled = command(endpoint, "rollback-v1", new BundleReleaseOperations.Request(1, "ROLLBACK", 2));
+        assertEquals("APPLIED", rolled.state()); assertEquals(3, rolled.activationSequence());
+        assertEquals(403, send(raw(endpoint + "/" + rolled.operationId() + ":retry", "")
+                .setHeader("X-Dev-Permissions", "release:activate")).statusCode());
+        assertEquals(3, count("mk_bundle_release_operation"));
+    }
+
+    /** 到期查询不会重新发送；未签发前的确定性拒绝释放位置给后续有效命令。 */
+    @Test void activeOwnershipExpirationAndConflictingRequestsUseDurableOperations() throws Exception {
+        var bundle = bundle();
+        String endpoint = "/api/v1/campaigns/" + bundle.campaignId() + "/release-bundles/operations";
+        var request = new BundleReleaseOperations.Request(1, "ACTIVATE", 0);
+        when(bundleRuntime.prepare(any())).thenReturn(List.of());
+        var op = command(endpoint, "create-one", request);
+        assertCode(409, ReleaseBundleError.OPERATION_CONFLICT.code(), send(raw(endpoint, mapper.writeValueAsString(request))
+                .header("Idempotency-Key", "other-key")));
+        clock.now = NOW.plusSeconds(3600);
+        assertEquals("EXPIRED", mapper.readTree(send(request(endpoint + "/" + op.operationId()).GET()).body()).path("state").asString());
+        assertEquals(403, send(request(endpoint + "/" + op.operationId()).setHeader("X-Dev-Permissions", "release:activate").GET()).statusCode());
+        verify(bundleRuntime, never()).apply(any(), anyLong(), any(), any());
+    }
+
+    /** 两个控制请求同时占用同一位置时只有一份未决意图，重放赢家也不增发序号。 */
+    @Test void competingCommandsReserveOnePositionAndPermanentSequence() throws Exception {
+        var bundle = bundle();
+        String endpoint = "/api/v1/campaigns/" + bundle.campaignId() + "/release-bundles/operations";
+        String body = mapper.writeValueAsString(new BundleReleaseOperations.Request(1, "ACTIVATE", 0));
+        when(bundleRuntime.prepare(any())).thenReturn(List.of());
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var start = new CountDownLatch(1);
+            var left = pool.submit(() -> { start.await(); return send(raw(endpoint, body).header("Idempotency-Key", "publish-left")); });
+            var right = pool.submit(() -> { start.await(); return send(raw(endpoint, body).header("Idempotency-Key", "publish-right")); });
+            start.countDown();
+            var x = left.get(); var y = right.get();
+            assertEquals(Set.of(200,409), Set.of(x.statusCode(), y.statusCode()));
+            var winner = x.statusCode() == 200 ? "publish-left" : "publish-right";
+            race(() -> send(raw(endpoint,body).header("Idempotency-Key",winner)),
+                    () -> send(raw(endpoint,body).header("Idempotency-Key",winner)));
+        }
+        assertEquals(1, count("mk_bundle_release_operation"));
+        assertEquals(1L, jdbc.queryForObject("select max(activation_sequence) from mk_bundle_release_operation where tenant_id=?", Long.class, tenant));
+    }
+
+    /** 外部响应未知时经过服务端时钟确认才能终结，截止后禁止再次发送应用。 */
+    @Test void expiredSignedOperationWaitsForRemoteClockAndNeverAppliesAgain() throws Exception {
+        var bundle = bundle();
+        warm(bundle);
+        var endpoint = "/api/v1/campaigns/" + bundle.campaignId() + "/release-bundles/operations";
+        when(bundleRuntime.prepare(any())).thenReturn(List.of());
+        when(bundleRuntime.apply(any(), anyLong(), any(), any())).thenThrow(ReleaseBundleError.RUNTIME_UNAVAILABLE.conflict());
+        var initial = command(endpoint, "clock-difference", new BundleReleaseOperations.Request(1, "ACTIVATE", 0));
+        assertEquals("PENDING", initial.state());
+        var deadline = NOW.plus(Duration.ofMinutes(10));
+        clock.now = deadline;
+        when(bundleRuntime.findApplied(any(), eq(deadline))).thenThrow(ReleaseBundleError.RUNTIME_UNAVAILABLE.conflict())
+                .thenReturn(java.util.Optional.empty());
+        String exact = endpoint + "/" + initial.operationId();
+        var waiting = send(raw(exact + ":retry", ""));
+        assertEquals("PENDING", mapper.readTree(waiting.body()).path("state").asString());
+        var finalView = send(request(exact).GET());
+        assertEquals("EXPIRED", mapper.readTree(finalView.body()).path("state").asString());
+        verify(bundleRuntime,times(1)).apply(any(), anyLong(), any(), any());
+    }
+
+    /** 在签名前撤回审批，不能将旧 READY 用作现行审批，也不能阻塞有效后续发布。 */
+    @Test void withdrawnApprovalRejectsBeforeSigningAndFreesPosition() throws Exception {
+        var bundle = bundle();
+        warm(bundle);
+        String endpoint = "/api/v1/campaigns/" + bundle.campaignId() + "/release-bundles/operations";
+        when(bundleRuntime.prepare(any())).thenReturn(List.of());
+        jdbc.update("update mk_approval_case set status='REJECTED' where tenant_id=? and case_id=?",
+                tenant, bundle.members().getFirst().approvalCaseIds().getFirst());
+        var rejected = command(endpoint, "approval-lost", new BundleReleaseOperations.Request(1, "ACTIVATE", 0));
+        assertEquals("REJECTED", rejected.state());
+        assertEquals(ReleaseBundleError.MEMBER_UNAVAILABLE.code(), rejected.reasonCode());
+        var next = nextBundle(bundle.campaignId(), 1);
+        var second = command(endpoint, "try-next-version", new BundleReleaseOperations.Request(next.version(), "ACTIVATE", 0));
+        assertEquals(2, second.activationSequence());
+        verify(bundleRuntime,never()).apply(any(), anyLong(), any(), any());
+    }
+
+    private BundleReleaseOperations.View command(String path, String key, BundleReleaseOperations.Request request) throws Exception {
+        var response = send(raw(path, mapper.writeValueAsString(request)).header("Idempotency-Key", key));
+        assertEquals(200, response.statusCode(), response.body());
+        return mapper.readValue(response.body(), BundleReleaseOperations.View.class);
+    }
+    private void warm(ReleaseBundleService.BundleView bundle) throws Exception {
+        for (var member : bundle.members()) {
+            assertEquals(200, post(bundle, ack(bundle, member, "one", NOW, 1000)).statusCode());
+            assertEquals(200, post(bundle, ack(bundle, member, "two", NOW, 1000)).statusCode());
+        }
+    }
+
     private ReleaseBundleService.BundleView bundle() throws Exception {
         String campaign = UUID.randomUUID().toString();
         repository.saveCampaign(new ControlRepository.CampaignWrite(tenant, campaign, "组合就绪", "隔离验收", "DRAFT", "org-a", "shop-a", NOW.toString(), NOW.toString(), "STANDARD"));
-        var members = List.of(member(campaign, "a"), member(campaign, "b"));
-        var response = send(raw("/api/v1/campaigns/" + campaign + "/release-bundles", mapper.writeValueAsString(Map.of("expectedVersion", 0, "manifestIds", members)))
-                .header("Idempotency-Key", "prepare-" + campaign));
+        return nextBundle(campaign, 0);
+    }
+    private ReleaseBundleService.BundleView nextBundle(String campaign, long previous) throws Exception {
+        var members = List.of(member(campaign, "a" + previous), member(campaign, "b" + previous));
+        var response = send(raw("/api/v1/campaigns/" + campaign + "/release-bundles", mapper.writeValueAsString(Map.of("expectedVersion", previous, "manifestIds", members)))
+                .header("Idempotency-Key", "prepare-" + campaign + "-" + previous));
         assertEquals(201, response.statusCode(), response.body());
         return mapper.readValue(response.body(), ReleaseBundleService.BundleView.class);
     }
