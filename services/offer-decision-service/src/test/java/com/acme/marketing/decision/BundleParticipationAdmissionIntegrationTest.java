@@ -227,7 +227,7 @@ class BundleParticipationAdmissionIntegrationTest {
     }
     private void applied(long sequence, boolean pointer) {
         var source = directive(sequence);
-        jdbc.update("INSERT INTO mk_bundle_applied_authorization VALUES (?,'local','cell-a','campaign',?,?,?,?)",
+        jdbc.update("INSERT INTO mk_bundle_applied_authorization (tenant_id,environment_name,cell_id,campaign_id,activation_sequence,directive_id,directive_json,applied_at) VALUES (?,'local','cell-a','campaign',?,?,?,?)",
                 tenant, sequence, source.directiveId(), mapper.writeValueAsString(source), format(NOW.minusMillis(500)));
         if (pointer) jdbc.update("INSERT INTO mk_bundle_admission_pointer VALUES (?,'local','cell-a','campaign',?,?)", tenant, sequence, format(NOW.minusMillis(500)));
     }

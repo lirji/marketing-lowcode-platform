@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.decision.infrastructure.persistence.mapper.BundleApplicationMapper">
+    <sql id="scope">tenant_id=#{key.tenantId} AND environment_name=#{key.environment} AND cell_id=#{key.cell} AND campaign_id=#{key.campaignId}</sql>
+    <sql id="values">#{key.tenantId},#{key.environment},#{key.cell},#{key.campaignId}</sql>
+    <insert id="serialize">
+        INSERT INTO mk_bundle_application_lock (tenant_id,environment_name,cell_id,campaign_id)
+        VALUES (<include refid="values"/>) ON DUPLICATE KEY UPDATE campaign_id=mk_bundle_application_lock.campaign_id
+    </insert>
+    <select id="current" resultType="long">
+        SELECT applied_sequence FROM mk_bundle_admission_pointer WHERE <include refid="scope"/>
+    </select>
+    <select id="lockApplication" resultType="string">
+        SELECT campaign_id FROM mk_bundle_application_lock WHERE <include refid="scope"/> FOR UPDATE
+    </select>
+    <select id="lockPointer" resultType="long">
+        SELECT applied_sequence FROM mk_bundle_admission_pointer WHERE <include refid="scope"/> FOR UPDATE
+    </select>
+    <select id="inventory" resultType="com.acme.marketing.decision.application.BundleApplicationRepository$Inventory">
+        SELECT h.deployment_sequence AS sequence,h.content_digest AS digest,i.inventory_json AS document
+        FROM mk_decision_deployment_head h JOIN mk_decision_deployment_inventory i USING (environment_name,cell_id,namespace_name,deployment_sequence)
+        WHERE h.environment_name=#{slot.environment} AND h.cell_id=#{slot.cell} AND h.namespace_name=#{slot.namespace}
+        FOR SHARE
+    </select>
+    <insert id="attest">
+        INSERT INTO mk_decision_execution_receipt
+        (tenant_id,environment_name,cell_id,campaign_id,namespace_name,activation_sequence,deployment_sequence,instance_id,receipt_json)
+        VALUES (<include refid="values"/>,#{namespace},#{sequence},#{deployment},#{instance},#{json})
+    </insert>
+    <select id="receipt" resultType="string">
+        SELECT receipt_json FROM mk_decision_execution_receipt WHERE <include refid="scope"/>
+          AND namespace_name=#{namespace} AND activation_sequence=#{sequence} AND deployment_sequence=#{deployment}
+          AND instance_id=#{instance}
+    </select>
+    <select id="receipts" resultType="string">
+        SELECT receipt_json FROM mk_decision_execution_receipt WHERE <include refid="scope"/>
+          AND namespace_name=#{namespace} AND activation_sequence=#{sequence} AND deployment_sequence=#{deployment} LIMIT 129
+    </select>
+    <select id="previouslyApplied" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM mk_bundle_applied_authorization WHERE <include refid="scope"/>
+          AND JSON_UNQUOTE(JSON_EXTRACT(directive_json,'$.bundle.bundleId'))=#{bundleId}
+          AND CAST(JSON_EXTRACT(directive_json,'$.bundle.version') AS UNSIGNED)=#{version}
+          AND JSON_UNQUOTE(JSON_EXTRACT(directive_json,'$.bundle.contentHash'))=#{hash})
+    </select>
+    <insert id="append">
+        INSERT INTO mk_bundle_applied_authorization (tenant_id,environment_name,cell_id,campaign_id,activation_sequence,directive_id,directive_json,execution_evidence,applied_at)
+        VALUES (<include refid="values"/>,#{sequence},#{directiveId},#{json},#{evidence},#{now})
+    </insert>
+    <insert id="first">
+        INSERT INTO mk_bundle_admission_pointer (tenant_id,environment_name,cell_id,campaign_id,applied_sequence,updated_at)
+        VALUES (<include refid="values"/>,#{sequence},#{now})
+    </insert>
+    <update id="advance">
+        UPDATE mk_bundle_admission_pointer SET applied_sequence=#{sequence},updated_at=#{now}
+        WHERE <include refid="scope"/> AND applied_sequence=#{previous}
+    </update>
+    <select id="protectedSlot" resultType="boolean">
+        SELECT bundle_applied FROM mk_runtime_slot
+        WHERE tenant_id=#{key.tenantId} AND environment_name=#{key.environment} AND cell_id=#{key.cell} AND runtime_name='decision'
+          AND namespace_name=#{namespace} AND bundle_managed=TRUE FOR UPDATE
+    </select>
+    <update id="protectSlot">
+        UPDATE mk_runtime_slot SET bundle_applied=TRUE
+        WHERE tenant_id=#{key.tenantId} AND environment_name=#{key.environment} AND cell_id=#{key.cell} AND runtime_name='decision'
+          AND namespace_name=#{namespace} AND bundle_managed=TRUE
+    </update>
+</mapper>

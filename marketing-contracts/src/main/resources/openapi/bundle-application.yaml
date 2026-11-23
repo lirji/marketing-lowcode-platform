@@ -1,0 +1,80 @@
+openapi: 3.1.0
+info:
+  title: Decision 活动组合运行证据与整体应用
+  version: 1.0.0
+security: [{oidc: []}]
+paths:
+  /api/v1/decisions/runtime/release-bundle-applications/{campaignId}/{sequence}/attest:
+    parameters:
+      - {$ref: '#/components/parameters/Campaign'}
+      - {$ref: '#/components/parameters/Sequence'}
+    post:
+      operationId: attestDecisionBundleReplica
+      description: 需要 runtime:activate。在接收请求的实例上验证真实参与签发和该实例负责的报价成员，持久记录本部署版本的专属签名。重复请求恢复原回执。
+      responses:
+        '200':
+          description: 单个 Decision 副本的签名运行回执
+          content:
+            application/json:
+              schema: {$ref: '../schema/artifact/decision-execution-receipt.schema.json'}
+        '409': {description: 当前授权、实例清单、签名或实际制品未满足条件}
+  /api/v1/decisions/runtime/release-bundle-applications/{campaignId}/{sequence}/apply:
+    parameters:
+      - {$ref: '#/components/parameters/Campaign'}
+      - {$ref: '#/components/parameters/Sequence'}
+    post:
+      operationId: applyDecisionBundle
+      description: 需要 runtime:activate 和 bundle:apply。由 Control 提交从 Journey 持久收集端读取的已提交 v2 回执。Decision 在同一事务中验证每个目标覆盖、指针原序号和截止时间，保存证据并切换新参与。对已提交的相同序号返回原结果。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedAppliedSequence, journeyAcks]
+              properties:
+                expectedAppliedSequence: {type: integer, format: int64, minimum: 0}
+                applyBefore: {type: [string, 'null'], format: date-time}
+                journeyAcks:
+                  type: array
+                  maxItems: 1024
+                  items: {$ref: './marketing-api.yaml#/components/schemas/JourneyBundleExecutionAck'}
+      responses:
+        '200': {$ref: '#/components/responses/Applied'}
+        '403': {description: 机器身份缺少发布权限}
+        '409': {description: 当前指针、目标部署、运行证据、回滚历史或截止时间未满足条件}
+  /api/v1/decisions/runtime/release-bundle-applications/{campaignId}/{sequence}:
+    parameters:
+      - {$ref: '#/components/parameters/Campaign'}
+      - {$ref: '#/components/parameters/Sequence'}
+    get:
+      operationId: getDecisionBundleApplication
+      description: 需要 runtime:activate。按原序号查询实际应用，在应用事务上完成仲裁后返回。可设置 confirmAbsentAfter，由 Decision 自己的时钟确认截止时间已过。
+      parameters:
+        - in: query
+          name: confirmAbsentAfter
+          schema: {type: string, format: date-time}
+      responses:
+        '200': {$ref: '#/components/responses/Applied'}
+        '404': {description: 尚无该序号的已提交应用事实}
+        '409': {description: 尚未达到确认缺失的截止时间或持久事实校验失败}
+components:
+  securitySchemes:
+    oidc: {type: http, scheme: bearer}
+  parameters:
+    Campaign: {name: campaignId, in: path, required: true, schema: {type: string, pattern: '^[A-Za-z0-9_.:-]{1,64}$'}}
+    Sequence: {name: sequence, in: path, required: true, schema: {type: integer, minimum: 1, format: int64}}
+  responses:
+    Applied:
+      description: 精确序号的真实事务结果，currentSequence 为查询时当前应用位置
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [state, directive, appliedAt, currentSequence]
+            properties:
+              state: {type: string, const: APPLIED}
+              directive: {$ref: './marketing-api.yaml#/components/schemas/ReleaseBundleActivationDirective'}
+              appliedAt: {type: string, format: date-time}
+              currentSequence: {type: integer, format: int64, minimum: 1}

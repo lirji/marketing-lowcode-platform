@@ -31,11 +31,22 @@ class JourneyRuntimeReaderTest {
                 }
                 connection.commit();
             }
+            try (var connection = DriverManager.getConnection(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())) {
+                var migrations = new ScriptRunner(connection); migrations.setLogWriter(null); migrations.setStopOnError(true);
+                for (String file : new String[]{"V3__bundle_directive_receipts.sql","V4__bundle_managed_runtime_slot.sql"}) {
+                    try (var script = Resources.getResourceAsReader("journey-schema/" + file)) { migrations.runScript(script); }
+                }
+            }
             var reader = new JourneyRuntimeReader(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
             assertTrue(reader.killSwitch("t", "main").enabled());
             assertNull(reader.killSwitch("other", "main"));
             assertEquals(2, reader.current("t", "local", "cell", "main").activationSequence());
             assertNull(reader.current("t", "local", "wrong-cell", "main"));
+            try (var connection = DriverManager.getConnection(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
+                    var statement = connection.createStatement()) {
+                statement.executeUpdate("UPDATE mk_journey_runtime_slot SET bundle_managed=true");
+            }
+            assertNull(reader.current("t", "local", "cell", "main"));
             var historical = reader.activated("t", "local", "cell", "main", 1, 2, "artifact");
             assertArrayEquals(new byte[]{1, 2}, historical.payload());
             assertNull(reader.activated("t", "local", "cell", "main", 1, 3, "artifact"));

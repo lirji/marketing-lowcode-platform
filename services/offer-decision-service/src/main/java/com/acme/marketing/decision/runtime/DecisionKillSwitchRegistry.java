@@ -64,6 +64,14 @@ public class DecisionKillSwitchRegistry {
                 directive.enabled(), directive.reason()));
     }
 
+    /** 组合发布在短事务中复核各成员当前持久停用状态，避免依赖下一次热缓存同步。 */
+    public void requireEnabledForApplication(String tenantId, String targetNamespace) {
+        store.lock(tenantId, targetNamespace).filter(StoredState::enabled).ifPresent(disabled -> {
+            throw new ConflictException("MARKETING_KILL_SWITCH_ENABLED", disabled.reason());
+        });
+        if (namespace.equals(targetNamespace)) requireEnabled(tenantId);
+    }
+
     public void requireEnabled(String tenantId) {
         State state = states.get(tenantId);
         if (state != null && state.enabled()) {

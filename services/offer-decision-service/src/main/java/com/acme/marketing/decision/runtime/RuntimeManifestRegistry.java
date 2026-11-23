@@ -229,7 +229,14 @@ public final class RuntimeManifestRegistry {
                 && !routing.manifest().retainedGenerations().contains(key.generation()));
     }
 
+    /** 回放也要实时核对应用记录，避免已保存的单清单报价绕过整体切换。 */
+    public void requireLegacyRouting(String tenantId) {
+        if (stateStore.requiresBinding(slot, tenantId)) throw ReleaseBundleProtocolError.SLOT_MANAGED.conflict();
+    }
+
+    /** 真实组合切换与单清单报价在持久位置上仲裁。 */
     public GenerationSnapshot route(String tenantId, String targetingKey) {
+        requireLegacyRouting(tenantId);
         String slotKey = slot.key(tenantId);
         ActiveRouting routing = active.get(slotKey);
         if (routing == null) {

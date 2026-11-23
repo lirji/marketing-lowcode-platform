@@ -44,6 +44,9 @@ public interface DecisionMapper {
     /** 读取运行时槽位。 */
     SlotPointerRow selectRuntimeSlot(RuntimeSlotKey slot);
 
+    /** 与组合切换在同一个物理位置上仲裁旧入口。 */
+    Boolean requiresBinding(RuntimeSlotKey slot);
+
     /** 更新运行时槽位期望指针。 */
     int updateRuntimeSlot(RuntimeSlotWrite slot);
 

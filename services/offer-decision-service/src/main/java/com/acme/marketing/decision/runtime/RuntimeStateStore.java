@@ -9,6 +9,9 @@ import java.util.Optional;
 public interface RuntimeStateStore {
     void install(String releaseKeyId, ReleaseManifest manifest, byte[] artifactPayload);
 
+    /** 查询真实应用后是否必须携带活动参与凭证。 */
+    boolean requiresBinding(RuntimeManifestRegistry.RuntimeSlot slot, String tenantId);
+
     void activate(ActivationDirective directive);
 
     Optional<DesiredState> desired(RuntimeManifestRegistry.RuntimeSlot slot, String tenantId);

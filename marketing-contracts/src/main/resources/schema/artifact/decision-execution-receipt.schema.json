@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/marketing/decision-execution-receipt/1-0-0",
+  "description": "Decision 副本签发的执行回执，绑定已验证的整体授权、部署位置、接流量实例与参与签发身份。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "directiveSignature",
+    "deploymentSequence",
+    "deploymentDigest",
+    "replica",
+    "participationKeyId",
+    "observedAt",
+    "signature"
+  ],
+  "properties": {
+    "directiveSignature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{86}$"
+    },
+    "deploymentSequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9223372036854775807
+    },
+    "deploymentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "replica": {
+      "type": "object",
+      "required": [
+        "instanceId",
+        "imageDigest",
+        "executionKeyId"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "instanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "imageDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "executionKeyId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+        }
+      }
+    },
+    "participationKeyId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_.:@-]+$"
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{86}$"
+    }
+  }
+}

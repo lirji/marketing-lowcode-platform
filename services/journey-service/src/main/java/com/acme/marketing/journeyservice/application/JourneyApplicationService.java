@@ -31,14 +31,16 @@ public class JourneyApplicationService {
     private final boolean directRegistrationEnabled;
     private final ExecutionMode executionMode;
     private final JourneyKillSwitchRegistry killSwitch;
+    private final JourneyProbeDeliveryRepository.Slot slot;
     private final JourneyRuntime runtime = new JourneyRuntime();
 
     public JourneyApplicationService(JourneyRepository repository, ObjectMapper mapper, Clock clock,
-            JourneyKillSwitchRegistry killSwitch,
+            JourneyKillSwitchRegistry killSwitch, JourneyExecutionDeployment deployment,
             @Value("${marketing.security.mode:DEV}") String securityMode,
             @Value("${marketing.journey.execution-mode:DIRECT}") ExecutionMode executionMode) {
         this.repository = repository;
         this.mapper = mapper;
+        this.slot = deployment.slot();
         this.clock = clock;
         this.killSwitch = killSwitch;
         this.directRegistrationEnabled = !"OIDC".equalsIgnoreCase(securityMode);
@@ -75,6 +77,10 @@ public class JourneyApplicationService {
             return view(read(row.snapshotJson(), EnrollmentSnapshot.class), List.of(), Map.of(), true,
                     Instant.parse(row.createdAt()));
         }
+        // 已存在的参与可恢复；同位置的组合上线后，开发模式的直接入口也不能创建无绑定参与。
+        if (repository.findRuntimeSlot(scope.tenantId().value(),slot.environment(),slot.cell(),slot.namespace(),true)
+                .map(JourneyRepository.RuntimeSlotRow::bundleManaged).orElse(false))
+            throw com.acme.marketing.contracts.release.ReleaseBundleProtocolError.SLOT_MANAGED.conflict();
         Instant now = clock.instant();
         String enrollmentId = UUID.randomUUID().toString();
         EnrollmentSnapshot start = EnrollmentSnapshot.start(scope.tenantId().value(), enrollmentId,

@@ -60,3 +60,14 @@ marketing.deployment-inventory:
   trusted-public-keys: ${DECISION_DEPLOYMENT_TRUSTED_PUBLIC_KEYS:}
   tenant: ${DECISION_DEPLOYMENT_PIPELINE_TENANT:}
   actor: ${DECISION_DEPLOYMENT_PIPELINE_ACTOR:}
+
+# 实例专用身份由部署方注入，每个接流量实例持有独立私钥；目标作业身份取自受信部署配置。
+marketing.execution:
+  instance-id: ${DECISION_EXECUTION_INSTANCE_ID:}
+  image-digest: ${DECISION_EXECUTION_IMAGE_DIGEST:}
+  key-id: ${DECISION_EXECUTION_KEY_ID:}
+  private-key: ${DECISION_EXECUTION_PRIVATE_KEY_BASE64:}
+  trusted-public-keys: ${DECISION_EXECUTION_TRUSTED_PUBLIC_KEYS:}
+  journey-public-keys: ${DECISION_JOURNEY_EXECUTION_TRUSTED_PUBLIC_KEYS:}
+  journey-targets: ${DECISION_JOURNEY_EXECUTION_TARGETS:}
+  admission-namespace: ${DECISION_ADMISSION_NAMESPACE:main}

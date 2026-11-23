@@ -56,7 +56,7 @@ final class JourneyExecutionProbeHandler implements Serializable {
         if (signer == null) throw unavailable();
         plans.verifyExecutionProbe(probe, jobId, parallelism, buildDigest, now);
         return JourneyBundleExecutionAckSigner.sign(signer, new JourneyBundleExecutionAck(probe,
-                JourneyBundleExecutionAck.EXECUTION_PROTOCOL, jobId, parallelism, subtask, attempt, buildDigest, now, keyId, ""));
+                JourneyBundleExecutionAck.BOUND_START_PROTOCOL, jobId, parallelism, subtask, attempt, buildDigest, now, keyId, ""));
     }
     private static void validateKeys(String id, String privateValue, String publicValue) {
         if (!id.matches("[A-Za-z0-9_.:@-]{1,64}") || privateValue.isBlank() || publicValue.isBlank()) throw unavailable();

@@ -62,10 +62,10 @@ public final class DecisionApplicationService {
         if (request.organizationId() != null) scope.requireOrganization(request.organizationId());
         request.cart().lines().stream().map(line -> line.shopId()).distinct().forEach(scope::requireShop);
         killSwitch.check(scope.tenantId().value());
-        return bulkhead.execute(scope.tenantId(), () -> evaluateNow(scope, request));
+        return bulkhead.execute(scope.tenantId(), () -> evaluateNow(scope, request, true));
     }
 
-    private DecisionResponse evaluateNow(TenantScope scope, DecisionRequest request) {
+    private DecisionResponse evaluateNow(TenantScope scope, DecisionRequest request, boolean signOffer) {
         long started = System.nanoTime();
         Instant now = clock.instant();
         if (request.occurredAt().isBefore(now.minusSeconds(300))
@@ -87,15 +87,36 @@ public final class DecisionApplicationService {
         }
         PricingResult result = pricing.price(request.cart(), candidates);
         String quoteId = UUID.randomUUID().toString();
-        String token = result.appliedOffers().isEmpty() ? "" : token(scope, request, snapshot, result, quoteId, now);
+        String token = !signOffer || result.appliedOffers().isEmpty() ? "" : token(scope, request, snapshot, result, quoteId, now);
         long durationMicros = (System.nanoTime() - started) / 1_000;
         return new DecisionResponse(request.requestId(), quoteId, snapshot.generation(), result, token,
                 trace, durationMicros, now);
     }
 
+    /** 对真实精确成员执行同一报价路径；探针输入仅在进程内使用，不签 OfferToken 或写业务报价。 */
+    void verifyExecution(TenantScope scope, com.acme.marketing.contracts.release.ReleaseBundleActivationDirective directive,
+            com.acme.marketing.contracts.release.ReleaseBundleParticipation participation, String subject, long generation) {
+        killSwitch.check(scope.tenantId().value());
+        String id = participation.participationId();
+        String shop = directive.shopId().isEmpty()
+                ? scope.shops().stream().filter(value -> !"*".equals(value)).findFirst().orElse("execution-probe")
+                : directive.shopId();
+        var unit = new com.acme.marketing.decision.model.Money("CNY", 1);
+        var line = new com.acme.marketing.decision.model.CartLine(id, id, shop, "", "", 1, unit, unit, false);
+        var request = new DecisionRequest(id, id, directive.organizationId(), id, subject, "EXECUTION_PROBE",
+                clock.instant(), new Cart(unit.currency(), List.of(line)), Set.of(),
+                new BundleContext(directive.bundle().campaignId(), id, participation));
+        var result = evaluateNow(scope, request, false);
+        if (result.generation() != generation)
+            throw com.acme.marketing.contracts.release.ReleaseBundleProtocolError.EXECUTION_ACK_INVALID.conflict();
+    }
+
     /** 成功回放仍校验当前停用及签名信任；不重签报价，不赋予新的参与资格。 */
     public void validateBundleReplay(TenantScope scope, DecisionRequest request) {
-        if (request.bundleContext() == null) return;
+        if (request.bundleContext() == null) {
+            manifests.requireLegacyRouting(scope.tenantId().value());
+            return;
+        }
         killSwitch.check(scope.tenantId().value());
         boundSnapshot(scope, request, clock.instant());
     }

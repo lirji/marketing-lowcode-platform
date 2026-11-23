@@ -42,6 +42,26 @@ public final class PinnedJourneyBundleExecutionVerifier {
     public void requireAck(ExpectedDeployment expected, JourneyBundleExecutionProbe probe,
             ReleaseBundleActivationDirective source, JourneyBundleExecutionAck ack, Instant now) {
         requireProbe(expected, probe, source, now);
+        requireAckSignature(expected, probe, ack, now);
+    }
+
+    /** 同一次应用只需验证一次完整授权和挑战；每个实际子任务的签名仍需独立复核。 */
+    public void requireCoverage(ExpectedDeployment expected, ReleaseBundleActivationDirective source,
+            java.util.List<JourneyBundleExecutionAck> acks, Instant now) {
+        if (acks == null || acks.size() != expected.parallelism() || acks.getFirst() == null)
+            throw ReleaseBundleProtocolError.EXECUTION_COVERAGE_INCOMPLETE.conflict();
+        var probe = acks.getFirst().probe();
+        requireProbe(expected, probe, source, now);
+        var indices = new java.util.BitSet(expected.parallelism());
+        for (var ack : acks) {
+            requireAckSignature(expected, probe, ack, now);
+            if (indices.get(ack.subtaskIndex())) throw ReleaseBundleProtocolError.EXECUTION_COVERAGE_INCOMPLETE.conflict();
+            indices.set(ack.subtaskIndex());
+        }
+    }
+
+    private void requireAckSignature(ExpectedDeployment expected, JourneyBundleExecutionProbe probe,
+            JourneyBundleExecutionAck ack, Instant now) {
         if (ack == null || !probe.equals(ack.probe()) || !expected.jobId().equals(ack.jobId())
                 || expected.parallelism() != ack.parallelism() || !expected.buildDigest().equals(ack.buildDigest())
                 || ack.acknowledgedAt().isAfter(now.plusSeconds(MAX_CLOCK_SKEW_SECONDS))

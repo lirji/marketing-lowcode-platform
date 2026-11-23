@@ -43,6 +43,9 @@ import tools.jackson.databind.ObjectMapper;
         mergeMode = org.springframework.test.context.TestExecutionListeners.MergeMode.MERGE_WITH_DEFAULTS)
 class DecisionBundleEvaluationIntegrationTest {
     private static final KeyPair RELEASE = Ed25519.generateKeyPair(), COMPILER = Ed25519.generateKeyPair(), PARTICIPATION = Ed25519.generateKeyPair();
+    private static final KeyPair PIPELINE = Ed25519.generateKeyPair(), REPLICA = Ed25519.generateKeyPair(), FLINK = Ed25519.generateKeyPair();
+    private static final String IMAGE = "sha256:" + "a".repeat(64), JAR = "sha256:" + "b".repeat(64), JOB = "c".repeat(32);
+    private static final String APPLICATION = "/api/v1/decisions/runtime/release-bundle-applications/campaign/";
     private static final Instant NOW = Instant.now();
     private static final MutableClock TIME = new MutableClock();
     private static final org.testcontainers.mysql.MySQLContainer MYSQL = mysql();
@@ -74,6 +77,19 @@ class DecisionBundleEvaluationIntegrationTest {
         r.add("spring.datasource.url", MYSQL::getJdbcUrl); r.add("spring.datasource.username", MYSQL::getUsername);
         r.add("spring.datasource.password", MYSQL::getPassword); r.add("spring.flyway.user", MYSQL::getUsername); r.add("spring.flyway.password", MYSQL::getPassword);
         r.add("marketing.release.trusted-key-id", () -> "release"); r.add("marketing.release.public-key-base64", () -> encoded(RELEASE.getPublic().getEncoded()));
+        r.add("marketing.deployment-inventory.tenant", () -> "deploy");
+        r.add("marketing.deployment-inventory.actor", () -> "pipeline");
+        r.add("marketing.deployment-inventory.trusted-public-keys", () -> "pipeline=" + encoded(PIPELINE.getPublic().getEncoded()));
+        r.add("marketing.execution.instance-id", () -> "pod-one"); r.add("marketing.execution.image-digest", () -> IMAGE);
+        r.add("marketing.execution.key-id", () -> "pod-key");
+        r.add("marketing.execution.private-key", () -> encoded(REPLICA.getPrivate().getEncoded()));
+        r.add("marketing.execution.trusted-public-keys", () -> "pod-key=" + encoded(REPLICA.getPublic().getEncoded()));
+        r.add("marketing.execution.journey-public-keys", () -> "flink=" + encoded(FLINK.getPublic().getEncoded()));
+        String target = "{\"jobId\":\"" + JOB + "\",\"parallelism\":2,\"buildDigest\":\"" + JAR + "\"}";
+        r.add("marketing.execution.journey-targets", () -> "{\"other\":" + target + ",\"mail\":" + target + "}");
+        r.add("marketing.participation.signing-key-id", () -> "participation");
+        r.add("marketing.participation.private-key-base64", () -> encoded(PARTICIPATION.getPrivate().getEncoded()));
+        r.add("marketing.participation.signing-public-key-base64", () -> encoded(PARTICIPATION.getPublic().getEncoded()));
         r.add("marketing.compiler.trusted-key-id", () -> "compiler"); r.add("marketing.compiler.public-key-base64", () -> encoded(COMPILER.getPublic().getEncoded()));
         r.add("marketing.participation.trusted-key-id", () -> "participation"); r.add("marketing.participation.public-key-base64", () -> encoded(PARTICIPATION.getPublic().getEncoded()));
     }
@@ -186,6 +202,148 @@ class DecisionBundleEvaluationIntegrationTest {
         legacyShape.put("orderId", legacy.orderId()); legacyShape.put("subjectToken", legacy.subjectToken()); legacyShape.put("channel", legacy.channel());
         legacyShape.put("occurredAt", legacy.occurredAt()); legacyShape.put("cart", legacy.cart()); legacyShape.put("audienceSnapshotIds", legacy.audienceSnapshotIds());
         assertEquals(mapper.writeValueAsString(legacyShape), mapper.writeValueAsString(legacy));
+    }
+
+    @Test void inventoryChangesAndConcurrentWholeBundleApplicationPreserveBindingsAndRollback() throws Exception {
+        var first = installed(1);
+        assertCode(403, "PERMISSION_DENIED", send(builder(APPLICATION + "1/apply").setHeader("X-Dev-Permissions", "runtime:activate")
+                .POST(HttpRequest.BodyPublishers.ofString("{}"))));
+        var one = new DecisionDeploymentInventory.Replica("pod-one", IMAGE, "pod-key");
+        var two = new DecisionDeploymentInventory.Replica("pod-two", IMAGE, "other-key");
+        long deployment = nextDeployment();
+        registerInventory(deployment, List.of(one, two));
+        assertCode(404, "RELEASE_BUNDLE_ADMISSION_NOT_APPLIED", send(builder(APPLICATION + "1").GET()));
+        assertCode(409, "RELEASE_BUNDLE_EXECUTION_COVERAGE_INCOMPLETE",
+                send(builder(APPLICATION + "1?confirmAbsentAfter=" + NOW.plusSeconds(10)).GET()));
+        assertCode(404, "RELEASE_BUNDLE_ADMISSION_NOT_APPLIED", send(builder(APPLICATION + "1?confirmAbsentAfter=" + NOW).GET()));
+        assertEquals(200, post(APPLICATION + "1/attest", null).statusCode());
+        var proofs = journeyProofs(first);
+        assertCode(409, "RELEASE_BUNDLE_EXECUTION_COVERAGE_INCOMPLETE", apply(1, 0, proofs));
+        registerInventory(deployment + 1, List.of(one));
+        assertCode(409, "RELEASE_BUNDLE_EXECUTION_COVERAGE_INCOMPLETE", apply(1, 0, proofs));
+        var receipt = post(APPLICATION + "1/attest", null);
+        assertEquals(200, receipt.statusCode(), receipt.body());
+        assertEquals(deployment + 1, mapper.readValue(receipt.body(), DecisionExecutionReceipt.class).deploymentSequence());
+        TIME.now = NOW.plusSeconds(1);
+        assertEquals(mapper.readTree(receipt.body()), mapper.readTree(post(APPLICATION + "1/attest", null).body()));
+        String storedAck = jdbc.queryForObject("SELECT receipt_json FROM mk_decision_execution_receipt WHERE tenant_id=? AND deployment_sequence=?",
+                String.class, tenant, deployment + 1);
+        var tampered = (tools.jackson.databind.node.ObjectNode) mapper.readTree(storedAck);
+        tampered.put("participationKeyId", "wrong-role");
+        jdbc.update("UPDATE mk_decision_execution_receipt SET receipt_json=? WHERE tenant_id=? AND deployment_sequence=?",
+                mapper.writeValueAsString(tampered), tenant, deployment + 1);
+        assertCode(409, "RELEASE_BUNDLE_EXECUTION_ACK_INVALID", apply(1, 0, proofs));
+        assertCode(409, "RELEASE_BUNDLE_EXECUTION_ACK_INVALID", post(APPLICATION + "1/attest", null));
+        jdbc.update("UPDATE mk_decision_execution_receipt SET receipt_json=? WHERE tenant_id=? AND deployment_sequence=?",
+                storedAck, tenant, deployment + 1);
+        var sample = proofs.getFirst();
+        var oldProtocol = JourneyBundleExecutionAckSigner.sign(FLINK.getPrivate(), new JourneyBundleExecutionAck(sample.probe(),
+                JourneyBundleExecutionAck.EXECUTION_PROTOCOL, JOB, 2, 0, 0, JAR, NOW, "flink", ""));
+        assertCode(409, "RELEASE_BUNDLE_EXECUTION_ACK_INVALID", apply(1, 0, List.of(oldProtocol, proofs.getLast())));
+        assertCode(409, "RELEASE_BUNDLE_EXECUTION_COVERAGE_INCOMPLETE", apply(1, 0, List.of(proofs.getFirst(), proofs.getFirst())));
+        assertCode(409, "RELEASE_BUNDLE_EXECUTION_ACK_INVALID", apply(1, 0, List.of(
+                JourneyBundleExecutionAckSigner.sign(PIPELINE.getPrivate(), proofs.getFirst()), proofs.getLast())));
+        assertCode(409, "RELEASE_BUNDLE_APPLICATION_DEADLINE", post(APPLICATION + "1/apply",
+                new BundleApplicationService.ApplyRequest(0L, proofs, NOW)));
+        // 在真实历史写入之后使首次指针写入失败；门禁标记、签名证据与指针必须一起回滚。
+        jdbc.execute("ALTER TABLE mk_bundle_admission_pointer ADD CONSTRAINT application_test_fault CHECK (tenant_id <> '" + tenant + "')");
+        try {
+            assertEquals(500, apply(1, 0, proofs).statusCode());
+            assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM mk_bundle_applied_authorization WHERE tenant_id=?", Integer.class, tenant));
+            assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM mk_runtime_slot WHERE tenant_id=? AND bundle_applied=TRUE", Integer.class, tenant));
+        } finally {
+            jdbc.execute("ALTER TABLE mk_bundle_admission_pointer DROP CHECK application_test_fault");
+        }
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            var a = pool.submit(() -> apply(1, 0, proofs)); var b = pool.submit(() -> apply(1, 0, proofs));
+            for (var future : List.of(a, b)) {
+                var result = future.get(); assertEquals(200, result.statusCode(), result.body());
+                assertEquals("APPLIED", mapper.readTree(result.body()).path("state").asString());
+            }
+        }
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM mk_bundle_applied_authorization WHERE tenant_id=?", Integer.class, tenant));
+        String evidence = jdbc.queryForObject("SELECT execution_evidence FROM mk_bundle_applied_authorization WHERE tenant_id=?", String.class, tenant);
+        assertEquals(1, mapper.readTree(evidence).path("decision").size());
+        assertEquals(2, mapper.readTree(evidence).path("journey").size());
+        var old = admit("first"); assertEquals(first.bundle().bundleId(), old.bundleId());
+        var legacy = new DecisionRequest("legacy", "legacy-key", "org", "order", "subject", "CHECKOUT", NOW, cart("shop"), Set.of());
+        assertCode(409, "RELEASE_BUNDLE_SLOT_MANAGED", post("/api/v1/decisions:evaluate", legacy));
+        var second = installed(2);
+        assertEquals(200, post(APPLICATION + "2/attest", null).statusCode());
+        assertCode(409, "RELEASE_BUNDLE_ACTIVATION_SEQUENCE_CONFLICT", apply(2, 0, journeyProofs(second)));
+        var applied = apply(2, 1, journeyProofs(second)); assertEquals(200, applied.statusCode(), applied.body());
+        var newer = admit("second");
+        assertEquals(2, newer.bundleVersion()); assertEquals(old, admit("first"));
+        assertEquals(1, mapper.readTree(send(decision(old)).body()).path("generation").asLong());
+        var rollback = ReleaseBundleActivationSigner.sign(RELEASE.getPrivate(), new ReleaseBundleActivationDirective("back", first.bundle(),
+                3, "ROLLBACK", "org", "shop", NOW, "operator", "release", ""));
+        assertEquals(200, post("/api/v1/decisions/runtime/release-bundle-directives", rollback).statusCode());
+        assertEquals(200, post(APPLICATION + "3/attest", null).statusCode());
+        var restored = apply(3, 2, journeyProofs(rollback)); assertEquals(200, restored.statusCode(), restored.body());
+        assertEquals(1, admit("after-rollback").bundleVersion()); assertEquals(newer, admit("second"));
+        assertEquals(3, mapper.readTree(send(builder(APPLICATION + "1").GET()).body()).path("currentSequence").asLong());
+        TIME.now = NOW.plusSeconds(601);
+        assertEquals(200, apply(3, 2, List.of()).statusCode());
+    }
+
+    @Test void journeyOnlyBundleRequiresAdmissionReplicaAndEveryNamespaceAndRejectsUnappliedRollback() throws Exception {
+        var peers = List.of(member(1, new byte[]{1}, "journey", "mail"), member(2, new byte[]{2}, "journey", "other"));
+        var bundle = ReleaseBundleManifestSigner.sign(RELEASE.getPrivate(), new ReleaseBundleManifest("journeys", new TenantId(tenant),
+                "campaign", 1, "local", "cell-a", ReleaseBundleManifest.contentHash(tenant, "campaign", peers), peers, NOW.minusSeconds(2),
+                NOW.plusSeconds(600), "release", ""));
+        var url = "/api/v1/decisions/runtime/release-bundle-directives";
+        registerInventory(nextDeployment(), List.of(new DecisionDeploymentInventory.Replica("pod-one", IMAGE, "pod-key")));
+        var rollback = ReleaseBundleActivationSigner.sign(RELEASE.getPrivate(), new ReleaseBundleActivationDirective("unapplied", bundle, 1,
+                "ROLLBACK", "org", "shop", NOW, "operator", "release", ""));
+        assertEquals(200, post(url, rollback).statusCode());
+        assertCode(409, "RELEASE_BUNDLE_ROLLBACK_NOT_APPLIED", apply(1, 0, List.of()));
+        var source = ReleaseBundleActivationSigner.sign(RELEASE.getPrivate(), new ReleaseBundleActivationDirective("apply-journeys", bundle, 2,
+                "ACTIVATE", "org", "shop", NOW, "operator", "release", ""));
+        assertEquals(200, post(url, source).statusCode());
+        var acks = peers.stream().flatMap(peer -> journeyProofs(source, peer).stream()).toList();
+        assertCode(409, "RELEASE_BUNDLE_EXECUTION_COVERAGE_INCOMPLETE", apply(2, 0, acks));
+        var ack = post(APPLICATION + "2/attest", null); assertEquals(200, ack.statusCode(), ack.body());
+        assertCode(409, "RELEASE_BUNDLE_EXECUTION_COVERAGE_INCOMPLETE", apply(2, 0, acks.subList(0, 2)));
+        var result = apply(2, 0, acks); assertEquals(200, result.statusCode(), result.body());
+        assertEquals(source.bundle().bundleId(), admit("new-journey").bundleId());
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM mk_runtime_slot WHERE tenant_id=? AND bundle_applied=TRUE",
+                Integer.class, tenant));
+    }
+
+    private long nextDeployment() throws Exception {
+        var current = send(builder("/api/v1/decisions/runtime/deployment-inventory").setHeader("X-Dev-Tenant-Id", "deploy")
+                .setHeader("X-Dev-Actor-Id", "pipeline").GET());
+        assertEquals(200, current.statusCode(), current.body()); return mapper.readTree(current.body()).path("sequence").asLong() + 1;
+    }
+
+    private HttpResponse<String> post(String path, Object body) throws Exception {
+        return send(builder(path).POST(body == null ? HttpRequest.BodyPublishers.noBody() :
+                HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))));
+    }
+    private HttpResponse<String> apply(long sequence, long expected, List<JourneyBundleExecutionAck> acks) throws Exception {
+        return post(APPLICATION + sequence + "/apply", new BundleApplicationService.ApplyRequest(expected, acks, null));
+    }
+    private ReleaseBundleParticipation admit(String id) throws Exception {
+        var response = post("/api/v1/decisions/bundle-participations", new ReleaseBundleAdmissionRequest("campaign", id, "subject"));
+        assertEquals(200, response.statusCode(), response.body()); return mapper.readValue(response.body(), ReleaseBundleParticipation.class);
+    }
+    private void registerInventory(long sequence, List<DecisionDeploymentInventory.Replica> replicas) throws Exception {
+        var inv = new DecisionDeploymentInventory("local", "cell-a", "main", sequence, NOW.minusSeconds(1), NOW.plusSeconds(240), replicas,
+                "pipeline", "").sign(PIPELINE.getPrivate());
+        var response = send(builder("/api/v1/decisions/runtime/deployment-inventory").setHeader("X-Dev-Tenant-Id", "deploy")
+                .setHeader("X-Dev-Actor-Id", "pipeline").PUT(HttpRequest.BodyPublishers.ofString(
+                        com.acme.marketing.decision.deployment.DecisionInventoryJson.write(inv))));
+        assertEquals(200, response.statusCode(), response.body());
+    }
+    private List<JourneyBundleExecutionAck> journeyProofs(ReleaseBundleActivationDirective source) {
+        return journeyProofs(source, source.bundle().members().stream().filter(m -> m.runtime().equals("journey")).findFirst().orElseThrow());
+    }
+    private List<JourneyBundleExecutionAck> journeyProofs(ReleaseBundleActivationDirective source, ReleaseManifest peer) {
+        var probe = JourneyBundleExecutionProbeSigner.sign(RELEASE.getPrivate(), new JourneyBundleExecutionProbe("probe-" + source.activationSequence(),
+                new TenantId(tenant), "campaign", "local", "cell-a", peer.namespace(), peer.manifestId(), source.activationSequence(), source.signature(),
+                JOB, 2, "participation", NOW, NOW.plusSeconds(120), "release", ""));
+        return java.util.stream.IntStream.range(0, 2).mapToObj(index -> JourneyBundleExecutionAckSigner.sign(FLINK.getPrivate(),
+                new JourneyBundleExecutionAck(probe, JourneyBundleExecutionAck.BOUND_START_PROTOCOL, JOB, 2, index, 0, JAR, NOW, "flink", ""))).toList();
     }
 
     private ReleaseBundleActivationDirective installed(long generation) throws Exception {

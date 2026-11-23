@@ -22,7 +22,7 @@
     },
     "executionProtocol": {
       "type": "string",
-      "const": "marketing.activity-bundle-execution/v1"
+      "enum": ["marketing.activity-bundle-execution/v1", "marketing.activity-bundle-execution/v2"]
     },
     "jobId": {
       "type": "string",

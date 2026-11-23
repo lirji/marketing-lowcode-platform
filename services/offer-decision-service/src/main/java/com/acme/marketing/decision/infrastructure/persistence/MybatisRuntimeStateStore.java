@@ -95,6 +95,11 @@ public class MybatisRuntimeStateStore implements RuntimeStateStore {
     }
 
     @Override
+    public boolean requiresBinding(RuntimeSlot slot, String tenantId) {
+        return Boolean.TRUE.equals(decisionMapper.requiresBinding(slotKey(slot, tenantId)));
+    }
+
+    @Override
     public Optional<DesiredState> desired(RuntimeSlot slot, String tenantId) {
         SlotPointerRow pointer = decisionMapper.selectRuntimeSlot(slotKey(slot, tenantId));
         if (pointer == null || pointer.desiredGeneration() <= 0) return Optional.empty();

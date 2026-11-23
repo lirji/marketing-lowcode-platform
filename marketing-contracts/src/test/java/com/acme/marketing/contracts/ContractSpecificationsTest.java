@@ -236,8 +236,10 @@ class ContractSpecificationsTest {
         var ack = mapper.readTree(Files.readString(RESOURCES.resolve("schema/events/journey-bundle-execution-ack.schema.json")));
         assertEquals(probe.path("$id").asString(), ack.path("properties").path("probe").path("$ref").asString());
         assertEquals("object", probe.path("properties").path("tenantId").path("type").asString());
-        assertEquals(com.acme.marketing.contracts.release.JourneyBundleExecutionAck.EXECUTION_PROTOCOL,
-                ack.path("properties").path("executionProtocol").path("const").asString());
+        var protocols = new HashSet<String>();
+        ack.path("properties").path("executionProtocol").path("enum").forEach(code -> protocols.add(code.asString()));
+        assertEquals(Set.of(com.acme.marketing.contracts.release.JourneyBundleExecutionAck.EXECUTION_PROTOCOL,
+                com.acme.marketing.contracts.release.JourneyBundleExecutionAck.BOUND_START_PROTOCOL),protocols);
     }
 
     @Test

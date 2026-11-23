@@ -137,6 +137,11 @@
         FOR UPDATE
     </select>
 
+    <select id="requiresBinding" resultType="boolean">
+        SELECT bundle_applied FROM mk_runtime_slot WHERE tenant_id=#{tenantId} AND environment_name=#{environmentName}
+          AND cell_id=#{cellId} AND runtime_name=#{runtimeName} AND namespace_name=#{namespaceName} FOR SHARE
+    </select>
+
     <select id="selectRuntimeSlot"
             resultType="com.acme.marketing.decision.infrastructure.persistence.mapper.DecisionMapper$SlotPointerRow">
         SELECT

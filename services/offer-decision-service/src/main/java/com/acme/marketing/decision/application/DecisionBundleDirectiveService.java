@@ -29,6 +29,7 @@ public class DecisionBundleDirectiveService {
     private final PinnedReleaseBundleActivationVerifier verifier;
     private final RuntimeManifestRegistry registry;
     private final RuntimeManifestRegistry.RuntimeSlot slot;
+    private final String admissionNamespace;
     private final ObjectMapper mapper;
     private final Clock clock;
 
@@ -37,7 +38,9 @@ public class DecisionBundleDirectiveService {
             RuntimeManifestRegistry registry, ObjectMapper mapper, Clock clock,
             @Value("${marketing.runtime.environment:local}") String environment,
             @Value("${marketing.runtime.cell:cell-a}") String cell,
-            @Value("${marketing.runtime.namespace:main}") String namespace) {
+            @Value("${marketing.runtime.namespace:main}") String namespace,
+            @Value("${marketing.execution.admission-namespace:main}") String admissionNamespace) {
+        this.admissionNamespace = admissionNamespace;
         this.repository = repository; this.verifier = verifier; this.registry = registry; this.mapper = mapper;
         this.clock = clock; this.slot = new RuntimeManifestRegistry.RuntimeSlot(environment, cell, namespace);
     }
@@ -52,9 +55,9 @@ public class DecisionBundleDirectiveService {
         Long previous = repository.lockHead(key, format(clock.instant()));
         Instant now = clock.instant();
         verifier.requireValid(scope.tenantId().value(), directive, now);
-        registry.verifyInstalledMember(scope.tenantId().value(), member);
+        if (member != null) registry.verifyInstalledMember(scope.tenantId().value(), member);
         // 原slot行锁与单清单写入共用；后续冲突或事务故障必须一起撤销此标记。
-        repository.manageSlot(key, format(now));
+        if (member != null) repository.manageSlot(key, format(now));
         var existing = repository.history(key, directive.activationSequence());
         if (existing.isPresent()) {
             var row = existing.orElseThrow();
@@ -90,7 +93,11 @@ public class DecisionBundleDirectiveService {
         return new BundleDirectiveRepository.Key(tenant, slot.environment(), slot.cell(), slot.namespace(), campaign);
     }
 
-    private ReleaseManifest localMember(ReleaseBundleActivationDirective directive) {
+    /** 纯 Journey 组合的唯一 Decision 职责是签发准入；其他位置不能自称准入权威。 */
+    ReleaseManifest localMember(ReleaseBundleActivationDirective directive) {
+        if (slot.environment().equals(directive.bundle().environment()) && slot.cell().equals(directive.bundle().cell())
+                && slot.namespace().equals(admissionNamespace)
+                && directive.bundle().members().stream().noneMatch(member -> RUNTIME_NAME.equals(member.runtime()))) return null;
         return directive.bundle().members().stream().filter(member -> RUNTIME_NAME.equals(member.runtime()) && slot.matches(member))
                 .findFirst().orElseThrow(ReleaseBundleProtocolError.MEMBER_MISMATCH::conflict);
     }
@@ -102,7 +109,7 @@ public class DecisionBundleDirectiveService {
         } catch (java.time.DateTimeException corrupt) { throw ReleaseBundleProtocolError.ACTIVATION_STORED_INVALID.conflict(); }
     }
 
-    private ReleaseBundleActivationDirective read(BundleDirectiveRepository.Key key, BundleDirectiveRepository.StoredDirective row) {
+    ReleaseBundleActivationDirective read(BundleDirectiveRepository.Key key, BundleDirectiveRepository.StoredDirective row) {
         try {
             if (row.directiveJson().length() > MAX_REQUEST_BYTES) throw ReleaseBundleProtocolError.ACTIVATION_STORED_INVALID.conflict();
             ReleaseBundleActivationDirective value = mapper.readerFor(ReleaseBundleActivationDirective.class)

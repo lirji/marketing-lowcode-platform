@@ -15,6 +15,8 @@
           AND generation.namespace_name = slot.namespace_name AND generation.generation_no = slot.desired_generation
         WHERE slot.tenant_id = #{tenantId} AND slot.environment_name = #{environment}
           AND slot.cell_id = #{cell} AND slot.namespace_name = #{namespace} AND slot.desired_generation &gt; 0
+          <!-- 已有旅程走 activated 历史；新 START 在首次组合指令后必须提交参与凭证。 -->
+          AND slot.bundle_managed = FALSE
     </select>
     <select id="activated" resultType="com.acme.marketing.jobs.journey.persistence.JourneyRuntimeMapper$RuntimeRow">
         SELECT generation.generation_no AS generation, activation.activation_sequence AS activationSequence,

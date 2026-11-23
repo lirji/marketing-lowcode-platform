@@ -9,6 +9,8 @@ import java.util.Optional;
 import java.util.List;
 
 final class InMemoryRuntimeStateStore implements RuntimeStateStore {
+    /** 内存测试存储不承载组合应用权威。 */
+    @Override public boolean requiresBinding(RuntimeManifestRegistry.RuntimeSlot slot, String tenantId) { return false; }
     private final Map<String, Pointer> desired = new HashMap<>();
     private final Map<String, StoredGeneration> generations = new HashMap<>();
 
