@@ -895,3 +895,12 @@
 - 下一项 Decision 执行证据需覆盖接收业务流量的实例。现有 Helm 从 metadata.name 和镜像标签配置运行身份，Compose 使用固定名称和 local 值。用户已确认由部署流水线出具签名清单，兼容 Compose 和 Kubernetes。
 - 获准启动本机 Docker Desktop 后第一次本地验收因默认地址池耗尽而停在网络创建。已支持显式独占测试子网并用无冲突的 10.254.211.0/28 复验，日志 s11g6b3c-checkpoint-local-subnet.log。共享 REST 在引擎启动后返回空作业列表，本次只读核对。
 - 本机显式独占子网复验 1 项通过（s11g6b3c-checkpoint-local-subnet.log），服务模块耗时约 46 秒；c6d5f7a 的远程 checkpoint 作业 137543496937 通过。两端均验证实际回执和提交前 broker 位点。
+
+## S11g6b3d Decision 部署流水线签名清单
+
+- 用户选择流水线签名清单，授权决定登记工作流和位置。使用本仓库可复用工作流和 Decision V7 本库记录，支持 Compose/Kubernetes；设计与约束见 ATOMIC_RELEASE_DESIGN.md 文末。仅实现并隔离验证，不执行共享迁移或生产登记。
+- 已实现清单合同/签名/机器 schema、JAR 离线签发与验签、严格解析、专用机器身份与事务登记/读取 API、条件推进和不可变历史。真实 MySQL 验证并发同序号、幂等、排空、旧序号/跳号、越权和无效输入。首轮 2 项集成、4 项清单、16 项合同测试通过（s11g6b3d-integration.log），操作 JAR 的签发和核验通过。GitHub 登记工作流与恢复脚本正在作最终验证。
+- Journey c6d5f7a 精确 CI 45130097152 四项通过并正常快进推送 main；本机独立子网适配提交 e68ca2b 于任务分支，随本片交付。共享 Flink REST 仍为空列表，未恢复业务作业。
+- 完整 Decision 47 项、合同 64 项及依赖回归通过（s11g6b3d-modules.log），10 项架构检查通过（s11g6b3d-final-gates.log）。增加真实 head 更新故障，验证历史插入回滚后可重试成功；最终 2 项数据库联合测试及 4 项清单测试通过并重打包（s11g6b3d-rollback.log、s11g6b3d-package-final.log）。
+- 可执行 JAR 签发/验签及时间/位置/内容边界、4 项登记客户端成功/拒绝/未知结果恢复测试和 actionlint 通过。Hygiene 最终无阻断，事务已复核锁与回滚、无网络副作用，仓库未配置规范格式化工具。真实环境登记仍需受保护部署环境、实际观测和机器身份；此时 GitHub 仓库已配置 Environment 数为 0。没有实际部署或写共享数据。
+- 下一片为 Decision 逐副本执行回执，与本站当前部署位置、活动指令、实际求值/准入能力关联。应用门禁与 Control 闭环继续待实现；当前流水线登记成功不得推进业务指针。

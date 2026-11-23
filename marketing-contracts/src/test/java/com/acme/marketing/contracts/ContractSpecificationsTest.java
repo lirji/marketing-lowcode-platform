@@ -21,6 +21,7 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
 class ContractSpecificationsTest {
     private static final Path RESOURCES = Path.of("src/main/resources").toAbsolutePath().normalize();
     private static final Set<String> API_PATHS = Set.of(
+            "/api/v1/decisions/runtime/deployment-inventory",
             "/api/v1/client-errors",
             "/api/v1/campaigns",
             "/api/v1/campaigns/{campaignId}/release-bundles",

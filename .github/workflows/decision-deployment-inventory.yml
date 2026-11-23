@@ -1,0 +1,43 @@
+name: Register Decision deployment inventory
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: Protected deployment environment containing the Decision origin and pipeline identity
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require a deployment run on main or a protected release tag
+        run: |
+          [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
+          [[ "$GITHUB_REF" == refs/heads/main || ( "$GITHUB_REF" == refs/tags/r1-v* && "$GITHUB_REF_PROTECTED" == true ) ]]
+
+  register:
+    needs: source
+    runs-on: ${{ vars.DECISION_DEPLOYMENT_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: decision-serving-inventory-${{ inputs.environment }}
+          path: ${{ runner.temp }}/decision-serving-inventory
+      - name: Register the observed inventory and verify its current position
+        env:
+          DECISION_DEPLOYMENT_BASE_URL: ${{ vars.DECISION_DEPLOYMENT_BASE_URL }}
+          DECISION_DEPLOYMENT_TOKEN: ${{ secrets.DECISION_DEPLOYMENT_TOKEN }}
+        run: |
+          python3 scripts/register-decision-inventory.py \
+            "$RUNNER_TEMP/decision-serving-inventory/signed.json" \
+            "$RUNNER_TEMP/decision-serving-inventory/digest.txt"

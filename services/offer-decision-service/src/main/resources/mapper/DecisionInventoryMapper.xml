@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.decision.infrastructure.persistence.mapper.DecisionInventoryMapper">
+    <sql id="location">environment_name=#{slot.environment} AND cell_id=#{slot.cell} AND namespace_name=#{slot.namespace}</sql>
+    <sql id="position">
+        SELECT deployment_sequence AS sequence, content_digest AS digest
+        FROM mk_decision_deployment_head WHERE <include refid="location"/>
+    </sql>
+    <insert id="ensureHead">
+        INSERT INTO mk_decision_deployment_head(environment_name,cell_id,namespace_name)
+        VALUES (#{slot.environment},#{slot.cell},#{slot.namespace})
+        ON DUPLICATE KEY UPDATE deployment_sequence=mk_decision_deployment_head.deployment_sequence
+    </insert>
+    <select id="lockHead" resultType="com.acme.marketing.decision.application.DecisionInventoryRepository$Position">
+        <include refid="position"/> FOR UPDATE
+    </select>
+    <select id="current" resultType="com.acme.marketing.decision.application.DecisionInventoryRepository$Position">
+        <include refid="position"/>
+    </select>
+    <insert id="append">
+        INSERT INTO mk_decision_deployment_inventory(environment_name,cell_id,namespace_name,deployment_sequence,
+            content_digest,inventory_json,recorded_by,recorded_at)
+        VALUES (#{slot.environment},#{slot.cell},#{slot.namespace},#{position.sequence},#{position.digest},#{json},#{actor},#{now})
+    </insert>
+    <update id="advance">
+        UPDATE mk_decision_deployment_head SET deployment_sequence=#{position.sequence}, content_digest=#{position.digest}
+        WHERE <include refid="location"/> AND deployment_sequence=#{previous}
+    </update>
+</mapper>

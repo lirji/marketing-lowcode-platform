@@ -640,6 +640,30 @@ paths:
       responses:
         '200': {description: Signed evidence for this exact bundle and member only, content: {application/json: {schema: {$ref: '#/components/schemas/ReleaseBundleAck'}}}}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/decisions/runtime/deployment-inventory:
+    get:
+      summary: Read the current Decision deployment sequence and digest for the configured pipeline identity
+      operationId: getDecisionDeploymentPosition
+      x-required-permission: deployment:publish
+      responses:
+        '200': {description: Current deployment position, content: {application/json: {schema: {$ref: '#/components/schemas/DecisionDeploymentPosition'}}}}
+        '403': {description: Caller is outside the configured deployment authority}
+    put:
+      summary: Register the next signed inventory of serving Decision replicas
+      operationId: recordDecisionDeploymentInventory
+      parameters:
+        - {in: header, name: X-Inventory-Digest, required: false, schema: {type: string}, description: Reject a mismatched canonical inventory digest before recording}
+      x-required-permission: deployment:publish
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '../schema/artifact/decision-deployment-inventory.schema.json'}
+      responses:
+        '200': {description: Persisted sequence and digest, content: {application/json: {schema: {$ref: '#/components/schemas/DecisionDeploymentPosition'}}}}
+        '400': {description: Invalid or oversized inventory}
+        '403': {description: Caller is outside the configured deployment authority}
+        '409': {description: Signature, scope, time window or deployment sequence rejected}
   /api/v1/decisions/runtime/manifest:
     put: {tags: [Decision], operationId: warmDecisionRuntime, requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
   /api/v1/decisions/runtime/activation:
@@ -1170,6 +1194,13 @@ components:
     JsonArray: {description: Successful collection, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/JsonObject'}}}}}
     Problem: {description: RFC 9457 problem response, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
   schemas:
+    DecisionDeploymentPosition:
+      type: object
+      additionalProperties: false
+      required: [sequence, digest]
+      properties:
+        sequence: {type: integer, format: int64, minimum: 0}
+        digest: {type: string, pattern: '^$|^sha256:[0-9a-f]{64}$'}
     BundleReadinessView:
       type: object
       additionalProperties: false

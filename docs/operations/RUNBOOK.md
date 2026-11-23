@@ -178,3 +178,14 @@ CONFIRM_GAME_DAY=marketing-r1-local ./scripts/game-day.sh kafka-restart
 在可用的 Docker 引擎上运行 `./scripts/verify-journey-checkpoint.sh`。脚本打包当前 Journey 作业，使用 Testcontainers 的独立网络、MySQL、Kafka 和 Flink 会话。测试经 Journey 服务登记并派发探针，在 Kafka 未提交读下观察到两个子任务的回执，再触发该作业的 checkpoint。服务的持久查询须从 PENDING（0 份）变为 READY（2 份），业务激活和派发表应为空。测试结束后释放本次容器。运行耗时包括镜像拉取及 Maven 构建。
 
 本机 Docker 默认地址池耗尽时，可将环境变量 `JOURNEY_CHECKPOINT_TEST_SUBNET` 设为与现有路由和 Docker 网络不重叠的空闲 CIDR，再运行同一脚本。
+
+### Decision 部署流水线的签名清单
+
+本仓库的可复用工作流 `.github/workflows/decision-deployment-inventory.yml` 负责登记。Compose 和 Kubernetes 的部署作业在主干或受保护的 r1-v 发布标签流水线中观测实际接收流量的后端，并使用相同的登记步骤。Decision 的 MySQL 是当前部署序号和摘要的权威记录。机器身份调用 `GET /api/v1/decisions/runtime/deployment-inventory` 取得 `sequence` 和 `digest`，空库返回序号 0。该查询也可在清单过期后用于恢复登记。
+
+1. 部署作业先读取当前位置，再在路由状态稳定时采集完整实例集合。Compose 使用当前接流量的容器实例 ID 和对应平台的 OCI manifest 摘要；Kubernetes 使用接流量端点对应的 Pod UID 和实际 OCI manifest 摘要。每个实例关联独立的执行签名 keyId。切换途中或来源不完整时停止签发。没有接流量实例时提交空集合。
+2. 按 `marketing-contracts/src/main/resources/schema/artifact/decision-deployment-inventory.schema.json` 准备草稿，序号取已读取位置加一，`signature` 暂填空字符串。有效期从观测时间起最多五分钟；同位置续期也使用新序号。使用构建的 Decision 可执行 JAR 运行 `scripts/decision-deployment-inventory.sh sign draft.json /path/to/ephemeral-key.der digest.txt > signed.json`。私钥输入为 PKCS#8 Ed25519 DER，构建制品可由 `DECISION_SERVICE_JAR` 指定。仅成功退出后发布这两个文件，流水线的签名私钥单独保管。
+3. 上传两份文件到本次运行的 artifact `decision-serving-inventory-<environment>`，由受保护的部署工作流通过 `jobs.<job>.uses: ./.github/workflows/decision-deployment-inventory.yml` 和 `with.environment` 调用登记。内网入口可通过仓库变量 `DECISION_DEPLOYMENT_RUNNER` 选择能访问该入口的受信 runner。GitHub Environment 提供 `DECISION_DEPLOYMENT_BASE_URL`（HTTPS）和 `DECISION_DEPLOYMENT_TOKEN`。Decision 服务配置 `DECISION_DEPLOYMENT_PIPELINE_TENANT`、`DECISION_DEPLOYMENT_PIPELINE_ACTOR`、`DECISION_DEPLOYMENT_TRUSTED_PUBLIC_KEYS`，令牌需有 `deployment:publish` 权限。缺省时机器入口关闭。私钥不交给 Decision 服务。
+4. `PUT` 同一签名清单可重放。成功后再次 GET 核对原序号和摘要。若其他发布已推进位置，须重新观测拓扑。不能把旧清单改一个序号后重发。执行证据及整体应用进度另行查询。
+
+离线核验可使用 `scripts/decision-deployment-inventory.sh verify signed.json ENV CELL NAMESPACE SEQUENCE DIGEST`。设置部署公钥集合，序号和摘要从上述独立登记位置读取。登记成功仅说明流水线上报的部署事实已持久化。
