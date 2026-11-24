@@ -112,10 +112,11 @@
 .workspace { width:100%; max-width:1600px; min-width:0; margin:0 auto; padding:28px var(--page-gutter, 24px) 48px; }
 .page-heading { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px 24px; margin-bottom:22px; }
 .page-heading h1 { margin:0; font-weight:690; letter-spacing:-.025em; }
-.page-heading > div > p:last-child { margin:6px 0 0; color:var(--ink-600); max-width:68ch; }
+.page-heading-description { margin:6px 0 0; color:var(--ink-600); max-width:68ch; }
+.page-heading-meta { margin-block-start:6px; color:var(--ink-600); font-size:var(--text-xs); }
 .panel-head { flex-wrap:wrap; gap:var(--action-section-gap); }
 :is(.page-heading,.panel-head) > div:first-child { min-inline-size:0; overflow-wrap:anywhere; }
-.heading-actions,.panel-actions,.designer-actions { margin-inline-start:auto; }
+.heading-actions,.panel-actions { margin-inline-start:auto; }
 .state-banner { align-items:center; justify-content:space-between; }
 .state-message { display:flex; align-items:flex-start; gap:10px; min-width:0; }
 .state-message > div { min-width:0; overflow-wrap:anywhere; }
@@ -199,7 +200,7 @@
   .workspace { padding:21px var(--page-gutter) 36px; }
   .page-heading { gap:12px; margin-bottom:17px; }
   .page-heading > div:first-child { flex-basis:100%; }
-  :is(.heading-actions,.panel-actions,.designer-actions).action-bar--end {
+  :is(.heading-actions,.panel-actions).action-bar--end {
     margin-inline-start:0;
     justify-content:flex-start;
   }

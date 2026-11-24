@@ -2,8 +2,18 @@ import { useEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from 're
 import { X } from 'lucide-react'
 import { runtimeConfig } from '../shared/config/runtime'
 
-export function PageHeader({ eyebrow, title, description, actions }: { eyebrow?: string; title: string; description: string; actions?: ReactNode }) {
-  return <header className="page-heading"><div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h1>{title}</h1><p>{description}</p></div>{actions && <div className="action-bar action-bar--end heading-actions">{actions}</div>}</header>
+export function PageHeader({ eyebrow, title, description, meta, actions }: {
+  eyebrow?: string; title: string; description?: string; meta?: ReactNode; actions?: ReactNode
+}) {
+  return <header className="page-heading">
+    <div>
+      {eyebrow && <p className="eyebrow">{eyebrow}</p>}
+      <h1>{title}</h1>
+      {description && <p className="page-heading-description">{description}</p>}
+      {meta && <div className="page-heading-meta">{meta}</div>}
+    </div>
+    {actions && <div className="action-bar action-bar--end heading-actions">{actions}</div>}
+  </header>
 }
 
 export function Button({ tone = 'secondary', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: 'primary' | 'secondary' | 'danger' | 'ghost' }) {

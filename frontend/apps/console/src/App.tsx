@@ -1,5 +1,5 @@
-import { lazy, Suspense } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { lazy, Suspense, useLayoutEffect } from 'react'
+import { Navigate, Outlet, Route, Routes, useLocation, useNavigationType } from 'react-router-dom'
 import { AppShell } from './app/AppShell'
 import { RequireAuth } from './app/RequireAuth'
 import { RequirePermission } from './app/RequirePermission'
@@ -26,6 +26,16 @@ const AnalyticsPage = lazy(() => import('./features/analytics/AnalyticsPage').th
 const AssetsPage = lazy(() => import('./features/assets/AssetsPage').then((module) => ({ default: module.AssetsPage })))
 const NotFoundPage = lazy(() => import('./features/system/NotFoundPage').then((module) => ({ default: module.NotFoundPage })))
 
+function DesignerRoutes() {
+  const { pathname } = useLocation()
+  const navigationType = useNavigationType()
+  useLayoutEffect(() => {
+    // 打开设计页时回到操作栏，同时保留浏览器前进和后退的滚动恢复。
+    if (navigationType === 'PUSH' && window.scrollY > 0) window.scrollTo(0, 0)
+  }, [navigationType, pathname])
+  return <Outlet />
+}
+
 export default function App() {
   if (runtimeConfigError) {
     return (
@@ -44,12 +54,14 @@ export default function App() {
           <Route index element={<RequirePermission anyOf={['campaign:read', 'measurement:read']}><DashboardPage /></RequirePermission>} />
           <Route path="campaigns" element={<RequirePermission anyOf={['campaign:read']}><CampaignsPage /></RequirePermission>} />
           <Route path="campaigns/:campaignId/workbench" element={<RequirePermission anyOf={['campaign:read']}><CampaignWorkbench /></RequirePermission>} />
-          <Route path="designers/offer" element={<RequirePermission anyOf={['definition:read', 'definition:write']}><OfferDesignerPage /></RequirePermission>} />
-          <Route path="designers/audience" element={<RequirePermission anyOf={['audience:read', 'audience:preview', 'audience:write']}><AudienceBuilderPage /></RequirePermission>} />
-          <Route path="designers/journey" element={<RequirePermission anyOf={['definition:read', 'journey:read']}><JourneyDesignerPage /></RequirePermission>} />
+          <Route element={<DesignerRoutes />}>
+            <Route path="designers/offer" element={<RequirePermission anyOf={['definition:read', 'definition:write']}><OfferDesignerPage /></RequirePermission>} />
+            <Route path="designers/audience" element={<RequirePermission anyOf={['audience:read', 'audience:preview', 'audience:write']}><AudienceBuilderPage /></RequirePermission>} />
+            <Route path="designers/journey" element={<RequirePermission anyOf={['definition:read', 'journey:read']}><JourneyDesignerPage /></RequirePermission>} />
+            <Route path="designers/referral" element={<RequirePermission anyOf={['definition:read', 'definition:write']}><ReferralDesignerPage /></RequirePermission>} />
+          </Route>
           <Route path="designers/dmn" element={<RequirePermission anyOf={['definition:read']}><DmnDesignerPage /></RequirePermission>} />
           <Route path="designers/benefit" element={<RequirePermission anyOf={['benefit:read', 'benefit:write']}><BenefitEditorPage /></RequirePermission>} />
-          <Route path="designers/referral" element={<RequirePermission anyOf={['definition:read', 'definition:write']}><ReferralDesignerPage /></RequirePermission>} />
           <Route path="assets" element={<RequirePermission anyOf={['audience:read', 'benefit:read', 'template:read', 'audience-field:read', 'definition:read']}><AssetsPage /></RequirePermission>} />
           <Route path="governance" element={<RequirePermission anyOf={['approval:business', 'approval:finance', 'approval:compliance', 'approval:merchant', 'definition:read']}><GovernancePage /></RequirePermission>} />
           <Route path="releases/bundles" element={<RequirePermission anyOf={['release:read']}><ReleaseBundlesPage /></RequirePermission>} />

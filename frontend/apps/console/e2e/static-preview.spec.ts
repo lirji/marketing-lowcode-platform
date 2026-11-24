@@ -1,5 +1,25 @@
 import { expect, test } from '@playwright/test'
 
+test('designer menus bring the next editor heading into view after scrolling', async ({ page }) => {
+  await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: true, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
+  await page.goto('/designers/offer')
+  await expect(page.getByRole('heading', { name: 'Offer 草稿', exact: true })).toBeInViewport()
+  const designers = [
+    { menu: 'Audience Builder', heading: '新人群' },
+    { menu: 'Journey 设计器', heading: 'Journey 草稿' },
+    { menu: '邀请有礼设计器', heading: '邀请有礼草稿' },
+  ]
+  for (const { menu, heading } of designers) {
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0)
+    const mobileMenu = page.getByRole('button', { name: '打开菜单' })
+    if (await mobileMenu.isVisible()) await mobileMenu.click()
+    await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: menu, exact: true }).click()
+    await expect(page.getByRole('heading', { name: heading, exact: true })).toBeInViewport()
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
+  }
+})
+
 test('static dashboard and operations show connection states without business requests', async ({ page }, info) => {
   const requests: string[] = []
   const errors: string[] = []

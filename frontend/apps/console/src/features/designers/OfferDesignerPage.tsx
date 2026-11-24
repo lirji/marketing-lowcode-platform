@@ -5,8 +5,12 @@ import { useQuery } from '@tanstack/react-query'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { api } from '../../shared/api/client'
 import { campaignNameFromLocationState, designerHeading } from './designerBinding'
+import { DesignerWorkspace } from './DesignerWorkspace'
 import { LowCodeDesigner } from './LowCodeDesigner'
 import { OFFER_UNBOUND_TITLE, OFFER_UNBOUND_VERSION, offerCanvas } from './offerCanvas'
+
+const DIALECT = 'OFFER_DECISION_DAG'
+const DESIGNER_TITLE = 'Offer 设计器'
 
 export function OfferDesignerPage() {
   const [params] = useSearchParams()
@@ -27,17 +31,23 @@ export function OfferDesignerPage() {
     demoVersion: OFFER_UNBOUND_VERSION,
   })
   if (campaignId && !api.demoMode && !campaigns.data?.some((item) => item.id === campaignId && isKnownCampaignType(item.campaignType))) {
-    return <div className="workspace"><StateBanner tone={campaigns.isError ? 'error' : 'info'} title={campaigns.isPending ? '正在确认活动类型' : '无法确认活动类型'} detail="取得当前活动的真实类型后才能编辑，请返回活动列表刷新后重试。" /><Link to="/campaigns">返回计划与活动</Link></div>
+    return <DesignerWorkspace eyebrow={DIALECT} title={DESIGNER_TITLE} notices={
+      <StateBanner tone={campaigns.isError ? 'error' : 'info'} title={campaigns.isPending ? '正在确认活动类型' : '无法确认活动类型'} detail="取得当前活动的真实类型后才能编辑，请返回活动列表刷新后重试。"
+        action={<Link className="button secondary" to="/campaigns">返回计划与活动</Link>} />
+    } />
   }
   if (campaigns.data?.find((item) => item.id === campaignId)?.campaignType === CAMPAIGN_TYPE.REFERRAL) {
-    return <div className="workspace"><StateBanner tone="info" title="此活动属于邀请有礼" detail="请使用邀请有礼规则设计器，标准 Offer / Journey 不适用于该活动。" /><Link to={`/designers/referral?campaignId=${encodeURIComponent(campaignId ?? '')}`}>打开邀请有礼设计器</Link></div>
+    return <DesignerWorkspace eyebrow={DIALECT} title={DESIGNER_TITLE} notices={
+      <StateBanner tone="info" title="此活动属于邀请有礼" detail="请使用邀请有礼规则设计器，标准 Offer / Journey 不适用于该活动。"
+        action={<Link className="button secondary" to={`/designers/referral?campaignId=${encodeURIComponent(campaignId ?? '')}`}>打开邀请有礼设计器</Link>} />
+    } />
   }
   const canvas = offerCanvas()
   return <LowCodeDesigner
     key={campaignId ?? 'offer-draft'}
     title={heading.title}
     version={heading.version}
-    dialect="OFFER_DECISION_DAG"
+    dialect={DIALECT}
     definitionId={campaignId ? `offer-${campaignId}` : 'offer-draft'}
     campaignId={campaignId}
     nodes={canvas.nodes}

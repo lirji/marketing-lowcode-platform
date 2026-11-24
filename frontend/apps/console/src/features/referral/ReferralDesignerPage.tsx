@@ -7,12 +7,13 @@ import { Select } from '../../components/Select'
 import { useEffect, useMemo, useState, useId, type ReactNode } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { CheckCircle2, FlaskConical, Plus, Save, Trash2 } from 'lucide-react'
-import { Badge, Button, DemoBanner, PageHeader, Panel, PanelHeader, StateBanner } from '../../components/ui'
+import { CheckCircle2, FlaskConical, Plus, Save, Send, Trash2 } from 'lucide-react'
+import { Badge, Button, Panel, PanelHeader, StateBanner } from '../../components/ui'
 import { api, optionalResource } from '../../shared/api/client'
 import { problemDetail, catalogProblemDetail } from '../../shared/api/problem'
 import { isReferralSimulation, REFERRAL_POLICY_DIALECT, type BenefitSku, type BenefitView, type ReferralSimulationResult } from '../../shared/api/schemas'
 import { campaignNameFromLocationState, designerHeading } from '../designers/designerBinding'
+import { DesignerWorkspace } from '../designers/DesignerWorkspace'
 import { SkuPickerField } from '../designers/SkuPickerField'
 import { orgChoicesFromIdentity, shopChoicesFromIdentity } from '../../shared/auth/scopeChoices'
 import { useAuth } from '../../shared/auth/useAuth'
@@ -204,49 +205,61 @@ export function ReferralDesignerPage() {
   const errors = fieldErrors
   const actionError = saveMutation.error ?? validateMutation.error ?? simulateMutation.error
   const catalogError = benefits.isError ? catalogProblemDetail(benefits.error, auth.tenantId) : skus.isError ? catalogProblemDetail(skus.error, auth.tenantId) : undefined
+  const eyebrow = `${REFERRAL_POLICY_DIALECT}${campaignId ? ` · ${campaignId}` : ''}`
+  const designerTitle = '邀请有礼设计器'
+  const statusLabel = {
+    saved: savedVersion ? '已保存' : undefined,
+    dirty: '有未保存更改',
+    validated: '校验通过（不可发布）',
+    simulated: '仿真完成（候选）',
+  }[status]
 
   if (campaignId && !api.demoMode && !isKnownCampaignType(campaign?.campaignType)) {
-    return <div className="workspace"><StateBanner tone={campaigns.isError ? 'error' : 'info'} title={campaigns.isPending ? '正在确认活动类型' : '无法确认活动类型'} detail="取得当前活动的真实类型后才能编辑，请返回活动列表刷新后重试。" /><Link to="/campaigns">返回计划与活动</Link></div>
+    return <DesignerWorkspace eyebrow={eyebrow} title={designerTitle} notices={
+      <StateBanner tone={campaigns.isError ? 'error' : 'info'} title={campaigns.isPending ? '正在确认活动类型' : '无法确认活动类型'} detail="取得当前活动的真实类型后才能编辑，请返回活动列表刷新后重试。"
+        action={<Link className="button secondary" to="/campaigns">返回计划与活动</Link>} />
+    } />
   }
   if (campaign?.campaignType === CAMPAIGN_TYPE.STANDARD) {
-    return <div className="workspace"><StateBanner tone="info" title="此活动属于标准营销" detail="标准活动使用 Offer / Journey 设计器，邀请有礼需要单独创建裂变活动。" /><Link to={`/designers/offer?campaignId=${encodeURIComponent(campaignId ?? '')}`}>打开 Offer 设计器</Link></div>
+    return <DesignerWorkspace eyebrow={eyebrow} title={designerTitle} notices={
+      <StateBanner tone="info" title="此活动属于标准营销" detail="标准活动使用 Offer / Journey 设计器，邀请有礼需要单独创建裂变活动。"
+        action={<Link className="button secondary" to={`/designers/offer?campaignId=${encodeURIComponent(campaignId ?? '')}`}>打开 Offer 设计器</Link>} />
+    } />
   }
   return (
-    <div className="workspace referral-page">
-      <PageHeader
-        eyebrow={`${REFERRAL_POLICY_DIALECT}${campaignId ? ` · ${campaignId}` : ''}`}
-        title={heading.title}
-        description="按分区填写邀请有礼规则，保存时序列化为固定线性图。不开放自由拖拽节点。"
-        actions={(
-          <>
-            <Button onClick={() => saveMutation.mutate()} disabled={!live || saveMutation.isPending} title={live ? '写入控制面定义' : '演示模式或未绑定活动不可保存'}>
-              <Save size={15} />保存
-            </Button>
-            <Button onClick={() => validateMutation.mutate()} disabled={!live || validateMutation.isPending} title={live ? '调用控制面校验' : '演示模式不可执行'}>
-              <CheckCircle2 size={15} />校验
-            </Button>
-            <Button onClick={() => simulateMutation.mutate()} disabled={!live || simulateMutation.isPending} title={live ? '无副作用仿真' : '演示模式不可执行'}>
-              <FlaskConical size={15} />仿真
-            </Button>
-            <Button disabled title="REFERRAL_RELEASE_NOT_AVAILABLE：裂变发布链未接通">提交审核</Button>
-          </>
-        )}
-      />
-      <DemoBanner />
-      <p className="referral-save-state" aria-live="polite">
+    <DesignerWorkspace
+      eyebrow={eyebrow}
+      title={heading.title}
+      description="按分区填写邀请有礼规则，保存时序列化为固定线性图。不开放自由拖拽节点。"
+      meta={<span aria-live="polite">
         {savedVersion ? `v${savedVersion}` : heading.version}
-        {' · '}
-        {status === 'saved' ? '已保存' : status === 'dirty' ? '有未保存更改' : status === 'validated' ? '校验通过（不可发布）' : '仿真完成（候选）'}
-      </p>
-      {!campaignId && !api.demoMode && <StateBanner tone="info" title="未绑定活动" detail="请从「计划与活动」创建或打开活动后再设计。保存不会写入控制面。" />}
-      <StateBanner tone="warn" title="裂变发布链未接通" detail="submit / ACK / 激活会返回 REFERRAL_RELEASE_NOT_AVAILABLE。校验通过或仿真候选都不能当作可发布或已到账。" />
-      {(actionError || loadError) && <StateBanner tone="error" title="设计器操作失败" detail={loadError ?? problemDetail(actionError)} />}
-      {notice && <StateBanner tone={notice.includes('异常') || notice.includes('错误') ? 'warn' : 'success'} title="操作结果" detail={notice} />}
-      {loadErrors.length > 0 && <StateBanner tone="warn" title="已保存图与当前合同不完全一致" detail={loadErrors.map((item) => item.message).join('；')} />}
-      {catalogError && <StateBanner tone="error" title="权益或 SKU 目录不可用" detail={catalogError} />}
-
-      <div className="referral-layout">
-        <div className="referral-main">
+        {statusLabel && <> · <span className={`save-state ${status}`}>{statusLabel}</span></>}
+      </span>}
+      actions={(
+        <>
+          <Button onClick={() => saveMutation.mutate()} disabled={!live || saveMutation.isPending} title={live ? '写入控制面定义' : '演示模式或未绑定活动不可保存'}>
+            <Save size={15} />保存
+          </Button>
+          <Button onClick={() => validateMutation.mutate()} disabled={!live || validateMutation.isPending} title={live ? '调用控制面校验' : '演示模式不可执行'}>
+            <CheckCircle2 size={15} />校验
+          </Button>
+          <Button onClick={() => simulateMutation.mutate()} disabled={!live || simulateMutation.isPending} title={live ? '无副作用仿真' : '演示模式不可执行'}>
+            <FlaskConical size={15} />仿真
+          </Button>
+          <Button tone="primary" disabled title="REFERRAL_RELEASE_NOT_AVAILABLE：裂变发布链未接通"><Send size={15} />提交审核</Button>
+        </>
+      )}
+      notices={<>
+        {!campaignId && !api.demoMode && <StateBanner tone="info" title="未绑定活动" detail="请从「计划与活动」创建或打开活动后再设计。保存不会写入控制面。" />}
+        <StateBanner tone="warn" title="裂变发布链未接通" detail="submit / ACK / 激活会返回 REFERRAL_RELEASE_NOT_AVAILABLE。校验通过或仿真候选都不能当作可发布或已到账。" />
+        {(actionError || loadError) && <StateBanner tone="error" title="设计器操作失败" detail={loadError ?? problemDetail(actionError)} />}
+        {notice && <StateBanner tone={notice.includes('异常') || notice.includes('错误') ? 'warn' : 'success'} title="操作结果" detail={notice} />}
+        {loadErrors.length > 0 && <StateBanner tone="warn" title="已保存图与当前合同不完全一致" detail={loadErrors.map((item) => item.message).join('；')} />}
+        {catalogError && <StateBanner tone="error" title="权益或 SKU 目录不可用" detail={catalogError} />}
+      </>}
+    >
+      <div className="designer-content">
+        <div className="designer-content">
           <Section title="基本信息 / 作用域" errors={sectionErrors(errors, '基本信息')}>
             {([
               ['startsAt', '开始时间', '用户可以开始参与活动的时间。'],
@@ -338,7 +351,7 @@ export function ReferralDesignerPage() {
           </Section>
         </div>
 
-        <aside className="referral-aside">
+        <aside className="designer-content">
           <Panel>
             <PanelHeader title="无副作用仿真" eyebrow="SIMULATED_INPUT" />
             <p className="referral-copy">以下输入全部按字符串提交。仿真不会写参与人、不会发奖。validCount 必须是本次假设后的人数，前端不会累加。</p>
@@ -395,7 +408,7 @@ export function ReferralDesignerPage() {
           </Panel>
         </aside>
       </div>
-    </div>
+    </DesignerWorkspace>
   )
 }
 

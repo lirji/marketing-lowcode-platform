@@ -8,7 +8,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, ChevronRight, FlaskConical, Redo2, Save, Send, Trash2, Undo2 } from 'lucide-react'
-import { Badge, Button, DemoBanner, StateBanner } from '../../components/ui'
+import { Badge, Button, Panel, StateBanner } from '../../components/ui'
 import { problemDetail } from '../../shared/api/problem'
 import { api, optionalResource } from '../../shared/api/client'
 import { fromGraphDefinition, toGraphDefinition, toneForType } from './graph'
@@ -22,6 +22,7 @@ import { NODE_LABELS, supportedNode } from './nodeConfig'
 import { problemNodeId } from './problemNodeId'
 import { JourneySimulationDialog } from './JourneySimulationDialog'
 import { legacyJourneyTimers, migrateJourneyTimers, supportsJourneyTimer } from './journeyLegacy'
+import { DesignerWorkspace } from './DesignerWorkspace'
 
 export type { DesignerNode }
 const DESIGNER_STATUS = { SAVED: 'saved', DIRTY: 'dirty', VALIDATED: 'validated', SIMULATED: 'simulated' } as const
@@ -276,27 +277,55 @@ export function LowCodeDesigner({
       outputs: spec?.outputPorts ? Object.keys(spec.outputPorts) : nodePorts(node.data.stableTypeId ?? '').outputs }
   }
 
-  return <div className="designer-page">
-    <header className="designer-header"><div><p className="eyebrow">{dialect}{campaignId ? ` · ${campaignId}` : ''}</p><h1>{title}</h1><span>{savedVersion ? `v${savedVersion}` : version} · <i className={`save-state ${status}`}>{status === DESIGNER_STATUS.SAVED ? '已保存' : status === DESIGNER_STATUS.DIRTY ? '有未保存更改' : status === DESIGNER_STATUS.VALIDATED ? '校验通过' : '仿真完成'}</i></span></div><div className="action-bar action-bar--end designer-actions"><Button onClick={() => startAction(() => saveMutation.mutate(capture()))} disabled={!editable || busy}><Save size={15} />保存</Button><Button onClick={() => startAction(() => validateMutation.mutate(capture()))} disabled={!editable || !live || busy}><CheckCircle2 size={15} />校验</Button>{dialect === 'OFFER_DECISION_DAG' && <Button onClick={() => { if (validated) startAction(() => simulateMutation.mutate({ target: validated, amountMinor, currency })) }} disabled={!ready || !validAmount || !/^[A-Z]{3}$/.test(currency)}><FlaskConical size={15} />金额试算</Button>}{dialect === 'JOURNEY_STATE_MACHINE' && <Button disabled={!ready || api.demoMode || !auth.hasPermission('definition:simulate')} onClick={() => setJourneySimulationOpen(true)}><FlaskConical size={15} />旅程仿真</Button>}<Button tone="primary" onClick={() => { if (validated) startAction(() => submitMutation.mutate(validated)) }} disabled={!ready || !auth.hasPermission('definition:submit')}><Send size={15} />提交审核</Button></div></header>
-    <DemoBanner />
-    {restoring && <div className="designer-notice"><StateBanner tone="info" title="正在加载已保存定义" detail="加载完成后可编辑，避免覆盖已有版本。" /></div>}
-    <div className="designer-simulation-inputs">{dialect === 'OFFER_DECISION_DAG' ? <><label className="field"><span>试算订单金额（分）</span><input aria-label="试算订单金额（分）" inputMode="numeric" value={amountMinor} onChange={(event) => setAmountMinor(event.target.value)} /></label><label className="field"><span>试算币种</span><input aria-label="试算币种" value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase())} maxLength={3} /></label><p>保存并校验当前内容后可试算和提交；编辑会使原校验失效。金额试算不支持商品、人群、店铺范围或运费优惠。</p></> : <p>保存并校验当前内容后可仿真或提交审核。仿真仅展示输入下的状态和拟生成指令；实际触达与履约仍需运行环境验收。</p>}</div>
-    {!campaignId && !api.demoMode && <div className="designer-notice"><StateBanner tone="info" title="未绑定活动" detail="侧栏打开的是空白草稿，保存不会写入控制面。请从「计划与活动」创建或打开活动后再设计。" /></div>}
-    {!api.demoMode && legacyTimers.length > 0 && <div className="designer-notice">
-      <StateBanner tone="info" title="发现历史等待节点" detail={`当前草稿有 ${legacyTimers.length} 个旧版等待节点。转换将保留配置与连线，保存时追加草稿版本；发布仍需重新校验和审核。${!supportsJourneyTimer(registry.data) || registry.isError ? ' 当前节点目录尚未确认支持，请刷新目录后重试。' : ''}`} />
-      <Button onClick={migrateTimers} disabled={!canMigrateTimers}>转换等待节点</Button>
-    </div>}
-    {(actionError || loadError) && <div className="designer-notice"><StateBanner tone="error" title="设计器操作失败" detail={loadError ?? problemDetail(actionError)} /></div>}
-    {notice && <div className="designer-notice"><StateBanner tone="success" title="操作已受理" detail={notice} /></div>}
-    <div className="designer-grid">
+  return <DesignerWorkspace
+    eyebrow={`${dialect}${campaignId ? ` · ${campaignId}` : ''}`}
+    title={title}
+    description={dialect === 'OFFER_DECISION_DAG'
+      ? '保存并校验当前内容后可试算和提交审核。编辑会使原校验失效。'
+      : '保存并校验后可仿真或提交审核。仿真仅展示输入下的状态和拟生成指令，实际触达与履约仍需运行环境验收。'}
+    meta={<span aria-live="polite">
+      {savedVersion ? `v${savedVersion}` : version}
+      {' · '}
+      <span className={`save-state ${status}`}>{status === DESIGNER_STATUS.SAVED ? '已保存' : status === DESIGNER_STATUS.DIRTY ? '有未保存更改' : status === DESIGNER_STATUS.VALIDATED ? '校验通过' : '仿真完成'}</span>
+    </span>}
+    actions={<>
+      <Button onClick={() => startAction(() => saveMutation.mutate(capture()))} disabled={!editable || busy}><Save size={15} />保存</Button>
+      <Button onClick={() => startAction(() => validateMutation.mutate(capture()))} disabled={!editable || !live || busy}><CheckCircle2 size={15} />校验</Button>
+      {dialect === 'OFFER_DECISION_DAG' && <Button onClick={() => { if (validated) startAction(() => simulateMutation.mutate({ target: validated, amountMinor, currency })) }} disabled={!ready || !validAmount || !/^[A-Z]{3}$/.test(currency)}><FlaskConical size={15} />金额试算</Button>}
+      {dialect === 'JOURNEY_STATE_MACHINE' && <Button disabled={!ready || api.demoMode || !auth.hasPermission('definition:simulate')} onClick={() => setJourneySimulationOpen(true)}><FlaskConical size={15} />旅程仿真</Button>}
+      <Button tone="primary" onClick={() => { if (validated) startAction(() => submitMutation.mutate(validated)) }} disabled={!ready || !auth.hasPermission('definition:submit')}><Send size={15} />提交审核</Button>
+    </>}
+    notices={<>
+      {restoring && <StateBanner tone="info" title="正在加载已保存定义" detail="加载完成后可编辑，避免覆盖已有版本。" />}
+      {!campaignId && !api.demoMode && <StateBanner tone="info" title="未绑定活动" detail="侧栏打开的是空白草稿，保存不会写入控制面。请从「计划与活动」创建或打开活动后再设计。" />}
+      {!api.demoMode && legacyTimers.length > 0 && <StateBanner tone="info" title="发现历史等待节点"
+        detail={`当前草稿有 ${legacyTimers.length} 个旧版等待节点。转换将保留配置与连线，保存时追加草稿版本；发布仍需重新校验和审核。${!supportsJourneyTimer(registry.data) || registry.isError ? ' 当前节点目录尚未确认支持，请刷新目录后重试。' : ''}`}
+        action={<Button onClick={migrateTimers} disabled={!canMigrateTimers}>转换等待节点</Button>} />}
+      {(actionError || loadError) && <StateBanner tone="error" title="设计器操作失败" detail={loadError ?? problemDetail(actionError)} />}
+      {notice && <StateBanner tone="success" title="操作已受理" detail={notice} />}
+    </>}
+  >
+    {dialect === 'OFFER_DECISION_DAG' && <Panel className="form-grid designer-fields">
+      <label className="field"><span>试算订单金额（分）</span><input aria-label="试算订单金额（分）" aria-describedby="offer-simulation-hint" inputMode="numeric" value={amountMinor} onChange={(event) => setAmountMinor(event.target.value)} /></label>
+      <label className="field"><span>试算币种</span><input aria-label="试算币种" value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase())} maxLength={3} /></label>
+      <p className="field-hint span-2" id="offer-simulation-hint">金额试算不支持商品、人群、店铺范围或运费优惠。</p>
+    </Panel>}
+    <Panel className="designer-grid">
       <aside className="node-palette"><div className="designer-section-title"><span>节点与模板</span><small>{visiblePalette.length} 个匹配</small></div><label className="palette-search"><span className="sr-only">搜索节点</span><input placeholder="搜索名称或节点类型…" value={search} onChange={(event) => setSearch(event.target.value)} /></label>{registry.isError && <p role="alert">节点目录加载失败，请刷新重试。</p>}{visiblePalette.map((item) => <button key={`${item.stableTypeId}@${item.semanticVersion}`} disabled={!editable} onClick={() => addNode(item)}><i className={item.tone}>{item.label.slice(0, 1)}</i><div><strong>{item.label}</strong><small>{item.subtitle}</small></div><ChevronRight size={13} /></button>)}{!visiblePalette.length && <p className="muted">{registry.isLoading ? '正在加载节点…' : '没有匹配节点'}</p>}<div className="complexity-meter"><div><span>注册节点成本合计</span><b>{complexity ?? '未知'}</b></div><p className="field-hint">按注册表权重计算，是否可发布以控制面校验为准。</p></div></aside>
       <section className="canvas-stage" aria-label={`${title}画布`}>
         <div className="canvas-toolbar"><button onClick={undo} disabled={!editable || !history.current.length} aria-label="撤销"><Undo2 size={15} /></button><button onClick={redo} disabled={!editable || !future.current.length} aria-label="重做"><Redo2 size={15} /></button><button onClick={remove} disabled={!editable || !selectedId} aria-label="删除节点"><Trash2 size={15} /></button><span /><button className={outline ? 'active' : ''} onClick={() => setOutline(!outline)}>线性大纲</button></div>
-        {outline ? <RecordTable label="节点大纲" columns={['节点 ID', '节点名称', '说明', '操作']} actions>{nodes.map((node) => <tr key={node.id}><td>{node.id}</td><td>{node.data.label}</td><td>{node.data.subtitle}</td><td><Button aria-label={`定位节点：${node.id}`} onClick={() => { setSelectedId(node.id); setOutline(false) }}>定位节点</Button></td></tr>)}</RecordTable> : <ReactFlow<DesignerNode, Edge> nodes={nodes.map((node) => ({ ...node, data: { ...node.data, ports: portsFor(node) } }))} edges={edges} nodeTypes={nodeTypes} nodesDraggable={editable} nodesConnectable={editable} edgesReconnectable={editable} onNodesChange={(changes) => { onNodesChange(changes); if (changes.some((change) => change.type === FLOW_CHANGE.DIMENSIONS)) void flow.current?.fitView({ maxZoom: 1, padding: 0.2 }); if (editable && changes.some((change) => change.type === FLOW_CHANGE.POSITION && change.dragging)) markDirty() }} onEdgesChange={(changes) => { onEdgesChange(changes); if (changes.some((change) => change.type === FLOW_CHANGE.REMOVE || change.type === FLOW_CHANGE.ADD)) markDirty() }} onConnect={connect} onInit={(instance) => { flow.current = instance }} onNodeClick={(_, node) => setSelectedId(node.id)} fitView fitViewOptions={{ maxZoom: 1, padding: 0.2 }} minZoom={0.2} maxZoom={1.8} deleteKeyCode={null}><Background color="#cad7d5" gap={22} size={1} />{nodes.length > 6 && <MiniMap pannable zoomable nodeColor={(node) => ({ teal: '#188e81', blue: '#377fbd', amber: '#d18a27', violet: '#7659b1', slate: '#647681' }[String(node.data?.tone)] ?? '#647681')} />}<Controls /></ReactFlow>}
+        {outline ? <div className="canvas-outline"><RecordTable label="节点大纲" columns={['节点 ID', '节点名称', '说明', '操作']} actions>{nodes.map((node) => <tr key={node.id}><td>{node.id}</td><td>{node.data.label}</td><td>{node.data.subtitle}</td><td><Button aria-label={`定位节点：${node.id}`} onClick={() => { setSelectedId(node.id); setOutline(false) }}>定位节点</Button></td></tr>)}</RecordTable></div> : <ReactFlow<DesignerNode, Edge> nodes={nodes.map((node) => ({ ...node, data: { ...node.data, ports: portsFor(node) } }))} edges={edges} nodeTypes={nodeTypes} nodesDraggable={editable} nodesConnectable={editable} edgesReconnectable={editable} onNodesChange={(changes) => { onNodesChange(changes); if (changes.some((change) => change.type === FLOW_CHANGE.DIMENSIONS)) void flow.current?.fitView({ maxZoom: 1, padding: 0.2 }); if (editable && changes.some((change) => change.type === FLOW_CHANGE.POSITION && change.dragging)) markDirty() }} onEdgesChange={(changes) => { onEdgesChange(changes); if (changes.some((change) => change.type === FLOW_CHANGE.REMOVE || change.type === FLOW_CHANGE.ADD)) markDirty() }} onConnect={connect} onInit={(instance) => { flow.current = instance }} onNodeClick={(_, node) => setSelectedId(node.id)} fitView fitViewOptions={{ maxZoom: 1, padding: 0.2 }} minZoom={0.2} maxZoom={1.8} deleteKeyCode={null}><Background color="#cad7d5" gap={22} size={1} />{nodes.length > 6 && <MiniMap pannable zoomable nodeColor={(node) => ({ teal: '#188e81', blue: '#377fbd', amber: '#d18a27', violet: '#7659b1', slate: '#647681' }[String(node.data?.tone)] ?? '#647681')} />}<Controls /></ReactFlow>}
       </section>
       <aside className="inspector"><div className="designer-section-title"><span>属性与治理</span><Badge tone="info">节点配置</Badge></div>{selected ? <><div className="selected-node"><i className={selected.data.tone}>{selected.data.label.slice(0,1)}</i><div><strong>{selected.data.label}</strong><small>{selected.id}</small></div></div><NodeConfigEditor key={selected.id} node={selected} onChange={updateConfig} disabled={!editable} benefits={benefitCatalog.data} benefitError={benefitCatalog.error ? problemDetail(benefitCatalog.error) : undefined} /><div className="node-routes"><strong>出口连接</strong>{portsFor(selected).outputs.length === 0 && <p className="field-hint">结束节点没有出口。</p>}{portsFor(selected).outputs.map((port) => <label className="field" key={port}><span>出口 {port}</span><Select aria-label={`出口 ${port}`} disabled={!editable} value={edges.find((edge) => edge.source === selectedId && (edge.sourceHandle ?? 'next') === port)?.target ?? ''} onChange={(event) => routeTo(port, event.target.value)}><option value="">未连接</option>{nodes.filter((node) => node.id !== selectedId && portsFor(node).inputs.includes('in')).map((node) => <option key={node.id} value={node.id}>{node.data.label} · {node.id}</option>)}</Select></label>)}</div></> : <div className="empty-inspector">选择节点查看属性</div>}</aside>
-    </div>
+    </Panel>
     {journeySimulationOpen && validated && validated.revision === revision.current && <JourneySimulationDialog key={JSON.stringify([scope, auth.permissions, validated])} definitionId={validated.definitionId} version={validated.version} onClose={closeJourneySimulation} />}
-    <section className={`problems-drawer ${showProblems ? 'open' : ''}`}><button className="problems-title" type="button" onClick={() => setShowProblems(!showProblems)}><AlertTriangle size={15} /><strong>Problems {displayedProblems.length}</strong><span>{checkedRevision === revision.current ? '来自控制面校验' : '尚未校验当前内容'}</span></button>{showProblems && <div className="problem-list">{displayedProblems.length === 0 ? <p className="muted">{checkedRevision === revision.current ? '没有校验问题。' : '请校验当前内容，尚无校验结果。'}</p> : <RecordTable label="校验问题" columns={['严重程度', '问题码', '问题说明', '字段路径', '操作']} actions>{displayedProblems.map((problem, index) => <tr key={`${problem.code}-${problem.pointer}-${index}`}><td><Badge tone={problem.severity === 'ERROR' ? 'danger' : 'warn'}>{problem.severity}</Badge></td><td>{problem.code}</td><td>{problem.message}</td><td>{problem.pointer}</td><td><Button disabled={!problemNodeId(problem, nodes)} onClick={() => { setSelectedId(problemNodeId(problem, nodes) ?? ''); setOutline(false) }}>查看节点</Button></td></tr>)}</RecordTable>}</div>}</section>
-  </div>
+    <Panel>
+      <h2><button className="designer-problems-toggle" type="button" aria-expanded={showProblems} onClick={() => setShowProblems(!showProblems)}>
+        <AlertTriangle size={15} aria-hidden="true" />校验问题（{displayedProblems.length}）
+        <ChevronRight size={15} aria-hidden="true" />
+      </button></h2>
+      <p className="designer-problems-summary">{checkedRevision === revision.current ? '来自控制面校验' : '尚未校验当前内容'}</p>
+      {showProblems && (displayedProblems.length === 0 ? <p className="muted">{checkedRevision === revision.current ? '没有校验问题。' : '请校验当前内容，尚无校验结果。'}</p> : <RecordTable label="校验问题" columns={['严重程度', '问题码', '问题说明', '字段路径', '操作']} actions>{displayedProblems.map((problem, index) => <tr key={`${problem.code}-${problem.pointer}-${index}`}><td><Badge tone={problem.severity === 'ERROR' ? 'danger' : 'warn'}>{problem.severity}</Badge></td><td>{problem.code}</td><td>{problem.message}</td><td>{problem.pointer}</td><td><Button disabled={!problemNodeId(problem, nodes)} onClick={() => { setSelectedId(problemNodeId(problem, nodes) ?? ''); setOutline(false) }}>查看节点</Button></td></tr>)}</RecordTable>)}
+    </Panel>
+  </DesignerWorkspace>
 }

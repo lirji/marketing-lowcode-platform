@@ -6,11 +6,12 @@ import { Select } from '../../components/Select'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Eye, Plus, Save, ShieldCheck, Trash2 } from 'lucide-react'
-import { Badge, Button, DemoBanner, EmptyState, PageHeader, Panel, PanelHeader, StateBanner } from '../../components/ui'
+import { Badge, Button, EmptyState, Panel, PanelHeader, StateBanner } from '../../components/ui'
 import { api } from '../../shared/api/client'
 import { problemDetail } from '../../shared/api/problem'
 import { useAuth } from '../../shared/auth/useAuth'
 import type { AudienceView, FieldDefinition } from '../../shared/api/schemas'
+import { DesignerWorkspace } from './DesignerWorkspace'
 
 type Condition = { id: number; field: string; operator: string; value: string }
 
@@ -131,16 +132,26 @@ function AudienceEditor({ selectedId }: { selectedId: string }) {
   })
   const fieldMeta = (fieldId: string) => fields.data?.find((item) => item.fieldId === fieldId)
 
-  return <div className="workspace audience-page">
-    <PageHeader eyebrow={version ? `AUDIENCE_EXPRESSION · v${version}` : 'AUDIENCE_EXPRESSION'} title={name.trim() || '新人群'} description="保存圈选规则与字段用途；真实人群的计算需要已接入的画像来源。" actions={<><Button disabled title="画像来源接入后可预估真实人群"><Eye size={15} />预估人数</Button><Button disabled title="真实人群计算完成后可生成快照"><ShieldCheck size={15} />保存快照</Button>{!api.demoMode && canWrite && <Button tone="primary" disabled={save.isPending || !name.trim() || Boolean(selectionError)} onClick={() => save.mutate()}><Save size={15} />保存规则</Button>}</>} />
-    <DemoBanner />
-    {selectionError && <StateBanner tone="error" title="无法打开所选人群" detail={selectionError} />}
-    {!api.demoMode && <StateBanner tone="info" title="画像来源尚未接入" detail="可以保存圈选规则；接入真实会员画像后才能预估人数和生成完整人群快照。" />}
-    {notice && <StateBanner tone="success" title="已写入控制面" detail={notice} />}
-    {audiences.isError && <StateBanner tone="error" title="人群加载失败" detail={problemDetail(audiences.error)} />}
-    {fields.isError && <StateBanner tone="error" title="字段目录加载失败" detail={problemDetail(fields.error)} />}
-    {save.isError && <StateBanner tone="error" title="保存失败" detail={problemDetail(save.error)} />}
-    {!api.demoMode && <div className="form-grid audience-basics">
+  return <DesignerWorkspace
+    eyebrow="AUDIENCE_EXPRESSION"
+    title={name.trim() || '新人群'}
+    description="保存圈选规则与字段用途；真实人群的计算需要已接入的画像来源。"
+    meta={version ? `v${version}` : undefined}
+    actions={<>
+      <Button disabled title="画像来源接入后可预估真实人群"><Eye size={15} />预估人数</Button>
+      <Button disabled title="真实人群计算完成后可生成快照"><ShieldCheck size={15} />保存快照</Button>
+      {!api.demoMode && canWrite && <Button tone="primary" disabled={save.isPending || !name.trim() || Boolean(selectionError)} onClick={() => save.mutate()}><Save size={15} />保存规则</Button>}
+    </>}
+    notices={<>
+      {selectionError && <StateBanner tone="error" title="无法打开所选人群" detail={selectionError} />}
+      {!api.demoMode && <StateBanner tone="info" title="画像来源尚未接入" detail="可以保存圈选规则；接入真实会员画像后才能预估人数和生成完整人群快照。" />}
+      {notice && <StateBanner tone="success" title="已写入控制面" detail={notice} />}
+      {audiences.isError && <StateBanner tone="error" title="人群加载失败" detail={problemDetail(audiences.error)} />}
+      {fields.isError && <StateBanner tone="error" title="字段目录加载失败" detail={problemDetail(fields.error)} />}
+      {save.isError && <StateBanner tone="error" title="保存失败" detail={problemDetail(save.error)} />}
+    </>}
+  >
+    {!api.demoMode && <Panel className="form-grid designer-fields">
       <label className="field"><span>人群名称</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="未命名人群" /></label>
       <label className="field"><span>已保存版本</span>
         <Select aria-label="已保存版本" value={segmentId} onChange={(event) => {
@@ -152,8 +163,8 @@ function AudienceEditor({ selectedId }: { selectedId: string }) {
           {(audiences.data ?? []).map((item) => <option key={item.segmentId} value={item.segmentId}>{item.name} · {item.segmentId} v{item.version}</option>)}
         </Select>
       </label>
-    </div>}
-    <div className="builder-layout">
+    </Panel>}
+    <div className="designer-content">
       <Panel className="condition-panel"><PanelHeader eyebrow="条件树" title="圈选规则" aside={<div className="segmented"><button className={match === 'ALL' ? 'active' : ''} onClick={() => setMatch('ALL')}>同时满足</button><button className={match === 'ANY' ? 'active' : ''} onClick={() => setMatch('ANY')}>任一满足</button></div>} />
         <div className="condition-group">
           <div className="group-rail"><span>{match === 'ALL' ? 'AND' : 'OR'}</span></div>
@@ -190,12 +201,12 @@ function AudienceEditor({ selectedId }: { selectedId: string }) {
         }}><Plus size={14} />添加条件</Button>
         <p className="muted">排除集尚未接入控制面，不会显示虚构快照。</p>
       </Panel>
-      <aside className="audience-aside">
+      <aside className="designer-content">
         <Panel><PanelHeader eyebrow="PREVIEW" title="人群预估" aside={<Badge tone="warn">待接入数据源</Badge>} /><p>暂无可验证的真实人数。规则已保存不代表全量人群已完成计算。</p></Panel>
         <Panel><PanelHeader eyebrow="DATA GOVERNANCE" title="字段来源与用途" /><LiveProvenance fields={fields.data ?? []} used={conditions.map((item) => item.field)} /></Panel>
       </aside>
     </div>
-  </div>
+  </DesignerWorkspace>
 }
 
 function LiveProvenance({ fields, used }: { fields: FieldDefinition[]; used: string[] }) {
