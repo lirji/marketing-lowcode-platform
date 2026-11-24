@@ -53,7 +53,15 @@ function TemplateWorkspace() {
     <ListToolbar query={search} onQueryChange={setSearch} searchLabel="搜索消息模板" describedBy="template-search-hint" placeholder="搜索模板 ID、版本、渠道、变量、状态或时间" count={!searchPending && query.data ? rows.length : undefined} unit="项（已加载）" onReset={search ? () => setSearch('') : undefined} />
     <FieldHint id="template-search-hint">搜索当前租户全部模板的 ID、版本、渠道、必需变量、状态及北京时间创建时间，按关键词包含匹配；正文在详情中完整查看。</FieldHint>
     {(query.isPending || searchPending) && !api.demoMode ? <div className="skeleton-list" aria-label="正在加载模板"><i /><i /></div> : initialError ? null : rows.length === 0 ? <EmptyState title="没有匹配的消息模板" detail={search ? '清除或调整关键词后再试。' : '可通过新建消息模板保存第一个版本。'} /> : <RecordTable label="消息模板" columns={['模板 ID', '版本', '渠道', '必需变量', '状态', '创建时间（北京时间）', '操作']} actions>
-      {rows.map((item) => <tr key={item.templateId}><td>{item.templateId}</td><td>v{item.version}</td><td>{item.channel}</td><td>{item.requiredVariables.join(', ') || '无'}</td><td><Badge tone={item.state === TEMPLATE_STATE.APPROVED ? 'good' : 'neutral'}>{stateLabel(item.state)}</Badge></td><td>{templateTime(item.createdAt)}</td><td><Button aria-label={`查看模板 ${item.templateId}`} onClick={() => setSelected(item)}>查看详情</Button><Button aria-label={`编辑模板 ${item.templateId} 新版本`} disabled={!canWrite || item.content == null || item.version >= Number.MAX_SAFE_INTEGER} onClick={() => { setSaved(null); setEditor({ source: item }) }}>编辑新版本</Button></td></tr>)}
+      {rows.map((item) => <tr key={item.templateId}>
+        <td>{item.templateId}</td><td>v{item.version}</td><td>{item.channel}</td><td>{item.requiredVariables.join(', ') || '无'}</td>
+        <td><Badge tone={item.state === TEMPLATE_STATE.APPROVED ? 'good' : 'neutral'}>{stateLabel(item.state)}</Badge></td>
+        <td>{templateTime(item.createdAt)}</td>
+        <td><div className="row-actions">
+          <Button aria-label={`查看模板 ${item.templateId}`} onClick={() => setSelected(item)}>查看详情</Button>
+          <Button aria-label={`编辑模板 ${item.templateId} 新版本`} disabled={!canWrite || item.content == null || item.version >= Number.MAX_SAFE_INTEGER} onClick={() => { setSaved(null); setEditor({ source: item }) }}>编辑新版本</Button>
+        </div></td>
+      </tr>)}
     </RecordTable>}
     {!searchPending && query.isFetchNextPageError && <StateBanner tone="error" title="下一页模板加载失败" detail={problemDetail(query.error)} />}
     {!searchPending && query.isRefetchError && rows.length > 0 && <StateBanner tone="error" title="模板刷新失败" detail="当前保留上次结果，请重试刷新。" />}

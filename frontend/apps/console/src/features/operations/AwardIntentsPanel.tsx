@@ -141,17 +141,17 @@ function AwardIntentRow({ item, expanded, onObserve }: { item: AwardIntentView; 
       <td>{shortHash(item.subjectHash)}</td><td>{item.deliveryResult ? DELIVERY_LABELS[item.deliveryResult] : '—'}</td><td>{item.attempts}</td><td>{item.benefitOrderNo ?? '—'}</td>
       <td>{blocked ? riskBannerTitle(item.riskAction) : item.riskAction ?? '—'}</td><td>{item.riskReason || (blocked ? '发放指令未进入出站队列。' : '—')}</td><td>{item.riskDecisionId ?? '—'}</td><td>{item.lastError || '—'}</td>
       <td><RecordTime value={item.createdAt} /></td><td><RecordTime value={item.updatedAt} /></td><td><RecordTime value={item.sentAt} /></td>
-      <td><div className="record-actions">
+      <td><div className="row-actions row-actions--stack">
         {canObserve && <button className="row-action" type="button" aria-expanded={expanded} aria-controls={`award-fulfillment-${item.intentId}`} onClick={(event) => onObserve(event.currentTarget)}>查看发放结果</button>}
         <button className="row-action" type="button" onClick={() => void navigator.clipboard.writeText(item.sourceRequestId)}>
           <Copy size={13} />复制 sourceRequestId
         </button>
         {orderHref ? (
-          <a href={orderHref} target="_blank" rel="noreferrer">
+          <a className="row-action" href={orderHref} target="_blank" rel="noreferrer">
             <ExternalLink size={13} />打开权益订单
           </a>
         ) : riskHref ? (
-          <a href={riskHref} target="_blank" rel="noreferrer">
+          <a className="row-action" href={riskHref} target="_blank" rel="noreferrer">
             <ExternalLink size={13} />打开风控决策
           </a>
         ) : item.status === DELIVERY_STATUS.DEAD ? (

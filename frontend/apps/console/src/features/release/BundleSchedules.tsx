@@ -73,7 +73,7 @@ export function BundleSchedules({ bundle, scope, appliedSequence, canAdvance, on
       {schedules.data.length > 0 && <RecordTable actions label="定时发布记录" columns={['调度 ID', '状态', '计划时间（北京时间）', '最迟生效时间（北京时间）', '预期生效序号', '修订', '原因代码', '操作']}>
         {schedules.data.map(item => <tr key={item.scheduleId}><td>{item.scheduleId}</td><td><Badge tone={item.state === ScheduleState.APPLIED ? 'good' : item.state === ScheduleState.REJECTED || item.state === ScheduleState.EXPIRED ? 'danger' : 'info'}>{states[item.state]}</Badge></td>
           <td><RecordTime value={item.dueAt} /></td><td><RecordTime value={item.applyBefore} /></td><td>{item.expectedAppliedSequence}</td><td>{item.revision}</td><td>{item.reasonCode ?? '—'}</td>
-          <td><div className="action-bar bundle-actions">
+          <td><div className="row-actions">
             {canManage && item.state === ScheduleState.SCHEDULED && <Button disabled={busy || schedules.isFetching} onClick={() => change.mutate({ item, action: 'pause' })}>暂停预约</Button>}
             {canManage && item.state === ScheduleState.PAUSED && <Button disabled={busy || schedules.isFetching || Date.parse(item.applyBefore) <= Date.now()} onClick={() => change.mutate({ item, action: 'resume' })}>恢复预约</Button>}
             {item.operationId && <Button onClick={() => onTrack(item.operationId!)}>查看发布操作</Button>}

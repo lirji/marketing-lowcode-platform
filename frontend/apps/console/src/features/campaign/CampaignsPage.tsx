@@ -39,7 +39,7 @@ const campaignColumns = [
   { label: '目标', width: 190 }, { label: '活动 ID', width: 150 }, { label: '创建人', width: 96 },
   { label: '组织 ID', width: 110 }, { label: '店铺 ID', width: 105 },
   { label: '创建时间（北京时间）', width: 146 }, { label: '更新时间（北京时间）', width: 146 },
-  { label: '操作', width: 148 },
+  { label: '操作', width: 168 },
 ] as const
 
 export function CampaignsPage() {

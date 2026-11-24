@@ -44,6 +44,21 @@ test('asset details show complete values and tabs support keyboard navigation', 
   await expect(page.getByRole('tabpanel', { name: '权益与券' })).toBeVisible()
   await page.getByRole('searchbox', { name: '搜索权益' }).fill('coupon-live')
   const view = page.getByRole('button', { name: '查看测试权益完整名称' })
+  const edit = page.getByRole('link', { name: '编辑测试权益完整名称' })
+  await expect(view).toBeInViewport()
+  await expect(edit).toBeInViewport()
+  const viewBox = (await view.boundingBox())!
+  const editBox = (await edit.boundingBox())!
+  expect(Math.min(viewBox.height, editBox.height)).toBeGreaterThanOrEqual(32)
+  if (page.viewportSize()!.width <= 720) {
+    expect(editBox.y - (viewBox.y + viewBox.height)).toBeGreaterThanOrEqual(8)
+    await page.getByRole('region', { name: '权益表格' }).evaluate(table => { table.scrollLeft = table.scrollWidth })
+    await expect(view).toBeInViewport()
+    await expect(edit).toBeInViewport()
+  } else {
+    expect(editBox.x - (viewBox.x + viewBox.width)).toBeGreaterThanOrEqual(8)
+  }
+  await expect(edit).toHaveAttribute('href', '/designers/benefit?benefitId=coupon-live')
   await view.click()
   await expect(page.getByRole('dialog')).toContainText('sku-complete-reference-123456789')
   await page.getByRole('button', { name: '关闭详情' }).press('Escape')

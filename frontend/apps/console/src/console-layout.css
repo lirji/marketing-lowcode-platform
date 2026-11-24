@@ -152,16 +152,15 @@
 .campaigns-page .table-panel { container-type:inline-size; }
 .campaign-list-help { display:flex; flex-wrap:wrap; justify-content:space-between; gap:3px 12px; }
 .campaign-scroll-hint { display:none; }
-/* Table widths add up to 1415px. */
-@container (max-width:1414px) {
+/* Table widths add up to 1435px. */
+@container (max-width:1434px) {
   .campaign-list-help .campaign-scroll-hint { display:inline; }
 }
 .campaigns-page .record-table :is(th,td) { padding:12px 10px; }
 .campaigns-page .record-table td { vertical-align:middle; }
 .campaigns-page .record-table :is(th,td):first-child { padding-left:16px; }
-.campaigns-page .record-table .row-actions { display:grid; grid-template-columns:repeat(2,minmax(0, 1fr)); gap:1px 6px; }
-.campaigns-page .row-action { display:inline-flex; align-items:center; font-weight:600; text-decoration:none; }
-.campaigns-page button.row-action { color:var(--ink-600); }
+.campaigns-page .row-action { font-weight:600; }
+.campaigns-page .row-actions button.row-action { color:var(--ink-600); }
 .campaigns-page .row-action:hover { text-decoration:underline; }
 .campaigns-page .campaign-id-cell,.campaigns-page .campaign-objective-cell { color:var(--ink-600); }
 .campaigns-page .record-table .readiness-row td { padding:16px; }

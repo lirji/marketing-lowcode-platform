@@ -408,9 +408,8 @@ button:focus-visible, a:focus-visible, [tabindex="0"]:focus-visible { outline:2p
 .record-description { display:block; font-size:var(--text-xs); color:var(--ink-600); margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .record-meta { display:block; font-size:var(--text-xs); color:var(--ink-400); margin-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .record-date { font-size:var(--text-base); color:var(--ink-600); white-space:nowrap; font-variant-numeric:tabular-nums; }
-.row-actions { display:flex; align-items:center; gap:10px; white-space:nowrap; }
-.row-action, .row-actions .row-action, .row-menu-trigger, .row-actions .row-menu-trigger { min-height:32px; padding:4px 0; border:0; border-radius:4px; background:transparent; color:var(--teal); font-size:var(--text-base); font-weight:500; line-height:24px; white-space:nowrap; cursor:pointer; }
-.row-menu-trigger, .row-actions .row-menu-trigger { display:inline-flex; align-items:center; gap:3px; color:var(--ink-600); }
+.row-action, .row-menu-trigger { min-height:32px; padding:4px 0; border:0; border-radius:4px; background:transparent; color:var(--teal); font-size:var(--text-base); font-weight:500; line-height:24px; white-space:nowrap; cursor:pointer; }
+.row-menu-trigger { display:inline-flex; align-items:center; gap:3px; color:var(--ink-600); }
 .row-action:hover, .row-menu-trigger:hover { color:#05655d; text-decoration:underline; text-underline-offset:3px; }
 .row-action-menu { position:fixed; z-index:150; padding:6px; max-height:320px; overflow:auto; border:1px solid var(--line); border-radius:9px; background:#fff; box-shadow:0 8px 28px rgba(17,27,38,.14); font-size:var(--text-base); }
 .row-menu-caption { margin:0 4px 5px; padding:8px 5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; border-bottom:1px solid var(--line); color:var(--ink-400); font-size:var(--text-xs); }
@@ -486,14 +485,22 @@ button:focus-visible, a:focus-visible, [tabindex="0"]:focus-visible { outline:2p
 .record-table.has-actions th:last-child, .record-table.has-actions td:last-child:not([colspan]) { position: sticky; right: 0; background: var(--paper); box-shadow: -1px 0 0 var(--line); z-index: 1; }
 .record-table.has-actions th:last-child { background: #f8fafb; }
 .record-table td .badge { white-space: normal; }
-.record-table .row-actions { flex-wrap: wrap; }
-.record-table .record-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
-.record-table .record-actions a, .record-table .record-actions button { display: inline-flex; align-items: center; gap: 5px; }
-.record-table .record-actions p { margin: 0; font-size:var(--text-xs); color: var(--ink-600); }
-
-.record-table .record-actions .row-action { white-space: normal; text-align: left; line-height: 1.5; }
-.record-table .record-actions a { color: var(--teal); text-decoration: none; }
-.record-table .record-actions a:hover { text-decoration: underline; }
+.record-table .row-actions { display:flex; align-items:center; flex-wrap:wrap; gap:var(--action-gap); }
+.record-table .row-actions--stack { flex-direction:column; align-items:flex-start; }
+.record-table .row-actions > :is(.row-action, .row-menu-trigger, .button) {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  min-height:32px;
+  padding:4px 7px;
+  line-height:var(--control-line-height);
+  text-decoration:none;
+}
+.record-table .row-actions > :is(.row-action, .row-menu-trigger):hover { background:#eef5f3; }
+.record-table .row-actions > :is(a, button):focus-visible { outline:2px solid var(--teal); outline-offset:2px; }
+.record-table .row-actions--stack .row-action { max-width:100%; white-space:normal; text-align:left; }
+.record-table .row-actions--stack .row-action svg { flex-shrink:0; }
+.assets-page .record-table.has-actions th:last-child { width:clamp(136px, 20vw, 204px); }
 .record-table tr.is-expanded td, .record-table .readiness-row td { background: #f3faf8; }
 
 /* 提示独立占一行；固定有效期列宽，避免不同徽标文字让各条条件错列。 */
@@ -550,8 +557,6 @@ button:focus-visible, a:focus-visible, [tabindex="0"]:focus-visible { outline:2p
 .dmn-page .dmn-toolbar label { flex-wrap: wrap; min-width: 0; max-width: 100%; }
 .dmn-column-group .record-table th:first-child { width: 84px; }
 .dmn-column-group .record-table th:last-child { width: 100px; }
-
-.release-row-actions { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
 
 .journey-sim-content { display: grid; gap: 20px; min-width: 0; }
 .journey-sim-content section { min-width: 0; display: grid; gap: 12px; }
