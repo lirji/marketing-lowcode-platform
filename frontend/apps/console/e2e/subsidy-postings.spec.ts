@@ -67,6 +67,7 @@ test('funding reconciliation shows scoped postings, refunds and exact minor unit
   const partial = await download()
   expect(partial).toContain('"9007199254740993","CNY","补贴确认"')
   expect(partial).toContain('"\'=ext-app"')
+  expect(partial).toContain('"retail-cn","2026-09-16T16:00:00.000Z"')
   expect(partial).toContain('"还有下一页"')
   expect(partial).not.toContain('posting-refund')
   await page.getByRole('button', { name: '加载更多流水' }).click()

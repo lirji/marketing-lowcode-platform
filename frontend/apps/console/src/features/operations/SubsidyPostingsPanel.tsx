@@ -24,10 +24,10 @@ export function SubsidyPostingsPanel() {
   const auth = useAuth()
   const scope = releaseScopeKey(auth)
   if (api.demoMode || !auth.hasPermission('funding:reconcile')) return null
-  return <SubsidyPostingSearch key={scope} scope={scope} />
+  return <SubsidyPostingSearch key={scope} scope={scope} tenantId={auth.tenantId} />
 }
 
-function SubsidyPostingSearch({ scope }: { scope: string }) {
+function SubsidyPostingSearch({ scope, tenantId }: { scope: string; tenantId: string }) {
   const [params] = useSearchParams()
   const { state } = useLocation()
   const initialOrder = state?.postingScope === scope && typeof state.postingOrderId === 'string'
@@ -75,13 +75,13 @@ function SubsidyPostingSearch({ scope }: { scope: string }) {
 
   function downloadPostings() {
     if (!applied || !postings.isSuccess || postings.isFetching || items.length === 0) return
-    const scope = [applied.from, applied.to, applied.selection === UNASSIGNED ? '' : applied.selection,
+    const queryScope = [tenantId, applied.from, applied.to, applied.selection === UNASSIGNED ? '' : applied.selection,
       applied.selection === UNASSIGNED ? '仅待归属流水' : '可见流水', applied.orderId,
       postings.hasNextPage ? PAGINATION.PARTIAL : PAGINATION.EXHAUSTED]
     const file = formatCsv([
-      [...POSTING_COLUMNS, '入账时间（UTC）', '入账开始（UTC，含）', '入账结束（UTC，不含）', '活动筛选 ID', '归属范围', '订单号筛选', '分页状态'],
+      [...POSTING_COLUMNS, '入账时间（UTC）', '租户 ID', '入账开始（UTC，含）', '入账结束（UTC，不含）', '活动筛选 ID', '归属范围', '订单号筛选', '分页状态'],
       ...items.map(item => [BigInt(item.amountMinor), item.currency, OPERATIONS[item.operation], displayTimestamp(item.postedAt),
-        item.campaignId ?? '待归属', item.resourceKey, item.applicationId, item.ledgerId, item.postedAt, ...scope]),
+        item.campaignId ?? '待归属', item.resourceKey, item.applicationId, item.ledgerId, item.postedAt, ...queryScope]),
     ])
     downloadCsv(file, `subsidy-postings-${new Date(applied.to).toISOString().replaceAll(':', '-')}.csv`)
   }
