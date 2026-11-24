@@ -639,6 +639,38 @@ public class BenefitFundingService {
         return new OrderSubsidyPostingPage(orderId, subsidyPostingPage(scope, from, to, filter, limit, cursor));
     }
 
+    /** 绑定先于入账，独立查询可以在资金流水为空时查询授权申请的首次交易回执状态。 */
+    @Transactional(readOnly = true)
+    public OrderBindingEvidencePage orderBindingEvidence(String orderId, String campaignId, boolean unassigned, String after) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission(RECONCILE_PERMISSION);
+        requirePostingOrderId(orderId);
+        validatePostingCampaign(campaignId, unassigned);
+        if (after != null && !after.matches("[A-Za-z0-9_.:-]{1,64}")) {
+            throw new IllegalArgumentException("order binding cursor is invalid");
+        }
+        if (scope.organizations().isEmpty() || scope.shops().isEmpty()) {
+            return new OrderBindingEvidencePage(orderId, campaignId, unassigned, List.of(), null);
+        }
+        var filter = new BenefitFundingRepository.OrderBindingFilter(scope.tenantId().value(), orderId, campaignId,
+                unassigned, scope.organizations().contains("*") ? null : scope.organizations(),
+                scope.shops().contains("*") ? null : json(scope.shops()));
+        var rows = repository.findOrderBindings(filter, after, ORDER_BINDING_PAGE_SIZE + 1);
+        var items = rows.stream().limit(ORDER_BINDING_PAGE_SIZE).map(BenefitFundingService::bindingEvidence).toList();
+        return new OrderBindingEvidencePage(orderId, campaignId, unassigned, items,
+                rows.size() > ORDER_BINDING_PAGE_SIZE ? items.getLast().applicationId() : null);
+    }
+
+    private static OrderBindingEvidence bindingEvidence(BenefitFundingRepository.OrderBindingRow row) {
+        if (row.evidenceVersion() == null) {
+            return new OrderBindingEvidence(row.applicationId(), row.campaignId(), BindingEvidenceStatus.UNBOUND.code, null, null);
+        }
+        // 绑定记录保留首次版本；对应回执已丢失或不匹配时仍可凭该版本继续核查。
+        var status = row.evidencePresent() ? BindingEvidenceStatus.BOUND : BindingEvidenceStatus.EVIDENCE_MISSING;
+        return new OrderBindingEvidence(row.applicationId(), row.campaignId(), status.code,
+                Instant.parse(row.boundAt()), row.evidenceVersion().toString());
+    }
+
     private SubsidyPostingPage subsidyPostingPage(TenantScope scope, Instant from, Instant to,
             BenefitFundingRepository.SubsidyPostingFilter filter, Integer limit, String cursor) {
         int pageSize = limit == null ? DEFAULT_POSTING_PAGE_SIZE : limit;
@@ -667,6 +699,7 @@ public class BenefitFundingService {
     }
 
     private static final int MAX_POSTING_ORDER_ID_LENGTH = 128;
+    private static final int ORDER_BINDING_PAGE_SIZE = 50;
 
     /** 对齐资金申请的订单字段容量，保留上游标识原始大小写，不接受控制字符。 */
     private static void requirePostingOrderId(String orderId) {
@@ -760,12 +793,16 @@ public class BenefitFundingService {
                 || format(from).length() != 30 || format(to).length() != 30) {
             throw new IllegalArgumentException("subsidy posting time range must be positive and no more than 31 days");
         }
-        if (campaignId != null && (unassigned || !campaignId.matches("[A-Za-z0-9_.:-]{1,64}"))) {
-            throw new IllegalArgumentException("campaignId is invalid or combined with the unassigned filter");
-        }
+        validatePostingCampaign(campaignId, unassigned);
         return new BenefitFundingRepository.SubsidyPostingFilter(scope.tenantId().value(), format(from), format(to),
                 campaignId, orderId, unassigned, scope.organizations().contains("*") ? null : scope.organizations(),
                 scope.shops().contains("*") ? null : json(scope.shops()));
+    }
+
+    private static void validatePostingCampaign(String campaignId, boolean unassigned) {
+        if (campaignId != null && (unassigned || !campaignId.matches("[A-Za-z0-9_.:-]{1,64}"))) {
+            throw new IllegalArgumentException("campaignId is invalid or combined with the unassigned filter");
+        }
     }
 
     @Transactional(readOnly = true)
@@ -1192,6 +1229,14 @@ public class BenefitFundingService {
     }
 
     private enum Operation { CONFIRM, RELEASE, REFUND }
+    /** 控制台使用协议码解释回执状态，状态变更不依赖枚举顺序。 */
+    private enum BindingEvidenceStatus {
+        UNBOUND("UNBOUND"), BOUND("BOUND"), EVIDENCE_MISSING("EVIDENCE_MISSING");
+
+        private final String code;
+
+        BindingEvidenceStatus(String code) { this.code = code; }
+    }
     public enum ApplicationState { RESERVED, CONFIRMED, CANCELLED, EXPIRED, PARTIALLY_REFUNDED, REFUNDED, REVERSED }
     public enum BenefitStatus { DRAFT, ACTIVE, RETIRED }
     private record ResourceSnapshot(String resourceKey, long authorized, long available, long reserved,
@@ -1413,6 +1458,17 @@ public class BenefitFundingService {
     }
     /** 回显已应用的订单号，原流水返回形状及游标规则保留供旧客户端使用。 */
     public record OrderSubsidyPostingPage(String orderId, SubsidyPostingPage page) { }
+
+    /** 首次绑定的审计概要，证据版本通过十进制字符串保留精度。 */
+    public record OrderBindingEvidence(String applicationId, String campaignId, String status, Instant boundAt,
+            String evidenceVersion) { }
+
+    /** 回显订单及活动筛选，分页按资金申请 ID 继续。 */
+    public record OrderBindingEvidencePage(String orderId, String campaignId, boolean unassigned,
+            List<OrderBindingEvidence> items, String nextCursor) {
+        public OrderBindingEvidencePage { items = List.copyOf(items); }
+    }
+
     /** 金额和笔数均保留十进制字符串，汇总允许为负和零。 */
     public record SubsidySummaryGroup(String currency, boolean unassigned, String postingCount, String netAmountMinor,
             @JsonInclude(JsonInclude.Include.NON_NULL) SubsidyPostingBreakdown breakdown) { }

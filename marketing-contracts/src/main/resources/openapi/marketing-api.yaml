@@ -1093,6 +1093,24 @@ paths:
                   orderId: {type: string}
                   page: {$ref: '#/components/schemas/SubsidyPostingPage'}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/funding/subsidy-postings/by-order/bindings:
+    get:
+      tags: [Benefit]
+      operationId: listOrderSubsidyBindingEvidence
+      x-required-permission: funding:reconcile
+      description: Read binding evidence for authorized budget applications for the exact marketing order and optional activity. Includes applications without ledger postings and is independent of posting dates.
+      parameters:
+        - {in: query, name: orderId, required: true, schema: {type: string, minLength: 1, maxLength: 128}}
+        - {in: query, name: campaignId, schema: {type: string, pattern: '^[A-Za-z0-9_.:-]{1,64}$'}}
+        - {in: query, name: unassigned, schema: {type: boolean, default: false}, description: Incompatible with campaignId.}
+        - {in: query, name: after, schema: {type: string, pattern: '^[A-Za-z0-9_.:-]{1,64}$'}, description: Use nextCursor from the same order and selection.}
+      responses:
+        '200':
+          description: Binding evidence ordered by funding application ID. The binding status describes the first receipt and does not certify settlement.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrderBindingEvidencePage'}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/funding/subsidy-postings/summary:
     get:
       tags: [Benefit]
@@ -2029,6 +2047,31 @@ components:
             status: {type: [string, 'null'], enum: [ACCEPTED, PROCESSING, SUCCEEDED, PARTIAL_SUCCEEDED, FAILED, REMEDIATING, REVERSING, REVERSED, PARTIALLY_REVERSED, null]}
             checkedAt: {type: [string, 'null'], format: date-time}
             latestCheckFailed: {type: boolean}
+    OrderBindingEvidencePage:
+      type: object
+      additionalProperties: false
+      required: [orderId, campaignId, unassigned, items, nextCursor]
+      properties:
+        orderId: {type: string, minLength: 1, maxLength: 128}
+        campaignId: {type: [string, 'null']}
+        unassigned: {type: boolean}
+        nextCursor: {type: [string, 'null']}
+        items:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            additionalProperties: false
+            required: [applicationId, campaignId, status, boundAt, evidenceVersion]
+            properties:
+              applicationId: {type: string}
+              campaignId: {type: [string, 'null']}
+              status:
+                type: string
+                enum: [UNBOUND, BOUND, EVIDENCE_MISSING]
+                description: UNBOUND means no binding, BOUND means the referenced first receipt matches, and EVIDENCE_MISSING means the receipt cannot be verified.
+              boundAt: {type: [string, 'null'], format: date-time, description: First binding time. Null before binding.}
+              evidenceVersion: {type: [string, 'null'], pattern: '^[1-9][0-9]*$', description: First receipt version as an exact decimal. Null before binding.}
     SubsidyPostingPage:
       type: object
       additionalProperties: false

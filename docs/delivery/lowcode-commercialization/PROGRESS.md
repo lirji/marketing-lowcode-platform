@@ -11,6 +11,7 @@
 | LC-05 | 等待前置 | LC-04 完成后，按确认、退款及异常处理状态完成完整日结 |
 | LC-05a | 本机验证通过 | 控制台用既有流水查询权限导出已加载明细，保留精确金额、范围、订单过滤和分页状态。构建、Lint、277 个单测通过，浏览器 116 通过、12 条按环境跳过。候选控制台通过本机网关导出两条初始化账本记录，CSV 与查询结果一致 |
 | LC-05b | 验证通过 | 资金汇总提供按币种及归属的补贴确认、退款或冲正和净额。控制台可导出同口径 CSV，保留窗口、租户、权限范围及关联校验状态。真实 MySQL 验证跨日、权限、全额冲正和超出单笔 long 范围的汇总 |
+| LC-05c | 验证通过 | 订单对账可在入账前查看待绑定、已绑定及首次回执待核查。真实 MySQL 验证首次版本、只读数据库权限和范围隔离，桌面和手机通过打包联跑 |
 | LC-06 | 等待前置及授权 | LC-05 的财务验收、试点门店、关账观察期和上线授权 |
 | LC-07 | 来源准备完成，等待合同 | 已识别业务身份、水位、冻结注销与等级写入边界。等待 Commerce 和 Auth 签收身份与全量读取合同 |
 | LC-07a | 专项与远端源码验证通过 | Commerce `69a57b0` 的同步入口在固定只读事务内按会员主键分批扫描。隔离 MySQL 验证空结果、10,000 行、超限拒绝和两批间提交等级及状态变更。旧请求读取一致，新请求读取更新值。`452eda1` 进一步隔离重复验证的对照租户 |
@@ -28,6 +29,7 @@
 - 脱敏本机复核记录为 `~/.local/share/marketing-delivery/lowcode-commercialization/live-readonly.json`。历史交易隔离证据位于 `~/.local/share/marketing-delivery/platform-integration-20261124/`；商城本机验证位于 `~/.local/share/marketing-delivery/commerce-member-audience/`。记录可区分本机、隔离、正式证据。
 - 流水导出证据位于 `~/.local/share/marketing-delivery/lowcode-commercialization/lc05/`。`live-result.json` 记录租户级只读审计身份在 1440 和 390 像素的候选版验证。网关验证缺少对账权限时返回 403，默认门店范围查询该初始化订单为空。操作见[运行手册](../../operations/RUNBOOK.md#按订单核对营销补贴流水)。
 - 账本汇总证据位于 `~/.local/share/marketing-delivery/lowcode-commercialization/lc05b/`。资金服务全量 106 项通过。最终改动复验 20 项真实 MySQL 集成及 16 项契约通过。控制台构建、Lint、277 项单测及 116 项浏览器用例通过，12 项按环境跳过。现有本机资金服务收到新参数后仍返回 HTTP 200 和原来的净额结构。候选应用以只读数据库账户连接隔离 MySQL，桌面与手机查询及导出均得到确认 1,000、冲减 1,000、净额 0 分，见 `candidate-result.json`。正式试点仍由真实付款和退款分摊凭证签收。
+- 订单绑定证据位于 `~/.local/share/marketing-delivery/lowcode-commercialization/lc05c/`。资金服务全量 107 项通过，共用授权条件变更后复验 28 项真实 MySQL 集成及 16 项接口契约。控制台构建、Lint、277 项单测及 118 项浏览器通过，12 项按环境跳过。打包资金服务以只读账户连接隔离 MySQL，两种屏幕宽度均查到三种绑定状态，并同时验证补贴流水为空、门店越界和大小写不同的租户返回空、缺对账权限返回 403。首次版本以原始精确值显示，后续事件不会替换它。正式交易、退款和关账继续按 LC-02 至 LC-06 验收。
 - 安全检查 `45403099534` 在 Flink 作业报告 Jackson Databind 2.20.2。作业模块统一使用 2.21.8 BOM，覆盖 [FasterXML 拒绝服务修复](https://github.com/FasterXML/jackson-databind/security/advisories/GHSA-cxp5-3px4-pw24)及[后续校验修复](https://github.com/FasterXML/jackson-databind/security/advisories/GHSA-m8xf-2cr7-77ph)。重复打包时重建原始 Jar，避免 Shade 复用含旧依赖的产物，见 [Maven Jar Plugin](https://maven.apache.org/plugins/maven-jar-plugin/jar-mojo.html#forceCreation)。功能提交和安全修复保留各自任务分支。
 - 本机三个 Flink 作业重新打包后，每个产物的 1,194 个 Jackson 类文件均与 BOM 解析到的依赖逐字节一致。作业及支持模块 37 项测试通过。安装新 JAR 后的真实 Flink checkpoint 回执用例通过。组合发布用例由独立 CI 作业运行。检查点测试保留失败的标准输出与错误输出，并以固定只读权限为非 root JobManager 提供 JAR。
 - 会员本机验证日志位于 `~/.local/share/marketing-delivery/lowcode-commercialization/lc07/`。首次并发用例执行测试替身失败，调整为当前事务绑定的 SqlSession 执行真实 XML 后通过。并行全量回归出现既有积分测试事务超时，随后专项复验 10 项全部通过，见 `targeted-final.log`。CI `45365787291` 对 `69a57b0` 完整验证通过。现有机器租户过滤及 10,000 人同步入口约束继续适用。

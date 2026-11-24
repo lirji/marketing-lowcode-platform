@@ -131,6 +131,10 @@ public class MybatisBenefitFundingRepository implements BenefitFundingRepository
             SubsidyPostingCursor cursor, int limit) {
         return mapper.selectSubsidyPostings(filter, cursor, limit);
     }
+    /** 沿用申请维度的授权条件，原始回执保留在资金库内。 */
+    @Override public List<OrderBindingRow> findOrderBindings(OrderBindingFilter filter, String after, int limit) {
+        return mapper.selectOrderBindings(filter, after, limit);
+    }
     @Override public List<SubsidySummaryRow> summarizeSubsidyPostings(SubsidyPostingFilter filter) {
         return mapper.summarizeSubsidyPostings(filter);
     }

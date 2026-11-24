@@ -379,15 +379,12 @@
 
     <sql id="subsidyPostingWindow">
         l.tenant_id = #{scope.tenantId} AND l.operation_name IN ('CONFIRM', 'REFUND')
+        AND CAST(l.tenant_id AS BINARY) = CAST(#{scope.tenantId} AS BINARY)
         AND l.posting_time_utc &gt;= #{scope.from} AND l.posting_time_utc &lt; #{scope.to}
     </sql>
-    <!-- 游标按与列表相同的业务和授权范围定位，防止旧范围游标跳过可见流水。 -->
-    <sql id="subsidyPostingBaseScope">
-        FROM mk_funding_ledger l
-        JOIN mk_promotion_application a ON a.tenant_id = l.tenant_id AND a.application_id = l.application_id
-        JOIN mk_reservation_item r ON r.tenant_id = l.tenant_id AND r.application_id = l.application_id
-            AND r.resource_key = l.resource_key AND r.resource_type = 'BUDGET'
-        WHERE <include refid="subsidyPostingWindow"/>
+    <sql id="subsidyApplicationAccess">
+        <!-- 原有库可能采用不区分大小写的排序规则，租户和组织仍须按授权标识精确匹配。 -->
+        AND CAST(a.tenant_id AS BINARY) = CAST(#{scope.tenantId} AS BINARY)
         <if test="scope.organizations != null">
             AND CAST(a.organization_id AS BINARY) IN
             <foreach collection="scope.organizations" item="organization" open="(" separator="," close=")">
@@ -400,8 +397,7 @@
                 ELSE FALSE END
         </if>
     </sql>
-    <sql id="subsidyPostingScope">
-        <include refid="subsidyPostingBaseScope"/>
+    <sql id="subsidySelectedApplication">
         <if test="scope.campaignId != null">AND CAST(a.campaign_id AS BINARY) = CAST(#{scope.campaignId} AS BINARY)</if>
         <if test="scope.orderId != null">
             <!-- 等值谓词使用订单索引，二进制比较避免默认排序规则把不同订单号合并。 -->
@@ -410,6 +406,47 @@
         </if>
         <if test="scope.unassigned">AND a.campaign_id IS NULL</if>
     </sql>
+    <sql id="subsidyPostingBaseScope">
+        FROM mk_funding_ledger l
+        JOIN mk_promotion_application a ON a.tenant_id = l.tenant_id AND a.application_id = l.application_id
+        JOIN mk_reservation_item r ON r.tenant_id = l.tenant_id AND r.application_id = l.application_id
+            AND r.resource_key = l.resource_key AND r.resource_type = 'BUDGET'
+        WHERE <include refid="subsidyPostingWindow"/>
+        <include refid="subsidyApplicationAccess"/>
+    </sql>
+    <!-- 游标按与列表相同的业务和授权范围定位，防止旧范围游标跳过可见流水。 -->
+    <sql id="subsidyPostingScope">
+        <include refid="subsidyPostingBaseScope"/>
+        <include refid="subsidySelectedApplication"/>
+    </sql>
+    <!-- 首次回执必须对应绑定时的版本；同一订单的后续事件不会掩盖原始回执缺失。 -->
+    <select id="selectOrderBindings"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$OrderBindingRow">
+        SELECT a.application_id AS applicationId, a.campaign_id AS campaignId,
+               b.evidence_version AS evidenceVersion, b.bound_at AS boundAt,
+               receipt.event_id IS NOT NULL AS evidencePresent
+        FROM mk_promotion_application a
+        LEFT JOIN mk_trade_order_binding b ON b.tenant_id = a.tenant_id AND b.application_id = a.application_id
+            AND CAST(b.tenant_id AS BINARY) = CAST(a.tenant_id AS BINARY)
+            AND CAST(b.application_id AS BINARY) = CAST(a.application_id AS BINARY)
+        LEFT JOIN mk_trade_receipt_inbox receipt ON receipt.event_id = b.receipt_event_id
+            AND CAST(receipt.event_id AS BINARY) = CAST(b.receipt_event_id AS BINARY)
+            AND receipt.source_tenant_id = b.source_tenant_id
+            AND receipt.source_order_id = b.source_order_id
+            AND receipt.evidence_version = b.evidence_version
+            AND CAST(receipt.currency AS BINARY) = CAST(a.currency_code AS BINARY)
+        WHERE a.tenant_id = #{scope.tenantId}
+        <include refid="subsidyApplicationAccess"/>
+        <include refid="subsidySelectedApplication"/>
+        AND EXISTS (
+            SELECT 1 FROM mk_reservation_item budget
+            WHERE budget.tenant_id = a.tenant_id AND budget.application_id = a.application_id
+                AND budget.resource_type = 'BUDGET'
+        )
+        <if test="after != null">AND a.application_id &gt; #{after}</if>
+        ORDER BY a.application_id
+        LIMIT #{limit}
+    </select>
     <select id="selectSubsidyPostingCursor"
             resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$SubsidyPostingCursor">
         SELECT l.ledger_id AS ledgerId, l.posting_time_utc AS postingTime

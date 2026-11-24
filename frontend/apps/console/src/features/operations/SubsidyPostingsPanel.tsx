@@ -7,7 +7,7 @@ import { FieldHint } from '../../components/FieldHint'
 import { RecordTable, RecordTime } from '../../components/RecordTable'
 import { Select } from '../../components/Select'
 import { Button, EmptyState, Panel, PanelHeader, StateBanner } from '../../components/ui'
-import { api } from '../../shared/api/client'
+import { ApiProblem, api } from '../../shared/api/client'
 import { problemDetail } from '../../shared/api/problem'
 import { MAX_SUBSIDY_ORDER_ID_LENGTH, MAX_SUBSIDY_RANGE_MS } from '../../shared/api/schemas'
 import { releaseScopeKey } from '../../shared/api/useReleasePages'
@@ -19,6 +19,8 @@ const INITIAL_LINKED_RANGE_MS = 7 * 24 * 60 * 60 * 1_000
 const OPERATIONS = { CONFIRM: '补贴确认', REFUND: '退款或冲正' } as const
 const POSTING_COLUMNS = ['金额（最小货币单位）', '币种', '入账类型', '入账时间（北京时间）', '活动 ID', '出资账户', '资金申请 ID', '流水 ID']
 const PAGINATION = { PARTIAL: '还有下一页', EXHAUSTED: '已读取至最后一页' }
+const BINDING_STATUS = { UNBOUND: '待绑定', BOUND: '已绑定', EVIDENCE_MISSING: '首次回执待核查' } as const
+const BINDING_COLUMNS = ['绑定状态', '资金申请 ID', '活动 ID', '首次回执版本', '绑定时间（北京时间）']
 
 export function SubsidyPostingsPanel() {
   const auth = useAuth()
@@ -130,5 +132,46 @@ function SubsidyPostingSearch({ scope, tenantId }: { scope: string; tenantId: st
       {items.length > 0 && <Button onClick={downloadPostings} disabled={!postings.isSuccess || postings.isFetching} aria-describedby="posting-export-hint">导出已加载流水</Button>}
     </div>}
     {items.length > 0 && <p className="field-hint" id="posting-export-hint">CSV 包含已加载的流水及查询范围。使用表格软件时，可将金额列按文本导入以保留完整精度。</p>}
+    {applied?.orderId && <OrderBindingEvidence scope={scope} orderId={applied.orderId}
+      selection={applied.selection} revision={applied.revision} />}
   </Panel>
+}
+
+function OrderBindingEvidence({ scope, orderId, selection, revision }: {
+  scope: string; orderId: string; selection: string; revision: number
+}) {
+  const bindings = useInfiniteQuery({
+    queryKey: ['subsidy-order-bindings', scope, orderId, selection, revision],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) => api.orderBindingEvidence({
+      orderId, campaignId: selection && selection !== UNASSIGNED ? selection : undefined,
+      unassigned: selection === UNASSIGNED, after: pageParam,
+    }),
+    getNextPageParam: page => page.nextCursor ?? undefined,
+    retry: false,
+  })
+  const items = [...new Map((bindings.data?.pages.flatMap(page => page.items) ?? []).map(item => [item.applicationId, item])).values()]
+  const unsupported = bindings.error instanceof ApiProblem && bindings.error.status === 404
+  return <section aria-label="订单绑定证据">
+    <h3>订单绑定证据</h3>
+    <p className="field-hint">按订单和活动归属查询所有可见预算申请，包含尚未入账的申请。已绑定表示首次交易回执可核对。</p>
+    {bindings.isPending && <StateBanner tone="loading" title="正在读取绑定证据" detail="可继续查看补贴流水。" />}
+    {bindings.isError && !bindings.data && (unsupported
+      ? <p className="field-hint">当前资金服务尚未提供订单绑定查询。</p>
+      : <StateBanner tone="error" title="绑定证据读取失败" detail={problemDetail(bindings.error)}
+        action={<Button onClick={() => void bindings.refetch()}>重试绑定查询</Button>} />)}
+    {bindings.isSuccess && items.length === 0 && <EmptyState title="没有匹配的预算申请" detail="请核对订单号、活动归属或当前门店范围。" />}
+    {items.length > 0 && <RecordTable label="订单绑定证据" columns={BINDING_COLUMNS}>
+      {items.map(item => <tr key={item.applicationId}>
+        <td>{BINDING_STATUS[item.status]}</td><td>{item.applicationId}</td><td>{item.campaignId ?? '待归属'}</td>
+        <td>{item.evidenceVersion ?? '—'}</td><td>{item.boundAt ? <RecordTime value={item.boundAt} /> : '—'}</td>
+      </tr>)}
+    </RecordTable>}
+    {bindings.isFetchNextPageError && <StateBanner tone="error" title="下一页绑定证据读取失败" detail={problemDetail(bindings.error)} />}
+    {bindings.hasNextPage && <div className="action-bar toolbar">
+      <Button onClick={() => void bindings.fetchNextPage()} disabled={bindings.isFetching}>
+        {bindings.isFetchNextPageError ? '重试加载绑定证据' : '加载更多绑定证据'}
+      </Button>
+    </div>}
+  </section>
 }

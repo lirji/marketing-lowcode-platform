@@ -64,6 +64,8 @@ public interface BenefitFundingRepository {
     List<LedgerRow> findLedger(String tenantId);
     Optional<SubsidyPostingCursor> findSubsidyPostingCursor(SubsidyPostingFilter filter, String ledgerId);
     List<SubsidyPostingRow> findSubsidyPostings(SubsidyPostingFilter filter, SubsidyPostingCursor cursor, int limit);
+    /** 按申请读取首次绑定及其回执是否仍可核对，包含尚未入账的预算申请。 */
+    List<OrderBindingRow> findOrderBindings(OrderBindingFilter filter, String after, int limit);
     List<SubsidySummaryRow> summarizeSubsidyPostings(SubsidyPostingFilter filter);
     /** 全租户校验原始流水，识别无法走正常账本联接的记录。 */
     long countUnmatchedSubsidyPostings(SubsidyPostingFilter filter);
@@ -166,6 +168,12 @@ public interface BenefitFundingRepository {
     record SubsidyPostingCursor(String ledgerId, String postingTime) { }
     record SubsidyPostingRow(String ledgerId, String postingTime, String applicationId, String campaignId,
             String resourceKey, String currency, String operation, long amount) { }
+    /** 查询范围来自已验证的资金对账身份，空组织或门店参数表示相应维度具有全域授权。 */
+    record OrderBindingFilter(String tenantId, String orderId, String campaignId, boolean unassigned,
+            Set<String> organizations, String allowedShopsJson) { }
+    /** 缺少版本表示尚未绑定；已绑定时还需核对首次回执。 */
+    record OrderBindingRow(String applicationId, String campaignId, Long evidenceVersion, String boundAt,
+            boolean evidencePresent) { }
     /** 跨流水汇总使用数据库精确十进制，允许结果超过单笔 long 金额范围。 */
     record SubsidySummaryRow(String currency, boolean unassigned, long postingCount,
             BigDecimal confirmedAmountMinor, BigDecimal reversedAmountMinor) { }

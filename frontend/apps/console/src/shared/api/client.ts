@@ -43,6 +43,7 @@ import {
   reconciliationSchema,
   subsidyPostingPageSchema,
   orderSubsidyPostingPageSchema,
+  orderBindingEvidencePageSchema,
   subsidyPostingSummarySchema,
   recomputeSchema,
   releaseViewSchema,
@@ -443,6 +444,23 @@ export const api = {
         throw new Error('资金服务未确认本次对账范围，请重新查询。')
       }
       return summary
+    })
+  },
+  orderBindingEvidence: (query: { orderId: string; campaignId?: string; unassigned: boolean; after?: string }) => {
+    const params = new URLSearchParams({ orderId: query.orderId })
+    if (query.campaignId) params.set('campaignId', query.campaignId)
+    if (query.unassigned) params.set('unassigned', 'true')
+    if (query.after) params.set('after', query.after)
+    return request(`/api/v1/funding/subsidy-postings/by-order/bindings?${params}`, undefined, value => {
+      const page = parseWith(orderBindingEvidencePageSchema, value)
+      const wrongActivity = page.items.some(item => (query.campaignId && item.campaignId !== query.campaignId)
+        || (query.unassigned && item.campaignId !== null))
+      if (page.orderId !== query.orderId || page.campaignId !== (query.campaignId ?? null)
+        || page.unassigned !== query.unassigned || wrongActivity
+        || (page.nextCursor !== null && (page.nextCursor !== page.items.at(-1)?.applicationId || page.nextCursor === query.after))) {
+        throw new Error('资金服务未确认订单绑定查询范围或返回了无效游标，请重新查询。')
+      }
+      return page
     })
   },
   subsidyPostings: (query: { from: string; to: string; campaignId?: string; orderId?: string; unassigned?: boolean; cursor?: string }) => {

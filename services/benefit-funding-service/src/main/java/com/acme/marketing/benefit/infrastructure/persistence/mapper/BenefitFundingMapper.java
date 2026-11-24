@@ -81,6 +81,10 @@ public interface BenefitFundingMapper {
     List<BenefitFundingRepository.SubsidyPostingRow> selectSubsidyPostings(
             @Param("scope") BenefitFundingRepository.SubsidyPostingFilter filter,
             @Param("cursor") BenefitFundingRepository.SubsidyPostingCursor cursor, @Param("limit") int limit);
+    /** 仅返回授权申请的首次绑定概要，不取交易回执原文。 */
+    List<BenefitFundingRepository.OrderBindingRow> selectOrderBindings(
+            @Param("scope") BenefitFundingRepository.OrderBindingFilter filter,
+            @Param("after") String after, @Param("limit") int limit);
     List<BenefitFundingRepository.SubsidySummaryRow> summarizeSubsidyPostings(
             @Param("scope") BenefitFundingRepository.SubsidyPostingFilter filter);
     long countUnmatchedSubsidyPostings(@Param("scope") BenefitFundingRepository.SubsidyPostingFilter filter);

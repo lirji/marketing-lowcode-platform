@@ -221,6 +221,60 @@ class TradeOrderBindingIntegrationTest extends MySqlIntegrationTest {
     }
 
     @Test
+    void reportsScopedBindingEvidenceBeforePostingAndDetectsAnUnverifiableFirstReceipt() throws Exception {
+        long order = 714;
+        Reservation reservation = reserve(order, Long.toString(order));
+        String path = "/api/v1/funding/subsidy-postings/by-order/bindings?orderId=";
+        String auditor = jwt(TENANT, "auditor", "funding:reconcile", AUDIENCE, "org-a", "shop-a");
+        JsonNode unbound = expect(get(path + order + "&unassigned=true", auditor), 200, null);
+        assertEquals(Long.toString(order), unbound.path("orderId").asString());
+        assertEquals(true, unbound.path("unassigned").asBoolean());
+        assertEquals(1, unbound.path("items").size());
+        JsonNode item = unbound.path("items").get(0);
+        assertEquals(reservation.applicationId(), item.path("applicationId").asString());
+        assertEquals("UNBOUND", item.path("status").asString());
+        assertEquals(true, item.path("evidenceVersion").isNull());
+        assertEquals(true, item.path("boundAt").isNull());
+        assertEquals(true, unbound.path("nextCursor").isNull());
+        long ledgerBefore = ledgerCount(reservation.applicationId());
+
+        assertEquals(0, expect(get(path + "0" + order, auditor), 200, null).path("items").size());
+        assertEquals(0, expect(get(path + order + "&campaignId=other", auditor), 200, null).path("items").size());
+        assertEquals(0, expect(get(path + order + "&after=" + reservation.applicationId(), auditor), 200, null)
+                .path("items").size());
+        expect(get(path + order + "&after=%25", auditor), 400, null);
+        expect(get(path + order + "&campaignId=other&unassigned=true", auditor), 400, null);
+        expect(get(path + order, machine()), 403, null);
+        String otherTenant = jwt("mk-other-binding", "auditor", "funding:reconcile", AUDIENCE, "org-a", "shop-a");
+        String caseVariantTenant = jwt("MK-BINDING", "auditor", "funding:reconcile", AUDIENCE, "org-a", "shop-a");
+        String otherShop = jwt(TENANT, "auditor", "funding:reconcile", AUDIENCE, "org-a", "shop-b");
+        String otherOrg = jwt(TENANT, "auditor", "funding:reconcile", AUDIENCE, "org-b", "shop-a");
+        for (String inaccessible : List.of(otherTenant, caseVariantTenant, otherShop, otherOrg)) {
+            assertEquals(0, expect(get(path + order, inaccessible), 200, null).path("items").size());
+        }
+
+        long originalVersion = 9_007_199_254_740_993L;
+        String originalReceipt = receipt(7, order, originalVersion, "CNY");
+        JsonNode binding = expect(request(reservation, "7", Long.toString(order), machine()), 200, null);
+        receipt(7, order, originalVersion + 1, "CNY");
+        JsonNode bound = expect(get(path + order, auditor), 200, null).path("items").get(0);
+        assertEquals("BOUND", bound.path("status").asString());
+        assertEquals(Long.toString(originalVersion), bound.path("evidenceVersion").asString());
+        assertEquals(Instant.parse(binding.path("boundAt").asString()), Instant.parse(bound.path("boundAt").asString()));
+        assertEquals(5, bound.size());
+        jdbc.update("UPDATE mk_trade_receipt_inbox SET source_tenant_id = ? WHERE event_id = ?", 8, originalReceipt);
+        JsonNode missing = expect(get(path + order, auditor), 200, null).path("items").get(0);
+        assertEquals("EVIDENCE_MISSING", missing.path("status").asString());
+        assertEquals(bound.path("evidenceVersion"), missing.path("evidenceVersion"));
+        assertEquals(ledgerBefore, ledgerCount(reservation.applicationId()));
+    }
+
+    private HttpRequest get(String path, String jwt) {
+        return HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+                .header("Authorization", "Bearer " + jwt).GET().build();
+    }
+
+    @Test
     void casdoorApplicationUsesConfiguredGrantAndReplaysFirstBinding() throws Exception {
         long order = 801;
         Reservation reservation = reserve(order, Long.toString(order));

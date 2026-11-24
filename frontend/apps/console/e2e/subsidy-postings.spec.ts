@@ -36,6 +36,9 @@ test('funding reconciliation shows scoped postings, refunds and exact minor unit
       },
     } })
   })
+  await page.route('**/api/v1/funding/subsidy-postings/by-order/bindings?*', route => route.fulfill({
+    status: 404, json: { status: 404, title: 'Not Found' },
+  }))
   await page.route('**/api/v1/funding/subsidy-postings?*', async route => {
     expect(route.request().method()).toBe('GET')
     const url = new URL(route.request().url())
@@ -113,6 +116,7 @@ test('funding reconciliation shows scoped postings, refunds and exact minor unit
   await page.getByRole('button', { name: '查询补贴流水' }).click()
   await expect(table.getByText('退款或冲正')).toBeVisible()
   await expect(table.getByText('-5,000', { exact: true })).toBeVisible()
+  await expect(page.getByText('当前资金服务尚未提供订单绑定查询。')).toBeVisible()
   expect(await download()).toContain('"settlement-order","已读取至最后一页"')
   expect(requests).toHaveLength(readsBeforeOrder)
   expect(orderRequests.map(url => url.searchParams.get('orderId'))).toEqual(['settlement-order', 'settlement-order'])
@@ -124,4 +128,51 @@ test('funding reconciliation shows scoped postings, refunds and exact minor unit
   const orderScope = page.getByText('订单号 ' + longOrder, { exact: true })
   await expect(orderScope).toBeVisible()
   expect(await orderScope.evaluate(label => label.scrollWidth)).toBeLessThanOrEqual(await orderScope.evaluate(label => label.clientWidth) + 1)
+})
+
+test('order reconciliation explains binding evidence even when no subsidy has posted', async ({ page }, info) => {
+  await page.clock.setFixedTime(new Date('2026-09-17T03:00:00Z'))
+  await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
+  await page.route('**/api/v1/**', route => route.fulfill({ json: [] }))
+  await page.route('**/api/v1/funding/reconciliation', route => route.fulfill({ json: { balanced: true, violations: [] } }))
+  await page.route('**/api/v1/funding/subsidy-postings/by-order?*', route => {
+    const params = new URL(route.request().url()).searchParams
+    return route.fulfill({ json: { orderId: params.get('orderId'),
+      page: { from: params.get('from'), to: params.get('to'), campaignId: null, unassigned: true,
+        items: [], nextCursor: null, hasMore: false } } })
+  })
+  await page.route('**/api/v1/funding/subsidy-postings/by-order/bindings?*', route => {
+    expect(route.request().method()).toBe('GET')
+    const params = new URL(route.request().url()).searchParams
+    expect(params.has('from')).toBe(false)
+    expect(params.has('to')).toBe(false)
+    expect(params.get('unassigned')).toBe('true')
+    const after = params.get('after')
+    expect(after).toBe(after ? 'application-waiting' : null)
+    const bound = { campaignId: null, boundAt: '2026-09-15T23:34:00Z', evidenceVersion: '9007199254740993' }
+    return route.fulfill({ json: { orderId: params.get('orderId'), campaignId: null, unassigned: true,
+      items: after ? [{ ...bound, applicationId: 'application-with-receipt', status: 'BOUND' },
+        { ...bound, applicationId: 'application-without-receipt', status: 'EVIDENCE_MISSING' }]
+        : [{ applicationId: 'application-waiting', campaignId: null, status: 'UNBOUND', evidenceVersion: null, boundAt: null }],
+      nextCursor: after ? null : 'application-waiting' } })
+  })
+
+  await page.goto('/operations')
+  await page.getByRole('tab', { name: '资金对账' }).click()
+  await page.getByRole('combobox', { name: '活动归属' }).click()
+  await page.getByRole('option', { name: '仅待归属流水' }).click()
+  await page.getByRole('textbox', { name: '订单号' }).fill('ORD-42')
+  await page.getByRole('button', { name: '查询补贴流水' }).click()
+  await expect(page.getByText('没有匹配的补贴流水')).toBeVisible()
+  const table = page.getByRole('table', { name: '订单绑定证据' })
+  await expect(table.getByRole('cell', { name: '待绑定', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '加载更多绑定证据' }).click()
+  const bound = table.getByRole('row').filter({ has: page.getByRole('cell', { name: 'application-with-receipt', exact: true }) })
+  await expect(bound.getByRole('cell', { name: '已绑定', exact: true })).toBeVisible()
+  await expect(bound.getByRole('cell', { name: '9007199254740993', exact: true })).toBeVisible()
+  await expect(bound.locator('time')).toHaveAttribute('datetime', '2026-09-15T23:34:00Z')
+  await expect(table.getByRole('cell', { name: '首次回执待核查' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '加载更多绑定证据' })).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
+  await page.screenshot({ path: info.outputPath('order-binding-evidence.png'), fullPage: true })
 })

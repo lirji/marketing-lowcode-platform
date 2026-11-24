@@ -150,6 +150,14 @@ public class BenefitController {
         return service.subsidyPostingsByOrder(orderId, from, to, campaignId, unassigned, limit, cursor);
     }
 
+    /** 资金对账人员可在补贴入账前查看订单资金申请的绑定证据。 */
+    @GetMapping("/funding/subsidy-postings/by-order/bindings")
+    public BenefitFundingService.OrderBindingEvidencePage orderBindingEvidence(@RequestParam String orderId,
+            @RequestParam(required = false) String campaignId, @RequestParam(defaultValue = "false") boolean unassigned,
+            @RequestParam(required = false) String after) {
+        return service.orderBindingEvidence(orderId, campaignId, unassigned, after);
+    }
+
     /** 对账汇总继承流水读取权限，并返回实际采用的范围与币种。 */
     @GetMapping("/funding/subsidy-postings/summary")
     public BenefitFundingService.SubsidyPostingSummary subsidyPostingSummary(@RequestParam Instant from,
