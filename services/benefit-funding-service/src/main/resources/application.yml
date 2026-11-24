@@ -24,6 +24,10 @@ mybatis:
   configuration:
     map-underscore-to-camel-case: false
 marketing.kafka.consumers-enabled: ${MARKETING_KAFKA_CONSUMERS_ENABLED:false}
+marketing.trade-receipts:
+  enabled: ${MARKETING_TRADE_RECEIPTS_ENABLED:false}
+  topic-prefix: ${MARKETING_TRADE_RECEIPTS_TOPIC_PREFIX:}
+  consumer-group: ${MARKETING_TRADE_RECEIPTS_CONSUMER_GROUP:mk-trade-receipts-v1}
 marketing.benefit.outbox-enabled: ${MARKETING_BENEFIT_OUTBOX_ENABLED:false}
 marketing.funding.budget-bucket-count: ${MARKETING_FUNDING_BUDGET_BUCKET_COUNT:16}
 marketing.benefit-center:

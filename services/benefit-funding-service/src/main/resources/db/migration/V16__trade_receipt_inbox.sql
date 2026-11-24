@@ -1,0 +1,22 @@
+CREATE TABLE mk_trade_receipt_inbox (
+  event_id char(36) NOT NULL COMMENT '交易中心全局唯一 V1 事件标识',
+  event_type varchar(64) NOT NULL COMMENT '交易中心 V1 支付、退款通知或退款成功事件类型',
+  source_tenant_id bigint NOT NULL COMMENT '交易中心原生租户编号',
+  source_order_id bigint NOT NULL COMMENT '交易中心原生订单编号',
+  evidence_version bigint NOT NULL COMMENT '交易中心原生订单证据版本',
+  receipt_reference varchar(64) NOT NULL COMMENT '交易中心本地实收单号或退款单号',
+  change_reason varchar(32) NULL COMMENT '原生退款变更原因，支付事件为空',
+  currency char(3) NOT NULL COMMENT '交易币种',
+  paid_minor bigint NOT NULL COMMENT '正常实收金额，单位为最小货币单位',
+  refund_minor bigint NULL COMMENT '本次退款金额，支付事件为空',
+  cumulative_refunded_minor bigint NULL COMMENT '交易累计成功退款金额，支付事件为空',
+  pending_refund_minor bigint NULL COMMENT '交易待退款金额，支付事件为空',
+  occurred_at varchar(40) NOT NULL COMMENT '交易主库事实发生的 UTC 时间',
+  payload_digest char(64) NOT NULL COMMENT '原始 UTF-8 消息 SHA-256，用于识别异载荷重放',
+  kafka_topic varchar(249) NOT NULL COMMENT '首次成功入箱的源主题',
+  kafka_partition int NOT NULL COMMENT '首次成功入箱的源分区编号',
+  kafka_offset bigint NOT NULL COMMENT '首次成功入箱的源消息位点',
+  received_at timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '首次入箱时间',
+  PRIMARY KEY (event_id),
+  KEY ix_trade_receipt_order (source_tenant_id,source_order_id,evidence_version)
+) COMMENT='交易回执原生事实与持久消费去重索引';

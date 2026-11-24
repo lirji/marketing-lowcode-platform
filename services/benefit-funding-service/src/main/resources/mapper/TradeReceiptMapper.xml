@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.benefit.infrastructure.persistence.mapper.TradeReceiptMapper">
+  <insert id="reserve">
+    INSERT INTO mk_trade_receipt_inbox
+      (event_id,event_type,source_tenant_id,source_order_id,evidence_version,receipt_reference,
+       change_reason,currency,paid_minor,refund_minor,cumulative_refunded_minor,pending_refund_minor,
+       occurred_at,payload_digest,kafka_topic,kafka_partition,kafka_offset)
+    VALUES
+      (#{eventId},#{eventType},#{sourceTenantId},#{sourceOrderId},#{evidenceVersion},#{receiptReference},
+       #{changeReason},#{currency},#{paidMinor},#{refundMinor},#{cumulativeRefundedMinor},#{pendingRefundMinor},
+       #{occurredAt},#{payloadDigest},#{topic},#{partition},#{offset})
+    ON DUPLICATE KEY UPDATE event_id=event_id
+  </insert>
+  <select id="payloadDigestForUpdate" resultType="string">
+    SELECT payload_digest FROM mk_trade_receipt_inbox WHERE event_id=#{eventId} FOR UPDATE
+  </select>
+</mapper>
