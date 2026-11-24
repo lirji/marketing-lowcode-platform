@@ -82,6 +82,7 @@ class ContractSpecificationsTest {
                 "/api/v1/award-intents/{intentId}/fulfillment:refresh", "/internal/v1/award-intents",
             "/internal/v1/benefits:assert-releasable",
             "/internal/v1/promotion-applications/{applicationId}/trade-order-binding",
+            "/internal/v1/promotion-applications/{applicationId}/trade-order-binding/casdoor",
             "/api/v1/promotion-applications", "/api/v1/promotion-applications/{applicationId}:confirm",
             "/api/v1/promotion-applications/{applicationId}:cancel",
             "/api/v1/promotion-applications/{applicationId}:refund",
@@ -267,6 +268,8 @@ class ContractSpecificationsTest {
         String bindingPath = "/internal/v1/promotion-applications/{applicationId}/trade-order-binding";
         assertEquals(Boolean.TRUE, map(map(paths.get(bindingPath)).get("put")).get("x-internal"));
         assertEquals("trade-order-binding:write", permission(paths, bindingPath, "put"));
+        String casdoorBindingPath = bindingPath + "/casdoor";
+        assertEquals("trade-order-binding:write", permission(paths, casdoorBindingPath, "put"));
         Set<String> operationIds = new HashSet<>();
         for (Object pathItem : paths.values()) {
             for (Map.Entry<String, Object> operation : map(pathItem).entrySet()) {

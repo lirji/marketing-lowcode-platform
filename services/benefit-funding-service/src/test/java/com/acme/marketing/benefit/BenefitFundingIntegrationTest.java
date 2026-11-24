@@ -974,11 +974,14 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
 
     @Test
     void tradeOrderBindingRouteIsDisabledByDefault() throws Exception {
-        var request = base("/internal/v1/promotion-applications/example/trade-order-binding")
-                .header("Content-Type", "application/json")
-                .PUT(HttpRequest.BodyPublishers.ofString("{}"))
-                .build();
-        assertEquals(404, client.send(request, HttpResponse.BodyHandlers.discarding()).statusCode());
+        String path = "/internal/v1/promotion-applications/example/trade-order-binding";
+        for (String endpoint : List.of(path, path + "/casdoor")) {
+            var request = base(endpoint)
+                    .header("Content-Type", "application/json")
+                    .PUT(HttpRequest.BodyPublishers.ofString("{}"))
+                    .build();
+            assertEquals(404, client.send(request, HttpResponse.BodyHandlers.discarding()).statusCode());
+        }
     }
 
     private List<JsonNode> getSubsidyPostings(String path) throws Exception {

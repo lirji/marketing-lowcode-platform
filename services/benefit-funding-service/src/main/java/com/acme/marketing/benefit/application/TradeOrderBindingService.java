@@ -8,6 +8,7 @@ import com.acme.marketing.benefit.application.TradeOrderBindingRepository.Source
 import com.acme.marketing.platform.error.ConflictException;
 import com.acme.marketing.platform.error.ForbiddenException;
 import com.acme.marketing.platform.identity.TenantId;
+import com.acme.marketing.platform.identity.TenantScope;
 import com.acme.marketing.platform.web.TenantContextHolder;
 import java.time.Clock;
 import java.util.HashSet;
@@ -23,7 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @ConditionalOnProperty(name = "marketing.trade-order-bindings.enabled", havingValue = "true")
 public class TradeOrderBindingService {
-    private static final String PERMISSION = "trade-order-binding:write";
+    static final String PERMISSION = "trade-order-binding:write";
     private static final String OFFER_MISMATCH = "TRADE_ORDER_BINDING_OFFER_MISMATCH";
     private static final Pattern APPLICATION_ID = Pattern.compile("[A-Za-z0-9_.:-]{1,64}");
     private static final Pattern NATIVE_ID = Pattern.compile("[1-9][0-9]{0,18}");
@@ -51,8 +52,23 @@ public class TradeOrderBindingService {
         if (verifiedSubject == null || !scope.actorId().equals(verifiedSubject)
                 || !scope.permissions().contains(PERMISSION)
                 || !authorities.contains(new SourceAuthority(scope.tenantId(), verifiedSubject, sourceTenantId))) {
-            throw new ForbiddenException("TRADE_ORDER_BINDING_FORBIDDEN", "当前机器身份未获该交易租户的绑定权限");
+            throw forbidden();
         }
+        return bindAuthorized(applicationId, scope, sourceTenantId, request);
+    }
+
+    /** 应用令牌的业务范围在专用入口解析，继续使用同一把申请行锁及首次绑定审计。 */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public BindingView bindMachine(String applicationId, TradeOrderBindingMachineAuthority.AuthorizedMachine machine,
+            BindRequest request) {
+        long sourceTenantId = nativeId(request.sourceTenantId(), "sourceTenantId");
+        if (sourceTenantId != machine.sourceTenantId()) {
+            throw forbidden();
+        }
+        return bindAuthorized(applicationId, machine.scope(), sourceTenantId, request);
+    }
+
+    private BindingView bindAuthorized(String applicationId, TenantScope scope, long sourceTenantId, BindRequest request) {
         if (!APPLICATION_ID.matcher(applicationId).matches()) {
             throw new IllegalArgumentException("applicationId 格式无效");
         }
@@ -79,11 +95,15 @@ public class TradeOrderBindingService {
             throw new ConflictException("TRADE_ORDER_BINDING_CURRENCY_MISMATCH", "原始报价与交易回执币种不一致");
         }
         Binding binding = new Binding(tenantId, applicationId, sourceTenantId, sourceOrderId,
-                receipt.eventId(), receipt.evidenceVersion(), verifiedSubject, format(clock.instant()));
+                receipt.eventId(), receipt.evidenceVersion(), scope.actorId(), format(clock.instant()));
         if (repository.insertBinding(binding) != 1) {
             throw new IllegalStateException("交易订单绑定未写入");
         }
         return BindingView.from(binding);
+    }
+
+    static ForbiddenException forbidden() {
+        return new ForbiddenException("TRADE_ORDER_BINDING_FORBIDDEN", "当前机器身份未获该交易租户的绑定权限");
     }
 
     private static Set<SourceAuthority> parseAuthorities(String sources) {
@@ -102,7 +122,7 @@ public class TradeOrderBindingService {
         return Set.copyOf(entries);
     }
 
-    private static long nativeId(String value, String name) {
+    static long nativeId(String value, String name) {
         if (value != null && NATIVE_ID.matcher(value).matches()) {
             try {
                 return Long.parseLong(value);

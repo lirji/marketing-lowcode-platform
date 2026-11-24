@@ -108,6 +108,29 @@ MySQL 提交后消费组才推进位点。数据库暂不可用时停止交易�
 
 历史报价若未签入原生订单编号，需要独立的权威映射。轮换报价签名密钥时，保留仍需绑定或重试的历史验签公钥。停止接收绑定请求时，可关闭开关，既有绑定与审计证据仍可供核对。交易回执、订单绑定、出资方退款分摊需要分别核验，才能用于后续自动记账。
 
+#### Casdoor 应用令牌
+
+资金服务在 OIDC 模式下提供专用入口 `PUT /internal/v1/promotion-applications/{applicationId}/trade-order-binding/casdoor`。先由资金服务管理员审核机器应用可访问的营销租户、交易租户、组织及全部门店，再配置授权。Casdoor 应用只启用 `client_credentials`，使用 JWT/RS256 及最长 300 秒访问令牌。请求仍传输原来的三个字段，绑定与回执要求相同。
+
+- 将 `MARKETING_TRADE_ORDER_BINDINGS_ENABLED` 和 `MARKETING_TRADE_ORDER_BINDING_CASDOOR_ENABLED` 都设为 `true`。两者默认关闭。
+- 设置 `MARKETING_TRADE_ORDER_BINDING_CASDOOR_ISSUER_URI` 及 `MARKETING_TRADE_ORDER_BINDING_CASDOOR_JWK_SET_URI`。使用受信 HTTPS 地址，本机测试可用回环 HTTP。机器客户端的受众由专用入口验证。
+- 将 `MARKETING_TRADE_ORDER_BINDING_CASDOOR_GRANTS` 配置为 JSON 数组。每个客户端只对应一条授权，门店列表至少包含一项。令牌中的 `sub` 必须匹配 `subject`，`aud` 必须只有 `clientId`，`azp` 也必须匹配该客户端。服务端只为此入口授予 `trade-order-binding:write`。客户端密钥通过调用方的凭据管理配置。
+
+```json
+[
+  {
+    "clientId": "trade-binding-client",
+    "subject": "admin/trade-binding-client",
+    "marketingTenantId": "sandbox-marketing",
+    "sourceTenantId": "101",
+    "organizationId": "sandbox-org",
+    "shopIds": ["sandbox-shop"]
+  }
+]
+```
+
+撤销单个客户端时移除其授权并更新资金服务配置，同时在身份平台停用该客户端。移除最后一条授权时关闭 Casdoor 入口。核对绑定审计的机器主体、原生租户及回执事件 ID。业务范围按受控配置发布，历史审计可继续查询。
+
 ### AwardIntent 风控阻断或投递积压
 
 - 先按 tenant、campaignId、sourceRequestId 区分 `RISK_BLOCKED`、`PENDING` 与 `DEAD`。`GET /api/v1/award-intents` 已合并 outbox/block 读模型，不要只查日志判断是否发过奖。

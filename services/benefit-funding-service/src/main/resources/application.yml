@@ -31,6 +31,11 @@ marketing.trade-receipts:
 marketing.trade-order-bindings:
   enabled: ${MARKETING_TRADE_ORDER_BINDINGS_ENABLED:false}
   sources: ${MARKETING_TRADE_ORDER_BINDING_SOURCES:}
+  casdoor:
+    enabled: ${MARKETING_TRADE_ORDER_BINDING_CASDOOR_ENABLED:false}
+    issuer-uri: ${MARKETING_TRADE_ORDER_BINDING_CASDOOR_ISSUER_URI:}
+    jwk-set-uri: ${MARKETING_TRADE_ORDER_BINDING_CASDOOR_JWK_SET_URI:}
+    grants: ${MARKETING_TRADE_ORDER_BINDING_CASDOOR_GRANTS:[]}
 marketing.benefit.outbox-enabled: ${MARKETING_BENEFIT_OUTBOX_ENABLED:false}
 marketing.funding.budget-bucket-count: ${MARKETING_FUNDING_BUDGET_BUCKET_COUNT:16}
 marketing.benefit-center:

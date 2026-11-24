@@ -2,8 +2,11 @@ package com.acme.marketing.benefit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.acme.marketing.benefit.application.BenefitFundingService;
+import com.acme.marketing.benefit.application.TradeOrderBindingMachineAuthority;
+import com.acme.marketing.benefit.application.TradeOrderBindingMachineAuthority.Grant;
 import com.acme.marketing.benefit.application.TradeOrderBindingService.BindRequest;
 import com.acme.marketing.benefit.domain.ResourceAccount.Type;
 import com.acme.marketing.benefit.infrastructure.persistence.mapper.TradeReceiptMapper;
@@ -42,6 +45,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -59,6 +63,7 @@ import tools.jackson.databind.ObjectMapper;
         "marketing.security.mode=OIDC",
         "marketing.risk.bearer-token=unused-binding-test-risk-token",
         "marketing.trade-order-bindings.enabled=true",
+        "marketing.trade-order-bindings.casdoor.enabled=true",
         "marketing.trade-order-bindings.sources=mk-binding|trade-machine|7,mk-binding|trade-machine|8,"
                 + "mk-other-binding|trade-machine|7,MK-BINDING|trade-machine|7",
         "marketing.offer.trusted-key-id=binding-test-key"
@@ -69,6 +74,8 @@ class TradeOrderBindingIntegrationTest extends MySqlIntegrationTest {
     private static final String ACTOR = "trade-machine";
     private static final String PERMISSION = "trade-order-binding.write";
     private static final String AUDIENCE = "marketing-api";
+    private static final String CASDOOR_CLIENT = "trade-binding-app";
+    private static final String CASDOOR_SUBJECT = "admin/" + CASDOOR_CLIENT;
     private static final String CART_DIGEST = "sha256:" + "a".repeat(64);
     private static final String BUDGET = "BUDGET:PLATFORM:platform:CNY";
     private static final String INVENTORY = "INVENTORY:binding-benefit";
@@ -88,6 +95,20 @@ class TradeOrderBindingIntegrationTest extends MySqlIntegrationTest {
         registry.add("spring.security.oauth2.resourceserver.jwt.issuer-uri", TradeOrderBindingIntegrationTest::issuer);
         registry.add("spring.security.oauth2.resourceserver.jwt.jwk-set-uri", () -> issuer() + "/jwks");
         registry.add("spring.security.oauth2.resourceserver.jwt.audiences", () -> AUDIENCE);
+        registry.add("marketing.trade-order-bindings.casdoor.issuer-uri", () -> issuer() + "/casdoor");
+        registry.add("marketing.trade-order-bindings.casdoor.jwk-set-uri", () -> issuer() + "/jwks");
+        registry.add("marketing.trade-order-bindings.casdoor.grants", () -> """
+                [
+                  {"clientId":"trade-binding-app","subject":"admin/trade-binding-app","marketingTenantId":"mk-binding",
+                   "sourceTenantId":"7","organizationId":"org-a","shopIds":["shop-a"]},
+                  {"clientId":"wrong-shop-app","subject":"admin/wrong-shop-app","marketingTenantId":"mk-binding",
+                   "sourceTenantId":"7","organizationId":"org-a","shopIds":["shop-b"]},
+                  {"clientId":"wrong-org-app","subject":"admin/wrong-org-app","marketingTenantId":"mk-binding",
+                   "sourceTenantId":"7","organizationId":"org-b","shopIds":["shop-a"]},
+                  {"clientId":"other-tenant-app","subject":"admin/other-tenant-app","marketingTenantId":"mk-other-binding",
+                   "sourceTenantId":"7","organizationId":"org-a","shopIds":["shop-a"]}
+                ]
+                """);
         registry.add("marketing.offer.public-key-base64",
                 () -> Base64.getEncoder().encodeToString(OFFER_KEYS.getPublic().getEncoded()));
     }
@@ -199,6 +220,69 @@ class TradeOrderBindingIntegrationTest extends MySqlIntegrationTest {
         assertEquals(0, bindingCount(reservation.applicationId()));
     }
 
+    @Test
+    void casdoorApplicationUsesConfiguredGrantAndReplaysFirstBinding() throws Exception {
+        long order = 801;
+        Reservation reservation = reserve(order, Long.toString(order));
+        String token = casdoorJwt(CASDOOR_CLIENT, claims -> { });
+        long before = ledgerCount(reservation.applicationId());
+        expect(casdoorRequest(reservation, "7", order, token), 409, "TRADE_ORDER_BINDING_RECEIPT_MISSING");
+        String firstReceipt = receipt(7, order, 2, "CNY");
+        JsonNode binding = expect(casdoorRequest(reservation, "7", order, token), 200, null);
+        assertEquals(firstReceipt, binding.path("receiptEventId").asString());
+        receipt(7, order, 3, "CNY");
+        assertEquals(binding, expect(casdoorRequest(reservation, "7", order, token), 200, null));
+        assertEquals(1, bindingCount(reservation.applicationId()));
+        assertEquals(CASDOOR_SUBJECT, jdbc.queryForObject(
+                "SELECT bound_by FROM mk_trade_order_binding WHERE application_id = ?", String.class,
+                reservation.applicationId()));
+        assertEquals(before, ledgerCount(reservation.applicationId()));
+        expect(request(reservation, "7", Long.toString(order), token), 401, null);
+        expect(post("/api/v1/promotion-applications/" + reservation.applicationId() + ":confirm", token,
+                "casdoor-must-not-confirm", new BenefitFundingService.SettlementRequest(Map.of(BUDGET, 1L, INVENTORY, 1L))),
+                401, null);
+        assertEquals(before, ledgerCount(reservation.applicationId()));
+    }
+
+    @Test
+    void casdoorApplicationRequiresClientClaimsAndAllBusinessScopes() throws Exception {
+        long order = 802;
+        Reservation reservation = reserve(order, Long.toString(order));
+        receipt(7, order, 2, "CNY");
+        expect(casdoorRequest(reservation, "7", order, null), 401, null);
+        expect(casdoorRequest(reservation, "7", order, machine()), 401, null);
+        expect(casdoorRequest(reservation, "7", order, casdoorJwt(CASDOOR_CLIENT,
+                claims -> claims.issuer("https://wrong-issuer.test"))), 401, null);
+        for (String unapproved : List.of(casdoorJwt("not-approved", claims -> { }),
+                casdoorJwt(CASDOOR_CLIENT, claims -> claims.subject("admin/another-application")),
+                casdoorJwt(CASDOOR_CLIENT, claims -> claims.audience(List.of(CASDOOR_CLIENT, AUDIENCE))),
+                casdoorJwt(CASDOOR_CLIENT, claims -> claims.claim("azp", "another-client")),
+                casdoorJwt(CASDOOR_CLIENT, claims -> claims.claim("type", "normal-user")),
+                casdoorJwt(CASDOOR_CLIENT, claims -> claims.claim("tokenType", "id-token")),
+                casdoorJwt(CASDOOR_CLIENT, claims -> claims.expirationTime(Date.from(Instant.now().plusSeconds(301)))))) {
+            expect(casdoorRequest(reservation, "7", order, unapproved), 403, "TRADE_ORDER_BINDING_FORBIDDEN");
+        }
+        expect(casdoorRequest(reservation, "8", order, casdoorJwt(CASDOOR_CLIENT, claims -> { })),
+                403, "TRADE_ORDER_BINDING_FORBIDDEN");
+        expect(casdoorRequest(reservation, "7", order, casdoorJwt("wrong-shop-app",
+                claims -> claims.claim("shop_ids", List.of("shop-a")))), 400, "INVALID_ARGUMENT");
+        expect(casdoorRequest(reservation, "7", order, casdoorJwt("wrong-org-app",
+                claims -> claims.claim("org_ids", List.of("org-a")))), 400, "INVALID_ARGUMENT");
+        expect(casdoorRequest(reservation, "7", order, casdoorJwt("other-tenant-app",
+                claims -> claims.claim("tenant_id", TENANT))), 404, "APPLICATION_NOT_FOUND");
+        assertEquals(0, bindingCount(reservation.applicationId()));
+    }
+
+    @Test
+    void casdoorGrantsRejectWildcardScopesAndDuplicateClients() {
+        Grant approved = new Grant(CASDOOR_CLIENT, CASDOOR_SUBJECT, TENANT, "7", "org-a", List.of("shop-a"));
+        assertThrows(IllegalArgumentException.class, () -> new TradeOrderBindingMachineAuthority(clock, List.of()));
+        assertThrows(IllegalArgumentException.class,
+                () -> new TradeOrderBindingMachineAuthority(clock, List.of(approved, approved)));
+        assertThrows(IllegalArgumentException.class, () -> new TradeOrderBindingMachineAuthority(clock,
+                List.of(new Grant(CASDOOR_CLIENT, CASDOOR_SUBJECT, TENANT, "7", "org-a", List.of("*")))));
+    }
+
     /** 通过真实资金事务创建预留，让报价摘要和预留时间来自应用写路径。 */
     private Reservation reserve(long order, String quotedOrder) throws Exception {
         Instant now = clock.instant();
@@ -236,8 +320,17 @@ class TradeOrderBindingIntegrationTest extends MySqlIntegrationTest {
     }
 
     private HttpRequest request(Reservation reservation, String sourceTenant, String order, String jwt) {
+        return bindingRequest(reservation, sourceTenant, order, jwt, "");
+    }
+
+    private HttpRequest casdoorRequest(Reservation reservation, String sourceTenant, long order, String jwt) {
+        return bindingRequest(reservation, sourceTenant, Long.toString(order), jwt, "/casdoor");
+    }
+
+    private HttpRequest bindingRequest(Reservation reservation, String sourceTenant, String order, String jwt,
+            String routeSuffix) {
         var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/internal/v1/promotion-applications/"
-                + reservation.applicationId() + "/trade-order-binding"))
+                + reservation.applicationId() + "/trade-order-binding" + routeSuffix))
                 .timeout(Duration.ofSeconds(15))
                 .header("Content-Type", "application/json");
         if (jwt != null) {
@@ -279,6 +372,19 @@ class TradeOrderBindingIntegrationTest extends MySqlIntegrationTest {
                 .issueTime(Date.from(now)).expirationTime(Date.from(now.plusSeconds(300)))
                 .claim("tenant_id", tenant).claim("org_ids", List.of(org)).claim("shop_ids", List.of(shop))
                 .claim("permissions", List.of(permission)).build();
+        return sign(claims);
+    }
+
+    private static String casdoorJwt(String client, Consumer<JWTClaimsSet.Builder> configure) throws Exception {
+        Instant now = Instant.now();
+        var claims = new JWTClaimsSet.Builder().issuer(issuer() + "/casdoor").subject("admin/" + client).audience(client)
+                .issueTime(Date.from(now)).expirationTime(Date.from(now.plusSeconds(300)))
+                .claim("type", "application").claim("tokenType", "access-token").claim("azp", client);
+        configure.accept(claims);
+        return sign(claims.build());
+    }
+
+    private static String sign(JWTClaimsSet claims) throws Exception {
         var token = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(OIDC_KEY.getKeyID()).build(), claims);
         token.sign(new RSASSASigner(OIDC_KEY));
         return token.serialize();

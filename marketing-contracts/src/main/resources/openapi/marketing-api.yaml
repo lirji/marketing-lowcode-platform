@@ -914,6 +914,28 @@ paths:
         '404': {description: Binding is disabled or the application is absent in the authenticated tenant}
         '409': {description: Signed evidence or existing binding conflicts, or the receipt is missing, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
         default: {$ref: '#/components/responses/Problem'}
+  /internal/v1/promotion-applications/{applicationId}/trade-order-binding/casdoor:
+    put:
+      tags: [Benefit]
+      operationId: bindTradeOrderWithCasdoor
+      x-internal: true
+      x-required-permission: trade-order-binding:write
+      description: >-
+        Funding service only. The dedicated Casdoor issuer must sign an application access token with an
+        approved subject, client audience and authorized party. The funding service grant supplies the
+        marketing tenant, native tenant, organization, shops and binding permission. The original signed offer
+        and native receipt are verified in the same transaction as the first binding. A retry returns that
+        binding. No Idempotency-Key is required.
+      parameters: [{$ref: '#/components/parameters/ApplicationId'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TradeOrderBindingRequest'}}}}
+      responses:
+        '200': {description: First binding or its idempotent replay, content: {application/json: {schema: {$ref: '#/components/schemas/TradeOrderBinding'}}}}
+        '400': {description: Invalid request or an application organization or shop is outside the grant}
+        '401': {description: Missing or invalid bearer authentication}
+        '403': {description: Application token or native tenant is outside the configured grant}
+        '404': {description: Application is absent from the granted marketing tenant or endpoint is disabled}
+        '409': {description: Signed evidence or existing binding conflicts, or the receipt is missing}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/promotion-applications/{applicationId}:cancel:
     post: {tags: [Benefit], operationId: cancelPromotion, parameters: [{$ref: '#/components/parameters/ApplicationId'}, {$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
   /api/v1/promotion-applications/{applicationId}:refund:

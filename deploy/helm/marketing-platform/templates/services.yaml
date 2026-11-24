@@ -254,6 +254,10 @@ spec:
             - {name: MARKETING_TRADE_RECEIPTS_CONSUMER_GROUP, value: {{ $service.tradeReceiptsConsumerGroup | quote }}}
             - {name: MARKETING_TRADE_ORDER_BINDINGS_ENABLED, value: {{ $service.tradeOrderBindingsEnabled | quote }}}
             - {name: MARKETING_TRADE_ORDER_BINDING_SOURCES, value: {{ $service.tradeOrderBindingSources | quote }}}
+            - {name: MARKETING_TRADE_ORDER_BINDING_CASDOOR_ENABLED, value: {{ $service.tradeOrderBindingCasdoorEnabled | quote }}}
+            - {name: MARKETING_TRADE_ORDER_BINDING_CASDOOR_ISSUER_URI, value: {{ $service.tradeOrderBindingCasdoorIssuerUri | quote }}}
+            - {name: MARKETING_TRADE_ORDER_BINDING_CASDOOR_JWK_SET_URI, value: {{ $service.tradeOrderBindingCasdoorJwkSetUri | quote }}}
+            - {name: MARKETING_TRADE_ORDER_BINDING_CASDOOR_GRANTS, value: {{ $service.tradeOrderBindingCasdoorGrants | quote }}}
             - {name: MARKETING_BENEFIT_OUTBOX_ENABLED, value: "true"}
             - {name: MARKETING_FUNDING_BUDGET_BUCKET_COUNT, value: {{ $service.budgetBucketCount | quote }}}
             - {name: BENEFIT_CENTER_BASE_URL, value: {{ $service.benefitCenterBaseUrl | quote }}}
