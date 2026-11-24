@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthStateContext, devAuthState } from '../../shared/auth/auth-context'
 import { DashboardPage } from './DashboardPage'
+import { businessDayStart } from '../../components/dateTime'
 
 const mocks = vi.hoisted(() => ({ dashboard: vi.fn(), series: vi.fn(), campaigns: vi.fn() }))
 vi.mock('../../shared/api/client', async (importOriginal) => {
@@ -42,6 +43,26 @@ describe('dashboard evidence-based status', () => {
     await screen.findByText('活动加载失败')
     expect(metric('水位延迟').getByText('未知')).toBeInTheDocument()
     expect(metric('已加载活动').getByText('—')).toBeInTheDocument()
+  })
+  it('queries and displays only the covered part of today', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-24T02:30:00Z'))
+    try {
+      const from = businessDayStart(new Date()).toISOString()
+      const completeThrough = '2026-11-24T02:00:00Z'
+      mocks.dashboard.mockResolvedValueOnce({ attributedRevenueMinor: 99999, fundingCostMinor: 99999, completeThrough })
+        .mockResolvedValueOnce({ attributedRevenueMinor: 12000, fundingCostMinor: 1000, roi: 11, completeThrough })
+      mocks.series.mockResolvedValue({ points: [{ at: '2026-11-24T01:00:00Z', revenueMinor: 12000 }] })
+      show()
+      expect(await screen.findByLabelText('今日小时事件收入')).toBeInTheDocument()
+      expect(screen.getByText('今日数据尚未齐全')).toBeInTheDocument()
+      expect(metric('今日事件收入').getByText('¥120.00')).toBeInTheDocument()
+      expect(metric('事件补贴成本').getByText('¥10.00')).toBeInTheDocument()
+      expect(mocks.dashboard).toHaveBeenNthCalledWith(2, from, completeThrough)
+      expect(mocks.series).toHaveBeenCalledWith(from, completeThrough, 'hour')
+    } finally {
+      vi.useRealTimers()
+    }
   })
   it('renders signed hourly amounts as a table when the simple positive bar chart cannot represent them', async () => {
     mocks.dashboard.mockImplementation(async (_from, to) => ({ counts: {}, attributedRevenueMinor: 0, fundingCostMinor: 0, completeThrough: to }))

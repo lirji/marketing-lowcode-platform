@@ -29,18 +29,30 @@ export function DashboardPage() {
       const now = new Date()
       const from = businessDayStart(now).toISOString()
       const to = now.toISOString()
-      return { from, to, totals: await api.dashboard(from, to) }
+      const totals = await api.dashboard(from, to)
+      const coverage = measurementCoverage(from, to, totals.completeThrough)
+      if (coverage === 'complete') return { from, totals, coverage, coveredTo: to, coveredTotals: totals }
+      if (coverage === 'partial' && totals.completeThrough) {
+        // 缩短查询窗口，避免把水位之后尚未齐全的事件算进当天指标。
+        const coveredTo = totals.completeThrough
+        const coveredTotals = await api.dashboard(from, coveredTo)
+        if (measurementCoverage(from, coveredTo, coveredTotals.completeThrough) === 'complete') {
+          return { from, totals, coverage, coveredTo, coveredTotals }
+        }
+      }
+      return { from, totals, coverage, coveredTo: undefined, coveredTotals: undefined }
     },
     enabled: !api.demoMode,
   })
   const window = dashboard.isSuccess && !dashboard.isFetching ? dashboard.data : undefined
   const totals = window?.totals
-  const coverage = window && measurementCoverage(window.from, window.to, totals?.completeThrough)
+  const coverage = window?.coverage
+  const coveredTotals = window?.coveredTotals
   const watermark = coverage === 'unknown' ? undefined : totals?.completeThrough
   const series = useQuery({
-    queryKey: ['series', 'hour', 'today', window?.from, window?.to],
-    queryFn: () => api.series(window!.from, window!.to, 'hour'),
-    enabled: !api.demoMode && coverage === 'complete',
+    queryKey: ['series', 'hour', 'today', window?.from, window?.coveredTo],
+    queryFn: () => api.series(window!.from, window!.coveredTo!, 'hour'),
+    enabled: !api.demoMode && Boolean(window?.coveredTo),
   })
   const campaigns = useQuery({ queryKey: ['campaigns'], queryFn: api.campaigns, enabled: !api.demoMode })
   const releases = useReleasePages()
@@ -51,13 +63,13 @@ export function DashboardPage() {
         : `已加载 ${releases.items.length} 条发布清单${releases.hasNextPage ? '，还有更多可在发布中心查看' : ''}`
   const metrics = !api.demoMode && totals
       ? [
-          { label: '今日' + MEASUREMENT_EVENT_LABELS.revenue, value: coverage === 'complete' ? formatMinor(totals.attributedRevenueMinor) : '—', delta: `完整数据截至 ${displayTimestamp(watermark)}`, icon: CircleDollarSign },
+          { label: '今日' + MEASUREMENT_EVENT_LABELS.revenue, value: coveredTotals ? formatMinor(coveredTotals.attributedRevenueMinor) : '—', delta: `完整数据截至 ${displayTimestamp(watermark)}`, icon: CircleDollarSign },
           { label: '已加载活动', value: campaigns.isSuccess ? String(campaigns.data?.length ?? 0) : '—', delta: '包含当前可见范围内的各类活动状态', icon: Megaphone },
-          { label: MEASUREMENT_EVENT_LABELS.cost, value: coverage === 'complete' ? formatMinor(totals.fundingCostMinor) : '—', delta: '', icon: Sparkles },
-          { label: '水位延迟', value: displayElapsedSeconds(watermark ? totals.lag?.seconds : undefined), delta: `${watermark && totals.lag ? `接口读取时延迟：${totals.lag.seconds.toLocaleString('zh-CN')} 秒` : '完整时间未知'}${coverage === 'complete' ? `；${MEASUREMENT_EVENT_LABELS.roi} ${displayMeasurementRoi(totals)}` : ''}`, icon: UsersRound },
+          { label: MEASUREMENT_EVENT_LABELS.cost, value: coveredTotals ? formatMinor(coveredTotals.fundingCostMinor) : '—', delta: '', icon: Sparkles },
+          { label: '水位延迟', value: displayElapsedSeconds(watermark ? totals.lag?.seconds : undefined), delta: `${watermark && totals.lag ? `接口读取时延迟：${totals.lag.seconds.toLocaleString('zh-CN')} 秒` : '完整时间未知'}${coveredTotals ? `；${MEASUREMENT_EVENT_LABELS.roi} ${displayMeasurementRoi(coveredTotals)}` : ''}`, icon: UsersRound },
         ]
       : emptyMetrics
-  const points = coverage === 'complete' && series.isSuccess ? series.data.points : []
+  const points = coveredTotals && series.isSuccess ? series.data.points : []
   const peak = Math.max(1, ...points.map((point) => point.revenueMinor))
 
   return <div className="workspace">
@@ -75,7 +87,7 @@ export function DashboardPage() {
       <Panel className="pulse-panel"><PanelHeader eyebrow="经营数据" title="小时事件收入" aside={<Badge tone={points.length ? 'good' : 'info'}>{points.length ? 'API' : '暂无序列'}</Badge>} />
         {api.demoMode
           ? <EmptyState title="收入序列需要连接服务" detail="静态预览不展示经营数据；连接后按事件收入绘制。" />
-          : coverage && coverage !== 'complete'
+          : coverage && !coveredTotals
             ? <EmptyState title="今日小时数据尚未齐全" detail="在衡量分析中可查询已覆盖的范围。" action={<Link className="button secondary" to="/analytics">打开衡量分析</Link>} />
           : points.length === 0
             ? <EmptyState title="暂无小时序列" detail="GET /api/v1/measurements/series 尚未返回数据点。" />
