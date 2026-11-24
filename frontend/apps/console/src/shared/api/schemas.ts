@@ -485,8 +485,9 @@ export const audienceProfileSourceSchema = z.object({
   fieldIds: z.array(z.string()),
 })
 
+export const MAX_COMMERCE_SNAPSHOT_MEMBERS = 10_000
 export const audienceProfileEstimateSchema = z.object({
-  memberCount: z.number().int().nonnegative(),
+  memberCount: z.number().int().nonnegative().max(2_147_483_647),
   asOf: z.iso.datetime({ offset: true }),
 })
 
@@ -500,6 +501,7 @@ export const audienceSnapshotSchema = z.object({
 })
 
 export const audienceProfileSnapshotSchema = audienceProfileEstimateSchema.extend({
+  memberCount: z.number().int().nonnegative().max(MAX_COMMERCE_SNAPSHOT_MEMBERS),
   snapshotId: z.string(),
   expiresAt: z.iso.datetime({ offset: true }),
 })

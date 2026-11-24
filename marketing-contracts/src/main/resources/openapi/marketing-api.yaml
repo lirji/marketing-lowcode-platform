@@ -596,8 +596,11 @@ paths:
       tags: [Audience]
       operationId: estimateCommerceAudience
       x-required-permission: audience:preview
-      description: Counts matches of the saved rule over the bounded Commerce population. Returns no subject identifiers.
-      parameters: [{$ref: '#/components/parameters/SegmentId'}, {$ref: '#/components/parameters/Version'}]
+      description: Counts matches of the saved rule without returning subject identifiers. By default the existing synchronous read and 10,000 member limit apply. With allowLargePopulation enabled, Commerce level summaries can cover larger populations. Older Commerce versions retain the synchronous read limit.
+      parameters:
+        - {$ref: '#/components/parameters/SegmentId'}
+        - {$ref: '#/components/parameters/Version'}
+        - {in: query, name: allowLargePopulation, required: false, schema: {type: boolean, default: false}}
       responses:
         '200':
           description: Count and observation time for the read.
@@ -607,7 +610,7 @@ paths:
                 type: object
                 required: [memberCount, asOf]
                 properties:
-                  memberCount: {type: integer, minimum: 0, maximum: 10000}
+                  memberCount: {type: integer, minimum: 0, maximum: 2147483647}
                   asOf: {type: string, format: date-time}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/audiences/{segmentId}/versions/{version}/profile-snapshots:

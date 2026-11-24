@@ -330,7 +330,7 @@ export const api = {
   audiences: () => request('/api/v1/audiences', undefined, (value) => zArray(audienceViewSchema, value)),
   audienceProfileSource: () => request('/api/v1/audiences/profile-source', undefined, (value) => parseWith(audienceProfileSourceSchema, value)),
   audienceProfileEstimate: (segmentId: string, version: number) =>
-    request(`/api/v1/audiences/${encodeURIComponent(segmentId)}/versions/${version}/profile-estimate`, undefined, (value) => parseWith(audienceProfileEstimateSchema, value)),
+    request(`/api/v1/audiences/${encodeURIComponent(segmentId)}/versions/${version}/profile-estimate?allowLargePopulation=true`, undefined, (value) => parseWith(audienceProfileEstimateSchema, value)),
   audienceProfileSnapshot: (segmentId: string, version: number, idempotencyKey: string) =>
     request(`/api/v1/audiences/${encodeURIComponent(segmentId)}/versions/${version}/profile-snapshots`, { method: 'POST', headers: commandHeaders(idempotencyKey) }, (value) => parseWith(audienceProfileSnapshotSchema, value)),
   audiencePage: (query: { q?: string; limit?: number; cursor?: string } = {}) => {

@@ -14,6 +14,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Semaphore;
+import java.util.function.Function;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,11 +29,13 @@ public final class CommerceMemberProfileClient implements CommerceProfileSource 
     private static final int MAX_BYTES = 4 * 1024 * 1024;
     private static final Duration TIMEOUT = Duration.ofSeconds(4);
     private static final String PATH = "/internal/v1/member-profiles/snapshot";
+    private static final String LEVEL_SUMMARY_PATH = PATH + "?view=level-summary";
     private final Semaphore reads = new Semaphore(2);
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build();
     private final ObjectMapper mapper;
     private final String marketingTenant;
-    private final HttpRequest request;
+    private final HttpRequest snapshotRequest;
+    private final HttpRequest estimateRequest;
 
     public CommerceMemberProfileClient(ObjectMapper mapper,
             @Value("${marketing.audience.commerce.enabled:false}") boolean enabled,
@@ -43,7 +46,8 @@ public final class CommerceMemberProfileClient implements CommerceProfileSource 
             @Value("${marketing.security.mode:DEV}") String securityMode) {
         this.mapper = mapper;
         if (!enabled) {
-            this.request = null;
+            this.snapshotRequest = null;
+            this.estimateRequest = null;
             this.marketingTenant = null;
             return;
         }
@@ -56,7 +60,12 @@ public final class CommerceMemberProfileClient implements CommerceProfileSource 
                 || !bearerToken.matches("[A-Za-z0-9_-]{43,128}")) {
             throw new IllegalArgumentException("商城画像来源缺少合法地址或独立机器凭据");
         }
-        this.request = HttpRequest.newBuilder(base.resolve(PATH))
+        this.snapshotRequest = request(base.resolve(PATH), bearerToken);
+        this.estimateRequest = request(base.resolve(LEVEL_SUMMARY_PATH), bearerToken);
+    }
+
+    private HttpRequest request(URI address, String bearerToken) {
+        return HttpRequest.newBuilder(address)
                 .header("Accept", "application/json")
                 .header("Authorization", "Bearer " + bearerToken)
                 .header("X-Marketing-Tenant", marketingTenant)
@@ -72,6 +81,32 @@ public final class CommerceMemberProfileClient implements CommerceProfileSource 
     /** 整次接收有截止时间和字节上限，拒绝截断、错误鉴权和超时响应。 */
     @Override
     public SourceSnapshot read(String tenant) {
+        return read(tenant, snapshotRequest, bytes -> mapper.readValue(bytes, SourceSnapshot.class));
+    }
+
+    /** 同一请求支持新旧响应，避免额外回源或放宽整次读取预算。 */
+    @Override
+    public EstimateObservation readEstimate(String tenant) {
+        return read(tenant, estimateRequest, bytes -> {
+            var body = mapper.readTree(bytes);
+            if (body == null || !body.isObject() || !body.path("asOf").isString()
+                    || body.has("levels") == body.has("profiles")) {
+                throw SOURCE_UNAVAILABLE.unavailable();
+            }
+            if (body.has("profiles")) return mapper.treeToValue(body, SourceSnapshot.class);
+            var levels = body.path("levels");
+            if (!levels.isArray()) throw SOURCE_UNAVAILABLE.unavailable();
+            // Jackson 可将浮点数或字符串转为长整数，汇总拒绝这类隐式转换。
+            for (var level : levels) {
+                if (!level.path("memberLevel").isString() || !level.path("memberCount").isIntegralNumber()) {
+                    throw SOURCE_UNAVAILABLE.unavailable();
+                }
+            }
+            return mapper.treeToValue(body, LevelSummary.class);
+        });
+    }
+
+    private <T> T read(String tenant, HttpRequest request, Function<byte[], T> decode) {
         if (!supports(tenant)) {
             throw SOURCE_DISABLED.conflict();
         }
@@ -89,7 +124,7 @@ public final class CommerceMemberProfileClient implements CommerceProfileSource 
                     throw SOURCE_LIMIT.conflict();
                 }
                 if (status != HttpStatus.OK.value()) throw SOURCE_UNAVAILABLE.unavailable();
-                return mapper.readValue(bytes.toByteArray(), SourceSnapshot.class);
+                return decode.apply(bytes.toByteArray());
             } catch (InterruptedException interrupted) {
                 call.cancel(true);
                 Thread.currentThread().interrupt();

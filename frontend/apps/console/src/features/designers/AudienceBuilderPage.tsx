@@ -10,7 +10,7 @@ import { Badge, Button, EmptyState, Panel, PanelHeader, StateBanner } from '../.
 import { api } from '../../shared/api/client'
 import { problemDetail } from '../../shared/api/problem'
 import { useAuth } from '../../shared/auth/useAuth'
-import type { AudienceView, FieldDefinition } from '../../shared/api/schemas'
+import { MAX_COMMERCE_SNAPSHOT_MEMBERS, type AudienceView, type FieldDefinition } from '../../shared/api/schemas'
 import { DesignerWorkspace } from './DesignerWorkspace'
 
 type Condition = { id: number; field: string; operator: string; value: string }
@@ -245,6 +245,7 @@ function AudienceEditor({ selectedId }: { selectedId: string }) {
           <PanelHeader eyebrow="PREVIEW" title="人群预估" aside={configured ? <Badge tone="good">商城会员画像</Badge> : undefined} />
           {estimate.isPending && <p role="status">正在读取商城会员画像…</p>}
           {shownEstimate && <p>{shownEstimate.memberCount.toLocaleString('zh-CN')} 人 · 数据时间 {profileTime.format(new Date(shownEstimate.asOf))}</p>}
+          {shownEstimate && shownEstimate.memberCount > MAX_COMMERCE_SNAPSHOT_MEMBERS && <p className="field-hint">本次预估人数已超过同步快照的 {MAX_COMMERCE_SNAPSHOT_MEMBERS.toLocaleString('zh-CN')} 人上限。</p>}
           {configured && !clean && <p>保存当前规则后可预估人数和生成快照。</p>}
           {configured && clean && !supported && <p>商城画像当前支持会员等级字段，调整圈选规则后重试。</p>}
           {shownSnapshot && <p role="status">已保存快照 {shownSnapshot.snapshotId}，共 {shownSnapshot.memberCount.toLocaleString('zh-CN')} 人，有效至 {profileTime.format(new Date(shownSnapshot.expiresAt))}。</p>}

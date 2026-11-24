@@ -136,10 +136,14 @@ describe('AudienceBuilderPage', () => {
     await userEvent.click(snapshot)
     expect(await screen.findByText(/已保存快照 commerce-verified，共 4 人/)).toBeInTheDocument()
     expect(mocks.profileSnapshot.mock.calls[0]).toEqual(mocks.profileSnapshot.mock.calls[1])
+    mocks.profileEstimate.mockResolvedValueOnce({ memberCount: 12_511, asOf: '2026-11-24T08:01:00Z' })
+    await userEvent.click(preview)
+    expect(await screen.findByText(/12,511 人 · 数据时间/)).toBeInTheDocument()
+    expect(screen.getByText('本次预估人数已超过同步快照的 10,000 人上限。')).toBeInTheDocument()
     await userEvent.type(screen.getByLabelText('条件 1 值'), 'X')
     expect(preview).toBeDisabled()
     expect(snapshot).toBeDisabled()
-    expect(screen.queryByText(/3 人 · 数据时间/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/12,511 人 · 数据时间/)).not.toBeInTheDocument()
   })
 
   it('does not seed PLUS 家电 mock rules when the API is empty', async () => {

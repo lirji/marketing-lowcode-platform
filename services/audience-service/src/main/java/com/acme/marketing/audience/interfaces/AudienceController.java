@@ -71,8 +71,9 @@ public class AudienceController {
 
     /** 对已保存规则执行真实商城数据圈选。 */
     @GetMapping("/audiences/{segmentId}/versions/{version}/profile-estimate")
-    public CommerceAudienceService.Estimate profileEstimate(@PathVariable String segmentId, @PathVariable long version) {
-        return commerce.estimate(segmentId, version);
+    public CommerceAudienceService.Estimate profileEstimate(@PathVariable String segmentId, @PathVariable long version,
+            @RequestParam(defaultValue = "false") boolean allowLargePopulation) {
+        return commerce.estimate(segmentId, version, allowLargePopulation);
     }
 
     /** 对同一版本重新获取完整数据，由服务端生成快照。 */
