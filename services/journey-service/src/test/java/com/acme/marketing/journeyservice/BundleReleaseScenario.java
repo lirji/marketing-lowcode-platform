@@ -3,7 +3,13 @@ package com.acme.marketing.journeyservice;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.acme.marketing.contracts.artifact.ArtifactAttestation;
+import com.acme.marketing.contracts.offer.OfferTokenCodec;
 import com.acme.marketing.contracts.release.*;
+import com.acme.marketing.decision.model.Cart;
+import com.acme.marketing.decision.model.CartLine;
+import com.acme.marketing.decision.model.Money;
+import com.acme.marketing.decision.runtime.OfferPolicyGraphCompiler;
+import com.acme.marketing.lowcode.compiler.CanonicalGraphHasher;
 import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.crypto.Ed25519;
 import com.acme.marketing.platform.identity.TenantId;
@@ -29,6 +35,12 @@ import tools.jackson.databind.ObjectMapper;
 final class BundleReleaseScenario implements AutoCloseable {
     private static final String TENANT = "bundle-e2e", ACTOR = "bundle-pipeline", CAMPAIGN = "atomic-e2e";
     private static final String PATH = "/api/v1/campaigns/" + CAMPAIGN + "/release-bundles";
+    private static final String FUNDS = "/api/v1/funding", APPLICATIONS = "/api/v1/promotion-applications";
+    private static final String CURRENCY = "CNY", SKU = "sku-checkout", ORGANIZATION = "org", SHOP = "shop";
+    private static final String BENEFIT_VERSION = "benefit@1", INVENTORY = "INVENTORY:" + BENEFIT_VERSION;
+    private static final String BUDGET = "BUDGET:PLATFORM:isolated:CNY", OFFER_KEY = "checkout-test-key";
+    private static final long THRESHOLD = 50_000, DISCOUNT = 5_000, NEXT_DISCOUNT = 6_000;
+    private static final long PARTIAL_REFUND = 2_000, OTHER_SUBTOTAL = 30_000;
     // 隔离验收运行打包的 JVM 制品；此标识用于模拟部署方的 OCI 声明。
     private static final String IMAGE = "sha256:" + "1".repeat(64);
     private final List<Process> processes = new ArrayList<>();
@@ -36,6 +48,7 @@ final class BundleReleaseScenario implements AutoCloseable {
     private final int journey;
     private final String job, digest, kafka, inputTopic;
     private final KeyPair release, compiler, participation, execution, ack;
+    private final KeyPair offerSettlement = Ed25519.generateKeyPair();
     private final KeyPair deployment = Ed25519.generateKeyPair(), replica = Ed25519.generateKeyPair(), secondReplica = Ed25519.generateKeyPair();
     private final ObjectMapper json;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
@@ -44,7 +57,7 @@ final class BundleReleaseScenario implements AutoCloseable {
     private JdbcTemplate controlDb;
     private com.sun.net.httpserver.HttpServer externalCatalog;
     private final java.util.concurrent.atomic.AtomicInteger catalogReads = new java.util.concurrent.atomic.AtomicInteger();
-    private int decision, secondDecision, control;
+    private int decision, secondDecision, control, funds;
 
     BundleReleaseScenario(MySQLContainer mysql, int journey, String job, String digest, String kafka, String inputTopic, ObjectMapper json,
             KeyPair release, KeyPair compiler, KeyPair participation, KeyPair execution, KeyPair ack) {
@@ -97,6 +110,11 @@ final class BundleReleaseScenario implements AutoCloseable {
         assertEquals(1,after.path("bundleVersion").asLong());
         assertEquals(second,admission("second"));
         assertEquals(first,admission("first"));
+        var earlierQuote = evaluateCheckout(second, "checkout-bound-to-v2", checkoutCart(THRESHOLD));
+        assertEquals(2, earlierQuote.path("generation").asLong());
+        assertEquals(THRESHOLD - NEXT_DISCOUNT, earlierQuote.at("/pricing/linePayables/eligible/minorUnits").asLong(),
+                "已签参与凭证固定候选版本，回滚只改变后续准入");
+        assertPostsSettlementForCurrentActivity(after);
         assertRunsBoundJourney(second);
         assertRunsBoundJourney(after);
         assertTrue(catalogReads.get() >= 3, "每次整体切换都须经资金服务复核 SKU");
@@ -109,6 +127,116 @@ final class BundleReleaseScenario implements AutoCloseable {
     private JsonNode admission(int endpoint, String id) throws Exception {
         return call(endpoint,"POST","/api/v1/decisions/bundle-participations",
                 Map.of("campaignId",CAMPAIGN,"participationId",id,"subjectToken","member-" + id),null);
+    }
+
+    /** 使用隔离订单触发真实组合定价和资金迁移，验证活动归属、逐行计价和退款重放。 */
+    private void assertPostsSettlementForCurrentActivity(JsonNode receipt) throws Exception {
+        createResource(INVENTORY, "INVENTORY", "UNIT", 10);
+        createResource(BUDGET, "BUDGET", CURRENCY, 100_000);
+        Instant from = Instant.now().minusSeconds(1);
+        var underThreshold = evaluateCheckout(receipt, "below-threshold", checkoutCart(THRESHOLD - 1));
+        assertEquals(0, underThreshold.at("/pricing/appliedOffers").size(),
+                "非参与商品的金额不能补足门槛");
+        assertTrue(underThreshold.path("offerToken").asString().isEmpty());
+
+        String orderId = "settlement-order";
+        Cart cart = checkoutCart(THRESHOLD);
+        var quote = evaluateCheckout(receipt, orderId, cart);
+        assertEquals(1, quote.path("generation").asLong(), "回滚后新参与使用第一版");
+        assertEquals(THRESHOLD - DISCOUNT, quote.at("/pricing/linePayables/eligible/minorUnits").asLong());
+        assertEquals(OTHER_SUBTOTAL, quote.at("/pricing/linePayables/other/minorUnits").asLong());
+        assertEquals(THRESHOLD + OTHER_SUBTOTAL - DISCOUNT, quote.at("/pricing/payable/minorUnits").asLong());
+
+        String token = quote.path("offerToken").asString();
+        var claims = OfferTokenCodec.verify(token, key -> OFFER_KEY.equals(key) ? offerSettlement.getPublic() : null,
+                new TenantId(TENANT), cart.digest(), java.time.Clock.systemUTC());
+        assertEquals(CAMPAIGN, claims.campaignId());
+        assertEquals(orderId, claims.orderId());
+        assertEquals(DISCOUNT, claims.totalDiscountMinorUnits());
+        var epochs = Map.of(INVENTORY, 1, BUDGET, 1);
+        var reserveBody = Map.of("offerToken", token, "orderId", orderId, "cartDigest", cart.digest(),
+                "expectedFencingEpochs", epochs);
+        var reserved = call(funds, "POST", APPLICATIONS, reserveBody, "checkout-reserve");
+        var replay = call(funds, "POST", APPLICATIONS, reserveBody, "checkout-reserve");
+        assertEquals("RESERVED", reserved.path("state").asString());
+        assertEquals(reserved.path("applicationId"), replay.path("applicationId"));
+        assertEquals(quote.path("quoteId"), reserved.path("quoteId"));
+        assertEquals(DISCOUNT, resourceBalance(BUDGET).path("reserved").asLong());
+        assertEquals(1, resourceBalance(INVENTORY).path("reserved").asLong());
+
+        String applicationId = reserved.path("applicationId").asString();
+        String application = APPLICATIONS + "/" + applicationId;
+        var settlement = Map.of("expectedFencingEpochs", epochs);
+        var confirmed = call(funds, "POST", application + ":confirm", settlement, "checkout-confirm");
+        assertEquals("CONFIRMED", confirmed.path("state").asString());
+        assertEquals(confirmed, call(funds, "POST", application + ":confirm", settlement, "checkout-confirm"));
+        var partial = Map.of("resourceAmounts", Map.of(BUDGET, PARTIAL_REFUND), "expectedFencingEpochs", epochs);
+        var refunded = call(funds, "POST", application + ":refund", partial, "checkout-refund-part");
+        assertEquals("PARTIALLY_REFUNDED", refunded.path("state").asString());
+        assertEquals(refunded, call(funds, "POST", application + ":refund", partial, "checkout-refund-part"));
+        assertEquals(DISCOUNT - PARTIAL_REFUND, resourceBalance(BUDGET).path("consumed").asLong());
+        var balance = call(funds, "POST", application + ":refund",
+                Map.of("resourceAmounts", Map.of(BUDGET, DISCOUNT - PARTIAL_REFUND, INVENTORY, 1),
+                        "expectedFencingEpochs", epochs), "checkout-refund-rest");
+        assertEquals("REFUNDED", balance.path("state").asString());
+        assertEquals(0, resourceBalance(BUDGET).path("consumed").asLong());
+        assertEquals(0, resourceBalance(INVENTORY).path("consumed").asLong());
+        assertSettlementPostings(from, applicationId);
+        var report = call(funds, "GET", FUNDS + "/reconciliation", null, null);
+        assertTrue(report.path("balanced").asBoolean(), report.toString());
+        assertTrue(report.path("violations").isEmpty());
+        var trace = call(decision, "GET", "/api/v1/decisions/traces/orders/" + orderId, null, null);
+        assertEquals(quote.path("requestId"), trace.path("requestId"));
+    }
+
+    private void assertSettlementPostings(Instant from, String applicationId) throws Exception {
+        String query = "?from=" + from + "&to=" + Instant.now().plusSeconds(1) + "&campaignId=" + CAMPAIGN;
+        var page = call(funds, "GET", FUNDS + "/subsidy-postings" + query, null, null);
+        assertFalse(page.path("hasMore").asBoolean());
+        long confirmed = 0, refunded = 0;
+        for (JsonNode item : page.path("items")) {
+            assertEquals(applicationId, item.path("applicationId").asString());
+            assertEquals(CAMPAIGN, item.path("campaignId").asString());
+            assertEquals(BUDGET, item.path("resourceKey").asString());
+            String operation = item.path("operation").asString();
+            if (operation.equals("CONFIRM")) confirmed += Long.parseLong(item.path("amountMinor").asString());
+            else if (operation.equals("REFUND")) refunded += Long.parseLong(item.path("amountMinor").asString());
+            else fail("Unexpected subsidy operation " + operation);
+        }
+        assertEquals(DISCOUNT, confirmed);
+        assertEquals(-DISCOUNT, refunded);
+        var summary = call(funds, "GET", FUNDS + "/subsidy-postings/summary" + query, null, null);
+        assertEquals(CAMPAIGN, summary.path("campaignId").asString());
+        assertEquals("0", summary.at("/groups/0/netAmountMinor").asString());
+        assertFalse(summary.at("/groups/0/unassigned").asBoolean());
+    }
+
+    private JsonNode evaluateCheckout(JsonNode receipt, String orderId, Cart cart) throws Exception {
+        String participationId = receipt.path("participationId").asString();
+        return call(decision, "POST", "/api/v1/decisions/bundle:evaluate", Map.of(
+                "requestId", "request-" + orderId, "idempotencyKey", "evaluate-" + orderId,
+                "organizationId", ORGANIZATION, "orderId", orderId, "subjectToken", "member-" + participationId,
+                "channel", "CHECKOUT", "occurredAt", Instant.now().toString(), "cart", cart,
+                "bundleContext", Map.of("campaignId", CAMPAIGN, "participationId", participationId,
+                        "participation", receipt)), null);
+    }
+
+    private static Cart checkoutCart(long eligibleAmount) {
+        return new Cart(CURRENCY, List.of(
+                new CartLine("eligible", SKU, SHOP, "", "", 1, new Money(CURRENCY, eligibleAmount), Money.zero(CURRENCY), false),
+                new CartLine("other", "sku-other", SHOP, "", "", 1, new Money(CURRENCY, OTHER_SUBTOTAL), Money.zero(CURRENCY), false)));
+    }
+
+    private void createResource(String key, String type, String currency, long authorized) throws Exception {
+        call(funds, "POST", FUNDS + "/accounts", Map.of("resourceKey", key, "type", type, "currency", currency,
+                "authorized", authorized, "fencingEpoch", 1), "checkout-resource-" + type);
+    }
+
+    private JsonNode resourceBalance(String key) throws Exception {
+        for (JsonNode account : call(funds, "GET", FUNDS + "/accounts", null, null)) {
+            if (key.equals(account.path("resourceKey").asString())) return account;
+        }
+        return fail("Missing settlement account " + key);
     }
 
     /** 回滚后用旧参与和新参与各启动一次，直到真实 Flink 输出被 Journey 存为对应定义版本。 */
@@ -162,29 +290,38 @@ final class BundleReleaseScenario implements AutoCloseable {
         String id = runtime + "-" + version, definition = "definition-" + id, approval = "case-" + id;
         boolean isJourney = runtime.equals("journey");
         byte[] bytes;
-        String graphJson = "{}";
+        String source = "sha256:" + Digests.sha256Hex(definition), graphJson = "{}";
+        String abi;
         if (isJourney) {
             var end = new com.acme.marketing.journey.JourneyNode("end",com.acme.marketing.journey.JourneyNode.Type.END,Map.of(),Map.of());
             bytes = json.writeValueAsBytes(new com.acme.marketing.journey.JourneyPlan(definition,1,"end",Map.of("end",end),5,1,Duration.ofDays(1)));
+            abi = "marketing-journey-plan/1";
         } else {
             var graph = new com.acme.marketing.lowcode.model.GraphDefinition(definition,
                     com.acme.marketing.lowcode.model.Dialect.OFFER_DECISION_DAG,"1.0.0",List.of(
                     new com.acme.marketing.lowcode.model.GraphNode("start","offer.start","1.0.0",Map.of()),
                     new com.acme.marketing.lowcode.model.GraphNode("discount","offer.fixed","1.0.0",
-                            Map.of("amountMinor","1000","benefitDefinitionVersion","benefit@1",
-                                    "validFrom",at.toString(),"validTo",expires.toString())),
+                            Map.of("amountMinor", Long.toString(version == 1 ? DISCOUNT : NEXT_DISCOUNT),
+                                    "thresholdMinor", Long.toString(THRESHOLD), "benefitDefinitionVersion", BENEFIT_VERSION,
+                                    "validFrom", at.toString(), "validTo", expires.toString(), "stage", "SHOP",
+                                    "skuIds", SKU, "shopIds", SHOP, "pricingCurrency", CURRENCY,
+                                    "fundingRules", "PLATFORM|isolated|10000")),
                     new com.acme.marketing.lowcode.model.GraphNode("end","offer.end","1.0.0",Map.of())),
                     List.of(new com.acme.marketing.lowcode.model.GraphEdge("e1","start","next","discount","in"),
-                            new com.acme.marketing.lowcode.model.GraphEdge("e2","discount","next","end","in")),Map.of(),Map.of());
+                            new com.acme.marketing.lowcode.model.GraphEdge("e2","discount","next","end","in")),Map.of(),
+                    Map.of("template", "STORE_SKU_FIXED_DISCOUNT_V1"));
             graphJson = json.writeValueAsString(graph);
-            bytes = json.writeValueAsBytes(new com.acme.marketing.decision.runtime.OfferPolicyGraphCompiler().compile(graph));
+            var artifact = new OfferPolicyGraphCompiler().compile(graph);
+            abi = artifact.abi();
+            bytes = json.writeValueAsBytes(artifact);
+            source = new CanonicalGraphHasher().semanticHash(graph);
         }
-        String source = "sha256:" + Digests.sha256Hex(definition), checksum = "sha256:" + Digests.sha256Hex(bytes);
-        String type = isJourney ? "JOURNEY_PLAN" : "OFFER_POLICY", abi = isJourney ? "marketing-journey-plan/1" : "marketing-offer-policy/1";
+        String checksum = "sha256:" + Digests.sha256Hex(bytes);
+        String type = isJourney ? "JOURNEY_PLAN" : "OFFER_POLICY";
         String signature = ArtifactAttestation.sign(compiler.getPrivate(),TENANT,id,definition,1,type,abi,checksum,source);
         var artifact = new ArtifactReference(id,type,"s3://artifacts/" + id,checksum,source,"compiler-key",signature,abi,definition,1);
         var member = new ReleaseManifestSigner().sign(new ReleaseManifest(id,new TenantId(TENANT),"local","cell-a",runtime,"main",
-                version,0,List.of(),List.of(),List.of(artifact),Map.of(),0,at,expires,"author",List.of(approval),at,""),release.getPrivate());
+                version,0,List.of(),List.of(),List.of(artifact),Map.of("terms", "checkout-terms-v1"),0,at,expires,"author",List.of(approval),at,""),release.getPrivate());
         String stamp = SqlTime.format(at);
         controlDb.update("INSERT INTO mk_definition_version(tenant_id,definition_id,campaign_id,version_no,dialect,graph_json,semantic_hash,status,created_by,created_at,updated_at) VALUES (?,?,?,1,?,?,?,'APPROVED','author',?,?)",
                 TENANT,definition,CAMPAIGN,isJourney ? "JOURNEY_DAG" : "OFFER_DECISION_DAG",graphJson,source,stamp,stamp);
@@ -212,7 +349,7 @@ final class BundleReleaseScenario implements AutoCloseable {
         var request = HttpRequest.newBuilder(URI.create(origin(port) + path)).timeout(Duration.ofSeconds(40))
                 .header("Content-Type","application/json").header("X-Dev-Tenant-Id",TENANT)
                 .header("X-Dev-Actor-Id",ACTOR).header("X-Dev-Permissions","*")
-                .header("X-Dev-Organization-Ids","org").header("X-Dev-Shop-Ids","shop");
+                .header("X-Dev-Organization-Ids", ORGANIZATION).header("X-Dev-Shop-Ids", SHOP);
         if (key != null) request.header("Idempotency-Key",key);
         if (body instanceof DecisionDeploymentInventory i) request.header("X-Inventory-Digest",i.contentDigest());
         request.method(method,body == null ? HttpRequest.BodyPublishers.noBody()
@@ -224,7 +361,7 @@ final class BundleReleaseScenario implements AutoCloseable {
     }
 
     private void startServices() throws Exception {
-        // 只在本用例创建的 MySQL 容器内准备两个独立逻辑库，绝不读取本机连接配置。
+        // 业务进程只读写本用例创建的 MySQL 和 Kafka，避免宿主配置串入。
         for (String database : List.of("bundle_decision","bundle_control","bundle_benefit")) {
             var created = mysql.execInContainer("mysql","-uroot","-p" + mysql.getPassword(),"-e",
                     "CREATE DATABASE " + database + "; GRANT ALL ON " + database + ".* TO '" + mysql.getUsername() + "'@'%'");
@@ -247,6 +384,9 @@ final class BundleReleaseScenario implements AutoCloseable {
         d.put("DECISION_JOURNEY_EXECUTION_TRUSTED_PUBLIC_KEYS","execution=" + pub(execution));
         d.put("DECISION_JOURNEY_EXECUTION_TARGETS",json.writeValueAsString(Map.of("main",Map.of("jobId",job,"parallelism",2,"buildDigest",digest))));
         d.put("MARKETING_RUNTIME_ID","decision-instance");
+        d.put("MARKETING_OFFER_SIGNING_KEY_ID", OFFER_KEY);
+        d.put("MARKETING_OFFER_PRIVATE_KEY_BASE64", priv(offerSettlement));
+        d.put("MARKETING_OFFER_PUBLIC_KEY_BASE64", pub(offerSettlement));
         decision = start("offer-decision-service","bundle_decision",d);
         var peer = new HashMap<>(d);
         peer.put("MARKETING_RUNTIME_ID","decision-peer");
@@ -265,7 +405,9 @@ final class BundleReleaseScenario implements AutoCloseable {
             try (var out = exchange.getResponseBody()) { out.write(body); }
         });
         externalCatalog.start();
-        int funds = start("benefit-funding-service","bundle_benefit",Map.of("BENEFIT_CENTER_BASE_URL",origin(externalCatalog.getAddress().getPort())));
+        funds = start("benefit-funding-service", "bundle_benefit", Map.of(
+                "BENEFIT_CENTER_BASE_URL", origin(externalCatalog.getAddress().getPort()),
+                "MARKETING_OFFER_TRUSTED_KEY_ID", OFFER_KEY, "MARKETING_OFFER_PUBLIC_KEY_BASE64", pub(offerSettlement)));
         new JdbcTemplate(new DriverManagerDataSource(dbUrl("bundle_benefit"),mysql.getUsername(),mysql.getPassword()))
                 .update("INSERT INTO mk_benefit_definition(tenant_id,benefit_id,version_no,name_text,status_name,resource_key,benefit_sku_id,policy_json,created_by,created_at) VALUES (?,'benefit',1,'验收权益','ACTIVE','','sku-active',?,'author',?)",
                         TENANT,json.writeValueAsString(Map.of("type","COUPON")),SqlTime.format(Instant.now()));
@@ -298,6 +440,7 @@ final class BundleReleaseScenario implements AutoCloseable {
         env.put("SPRING_DATASOURCE_URL",dbUrl(db)); env.put("SPRING_DATASOURCE_USERNAME",mysql.getUsername());
         env.put("SPRING_DATASOURCE_PASSWORD",mysql.getPassword()); env.put("SPRING_FLYWAY_USER",mysql.getUsername());
         env.put("SPRING_FLYWAY_PASSWORD",mysql.getPassword()); env.put("MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED","false");
+        env.put("SPRING_KAFKA_BOOTSTRAP_SERVERS", kafka);
         var suffix = settings.get("DECISION_EXECUTION_INSTANCE_ID");
         var log = logs.resolve(module + (suffix == null ? "" : "-" + suffix) + ".log");
         var proc = pb.redirectErrorStream(true).redirectOutput(log.toFile()).start();

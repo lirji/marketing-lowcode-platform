@@ -50,7 +50,7 @@ export function OperationsPage() {
     setParams(next, { replace: true })
   }
   return <div className="workspace operations-page"><PageHeader eyebrow="运营与客服" title="运营与客服" description="决策、报价、权益预占、旅程、触达与转化轨迹默认脱敏，并保留稳定原因码。" actions={<Button disabled title="敏感字段访问需独立工单接口"><ShieldCheck size={15} />敏感字段访问</Button>} /><DemoBanner /><PageTabs label="运营查询分类" items={visibleTabs.map((tab) => ({ value: tab, label: tab }))} value={current} onChange={selectTab}>
-    {current === '全链路查询' && <TraceSearch />}
+    {current === '全链路查询' && <TraceSearch initialKind={params.get('traceKind') === 'order' ? 'order' : 'request'} />}
     {current === 'Journey 实例' && <JourneyInstances />}
     {current === '触达记录' && <ContactAttempts />}
     {current === '发放' && <AwardIntentsPanel />}
@@ -65,8 +65,8 @@ const traceQueries = {
 }
 type TraceQueryKind = keyof typeof traceQueries
 
-export function TraceSearch() {
-  const [kind, setKind] = useState<TraceQueryKind>('request')
+export function TraceSearch({ initialKind = 'request' }: { initialKind?: TraceQueryKind } = {}) {
+  const [kind, setKind] = useState<TraceQueryKind>(initialKind)
   const [searchId, setSearchId] = useState('')
   const trace = useMutation({
     mutationFn: ({ id, kind: queryKind }: { id: string; kind: TraceQueryKind }) => traceQueries[queryKind].lookup(id),

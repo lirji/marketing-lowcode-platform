@@ -4,13 +4,20 @@ test('funding reconciliation shows scoped postings, refunds and exact minor unit
   await page.clock.setFixedTime(new Date('2026-09-17T03:00:00Z'))
   await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })
   await page.route('**/api/v1/**', route => route.fulfill({ json: [] }))
-  await page.route('**/api/v1/campaigns', route => route.fulfill({ json: [{ id: 'cmp-1', name: '新人礼', objective: '首购', status: 'ACTIVE', createdAt: '2026-09-16T15:00:00Z' }] }))
+  await page.route('**/api/v1/campaigns', route => route.fulfill({ json: [{ id: 'cmp-1', name: '新人礼', objective: '首购', campaignType: 'STANDARD', status: 'ACTIVE', createdAt: '2026-09-16T15:00:00Z' }] }))
   await page.route('**/api/v1/measurements/**', route => {
     const url = new URL(route.request().url())
     const campaignId = url.searchParams.get('campaignId') ?? undefined
     return route.fulfill({ json: url.pathname.endsWith('/dashboard') ? { counts: {}, attributedRevenueMinor: 100, fundingCostMinor: 0, completeThrough: url.searchParams.get('to'), campaignId } : { points: [], campaignId } })
   })
   await page.route('**/api/v1/funding/reconciliation', route => route.fulfill({ json: { balanced: true, violations: [], ledgerMovement: 9, checkedAt: '2026-09-17T02:00:00Z' } }))
+  await page.route('**/api/v1/definitions/latest?*', route => route.fulfill({
+    status: 404, json: { status: 404, code: 'DEFINITION_NOT_FOUND', title: '规则不存在' },
+  }))
+  await page.route('**/api/v1/traces/orders/settlement-order', route => {
+    expect(route.request().method()).toBe('GET')
+    return route.fulfill({ json: { requestId: 'settlement-request', events: [] } })
+  })
   const requests: URL[] = []
   await page.route('**/api/v1/funding/subsidy-postings?*', async route => {
     expect(route.request().method()).toBe('GET')
@@ -51,4 +58,17 @@ test('funding reconciliation shows scoped postings, refunds and exact minor unit
   await expect(table.getByText('cmp-1', { exact: true })).toBeVisible()
   expect(requests.at(-1)?.searchParams.get('campaignId')).toBe('cmp-1')
   expect(requests.at(-1)?.searchParams.get('from')).toBe('2026-09-16T16:00:00.000Z')
+
+  await page.goto('/campaigns/cmp-1/workbench')
+  await page.getByRole('link', { name: '查看本活动补贴流水' }).click()
+  await expect(table.getByText('cmp-1', { exact: true })).toBeVisible()
+  expect(requests.at(-1)?.searchParams.get('campaignId')).toBe('cmp-1')
+  expect(requests.at(-1)?.searchParams.get('from')).toBe('2026-09-10T03:00:00.000Z')
+  expect(requests.at(-1)?.searchParams.get('to')).toBe('2026-09-17T03:00:00.000Z')
+  await page.goBack()
+
+  await page.getByRole('link', { name: '按订单查营销轨迹' }).click()
+  await page.getByPlaceholder('填写完整订单 ID').fill('settlement-order')
+  await page.getByRole('button', { name: '查询', exact: true }).click()
+  await expect(page.getByText('settlement-request', { exact: true })).toBeVisible()
 })

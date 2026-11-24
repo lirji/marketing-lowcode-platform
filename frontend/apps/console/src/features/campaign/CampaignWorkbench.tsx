@@ -54,6 +54,8 @@ function Workbench({ campaign, scope }: { campaign: Campaign; scope: string }) {
   const canRead = auth.hasPermission('definition:read')
   const canWrite = canRead && auth.hasPermission('definition:write')
   const canSubmit = canRead && auth.hasPermission('definition:submit')
+  const canTrace = auth.hasPermission('trace:read')
+  const canReconcile = auth.hasPermission('funding:reconcile')
   const client = useQueryClient()
   const key = ['campaign-workbench', scope, campaign.id]
   const offer = useQuery({ queryKey: key, queryFn: () => latestOffer(campaign.id), enabled: canRead })
@@ -109,6 +111,15 @@ function Workbench({ campaign, scope }: { campaign: Campaign; scope: string }) {
         {auth.hasPermission('measurement:read') && <Link className="button secondary" to={`/analytics?${campaignQuery}`}>查看活动报表</Link>}
       </div>
     </Panel>
+    {(canTrace || canReconcile) && <Panel>
+      <PanelHeader title="履约与对账" />
+      <p className="field-hint">按交易订单号核对营销决策。补贴流水按确认和退款的实际入账时间查询。</p>
+      <div className="workbench-actions">
+        {canTrace && <Link className="button secondary" to="/operations?traceKind=order">按订单查营销轨迹</Link>}
+        {canReconcile && <Link className="button secondary"
+          to={`/operations?tab=funding&postingCampaignId=${encodeURIComponent(campaign.id)}`}>查看本活动补贴流水</Link>}
+      </div>
+    </Panel>}
   </>
 }
 

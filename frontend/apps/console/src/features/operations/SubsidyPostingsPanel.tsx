@@ -13,6 +13,7 @@ import { MAX_SUBSIDY_RANGE_MS } from '../../shared/api/schemas'
 import { useAuth } from '../../shared/auth/useAuth'
 
 const UNASSIGNED = '!unassigned'
+const INITIAL_CAMPAIGN_RANGE_MS = 7 * 24 * 60 * 60 * 1_000
 const OPERATIONS = { CONFIRM: '补贴确认', REFUND: '退款或冲正' } as const
 
 export function SubsidyPostingsPanel() {
@@ -29,15 +30,17 @@ function SubsidyPostingSearch({ scope }: { scope: string }) {
   const initialCampaign = params.get('postingCampaignId') ?? ''
   const initialSpan = Date.parse(initialTo) - Date.parse(initialFrom)
   const linkedRange = initialSpan > 0 && initialSpan <= MAX_SUBSIDY_RANGE_MS && /^[A-Za-z0-9_.:-]{0,64}$/.test(initialCampaign)
+  const linkedCampaign = !params.has('postingFrom') && !params.has('postingTo') && /^[A-Za-z0-9_.:-]{1,64}$/.test(initialCampaign)
   const canList = useAuth().hasPermission('campaign:read')
   const campaigns = useQuery({ queryKey: ['subsidy-campaigns', scope], queryFn: api.campaigns, enabled: canList, retry: false })
   const [form, setForm] = useState(() => {
     if (linkedRange) return { from: initialFrom, to: initialTo, selection: initialCampaign }
     const now = new Date()
+    if (linkedCampaign) return { from: new Date(now.getTime() - INITIAL_CAMPAIGN_RANGE_MS).toISOString(), to: now.toISOString(), selection: initialCampaign }
     return { from: businessDayStart(now).toISOString(), to: now.toISOString(), selection: '' }
   })
   const [applied, setApplied] = useState(() => (
-    linkedRange ? { ...form, revision: 0 } : undefined
+    linkedRange || linkedCampaign ? { ...form, revision: 0 } : undefined
   ))
   const span = Date.parse(form.to) - Date.parse(form.from)
   const valid = span > 0 && span <= MAX_SUBSIDY_RANGE_MS
