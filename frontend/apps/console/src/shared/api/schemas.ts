@@ -300,6 +300,7 @@ export const reconciliationSchema = z.object({
 export type ReconciliationReport = z.infer<typeof reconciliationSchema>
 
 export const MAX_SUBSIDY_RANGE_MS = 31 * 24 * 60 * 60 * 1000
+export const MAX_SUBSIDY_ORDER_ID_LENGTH = 128
 export const subsidyPostingPageSchema = z.object({
   from: z.string(),
   to: z.string(),
@@ -312,6 +313,10 @@ export const subsidyPostingPageSchema = z.object({
     currency: z.string(), resourceKey: z.string(), operation: z.enum(['CONFIRM', 'REFUND']),
     amountMinor: z.string().regex(/^-?[1-9][0-9]*$/),
   })).max(100),
+})
+export const orderSubsidyPostingPageSchema = z.object({
+  orderId: z.string().min(1),
+  page: subsidyPostingPageSchema,
 })
 
 export const subsidyPostingSummarySchema = z.object({

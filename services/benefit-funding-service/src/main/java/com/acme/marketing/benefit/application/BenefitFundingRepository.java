@@ -161,7 +161,7 @@ public interface BenefitFundingRepository {
             String resourceKey, int escrowBucketId, String operation, String debitBucket,
             String creditBucket, long amount, long accountVersion, String correctionOf, String occurredAt) { }
     /** 查询条件由服务端根据当前身份构造。空值才代表该维度具有全域权限。 */
-    record SubsidyPostingFilter(String tenantId, String from, String to, String campaignId, boolean unassigned,
+    record SubsidyPostingFilter(String tenantId, String from, String to, String campaignId, String orderId, boolean unassigned,
             Set<String> organizations, String allowedShopsJson) { }
     record SubsidyPostingCursor(String ledgerId, String postingTime) { }
     record SubsidyPostingRow(String ledgerId, String postingTime, String applicationId, String campaignId,

@@ -181,7 +181,7 @@ final class BundleReleaseScenario implements AutoCloseable {
         assertEquals("REFUNDED", balance.path("state").asString());
         assertEquals(0, resourceBalance(BUDGET).path("consumed").asLong());
         assertEquals(0, resourceBalance(INVENTORY).path("consumed").asLong());
-        assertSettlementPostings(from, applicationId);
+        assertSettlementPostings(from, orderId, applicationId);
         var report = call(funds, "GET", FUNDS + "/reconciliation", null, null);
         assertTrue(report.path("balanced").asBoolean(), report.toString());
         assertTrue(report.path("violations").isEmpty());
@@ -189,9 +189,11 @@ final class BundleReleaseScenario implements AutoCloseable {
         assertEquals(quote.path("requestId"), trace.path("requestId"));
     }
 
-    private void assertSettlementPostings(Instant from, String applicationId) throws Exception {
+    private void assertSettlementPostings(Instant from, String orderId, String applicationId) throws Exception {
         String query = "?from=" + from + "&to=" + Instant.now().plusSeconds(1) + "&campaignId=" + CAMPAIGN;
-        var page = call(funds, "GET", FUNDS + "/subsidy-postings" + query, null, null);
+        var order = call(funds, "GET", FUNDS + "/subsidy-postings/by-order" + query + "&orderId=" + orderId, null, null);
+        assertEquals(orderId, order.path("orderId").asString());
+        var page = order.path("page");
         assertFalse(page.path("hasMore").asBoolean());
         long confirmed = 0, refunded = 0;
         for (JsonNode item : page.path("items")) {

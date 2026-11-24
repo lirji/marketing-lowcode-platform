@@ -623,7 +623,23 @@ public class BenefitFundingService {
             Integer limit, String cursor) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission(RECONCILE_PERMISSION);
-        var filter = subsidyPostingFilter(scope, from, to, campaignId, unassigned);
+        var filter = subsidyPostingFilter(scope, from, to, campaignId, null, unassigned);
+        return subsidyPostingPage(scope, from, to, filter, limit, cursor);
+    }
+
+    /** 只按资金申请保存的订单号查账。独立接口防止旧服务忽略订单筛选。 */
+    @Transactional(readOnly = true)
+    public OrderSubsidyPostingPage subsidyPostingsByOrder(String orderId, Instant from, Instant to,
+            String campaignId, boolean unassigned, Integer limit, String cursor) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission(RECONCILE_PERMISSION);
+        requirePostingOrderId(orderId);
+        var filter = subsidyPostingFilter(scope, from, to, campaignId, orderId, unassigned);
+        return new OrderSubsidyPostingPage(orderId, subsidyPostingPage(scope, from, to, filter, limit, cursor));
+    }
+
+    private SubsidyPostingPage subsidyPostingPage(TenantScope scope, Instant from, Instant to,
+            BenefitFundingRepository.SubsidyPostingFilter filter, Integer limit, String cursor) {
         int pageSize = limit == null ? DEFAULT_POSTING_PAGE_SIZE : limit;
         if (pageSize < 1 || pageSize > MAX_POSTING_PAGE_SIZE) {
             throw new IllegalArgumentException("subsidy posting page size must be between 1 and 100");
@@ -633,7 +649,7 @@ public class BenefitFundingService {
         }
         if (scope.organizations().isEmpty() || scope.shops().isEmpty()) {
             if (cursor != null) throw new IllegalArgumentException("subsidy posting cursor is outside the current selection");
-            return new SubsidyPostingPage(from, to, campaignId, unassigned, List.of(), null, false);
+            return new SubsidyPostingPage(from, to, filter.campaignId(), filter.unassigned(), List.of(), null, false);
         }
         var position = cursor == null ? null : repository.findSubsidyPostingCursor(filter, cursor)
                 .orElseThrow(() -> new IllegalArgumentException("subsidy posting cursor is outside the current selection"));
@@ -645,8 +661,18 @@ public class BenefitFundingService {
             return new SubsidyPosting(row.ledgerId(), Instant.parse(row.postingTime()), row.applicationId(),
                     row.campaignId(), row.resourceKey(), row.currency(), row.operation(), Long.toString(signedAmount));
         }).toList();
-        return new SubsidyPostingPage(from, to, campaignId, unassigned, items,
+        return new SubsidyPostingPage(from, to, filter.campaignId(), filter.unassigned(), items,
                 hasMore ? items.getLast().ledgerId() : null, hasMore);
+    }
+
+    private static final int MAX_POSTING_ORDER_ID_LENGTH = 128;
+
+    /** 对齐资金申请的订单字段容量，保留上游标识原始大小写，不接受控制字符。 */
+    private static void requirePostingOrderId(String orderId) {
+        if (orderId == null || orderId.isBlank() || orderId.codePointCount(0, orderId.length()) > MAX_POSTING_ORDER_ID_LENGTH
+                || orderId.codePoints().anyMatch(Character::isISOControl)) {
+            throw new IllegalArgumentException("订单号须为 1 至 128 个有效字符");
+        }
     }
 
     /** 在一次数据库读取中按币种汇总；选定活动时另列同窗口、授权范围内的待归属流水。 */
@@ -654,7 +680,7 @@ public class BenefitFundingService {
     public SubsidyPostingSummary subsidyPostingSummary(Instant from, Instant to, String campaignId) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission(RECONCILE_PERMISSION);
-        var filter = subsidyPostingFilter(scope, from, to, campaignId, false);
+        var filter = subsidyPostingFilter(scope, from, to, campaignId, null, false);
         List<SubsidySummaryGroup> groups = scope.organizations().isEmpty() || scope.shops().isEmpty()
                 ? List.of() : repository.summarizeSubsidyPostings(filter).stream().map(row -> new SubsidySummaryGroup(
                         row.currency(), row.unassigned(), Long.toString(row.postingCount()),
@@ -715,7 +741,7 @@ public class BenefitFundingService {
     }
 
     private BenefitFundingRepository.SubsidyPostingFilter subsidyPostingFilter(TenantScope scope, Instant from,
-            Instant to, String campaignId, boolean unassigned) {
+            Instant to, String campaignId, String orderId, boolean unassigned) {
         if (from == null || to == null || !from.isBefore(to) || Duration.between(from, to).compareTo(MAX_POSTING_RANGE) > 0
                 || format(from).length() != 30 || format(to).length() != 30) {
             throw new IllegalArgumentException("subsidy posting time range must be positive and no more than 31 days");
@@ -724,7 +750,7 @@ public class BenefitFundingService {
             throw new IllegalArgumentException("campaignId is invalid or combined with the unassigned filter");
         }
         return new BenefitFundingRepository.SubsidyPostingFilter(scope.tenantId().value(), format(from), format(to),
-                campaignId, unassigned, scope.organizations().contains("*") ? null : scope.organizations(),
+                campaignId, orderId, unassigned, scope.organizations().contains("*") ? null : scope.organizations(),
                 scope.shops().contains("*") ? null : json(scope.shops()));
     }
 
@@ -1371,6 +1397,8 @@ public class BenefitFundingService {
             List<SubsidyPosting> items, String nextCursor, boolean hasMore) {
         public SubsidyPostingPage { items = List.copyOf(items); }
     }
+    /** 回显已应用的订单号，原流水返回形状及游标规则保留供旧客户端使用。 */
+    public record OrderSubsidyPostingPage(String orderId, SubsidyPostingPage page) { }
     /** 金额和笔数均保留十进制字符串，汇总允许为负和零。 */
     public record SubsidySummaryGroup(String currency, boolean unassigned, String postingCount, String netAmountMinor) { }
 

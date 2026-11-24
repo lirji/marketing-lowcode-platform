@@ -402,6 +402,11 @@
     <sql id="subsidyPostingScope">
         <include refid="subsidyPostingBaseScope"/>
         <if test="scope.campaignId != null">AND CAST(a.campaign_id AS BINARY) = CAST(#{scope.campaignId} AS BINARY)</if>
+        <if test="scope.orderId != null">
+            <!-- 等值谓词使用订单索引，二进制比较避免默认排序规则把不同订单号合并。 -->
+            AND a.order_id = #{scope.orderId}
+            AND CAST(a.order_id AS BINARY) = CAST(#{scope.orderId} AS BINARY)
+        </if>
         <if test="scope.unassigned">AND a.campaign_id IS NULL</if>
     </sql>
     <select id="selectSubsidyPostingCursor"

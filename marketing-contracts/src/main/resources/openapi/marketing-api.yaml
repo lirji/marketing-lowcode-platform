@@ -951,21 +951,34 @@ paths:
           description: Committed funding ledger postings ordered by posting time and ledger ID
           content:
             application/json:
+              schema: {$ref: '#/components/schemas/SubsidyPostingPage'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/funding/subsidy-postings/by-order:
+    get:
+      tags: [Benefit]
+      operationId: listOrderSubsidyPostings
+      x-required-permission: funding:reconcile
+      description: Read committed budget confirmations and refunds for the exact case-sensitive order ID saved on the marketing application. The same organization, all-shops, activity and time filters apply to the list and its cursor.
+      parameters:
+        - {in: query, name: orderId, required: true, schema: {type: string, minLength: 1, maxLength: 128}}
+        - {in: query, name: from, required: true, description: Inclusive, schema: {type: string, format: date-time}}
+        - {in: query, name: to, required: true, description: Exclusive with a maximum 31-day window, schema: {type: string, format: date-time}}
+        - {in: query, name: campaignId, schema: {type: string, pattern: '^[A-Za-z0-9_.:-]{1,64}$'}}
+        - {in: query, name: unassigned, schema: {type: boolean, default: false}, description: Incompatible with campaignId.}
+        - {in: query, name: limit, schema: {type: integer, default: 50, minimum: 1, maximum: 100}}
+        - {in: query, name: cursor, schema: {type: string, maxLength: 64}, description: Use nextCursor from the same order and selection.}
+      responses:
+        '200':
+          description: Confirmed order scope and its committed marketing subsidy postings.
+          content:
+            application/json:
               schema:
                 type: object
                 additionalProperties: false
-                required: [from, to, campaignId, unassigned, items, nextCursor, hasMore]
+                required: [orderId, page]
                 properties:
-                  from: {type: string, format: date-time}
-                  to: {type: string, format: date-time}
-                  campaignId: {type: [string, 'null']}
-                  unassigned: {type: boolean}
-                  items:
-                    type: array
-                    maxItems: 100
-                    items: {$ref: '#/components/schemas/SubsidyPosting'}
-                  nextCursor: {type: [string, 'null']}
-                  hasMore: {type: boolean}
+                  orderId: {type: string}
+                  page: {$ref: '#/components/schemas/SubsidyPostingPage'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/funding/subsidy-postings/summary:
     get:
@@ -1894,6 +1907,21 @@ components:
             status: {type: [string, 'null'], enum: [ACCEPTED, PROCESSING, SUCCEEDED, PARTIAL_SUCCEEDED, FAILED, REMEDIATING, REVERSING, REVERSED, PARTIALLY_REVERSED, null]}
             checkedAt: {type: [string, 'null'], format: date-time}
             latestCheckFailed: {type: boolean}
+    SubsidyPostingPage:
+      type: object
+      additionalProperties: false
+      required: [from, to, campaignId, unassigned, items, nextCursor, hasMore]
+      properties:
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        campaignId: {type: [string, 'null']}
+        unassigned: {type: boolean}
+        items:
+          type: array
+          maxItems: 100
+          items: {$ref: '#/components/schemas/SubsidyPosting'}
+        nextCursor: {type: [string, 'null']}
+        hasMore: {type: boolean}
     SubsidyPosting:
       type: object
       additionalProperties: false

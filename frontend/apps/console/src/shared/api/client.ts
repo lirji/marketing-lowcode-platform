@@ -39,6 +39,7 @@ import {
   quarantineViewSchema,
   reconciliationSchema,
   subsidyPostingPageSchema,
+  orderSubsidyPostingPageSchema,
   subsidyPostingSummarySchema,
   recomputeSchema,
   releaseViewSchema,
@@ -436,13 +437,17 @@ export const api = {
       return summary
     })
   },
-  subsidyPostings: (query: { from: string; to: string; campaignId?: string; unassigned?: boolean; cursor?: string }) => {
+  subsidyPostings: (query: { from: string; to: string; campaignId?: string; orderId?: string; unassigned?: boolean; cursor?: string }) => {
     const params = new URLSearchParams({ from: query.from, to: query.to })
     if (query.campaignId) params.set('campaignId', query.campaignId)
     if (query.unassigned) params.set('unassigned', 'true')
     if (query.cursor) params.set('cursor', query.cursor)
-    return request(`/api/v1/funding/subsidy-postings?${params}`, undefined, value => {
-      const page = parseWith(subsidyPostingPageSchema, value)
+    if (query.orderId) params.set('orderId', query.orderId)
+    const resource = query.orderId ? 'subsidy-postings/by-order' : 'subsidy-postings'
+    return request(`/api/v1/funding/${resource}?${params}`, undefined, value => {
+      const orderPage = query.orderId ? parseWith(orderSubsidyPostingPageSchema, value) : undefined
+      if (orderPage && orderPage.orderId !== query.orderId) throw new Error('资金服务未确认订单号，请重新查询。')
+      const page = orderPage?.page ?? parseWith(subsidyPostingPageSchema, value)
       if (Date.parse(page.from) !== Date.parse(query.from) || Date.parse(page.to) !== Date.parse(query.to)
         || page.campaignId !== (query.campaignId ?? null) || page.unassigned !== Boolean(query.unassigned)
         || page.hasMore !== Boolean(page.nextCursor) || (page.hasMore && page.nextCursor === query.cursor)) {

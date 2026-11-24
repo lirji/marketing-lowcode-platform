@@ -19,6 +19,22 @@ test('funding reconciliation shows scoped postings, refunds and exact minor unit
     return route.fulfill({ json: { requestId: 'settlement-request', events: [] } })
   })
   const requests: URL[] = []
+  const orderRequests: URL[] = []
+  await page.route('**/api/v1/funding/subsidy-postings/by-order?*', route => {
+    expect(route.request().method()).toBe('GET')
+    const url = new URL(route.request().url())
+    orderRequests.push(url)
+    const orderId = url.searchParams.get('orderId')
+    return route.fulfill({ json: {
+      orderId: orderRequests.length === 1 ? 'wrong-order' : orderId,
+      page: {
+        from: url.searchParams.get('from'), to: url.searchParams.get('to'), campaignId: url.searchParams.get('campaignId'),
+        unassigned: false, hasMore: false, nextCursor: null,
+        items: [{ ledgerId: 'order-refund', postedAt: '2026-09-16T16:00:00Z', applicationId: 'application-1',
+          campaignId: null, currency: 'CNY', resourceKey: 'BUDGET:PLATFORM:platform:CNY', operation: 'REFUND', amountMinor: '-5000' }],
+      },
+    } })
+  })
   await page.route('**/api/v1/funding/subsidy-postings?*', async route => {
     expect(route.request().method()).toBe('GET')
     const url = new URL(route.request().url())
@@ -71,4 +87,16 @@ test('funding reconciliation shows scoped postings, refunds and exact minor unit
   await page.getByPlaceholder('填写完整订单 ID').fill('settlement-order')
   await page.getByRole('button', { name: '查询', exact: true }).click()
   await expect(page.getByText('settlement-request', { exact: true })).toBeVisible()
+  const readsBeforeOrder = requests.length
+  await page.getByRole('link', { name: '查看该订单补贴流水' }).click()
+  await expect(page).toHaveURL(/\/operations\?tab=funding$/)
+  await expect(page.getByRole('textbox', { name: '订单号' })).toHaveValue('settlement-order')
+  await expect(page.getByText('资金服务未确认订单号，请重新查询。')).toBeVisible()
+  await expect(table).toHaveCount(0)
+  await page.getByRole('button', { name: '查询补贴流水' }).click()
+  await expect(table.getByText('退款或冲正')).toBeVisible()
+  await expect(table.getByText('-5,000', { exact: true })).toBeVisible()
+  expect(requests).toHaveLength(readsBeforeOrder)
+  expect(orderRequests.map(url => url.searchParams.get('orderId'))).toEqual(['settlement-order', 'settlement-order'])
+  expect(orderRequests.at(-1)?.searchParams.get('from')).toBe('2026-09-10T03:00:00.000Z')
 })

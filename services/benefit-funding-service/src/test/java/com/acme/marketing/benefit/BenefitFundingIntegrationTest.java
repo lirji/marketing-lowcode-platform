@@ -807,6 +807,30 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         var cursorFromOtherDay = client.send(base(nextDay + "&cursor=" + paged.getFirst().path("ledgerId").asString())
                 .GET().build(), HttpResponse.BodyHandlers.ofString());
         assertEquals(400, cursorFromOtherDay.statusCode());
+        assertOrderPostingScope(firstDay, nextDay, applicationId);
+    }
+
+    /** 订单查看复用同一授权和游标契约，区分大小写且不把退款移到原支付日。 */
+    private void assertOrderPostingScope(String firstDay, String nextDay, String applicationId) throws Exception {
+        String orderPath = firstDay.replace("subsidy-postings?", "subsidy-postings/by-order?");
+        String firstUrl = orderPath + "&orderId=order-1&limit=1";
+        var first = get(firstUrl);
+        assertEquals("order-1", first.path("orderId").asString());
+        var page = first.path("page");
+        assertEquals(applicationId, page.at("/items/0/applicationId").asString());
+        assertTrue(page.path("hasMore").asBoolean());
+        String cursor = page.path("nextCursor").asString();
+        assertEquals(applicationId, get(firstUrl + "&cursor=" + cursor).at("/page/items/0/applicationId").asString());
+        assertTrue(get(orderPath + "&orderId=ORDER-1").at("/page/items").isEmpty());
+        assertTrue(exchange(base(firstUrl).setHeader("X-Dev-Shop-Ids", "shop-other").GET().build()).at("/page/items").isEmpty());
+        assertTrue(getTenant(firstUrl, "other-tenant").at("/page/items").isEmpty());
+        assertEquals(400, client.send(base(orderPath + "&orderId=order-2&cursor=" + cursor)
+                .GET().build(), HttpResponse.BodyHandlers.ofString()).statusCode());
+        assertEquals(403, client.send(base(firstUrl).setHeader("X-Dev-Permissions", "measurement:read")
+                .GET().build(), HttpResponse.BodyHandlers.ofString()).statusCode());
+        String refunds = nextDay.replace("subsidy-postings?", "subsidy-postings/by-order?") + "&orderId=order-1";
+        assertEquals(-200, java.util.stream.StreamSupport.stream(get(refunds).at("/page/items").spliterator(), false)
+                .mapToLong(item -> Long.parseLong(item.path("amountMinor").asString())).sum());
     }
 
     @Test void olderOffersStayUnassignedAndRetainLegacyPostingPrecision() throws Exception {

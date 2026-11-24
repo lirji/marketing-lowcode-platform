@@ -3,19 +3,21 @@ import { RecordTable, RecordTime } from '../../components/RecordTable'
 import { FieldHint } from '../../components/FieldHint'
 import { Select } from '../../components/Select'
 import { useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, RefreshCw, Search, ShieldCheck, TriangleAlert } from 'lucide-react'
 import { api } from '../../shared/api/client'
 import { Badge, Button, DemoBanner, EmptyState, Modal, PageHeader, Panel, PanelHeader, StateBanner } from '../../components/ui'
 import { problemDetail } from '../../shared/api/problem'
 import { useAuth } from '../../shared/auth/useAuth'
-import type { TraceView } from '../../shared/api/schemas'
+import { MAX_SUBSIDY_ORDER_ID_LENGTH, type TraceView } from '../../shared/api/schemas'
+import { releaseScopeKey } from '../../shared/api/useReleasePages'
 import { PageTabs } from '../../components/PageTabs'
 import { AwardIntentsPanel } from './AwardIntentsPanel'
 import { SubsidyPostingsPanel } from './SubsidyPostingsPanel'
 
 const PREVIEW_DETAIL = '当前为静态预览。连接营销服务后可查询已保存的记录及其实际结果。'
+const ORDER_TRACE_KIND = 'order'
 
 function PreviewPanel({ title }: { title: string }) {
   return <Panel><EmptyState title={`${title}需要连接服务`} detail={PREVIEW_DETAIL} /></Panel>
@@ -40,7 +42,8 @@ export function OperationsPage() {
     if (tab === 'DLQ / 隔离区') return auth.hasPermission('event:read')
     return auth.hasPermission('funding:reconcile')
   })
-  const current = visibleTabs.includes(active) ? active : visibleTabs[0]
+  const selected = tabFromQuery(params.get('tab')) ?? active
+  const current = visibleTabs.includes(selected) ? selected : visibleTabs[0]
   const selectTab = (tab: (typeof tabs)[number]) => {
     setActive(tab)
     const next = new URLSearchParams(params)
@@ -50,7 +53,8 @@ export function OperationsPage() {
     setParams(next, { replace: true })
   }
   return <div className="workspace operations-page"><PageHeader eyebrow="运营与客服" title="运营与客服" description="决策、报价、权益预占、旅程、触达与转化轨迹默认脱敏，并保留稳定原因码。" actions={<Button disabled title="敏感字段访问需独立工单接口"><ShieldCheck size={15} />敏感字段访问</Button>} /><DemoBanner /><PageTabs label="运营查询分类" items={visibleTabs.map((tab) => ({ value: tab, label: tab }))} value={current} onChange={selectTab}>
-    {current === '全链路查询' && <TraceSearch initialKind={params.get('traceKind') === 'order' ? 'order' : 'request'} />}
+    {current === '全链路查询' && <TraceSearch postingScope={auth.hasPermission('funding:reconcile') ? releaseScopeKey(auth) : undefined}
+      initialKind={params.get('traceKind') === ORDER_TRACE_KIND ? ORDER_TRACE_KIND : 'request'} />}
     {current === 'Journey 实例' && <JourneyInstances />}
     {current === '触达记录' && <ContactAttempts />}
     {current === '发放' && <AwardIntentsPanel />}
@@ -65,7 +69,9 @@ const traceQueries = {
 }
 type TraceQueryKind = keyof typeof traceQueries
 
-export function TraceSearch({ initialKind = 'request' }: { initialKind?: TraceQueryKind } = {}) {
+export function TraceSearch({ initialKind = 'request', postingScope }: {
+  initialKind?: TraceQueryKind; postingScope?: string
+} = {}) {
   const [kind, setKind] = useState<TraceQueryKind>(initialKind)
   const [searchId, setSearchId] = useState('')
   const trace = useMutation({
@@ -90,15 +96,21 @@ export function TraceSearch({ initialKind = 'request' }: { initialKind?: TraceQu
     {trace.isPending && <StateBanner tone="info" title="正在查询轨迹" detail={`正在查询 ${trace.variables.id}，请稍候。`} />}
     {trace.isError && <StateBanner tone="error" title="轨迹查询失败" detail={problemDetail(trace.error)} />}
     {trace.isSuccess && (
-      trace.data ? <TraceResult requestId={trace.variables.id} live={trace.data} />
+      trace.data ? <TraceResult requestId={trace.variables.id} live={trace.data}
+        posting={postingScope && trace.variables.kind === ORDER_TRACE_KIND && Array.from(trace.variables.id).length <= MAX_SUBSIDY_ORDER_ID_LENGTH
+          ? { postingScope, postingOrderId: trace.variables.id } : undefined} />
         : <EmptyState title="未找到轨迹" detail="该 ID 暂无可用轨迹，请核对完整 ID 后重试。" />
     )}
   </div>
 }
 
-function TraceResult({ requestId, live }: { requestId: string; live: TraceView }) {
+function TraceResult({ requestId, live, posting }: {
+  requestId: string; live: TraceView; posting?: { postingScope: string; postingOrderId: string }
+}) {
   const events = (live.events ?? []).map((event) => [event.at ?? live.createdAt ?? '', event.type, event.title ?? event.type, event.detail ?? ''])
-  return <div className="trace-layout"><Panel><PanelHeader eyebrow="TRACE" title="营销轨迹" aside={<Badge tone="good">API</Badge>} /><div className="trace-id"><span>Request</span><code>{live.requestId ?? requestId}</code><button type="button" aria-label="复制 Request ID" onClick={() => void navigator.clipboard.writeText(live.requestId ?? requestId)}><Copy size={13} /></button><span>Subject</span><code>{live.maskedSubject ?? '—'}</code></div>
+  return <div className="trace-layout"><Panel><PanelHeader eyebrow="TRACE" title="营销轨迹" aside={posting
+    ? <Link className="button secondary" to="/operations?tab=funding" state={posting}>查看该订单补贴流水</Link>
+    : <Badge tone="good">API</Badge>} /><div className="trace-id"><span>Request</span><code>{live.requestId ?? requestId}</code><button type="button" aria-label="复制 Request ID" onClick={() => void navigator.clipboard.writeText(live.requestId ?? requestId)}><Copy size={13} /></button><span>Subject</span><code>{live.maskedSubject ?? '—'}</code></div>
     <dl className="trace-summary"><div><dt>Trace</dt><dd>{live.traceId ?? '—'}</dd></div><div><dt>Generation</dt><dd>{live.generation ?? '—'}</dd></div><div><dt>耗时</dt><dd>{live.durationMicros != null ? `${(live.durationMicros / 1000).toFixed(1)}ms` : '—'}</dd></div><div><dt>Terms</dt><dd>{live.termsVersion || '未提供'}</dd></div></dl>
     {events.length === 0 ? <EmptyState title="没有逐步事件" detail="当前轨迹只有摘要字段，events 为空。" /> : <RecordTable label="轨迹事件" columns={['事件时间（北京时间）', '事件类型', '事件标题', '事件详情']}>{events.map(([time, type, title, detail], index) => <tr key={`${index}-${type}`}><td><RecordTime value={time} /></td><td>{type}</td><td>{title}</td><td>{detail || '—'}</td></tr>)}</RecordTable>}
   </Panel><aside><Panel><PanelHeader eyebrow="DECISION EXPLAIN" title="候选与裁决" /><pre className="trace-json">{displayDiagnosticJson({ candidates: live.candidates ?? {}, pricing: live.pricing ?? {} })}</pre></Panel></aside></div>

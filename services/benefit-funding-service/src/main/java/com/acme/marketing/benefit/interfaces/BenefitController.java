@@ -141,6 +141,15 @@ public class BenefitController {
         return service.subsidyPostings(from, to, campaignId, unassigned, limit, cursor);
     }
 
+    /** 订单号只限定已有入账记录，入口不创建资金申请或退款。 */
+    @GetMapping("/funding/subsidy-postings/by-order")
+    public BenefitFundingService.OrderSubsidyPostingPage subsidyPostingsByOrder(@RequestParam String orderId,
+            @RequestParam Instant from, @RequestParam Instant to, @RequestParam(required = false) String campaignId,
+            @RequestParam(defaultValue = "false") boolean unassigned, @RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) String cursor) {
+        return service.subsidyPostingsByOrder(orderId, from, to, campaignId, unassigned, limit, cursor);
+    }
+
     /** 对账汇总继承流水读取权限，并返回实际采用的范围与币种。 */
     @GetMapping("/funding/subsidy-postings/summary")
     public BenefitFundingService.SubsidyPostingSummary subsidyPostingSummary(@RequestParam Instant from,
