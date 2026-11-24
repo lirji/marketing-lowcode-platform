@@ -117,10 +117,12 @@ class JourneyProbeCheckpointIT {
                 .withEnv("JOURNEY_PARTICIPATION_TRUSTED_KEY_ID", "participation").withEnv("JOURNEY_PARTICIPATION_PUBLIC_KEY_BASE64", publicKey(PARTICIPATION))
                 .withEnv("JOURNEY_EXECUTION_ACK_KEY_ID", "execution").withEnv("JOURNEY_EXECUTION_ACK_PUBLIC_KEY_BASE64", publicKey(EXECUTION))
                 .withEnv("JOURNEY_EXECUTION_ACK_PRIVATE_KEY_BASE64", Base64.getEncoder().encodeToString(EXECUTION.getPrivate().getEncoded()))
-                .withCopyFileToContainer(MountableFile.forHostPath(jar), "/tmp/journey.jar").start();
+                // JobManager 以非 root 身份运行，隔离验证制品使用固定只读权限。
+                .withCopyFileToContainer(MountableFile.forHostPath(jar, 0444), "/tmp/journey.jar").start();
         TM.start();
         var result = JM.execInContainer("timeout", "90", "flink", "run", "-d", "/tmp/journey.jar");
-        assertEquals(0, result.getExitCode(), result.getStderr());
+        // Flink CLI 会将作业提交异常写入 stdout，保留两路输出以定位失败原因。
+        assertEquals(0, result.getExitCode(), () -> result.getStdout() + "\n" + result.getStderr());
         var match = Pattern.compile("JobID ([0-9a-f]{32})").matcher(result.getStdout());
         assertTrue(match.find(), "隔离集群未返回实际作业 ID");
         jobId = match.group(1);
