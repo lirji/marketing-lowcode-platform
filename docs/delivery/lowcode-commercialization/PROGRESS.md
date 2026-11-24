@@ -10,6 +10,7 @@
 | LC-04 | 等待前置 | LC-03 完成后，以已签收的出资分摊和分次退款样本验证冲回 |
 | LC-05 | 等待前置 | LC-04 完成后，按确认、退款及异常处理状态完成完整日结 |
 | LC-05a | 本机验证通过 | 控制台用既有流水查询权限导出已加载明细，保留精确金额、范围、订单过滤和分页状态。构建、Lint、277 个单测通过，浏览器 116 通过、12 条按环境跳过。候选控制台通过本机网关导出两条初始化账本记录，CSV 与查询结果一致 |
+| LC-05b | 本机专项通过 | 资金汇总提供按币种及归属的补贴确认、退款或冲正和净额。控制台可导出同口径 CSV，保留窗口、租户、权限范围及关联校验状态。真实 MySQL 验证跨日、权限、全额冲正和超出单笔 long 范围的汇总 |
 | LC-06 | 等待前置及授权 | LC-05 的财务验收、试点门店、关账观察期和上线授权 |
 | LC-07 | 来源准备完成，等待合同 | 已识别业务身份、水位、冻结注销与等级写入边界。等待 Commerce 和 Auth 签收身份与全量读取合同 |
 | LC-07a | 专项与远端源码验证通过 | Commerce `69a57b0` 的同步入口在固定只读事务内按会员主键分批扫描。隔离 MySQL 验证空结果、10,000 行、超限拒绝和两批间提交等级及状态变更。旧请求读取一致，新请求读取更新值。`452eda1` 进一步隔离重复验证的对照租户 |
@@ -25,5 +26,6 @@
 - 首轮复核基线为营销 `07393f1`、商城 `cd5ba82` 和交易 `d85d392`。营销任务分支为 `feat/lowcode-commercialization`。交易中心既有未提交改动保留。
 - 脱敏本机复核记录为 `~/.local/share/marketing-delivery/lowcode-commercialization/live-readonly.json`。历史交易隔离证据位于 `~/.local/share/marketing-delivery/platform-integration-20261124/`；商城本机验证位于 `~/.local/share/marketing-delivery/commerce-member-audience/`。记录可区分本机、隔离、正式证据。
 - 流水导出证据位于 `~/.local/share/marketing-delivery/lowcode-commercialization/lc05/`。`live-result.json` 记录租户级只读审计身份在 1440 和 390 像素的候选版验证。网关验证缺少对账权限时返回 403，默认门店范围查询该初始化订单为空。操作见[运行手册](../../operations/RUNBOOK.md#按订单核对营销补贴流水)。
+- 账本汇总证据位于 `~/.local/share/marketing-delivery/lowcode-commercialization/lc05b/`。资金服务全量 106 项通过。最终改动复验 20 项真实 MySQL 集成及 16 项契约通过。现有本机资金服务收到新参数后仍返回 HTTP 200 和原来的净额结构，桌面与手机验收了同口径导出和旧服务缺分项状态。这些证据用于工程验收，正式试点仍由真实付款和退款分摊凭证签收。
 - 会员本机验证日志位于 `~/.local/share/marketing-delivery/lowcode-commercialization/lc07/`。首次并发用例执行测试替身失败，调整为当前事务绑定的 SqlSession 执行真实 XML 后通过。并行全量回归出现既有积分测试事务超时，随后专项复验 10 项全部通过，见 `targeted-final.log`。CI `45365787291` 对 `69a57b0` 完整验证通过。现有机器租户过滤及 10,000 人同步入口约束继续适用。
 - 后续收到签收记录时先核对授权及同单证据。LC-02 签收后执行 LC-03，随后在 LC-04 验证退款分摊。会员身份及全量水位合同到位时可并行继续 LC-07。旅程和裂变的额外业务缺件见[就绪条件](READINESS.md#lc-10-和-lc-12-的就绪条件)。

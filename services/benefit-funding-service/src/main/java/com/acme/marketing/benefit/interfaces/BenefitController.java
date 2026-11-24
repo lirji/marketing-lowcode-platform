@@ -153,7 +153,8 @@ public class BenefitController {
     /** 对账汇总继承流水读取权限，并返回实际采用的范围与币种。 */
     @GetMapping("/funding/subsidy-postings/summary")
     public BenefitFundingService.SubsidyPostingSummary subsidyPostingSummary(@RequestParam Instant from,
-            @RequestParam Instant to, @RequestParam(required = false) String campaignId) {
-        return service.subsidyPostingSummary(from, to, campaignId);
+            @RequestParam Instant to, @RequestParam(required = false) String campaignId,
+            @RequestParam(defaultValue = "false") boolean includeBreakdown) {
+        return service.subsidyPostingSummary(from, to, campaignId, includeBreakdown);
     }
 }

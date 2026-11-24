@@ -434,7 +434,7 @@ export const api = {
     request(`/api/v1/quarantine/${encodeURIComponent(quarantineId)}:replay`, { method: 'POST', headers: commandHeaders() }, (value) => value),
   reconciliation: () => request('/api/v1/funding/reconciliation', undefined, (value) => parseWith(reconciliationSchema, value)),
   subsidyPostingSummary: (query: { tenantId: string; from: string; to: string; campaignId?: string }) => {
-    const params = new URLSearchParams({ from: query.from, to: query.to })
+    const params = new URLSearchParams({ from: query.from, to: query.to, includeBreakdown: 'true' })
     if (query.campaignId) params.set('campaignId', query.campaignId)
     return request(`/api/v1/funding/subsidy-postings/summary?${params}`, undefined, value => {
       const summary = parseWith(subsidyPostingSummarySchema, value)

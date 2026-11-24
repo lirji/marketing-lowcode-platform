@@ -16,6 +16,7 @@ import com.acme.marketing.platform.error.NotFoundException;
 import com.acme.marketing.platform.identity.TenantId;
 import com.acme.marketing.platform.identity.TenantScope;
 import com.acme.marketing.platform.web.TenantContextHolder;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -677,14 +678,16 @@ public class BenefitFundingService {
 
     /** 在一次数据库读取中按币种汇总；选定活动时另列同窗口、授权范围内的待归属流水。 */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public SubsidyPostingSummary subsidyPostingSummary(Instant from, Instant to, String campaignId) {
+    public SubsidyPostingSummary subsidyPostingSummary(Instant from, Instant to, String campaignId, boolean includeBreakdown) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission(RECONCILE_PERMISSION);
         var filter = subsidyPostingFilter(scope, from, to, campaignId, null, false);
         List<SubsidySummaryGroup> groups = scope.organizations().isEmpty() || scope.shops().isEmpty()
                 ? List.of() : repository.summarizeSubsidyPostings(filter).stream().map(row -> new SubsidySummaryGroup(
                         row.currency(), row.unassigned(), Long.toString(row.postingCount()),
-                        row.netAmountMinor().toPlainString())).toList();
+                        row.confirmedAmountMinor().subtract(row.reversedAmountMinor()).toPlainString(),
+                        includeBreakdown ? new SubsidyPostingBreakdown(row.confirmedAmountMinor().toPlainString(),
+                                row.reversedAmountMinor().toPlainString()) : null)).toList();
         boolean tenantWide = filter.organizations() == null && filter.allowedShopsJson() == null;
         // 覆盖校验与金额使用同一事务快照。受限身份无法安全归属脱链记录，不返回全租户计数。
         String unmatchedCount = tenantWide ? Long.toString(repository.countUnmatchedSubsidyPostings(filter)) : null;
@@ -1411,7 +1414,11 @@ public class BenefitFundingService {
     /** 回显已应用的订单号，原流水返回形状及游标规则保留供旧客户端使用。 */
     public record OrderSubsidyPostingPage(String orderId, SubsidyPostingPage page) { }
     /** 金额和笔数均保留十进制字符串，汇总允许为负和零。 */
-    public record SubsidySummaryGroup(String currency, boolean unassigned, String postingCount, String netAmountMinor) { }
+    public record SubsidySummaryGroup(String currency, boolean unassigned, String postingCount, String netAmountMinor,
+            @JsonInclude(JsonInclude.Include.NON_NULL) SubsidyPostingBreakdown breakdown) { }
+
+    /** 两项均为非负分值，净额等于确认金额扣除退款与冲正。 */
+    public record SubsidyPostingBreakdown(String confirmedAmountMinor, String reversedAmountMinor) { }
 
     /** tenantWide 描述授权范围；readAt 记录读取时间，不代表数据源的完整水位。 */
     public record SubsidyPostingSummary(String tenantId, Instant from, Instant to, String campaignId,

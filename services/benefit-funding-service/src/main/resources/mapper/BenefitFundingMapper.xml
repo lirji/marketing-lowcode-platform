@@ -432,8 +432,10 @@
     <select id="summarizeSubsidyPostings"
             resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$SubsidySummaryRow">
         SELECT r.currency_code AS currency, a.campaign_id IS NULL AS unassigned, COUNT(*) AS postingCount,
-               SUM(CAST(CASE WHEN l.operation_name = 'REFUND' THEN -l.amount_value ELSE l.amount_value END
-                   AS DECIMAL(65, 0))) AS netAmountMinor
+               SUM(CAST(CASE WHEN l.operation_name = 'CONFIRM' THEN l.amount_value ELSE 0 END
+                   AS DECIMAL(65, 0))) AS confirmedAmountMinor,
+               SUM(CAST(CASE WHEN l.operation_name = 'REFUND' THEN l.amount_value ELSE 0 END
+                   AS DECIMAL(65, 0))) AS reversedAmountMinor
         <include refid="subsidyPostingBaseScope"/>
         <if test="scope.campaignId != null">
             AND (CAST(a.campaign_id AS BINARY) = CAST(#{scope.campaignId} AS BINARY) OR a.campaign_id IS NULL)

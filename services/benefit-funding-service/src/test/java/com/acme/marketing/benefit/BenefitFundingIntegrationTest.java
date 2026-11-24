@@ -754,6 +754,9 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         assertEquals("REVERSED", reversed.get("state").asString());
         assertEquals(-800, totalPostings(postings(BEIJING_MIDNIGHT.plusSeconds(3), BEIJING_MIDNIGHT.plusSeconds(4))
                 + "&campaignId=campaign-ledger"));
+        var fullWindow = get(postings(BEIJING_MIDNIGHT.minusSeconds(20), BEIJING_MIDNIGHT.plusSeconds(4))
+                .replace("subsidy-postings?", "subsidy-postings/summary?") + "&campaignId=campaign-ledger&includeBreakdown=true");
+        assertPostingAmounts(fullWindow, "1000", "1000", "0");
 
         JsonNode reconciliation = get("/api/v1/funding/reconciliation");
         assertTrue(reconciliation.get("balanced").asBoolean());
@@ -779,16 +782,22 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         assertEquals("1000", scopedSummary.path("groups").get(0).path("netAmountMinor").asString());
         assertEquals("3", scopedSummary.path("groups").get(0).path("postingCount").asString());
         assertFalse(scopedSummary.path("groups").get(0).path("unassigned").asBoolean());
+        assertFalse(scopedSummary.path("groups").get(0).has("breakdown"));
+        assertEquals(scopedSummary, get(firstSummary + "&includeBreakdown=false"));
+        String breakdownPath = firstSummary + "&includeBreakdown=true";
+        assertPostingAmounts(get(breakdownPath), "1000", "0", "1000");
         var tenantWide = exchange(base(firstSummary).setHeader("X-Dev-Organization-Ids", "*")
                 .setHeader("X-Dev-Shop-Ids", "*").GET().build());
         assertTrue(tenantWide.path("tenantWide").asBoolean());
         assertEquals("0", tenantWide.path("unmatchedPostingCount").asString());
         assertTrue(scopedSummary.path("unmatchedPostingCount").isNull());
-        var otherShopSummary = exchange(base(firstSummary).setHeader("X-Dev-Shop-Ids", "shop-other").GET().build());
+        var otherShopSummary = exchange(base(breakdownPath).setHeader("X-Dev-Shop-Ids", "shop-other").GET().build());
         assertEquals(0, otherShopSummary.path("groups").size());
-        assertEquals(0, getTenant(firstSummary, "other-tenant").path("groups").size());
-        assertEquals("-200", get(nextDay.replace("subsidy-postings?", "subsidy-postings/summary?"))
-                .path("groups").get(0).path("netAmountMinor").asString());
+        assertEquals(0, getTenant(breakdownPath, "other-tenant").path("groups").size());
+        assertEquals(403, client.send(base(breakdownPath).setHeader("X-Dev-Permissions", "measurement:read")
+                .GET().build(), HttpResponse.BodyHandlers.ofString()).statusCode());
+        assertPostingAmounts(get(nextDay.replace("subsidy-postings?", "subsidy-postings/summary?")
+                + "&includeBreakdown=true"), "0", "200", "-200");
         List<JsonNode> paged = getSubsidyPostings(firstDay + "&limit=1");
         assertEquals(3, paged.size());
         assertEquals(3, new HashSet<>(paged.stream().map(row -> row.path("ledgerId").asString()).toList()).size());
@@ -808,6 +817,15 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
                 .GET().build(), HttpResponse.BodyHandlers.ofString());
         assertEquals(400, cursorFromOtherDay.statusCode());
         assertOrderPostingScope(firstDay, nextDay, applicationId);
+    }
+
+    /** 同一窗口内两项与净额共享范围，只有一类分录时另一项必须返回明确的零。 */
+    private static void assertPostingAmounts(JsonNode summary, String confirmed, String reversed, String net) {
+        assertEquals(1, summary.path("groups").size());
+        var group = summary.path("groups").get(0);
+        assertEquals(confirmed, group.at("/breakdown/confirmedAmountMinor").asString());
+        assertEquals(reversed, group.at("/breakdown/reversedAmountMinor").asString());
+        assertEquals(net, group.path("netAmountMinor").asString());
     }
 
     /** 订单查看复用同一授权和游标契约，区分大小写且不把退款移到原支付日。 */
@@ -853,16 +871,22 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         assertEquals(3, unassigned.size());
         assertTrue(unassigned.get(0).path("campaignId").isNull());
         assertEquals(0, getTenant(day + "&campaignId=campaign-ledger", tenant).path("items").size());
-        var groups = getTenant(day.replace("subsidy-postings?", "subsidy-postings/summary?") + "&campaignId=campaign-ledger", tenant).path("groups");
-        assertEquals(1, groups.size());
-        assertTrue(groups.get(0).path("unassigned").asBoolean());
-        assertEquals("1000", groups.get(0).path("netAmountMinor").asString());
+        String summaryPath = day.replace("subsidy-postings?", "subsidy-postings/summary?")
+                + "&campaignId=campaign-ledger&includeBreakdown=true";
+        var summary = getTenant(summaryPath, tenant);
+        assertPostingAmounts(summary, "1000", "0", "1000");
+        assertTrue(summary.at("/groups/0/unassigned").asBoolean());
         var legacy = postRaw("/api/v1/promotion-applications/" + applicationId + ":attribute-campaign",
                 Map.of("offerToken", legacyToken), null, tenant);
         assertEquals(409, legacy.statusCode());
         assertEquals("SUBSIDY_ATTRIBUTION_CAMPAIGN_MISSING", mapper.readTree(legacy.body()).path("code").asString());
         assertEquals(3, getTenant(day + "&unassigned=true", tenant).path("items").size());
         assertEquals(0, getTenant(postings(BEIJING_MIDNIGHT.minusSeconds(1), BEIJING_MIDNIGHT), tenant).path("items").size());
+
+        // 扩大这组隔离账本行，覆盖单笔仍为 long、汇总已经超出 long 的精度边界。
+        assertEquals(3, jdbc.update("update mk_funding_ledger set amount_value=? where tenant_id=? and application_id=?"
+                + " and operation_name='CONFIRM' and resource_key like 'BUDGET:%'", Long.MAX_VALUE, tenant, applicationId));
+        assertPostingAmounts(getTenant(summaryPath, tenant), "27670116110564327421", "0", "27670116110564327421");
     }
 
     @Test void onlyExactOriginalQuoteRecoversCampaignAndFirstAuditWinsConcurrentRetries() throws Exception {

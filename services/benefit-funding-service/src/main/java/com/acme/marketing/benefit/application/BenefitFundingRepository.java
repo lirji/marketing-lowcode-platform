@@ -167,7 +167,8 @@ public interface BenefitFundingRepository {
     record SubsidyPostingRow(String ledgerId, String postingTime, String applicationId, String campaignId,
             String resourceKey, String currency, String operation, long amount) { }
     /** 跨流水汇总使用数据库精确十进制，允许结果超过单笔 long 金额范围。 */
-    record SubsidySummaryRow(String currency, boolean unassigned, long postingCount, BigDecimal netAmountMinor) { }
+    record SubsidySummaryRow(String currency, boolean unassigned, long postingCount,
+            BigDecimal confirmedAmountMinor, BigDecimal reversedAmountMinor) { }
     record OutboxWrite(String tenantId, String eventId, String aggregateId, String eventType,
             String destinationTopic, String partitionKey, long streamSequence, String payloadJson,
             String nextAttemptAt, String createdAt) { }

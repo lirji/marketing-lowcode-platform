@@ -1099,6 +1099,7 @@ paths:
         - {in: query, name: from, required: true, description: Inclusive, schema: {type: string, format: date-time}}
         - {in: query, name: to, required: true, description: Exclusive; maximum window 31 days, schema: {type: string, format: date-time}}
         - {in: query, name: campaignId, required: false, schema: {type: string, pattern: '^[A-Za-z0-9_.:-]{1,64}$'}}
+        - {in: query, name: includeBreakdown, required: false, description: Request confirmed and reversed amounts for each group. Older servers can return the net-only representation., schema: {type: boolean, default: false}}
       responses:
         '200':
           description: Net budget postings for the actual authorized scope
@@ -1130,6 +1131,14 @@ paths:
                         unassigned: {type: boolean}
                         postingCount: {type: string, pattern: '^[1-9][0-9]*$'}
                         netAmountMinor: {type: string, pattern: '^-?(0|[1-9][0-9]*)$'}
+                        breakdown:
+                          description: Returned in each group when includeBreakdown is requested and supported. The amounts are nonnegative magnitudes in that currency's minor units. Net equals confirmed minus reversed.
+                          type: object
+                          additionalProperties: false
+                          required: [confirmedAmountMinor, reversedAmountMinor]
+                          properties:
+                            confirmedAmountMinor: {type: string, pattern: '^(0|[1-9][0-9]*)$', description: Sum of budget CONFIRM postings in the selected window.}
+                            reversedAmountMinor: {type: string, pattern: '^(0|[1-9][0-9]*)$', description: Sum of budget REFUND postings including reversals in the selected window.}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/events/sources:
     post: {tags: [Event], operationId: registerEventSource, parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *created}

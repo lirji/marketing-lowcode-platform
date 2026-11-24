@@ -6,10 +6,36 @@ import { Button, EmptyState, Panel, PanelHeader, StateBanner } from '../../compo
 import { api } from '../../shared/api/client'
 import { problemDetail } from '../../shared/api/problem'
 import type { SubsidyPostingSummary } from '../../shared/api/schemas'
+import { downloadCsv, formatCsv } from '../../shared/downloadCsv'
 import { displayMinor, type AnalyticsRange } from './analyticsReport'
 
 const REPORT_CURRENCY = 'CNY'
 const cny = (minor: number | bigint) => `¥${displayMinor(minor)}`
+const COLUMNS = [
+  { label: '来源', width: 110 }, { label: '活动归属', width: 110 }, { label: '币种', width: 76 },
+  { label: '补贴确认', width: 148 }, { label: '退款或冲正', width: 148 }, { label: '净额', width: 148 },
+  { label: '账本流水数', width: 110 },
+]
+
+function ledgerAmount(minor: string | undefined, currency: string) {
+  if (minor === undefined) return '—'
+  const amount = BigInt(minor)
+  return currency === REPORT_CURRENCY ? cny(amount) : `${amount.toLocaleString('zh-CN')}（最小货币单位）`
+}
+
+function downloadLedgerSummary(summary: SubsidyPostingSummary) {
+  const content = formatCsv([
+    ['租户 ID', '授权范围', '活动筛选 ID', '入账开始（UTC，含）', '入账结束（UTC，不含）', '读取时间（UTC）',
+      '活动归属', '币种', '补贴确认（最小货币单位）', '退款或冲正（最小货币单位）', '净额（最小货币单位）',
+      '账本流水数', '待核查关联流水数（同窗口）'],
+    ...summary.groups.map(group => [summary.tenantId, summary.tenantWide ? '租户' : '授权组织与门店', summary.campaignId ?? '',
+      summary.from, summary.to, summary.readAt, group.unassigned ? '待归属' : '已归属', group.currency,
+      group.breakdown ? BigInt(group.breakdown.confirmedAmountMinor) : '',
+      group.breakdown ? BigInt(group.breakdown.reversedAmountMinor) : '', BigInt(group.netAmountMinor),
+      BigInt(group.postingCount), summary.unmatchedPostingCount == null ? '当前范围未返回' : BigInt(summary.unmatchedPostingCount)]),
+  ])
+  downloadCsv(content, `subsidy-ledger-summary-${new Date(summary.to).toISOString().replaceAll(':', '-')}.csv`)
+}
 
 function coverageIssue(summary: SubsidyPostingSummary) {
   if (!summary.tenantWide) return { reason: '账本仅覆盖当前身份可见的组织和店铺，事件汇总采用租户范围。' }
@@ -51,20 +77,28 @@ export function SubsidyComparisonPanel({ scope, tenantId, range, campaignId, eve
 
 function ComparisonResult({ summary, eventCost, eventReadAt }: { summary: SubsidyPostingSummary; eventCost?: number; eventReadAt?: string }) {
   const hasPostings = summary.groups.length > 0
+  const breakdownAvailable = summary.groups.every(group => group.breakdown !== undefined)
   const difference = hasPostings ? comparableDifference(summary, eventCost) : coverageIssue(summary)
   return <>
     <p className="field-hint">账本读取时间 {displayTimestamp(summary.readAt)}。事件读取时间 {displayTimestamp(eventReadAt)}。</p>
     {!hasPostings && !difference && <EmptyState title="所选范围没有可见的补贴流水" detail="可调整时间和活动后重新查询。" />}
     {hasPostings &&
-      <RecordTable label="补贴成本对账" columns={['来源', '活动归属', '币种', '净额', '账本流水数']}>
-        <tr><td>事件投影</td><td>{summary.campaignId ? '所选活动' : '全部活动'}</td><td>{REPORT_CURRENCY}</td><td>{eventCost === undefined ? '待覆盖' : cny(eventCost)}</td><td>—</td></tr>
+      <RecordTable label="补贴成本对账" columns={COLUMNS}>
+        <tr><td>事件投影</td><td>{summary.campaignId ? '所选活动' : '全部活动'}</td><td>{REPORT_CURRENCY}</td><td>—</td><td>—</td><td>{eventCost === undefined ? '待覆盖' : cny(eventCost)}</td><td>—</td></tr>
         {summary.groups.map(group => <tr key={JSON.stringify([group.currency, group.unassigned])}>
           <td>资金账本</td><td>{group.unassigned ? '待归属' : summary.campaignId ? '所选活动' : '已归属'}</td><td>{group.currency}</td>
-          <td>{group.currency === REPORT_CURRENCY ? cny(BigInt(group.netAmountMinor)) : `${BigInt(group.netAmountMinor).toLocaleString('zh-CN')}（最小货币单位）`}</td>
+          <td>{ledgerAmount(group.breakdown?.confirmedAmountMinor, group.currency)}</td>
+          <td>{ledgerAmount(group.breakdown?.reversedAmountMinor, group.currency)}</td>
+          <td>{ledgerAmount(group.netAmountMinor, group.currency)}</td>
           <td>{BigInt(group.postingCount).toLocaleString('zh-CN')}</td>
         </tr>)}
       </RecordTable>
     }
+    {!breakdownAvailable && <p className="field-hint">当前资金服务未返回账本分项，表中仍可核对净额。</p>}
+    {hasPostings && breakdownAvailable && <>
+      <div className="action-bar toolbar"><Button onClick={() => downloadLedgerSummary(summary)} aria-describedby="ledger-summary-export-hint">导出账本汇总</Button></div>
+      <p className="field-hint" id="ledger-summary-export-hint">CSV 金额按最小货币单位输出。可将金额列按文本导入，以保留完整精度。</p>
+    </>}
     {difference && ('amount' in difference
       ? <StateBanner tone={difference.amount === 0n ? 'info' : 'warn'} title="事件成本减账本净补贴" detail={cny(difference.amount)} />
       : <StateBanner tone="warn" title="暂无法计算可比差额" detail={difference.reason} />)}
