@@ -2,8 +2,8 @@ import { useEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from 're
 import { X } from 'lucide-react'
 import { runtimeConfig } from '../shared/config/runtime'
 
-export function PageHeader({ eyebrow, title, description, actions }: { eyebrow: string; title: string; description: string; actions?: ReactNode }) {
-  return <section className="page-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{description}</p></div>{actions && <div className="heading-actions">{actions}</div>}</section>
+export function PageHeader({ eyebrow, title, description, actions }: { eyebrow?: string; title: string; description: string; actions?: ReactNode }) {
+  return <header className="page-heading"><div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h1>{title}</h1><p>{description}</p></div>{actions && <div className="heading-actions">{actions}</div>}</header>
 }
 
 export function Button({ tone = 'secondary', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: 'primary' | 'secondary' | 'danger' | 'ghost' }) {
@@ -22,8 +22,8 @@ export function PanelHeader({ eyebrow, title, aside }: { eyebrow?: string; title
   return <div className="panel-head"><div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h2>{title}</h2></div>{aside}</div>
 }
 
-export function StateBanner({ tone, title, detail }: { tone: 'loading' | 'error' | 'warn' | 'success' | 'info'; title: string; detail: string }) {
-  return <div className={`state-banner ${tone}`} role={tone === 'error' ? 'alert' : 'status'}><i /><div><strong>{title}</strong><span>{detail}</span></div></div>
+export function StateBanner({ tone, title, detail, action }: { tone: 'loading' | 'error' | 'warn' | 'success' | 'info'; title: string; detail: string; action?: ReactNode }) {
+  return <div className={`state-banner ${tone}${action ? ' with-action' : ''}`}><div className="state-message" role={tone === 'error' ? 'alert' : 'status'}><i aria-hidden="true" /><div><strong>{title}</strong><span>{detail}</span></div></div>{action}</div>
 }
 
 export function DemoBanner() {
@@ -33,16 +33,19 @@ export function DemoBanner() {
 
 export function Modal({ title, description, children, onClose }: { title: string; description?: string; children: ReactNode; onClose: () => void }) {
   const card = useRef<HTMLElement>(null)
+  // 输入框的 autoFocus 会在 effect 之前运行，因此在打开时记录原来的操作位置。
+  const opener = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : null)
+  const close = useRef(onClose)
+  useEffect(() => { close.current = onClose }, [onClose])
   useEffect(() => {
-    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const root = card.current
     const focusable = () => Array.from(root?.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])') ?? []).filter((node) => !node.hasAttribute('disabled') && node.getAttribute('tabindex') !== '-1' && node.getAttribute('type') !== 'hidden' && !node.closest('[aria-hidden="true"]'))
-    focusable()[0]?.focus()
+    if (!root?.contains(document.activeElement)) focusable()[0]?.focus()
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return
       if (event.key === 'Escape') {
         event.preventDefault()
-        onClose()
+        close.current()
         return
       }
       if (event.key !== 'Tab') return
@@ -61,9 +64,9 @@ export function Modal({ title, description, children, onClose }: { title: string
     window.addEventListener('keydown', onKey)
     return () => {
       window.removeEventListener('keydown', onKey)
-      previouslyFocused?.focus()
+      opener.current?.focus({ preventScroll: true })
     }
-  }, [onClose])
+  }, [])
   return (
     <div className="modal-layer" role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={onClose}>
       <section ref={card} className="modal-card" onMouseDown={(event) => event.stopPropagation()}>

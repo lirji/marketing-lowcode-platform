@@ -10,6 +10,7 @@ import { reportUnknownError } from './shared/observability/report'
 import { runtimeConfigError } from './shared/config/runtime'
 import './styles.css'
 import './feature-styles.css'
+import './console-layout.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {

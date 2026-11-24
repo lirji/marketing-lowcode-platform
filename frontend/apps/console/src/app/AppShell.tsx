@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Bell, Building2, ChevronDown, Command, Menu, Search, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Building2, ChevronDown, ClipboardCheck, Command, Menu, Search, X } from 'lucide-react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { navigation } from './navigation'
 import { useAuth } from '../shared/auth/useAuth'
@@ -23,6 +23,9 @@ export function AppShell() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [logoutOpen, setLogoutOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const menuTrigger = useRef<HTMLButtonElement>(null)
+  const navClose = useRef<HTMLButtonElement>(null)
+  const searchTrigger = useRef<HTMLButtonElement>(null)
   const navigate = useNavigate()
   const location = useLocation()
   const auth = useAuth()
@@ -34,8 +37,9 @@ export function AppShell() {
       .filter((group) => group.items.length > 0),
     [permissions, authenticated, auth.hasAnyPermission],
   )
-  const searchable = useMemo(() => visibleNav.flatMap((group) => group.items), [visibleNav])
-  const results = searchable.filter((item) => item.label.toLowerCase().includes(query.toLowerCase()))
+  const searchable = useMemo(() => visibleNav.flatMap((group) => group.items.map(item => ({ ...item, group: group.label }))), [visibleNav])
+  const results = searchable.filter((item) => item.label.toLowerCase().includes(query.trim().toLowerCase()))
+  const canOpenGovernance = searchable.some(item => item.path === '/governance')
   const approvals = useApprovalPages(APPROVAL_STATUS.OPEN, authenticated, APPROVAL_PAGE_SIZES.MAX)
   const releases = useReleasePages(ReleaseState.ACTIVE)
   const openApprovals = approvals.items.length
@@ -48,12 +52,30 @@ export function AppShell() {
   const orgLabel = auth.organizations.includes('*') || auth.organizations.length === 0
     ? '全域组织'
     : auth.organizations.join(' / ')
+  const shopLabel = auth.shops.includes('*') || auth.shops.length === 0 ? '全部店铺' : auth.shops.join(' / ')
 
   useEffect(() => setNavOpen(false), [location.pathname])
+  useEffect(() => {
+    if (!searchOpen) return
+    return () => { requestAnimationFrame(() => searchTrigger.current?.focus()) }
+  }, [searchOpen])
+  useEffect(() => {
+    if (!navOpen) return
+    const desktop = window.matchMedia('(min-width: 721px)')
+    const closeOnDesktop = (event: MediaQueryListEvent) => { if (event.matches) setNavOpen(false) }
+    desktop.addEventListener('change', closeOnDesktop)
+    navClose.current?.focus()
+    return () => {
+      desktop.removeEventListener('change', closeOnDesktop)
+      requestAnimationFrame(() => menuTrigger.current?.focus())
+    }
+  }, [navOpen])
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
+        setNavOpen(false)
+        setQuery('')
         setSearchOpen(true)
       }
       if (event.key === 'Escape') setSearchOpen(false)
@@ -90,8 +112,15 @@ export function AppShell() {
 
   return (
     <div className="app-shell">
-      <aside className={`sidebar ${navOpen ? 'open' : ''}`}>
-        <div className="brand"><span className="brand-mark">M</span><span><strong>Meridian</strong><small>营销中枢</small></span><button className="mobile-close" type="button" onClick={() => setNavOpen(false)} aria-label="关闭菜单"><X size={17} /></button></div>
+      <aside id="console-navigation" inert={searchOpen} role={navOpen ? 'dialog' : undefined} aria-modal={navOpen || undefined} aria-label={navOpen ? '工作台菜单' : undefined} className={`sidebar ${navOpen ? 'open' : ''}`} onKeyDown={event => {
+        if (!navOpen) return
+        if (event.key === 'Escape') { event.preventDefault(); setNavOpen(false); return }
+        if (event.key !== 'Tab') return
+        const lastLink = Array.from(event.currentTarget.querySelectorAll('a')).at(-1)
+        if (event.shiftKey && event.target === navClose.current && lastLink) { event.preventDefault(); lastLink.focus() }
+        if (!event.shiftKey && (event.target === lastLink || !lastLink)) { event.preventDefault(); navClose.current?.focus() }
+      }}>
+        <div className="brand"><span className="brand-mark" aria-hidden="true">M</span><span><strong>Meridian</strong><small>营销中枢</small></span><button ref={navClose} className="mobile-close" type="button" onClick={() => setNavOpen(false)} aria-label="关闭菜单"><X size={18} /></button></div>
         <nav aria-label="主导航">
           {visibleNav.map((group) => (
             <div className="nav-group" key={group.label}>
@@ -113,19 +142,19 @@ export function AppShell() {
           </div>
         </div>
       </aside>
-      {navOpen && <button className="nav-backdrop" type="button" aria-label="关闭菜单" onClick={() => setNavOpen(false)} />}
-      <main>
+      {navOpen && <button className="nav-backdrop" type="button" tabIndex={-1} aria-hidden="true" onClick={() => setNavOpen(false)} />}
+      <main inert={navOpen || searchOpen}>
         <header className="topbar">
-          <button className="mobile-menu" type="button" aria-label="打开菜单" onClick={() => setNavOpen(true)}><Menu size={19} /></button>
+          <button ref={menuTrigger} className="mobile-menu" type="button" aria-label="打开菜单" aria-controls="console-navigation" aria-expanded={navOpen} onClick={() => setNavOpen(true)}><Menu size={19} /></button>
           <div className="tenant-switch" title="业务租户是货主。创建活动只能看见同一货主已投放的商品。切换需重新登录。">
-            <span className="scope-icon"><Building2 size={17} aria-hidden="true" /></span><div className="scope-info"><strong>业务租户 · {auth.tenantId || '未声明'}</strong><small title={`${orgLabel} · ${auth.shops.includes('*') || auth.shops.length === 0 ? '全部店铺' : auth.shops.join(' / ')}`}>{orgLabel} · {auth.shops.includes('*') || auth.shops.length === 0 ? '全部店铺' : auth.shops.join(' / ')}</small></div>
+            <span className="scope-icon"><Building2 size={17} aria-hidden="true" /></span><div className="scope-info"><strong title={auth.tenantId}>业务租户 · {auth.tenantId || '未声明'}</strong><small title={`${orgLabel} · ${shopLabel}`}>{orgLabel} · {shopLabel}</small></div>
           </div>
-          <button className="global-search" type="button" onClick={() => setSearchOpen(true)}><Search size={16} /><span>搜索模块…</span><kbd><Command size={11} /> K</kbd></button>
-          <button className="icon-button" type="button" aria-label={openApprovals > 0 ? `${openApprovalLabel} 条可见待审核` : '通知'} onClick={() => navigate('/governance')}>
-            <Bell size={18} />
+          <button ref={searchTrigger} className="global-search" type="button" aria-label="搜索模块" aria-haspopup="dialog" onClick={() => { setQuery(''); setSearchOpen(true) }}><Search size={17} aria-hidden="true" /><span>搜索模块…</span><kbd aria-hidden="true"><Command size={11} /> K</kbd></button>
+          {canOpenGovernance && <button className="icon-button" type="button" aria-label={openApprovals > 0 ? `${openApprovalLabel} 条可见待审核` : '审核与风险'} title="审核与风险" onClick={() => navigate('/governance')}>
+            <ClipboardCheck size={18} />
             {openApprovals > 0 && <i />}
-          </button>
-          <button className="profile" type="button" onClick={() => setLogoutOpen(true)} title="账户">
+          </button>}
+          <button className="profile" type="button" onClick={() => setLogoutOpen(true)} title="账户" aria-label="账户">
             <span>{auth.displayName.slice(0, 1)}</span>
             <div><strong>{auth.displayName}</strong><small>{auth.subject || '未登录'}</small></div>
             <ChevronDown size={14} />
@@ -137,9 +166,17 @@ export function AppShell() {
       </main>
       {searchOpen && (
         <div className="modal-layer" role="dialog" aria-modal="true" aria-labelledby="command-title" onMouseDown={() => setSearchOpen(false)}>
-          <section className="command-panel" onMouseDown={(event) => event.stopPropagation()}>
-            <div className="command-input"><Search size={18} /><h2 id="command-title" className="sr-only">全局搜索</h2><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="输入模块名称…" /><kbd>ESC</kbd></div>
-            <div className="command-results">{results.map(({ label, path, icon: Icon }) => <button key={path} type="button" onClick={() => { navigate(path); setSearchOpen(false) }}><Icon size={16} /><span>{label}</span><small>{path}</small></button>)}</div>
+          <section className="command-panel" onMouseDown={event => event.stopPropagation()} onKeyDown={event => {
+            if (event.key !== 'Tab') return
+            const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('input, button'))
+            const first = controls[0], last = controls.at(-1)
+            if (event.shiftKey && event.target === first) { event.preventDefault(); last?.focus() }
+            if (!event.shiftKey && event.target === last) { event.preventDefault(); first?.focus() }
+          }}>
+            <div className="command-input"><Search size={18} aria-hidden="true" /><h2 id="command-title" className="sr-only">全局搜索</h2><input autoFocus aria-label="模块名称" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="输入模块名称…" onKeyDown={event => {
+              if (event.key === 'Enter' && results[0]) { navigate(results[0].path); setSearchOpen(false) }
+            }} /><kbd>ESC</kbd></div>
+            <div className="command-results">{results.length ? results.map(({ label, path, group, icon: Icon }) => <button key={path} type="button" onClick={() => { navigate(path); setSearchOpen(false) }}><Icon size={16} /><span>{label}</span><small>{group}</small></button>) : <p role="status">没有匹配的模块</p>}</div>
           </section>
         </div>
       )}

@@ -1,5 +1,31 @@
 import { expect, test } from '@playwright/test'
 
+test('operators can reach core workbenches by menu or keyboard search', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: '查看当前运营数据' })).toBeVisible()
+  const trigger = page.getByRole('button', { name: '打开菜单' })
+  if (await trigger.isVisible()) {
+    await expect(page.getByRole('navigation', { name: '主导航' })).toHaveCount(0)
+    await trigger.click()
+    const menu = page.getByRole('dialog', { name: '工作台菜单' })
+    await expect(menu.getByRole('link', { name: '衡量分析' })).toBeVisible()
+    await expect(menu.getByRole('button', { name: '关闭菜单' })).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(menu).toHaveCount(0)
+    await expect(trigger).toBeFocused()
+  }
+  const search = page.getByRole('button', { name: '搜索模块' })
+  await search.click()
+  const dialog = page.getByRole('dialog', { name: '全局搜索' })
+  const input = dialog.getByRole('textbox', { name: '模块名称' })
+  await input.fill('无此模块')
+  await expect(dialog.getByRole('status')).toHaveText('没有匹配的模块')
+  await input.fill('衡量分析')
+  await input.press('Enter')
+  await expect(page).toHaveURL(/\/analytics$/)
+  await expect(page.getByRole('heading', { name: '衡量分析', exact: true })).toBeVisible()
+})
+
 test('operator can enter governed campaign creation', async ({ page }) => {
   let created: Record<string, unknown> | undefined
   await page.addInitScript(() => { window.__MARKETING_CONFIG__ = { API_BASE_URL: '', DEMO_MODE: false, AUTH_MODE: 'DEV', ALLOW_DEV_AUTH: true } })

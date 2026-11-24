@@ -33,6 +33,14 @@ const statusMeta: Record<Campaign['status'], { label: string; tone: 'good'|'warn
   PAUSED: { label: '已暂停', tone: 'danger' }, ENDED: { label: '已结束', tone: 'neutral' },
 }
 
+const campaignColumns = [
+  { label: '活动名称', width: 154 }, { label: '状态', width: 76 }, { label: '活动类型', width: 94 },
+  { label: '目标', width: 190 }, { label: '活动 ID', width: 150 }, { label: '创建人', width: 96 },
+  { label: '组织 ID', width: 110 }, { label: '店铺 ID', width: 105 },
+  { label: '创建时间（北京时间）', width: 146 }, { label: '更新时间（北京时间）', width: 146 },
+  { label: '操作', width: 148 },
+] as const
+
 export function CampaignsPage() {
   const [params, setParams] = useSearchParams()
   const query = params.get('q') ?? ''
@@ -81,33 +89,41 @@ export function CampaignsPage() {
   const shopOptions = shopChoicesFromIdentity(auth.shops)
 
   return <div className="workspace campaigns-page">
-    <PageHeader eyebrow="运营工作台" title="计划与活动" description="管理营销活动，查看就绪情况，并进入对应的规则与旅程设计。" actions={auth.hasPermission('campaign:write') && <Button tone="primary" disabled={!canWrite} title={canWrite ? undefined : CAMPAIGN_WRITE_UNAVAILABLE} onClick={() => updateParams({ create: 'true' })}><Plus size={16} />创建活动</Button>} />
+    <PageHeader title="计划与活动" description="查看活动状态、规则配置和经营报表。" actions={auth.hasPermission('campaign:write') && <Button tone="primary" disabled={!canWrite} title={canWrite ? undefined : CAMPAIGN_WRITE_UNAVAILABLE} onClick={() => updateParams({ create: 'true' })}><Plus size={16} />创建活动</Button>} />
     <Panel className="table-panel">
       {api.demoMode ? <EmptyState title="活动列表需要连接后端" detail="当前为静态预览。连接营销服务后，可查看已保存的活动并创建新活动。" /> : !canRead ? <StateBanner tone="warn" title="没有查看活动的权限" detail="需要有效身份与 campaign:read 权限。" /> : <>
       <ListToolbar query={query} onQueryChange={(q) => updateParams({ q })} searchLabel="搜索活动" describedBy="campaign-search-hint" placeholder="搜索名称、目标或活动 ID" count={campaigns.data ? filtered.length : undefined} unit="个活动" busy={campaigns.isFetching} onRefresh={() => void campaigns.refetch()} onReset={query || status !== 'ALL' ? () => updateParams({ q: null, status: null }) : undefined}>
         <label className="compact-select"><Filter size={15} aria-hidden="true" /><span className="sr-only">状态筛选</span><Select value={status} onChange={(event) => updateParams({ status: event.target.value === 'ALL' ? null : event.target.value })}><option value="ALL">全部状态</option>{Object.entries(statusMeta).map(([value, meta]) => <option value={value} key={value}>{meta.label}</option>)}</Select></label>
       </ListToolbar>
-      <div className="collection-search-help"><FieldHint id="campaign-search-hint">按活动名称、活动 ID 或目标关键词搜索；状态通过右侧下拉框筛选。</FieldHint></div>
+      <div className="collection-search-help campaign-list-help">
+        <FieldHint id="campaign-search-hint">支持按活动名称、活动 ID 或目标搜索。</FieldHint>
+        {filtered.length > 0 && <span className="field-hint campaign-scroll-hint">横向滚动可查看完整字段</span>}
+      </div>
       {campaigns.isError && <div className="collection-message"><StateBanner tone="error" title="活动列表加载失败" detail={problemDetail(campaigns.error)} /></div>}
-      {campaigns.isLoading ? <div className="skeleton-list" aria-label="正在加载活动"><i /><i /><i /></div> : !campaigns.data && campaigns.isError ? null : filtered.length === 0 ? <EmptyState title={query || status !== 'ALL' ? '没有匹配的活动' : '还没有营销活动'} detail={query || status !== 'ALL' ? '试试其他关键词，或清除筛选查看全部活动。' : '创建一个活动，开始配置营销规则与旅程。'} action={query || status !== 'ALL' ? <Button onClick={() => updateParams({ q: null, status: null })}>清除筛选</Button> : undefined} /> : <RecordTable label="营销活动" columns={['活动名称', '活动 ID', '目标', '活动类型', '状态', '创建人', '组织 ID', '店铺 ID', '创建时间（北京时间）', '更新时间（北京时间）', '操作']} actions>
+      {campaigns.isLoading ? <div className="skeleton-list" aria-label="正在加载活动"><i /><i /><i /></div> : !campaigns.data && campaigns.isError ? null : filtered.length === 0 ? <EmptyState title={query || status !== 'ALL' ? '没有匹配的活动' : '还没有营销活动'} detail={query || status !== 'ALL' ? '试试其他关键词，或清除筛选查看全部活动。' : '创建一个活动，开始配置营销规则与旅程。'} action={query || status !== 'ALL' ? <Button onClick={() => updateParams({ q: null, status: null })}>清除筛选</Button> : undefined} /> : <RecordTable label="营销活动" columns={campaignColumns} actions>
           {filtered.map((item) => <Fragment key={item.id}>
             <tr className={readyId === item.id ? 'is-expanded' : ''}>
               <td><strong className="record-name">{item.name}</strong></td>
-              <td className="campaign-id-cell">{item.id}</td>
-              <td className="campaign-objective-cell">{item.objective || '未填写目标'}</td>
-              <td>{item.campaignType ? campaignTypeLabel(item.campaignType) : '类型未设置'}</td>
               <td><Badge tone={statusMeta[item.status].tone}>{statusMeta[item.status].label}</Badge></td>
+              <td>{item.campaignType ? campaignTypeLabel(item.campaignType) : '类型未设置'}</td>
+              <td className="campaign-objective-cell">{item.objective || '未填写目标'}</td>
+              <td className="campaign-id-cell">{item.id}</td>
               <td>{item.createdBy ?? '未提供'}</td>
               <td>{item.organizationId ?? '未提供'}</td>
               <td>{item.shopId === undefined ? '未提供' : item.shopId || '全部店铺'}</td>
               <td><RecordTime value={item.createdAt} /></td>
               <td><RecordTime value={item.updatedAt} /></td>
-              <td><div className="row-actions"><button type="button" className="row-action" aria-expanded={readyId === item.id} aria-controls={readyId === item.id ? `readiness-${item.id}` : undefined} onClick={() => setReadyId((current) => current === item.id ? null : item.id)}>{readyId === item.id ? '收起就绪' : '查看就绪'}</button>{canRead && auth.hasPermission('release:read') && item.campaignType === CAMPAIGN_TYPE.STANDARD && <button className="text-button" onClick={() => navigate(`/releases/bundles?campaignId=${encodeURIComponent(item.id)}`)}>组合发布</button>}<ActionMenu label="设计" subject={item.name} items={item.campaignType === CAMPAIGN_TYPE.REFERRAL ? [
+              <td><div className="row-actions">
+                {auth.hasPermission('measurement:read') && <Link className="row-action" to={`/analytics?campaignId=${encodeURIComponent(item.id)}`} aria-label={`查看${item.name}的报表`}>查看报表</Link>}
+                <button type="button" className="row-action" aria-expanded={readyId === item.id} aria-controls={readyId === item.id ? `readiness-${item.id}` : undefined} onClick={() => setReadyId((current) => current === item.id ? null : item.id)}>{readyId === item.id ? '收起就绪' : '查看就绪'}</button>
+                <ActionMenu label="设计" subject={item.name} items={item.campaignType === CAMPAIGN_TYPE.REFERRAL ? [
                 { label: '邀请有礼', to: `/designers/referral?campaignId=${encodeURIComponent(item.id)}`, state: { campaignName: item.name } },
               ] : [
                 { label: 'Offer 规则', to: `/designers/offer?campaignId=${encodeURIComponent(item.id)}`, state: { campaignName: item.name } },
                 { label: 'Journey 旅程', to: `/designers/journey?campaignId=${encodeURIComponent(item.id)}`, state: { campaignName: item.name } },
-              ]} />{auth.hasPermission('measurement:read') && <Link className="text-button" to={`/analytics?campaignId=${encodeURIComponent(item.id)}`} aria-label={`查看${item.name}的报表`}>查看报表</Link>}</div></td>
+                ]} />
+                {auth.hasPermission('release:read') && item.campaignType === CAMPAIGN_TYPE.STANDARD && <button type="button" className="row-action" onClick={() => navigate(`/releases/bundles?campaignId=${encodeURIComponent(item.id)}`)}>组合发布</button>}
+              </div></td>
             </tr>
             {readyId === item.id && <tr className="readiness-row"><td colSpan={11}><div id={`readiness-${item.id}`}><CampaignReadiness campaignId={item.id} campaignType={item.campaignType} /></div></td></tr>}
           </Fragment>)}
