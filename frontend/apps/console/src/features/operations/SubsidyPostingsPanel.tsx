@@ -12,10 +12,13 @@ import { problemDetail } from '../../shared/api/problem'
 import { MAX_SUBSIDY_ORDER_ID_LENGTH, MAX_SUBSIDY_RANGE_MS } from '../../shared/api/schemas'
 import { releaseScopeKey } from '../../shared/api/useReleasePages'
 import { useAuth } from '../../shared/auth/useAuth'
+import { downloadCsv, formatCsv } from '../../shared/downloadCsv'
 
 const UNASSIGNED = '!unassigned'
 const INITIAL_LINKED_RANGE_MS = 7 * 24 * 60 * 60 * 1_000
 const OPERATIONS = { CONFIRM: '补贴确认', REFUND: '退款或冲正' } as const
+const POSTING_COLUMNS = ['金额（最小货币单位）', '币种', '入账类型', '入账时间（北京时间）', '活动 ID', '出资账户', '资金申请 ID', '流水 ID']
+const PAGINATION = { PARTIAL: '还有下一页', EXHAUSTED: '已读取至最后一页' }
 
 export function SubsidyPostingsPanel() {
   const auth = useAuth()
@@ -67,6 +70,21 @@ function SubsidyPostingSearch({ scope }: { scope: string }) {
   const totals = new Map<string, bigint>()
   for (const item of items) totals.set(item.currency, (totals.get(item.currency) ?? 0n) + BigInt(item.amountMinor))
   const activityLabel = (id: string) => campaigns.data?.find(campaign => campaign.id === id)?.name ?? id
+  const appliedSelection = applied?.selection === UNASSIGNED ? '仅待归属流水'
+    : applied?.selection ? activityLabel(applied.selection) : '全部可见流水'
+
+  function downloadPostings() {
+    if (!applied || !postings.isSuccess || postings.isFetching || items.length === 0) return
+    const scope = [applied.from, applied.to, applied.selection === UNASSIGNED ? '' : applied.selection,
+      applied.selection === UNASSIGNED ? '仅待归属流水' : '可见流水', applied.orderId,
+      postings.hasNextPage ? PAGINATION.PARTIAL : PAGINATION.EXHAUSTED]
+    const file = formatCsv([
+      [...POSTING_COLUMNS, '入账时间（UTC）', '入账开始（UTC，含）', '入账结束（UTC，不含）', '活动筛选 ID', '归属范围', '订单号筛选', '分页状态'],
+      ...items.map(item => [BigInt(item.amountMinor), item.currency, OPERATIONS[item.operation], displayTimestamp(item.postedAt),
+        item.campaignId ?? '待归属', item.resourceKey, item.applicationId, item.ledgerId, item.postedAt, ...scope]),
+    ])
+    downloadCsv(file, `subsidy-postings-${new Date(applied.to).toISOString().replaceAll(':', '-')}.csv`)
+  }
 
   return <Panel className="reconciliation-report">
     <PanelHeader title="补贴流水" />
@@ -92,14 +110,14 @@ function SubsidyPostingSearch({ scope }: { scope: string }) {
       {!validOrder && <p className="field-hint span-2" role="status">订单号最多 {MAX_SUBSIDY_ORDER_ID_LENGTH} 个字符。</p>}
     </form>
     {campaigns.isError && <p className="field-hint">活动列表读取失败，仍可查询全部可见或待归属流水。 <Button onClick={() => void campaigns.refetch()}>重试活动列表</Button></p>}
-    {applied && <p className="field-hint">已查询范围 {displayTimestamp(applied.from)} 至 {displayTimestamp(applied.to)}。{applied.selection === UNASSIGNED ? '仅待归属流水' : applied.selection ? activityLabel(applied.selection) : '全部可见流水'}。</p>}
+    {applied && <p className="field-hint">已查询范围 {displayTimestamp(applied.from)} 至 {displayTimestamp(applied.to)}。{appliedSelection}。</p>}
     {applied?.orderId && <p className="field-hint subsidy-posting-order"><span>订单号 {applied.orderId}</span></p>}
     {applied && postings.isPending && <StateBanner tone="loading" title="正在读取补贴流水" detail="金额以资金账本的已入账记录为准。" />}
     {postings.isError && <StateBanner tone="error" title="补贴流水读取失败" detail={problemDetail(postings.error)} />}
     {postings.isSuccess && items.length === 0 && <EmptyState title="没有匹配的补贴流水" detail="可调整入账时间或活动归属后重试。" />}
     {items.length > 0 && <>
       <p className="field-hint">已加载 {items.length} 笔。已加载净额 {Array.from(totals, ([currency, amount]) => `${currency} ${amount.toLocaleString('zh-CN')}`).join('；')}（最小货币单位）。</p>
-      <RecordTable label="补贴流水" columns={['金额（最小货币单位）', '币种', '入账类型', '入账时间（北京时间）', '活动 ID', '出资账户', '资金申请 ID', '流水 ID']}>
+      <RecordTable label="补贴流水" columns={POSTING_COLUMNS}>
         {items.map(item => <tr key={item.ledgerId}>
           <td>{BigInt(item.amountMinor).toLocaleString('zh-CN')}</td><td>{item.currency}</td><td>{OPERATIONS[item.operation]}</td>
           <td><RecordTime value={item.postedAt} /></td><td>{item.campaignId ?? '待归属'}</td><td>{item.resourceKey}</td>
@@ -107,6 +125,10 @@ function SubsidyPostingSearch({ scope }: { scope: string }) {
         </tr>)}
       </RecordTable>
     </>}
-    {postings.hasNextPage && <div className="action-bar toolbar"><Button onClick={() => void postings.fetchNextPage()} disabled={postings.isFetching}>{postings.isFetchNextPageError ? '重试加载更多' : '加载更多流水'}</Button></div>}
+    {(postings.hasNextPage || items.length > 0) && <div className="action-bar toolbar">
+      {postings.hasNextPage && <Button onClick={() => void postings.fetchNextPage()} disabled={postings.isFetching}>{postings.isFetchNextPageError ? '重试加载更多' : '加载更多流水'}</Button>}
+      {items.length > 0 && <Button onClick={downloadPostings} disabled={!postings.isSuccess || postings.isFetching} aria-describedby="posting-export-hint">导出已加载流水</Button>}
+    </div>}
+    {items.length > 0 && <p className="field-hint" id="posting-export-hint">CSV 包含已加载的流水及查询范围。使用表格软件时，可将金额列按文本导入以保留完整精度。</p>}
   </Panel>
 }

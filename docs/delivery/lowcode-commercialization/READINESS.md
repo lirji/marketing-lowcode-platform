@@ -10,7 +10,7 @@
 | 支付、退款回执及证据版本 | 原生交易 Outbox 经 Kafka 形成四条隔离验收记录。资金持久入箱具备去重、回放和提交后推进位点。部署版本和源码已核对。见[交易回执消费手册](../../operations/RUNBOOK.md#交易回执消费) | 交易和 Auth 签收实际渠道、原生交易租户、主题及 ACL，提供同一订单的权威回执 |
 | 订单绑定 | 两版 Casdoor 的隔离验收均通过原生订单绑定。并发重试仅留首次绑定，退款前后可重放。绑定样本资金申请保持预占，账本只有两条预占分录。见[绑定合同](../../operations/RUNBOOK.md#交易订单绑定) | 资金与 Auth 确认试点机器身份、营销与交易租户配对、组织及门店授权 |
 | 营销确认与部分退款 | 既有满减隔离验收覆盖预占、确认、两次退款及完整冲回。另一条跨平台历史样本用测试消费端和指定分摊执行确认和退款。现有[资金命令](../../../services/benefit-funding-service/src/main/java/com/acme/marketing/benefit/application/BenefitFundingService.java)要求按资源提交退款金额。原生[交易回执](../../../services/benefit-funding-service/src/main/java/com/acme/marketing/benefit/infrastructure/trade/TradeReceipt.java)携带支付、退款及累计金额 | 财务确认以何种支付事实入账，从原报价分摊和哪份退款凭证形成出资方金额 |
-| 当前订单级账本与客服追溯 | 本机网关与控制台对同一本机订单均返回 HTTP 200，两笔预算确认与 MySQL 流水 ID 和金额一致，合计人民币 80 元。本机查询范围缺少同笔订单同时含确认与退款的预算样本。此笔订单在 Decision 和 Measurement 两个追踪入口均返回 404 | 财务和运营提供能共同核对活动版本、报价、支付、退款及账本的真实试点订单 |
+| 当前订单级账本与客服追溯 | 本机网关与控制台对同一本机订单均返回 HTTP 200，两笔预算确认与 MySQL 流水 ID 和金额一致，合计人民币 80 元。该订单源于[初始化脚本](../../../scripts/seed-data/system-mock.sql)。本机查询范围缺少同笔订单同时含确认与退款的预算样本。此笔订单在 Decision 和 Measurement 两个追踪入口均返回 404 | 财务和运营提供能共同核对活动版本、报价、支付、退款及账本的真实试点订单 |
 
 本机资金服务运行 `a5ea4a6`，现有三个交易开关均为关闭，Casdoor 授权列表为空。本机交易健康地址 `127.0.0.1:8400` 未监听。上述本机记录和多个隔离样本之间保留各自来源，正式同单全链路等待 LC-02 签收。
 
@@ -50,3 +50,8 @@ LC-03 在 LC-02 签收后开始，重点验收支付证据、准确绑定和退�
 - **增量来源。** 已定位会员登记、冻结注销和成长等级更新的写入路径。会员状态和等级由不同写入口修改。现有营销 Flink 接收含 `segmentIds` 的已分群消息，不能据此证明商城状态及等级修改都能传播。LC-07 签收的基线水位需能衔接 LC-08 的变更、撤销和补读。见[画像接入设计](../commerce-member-audience/DESIGN.md)。
 
 会员线当前已完成来源盘点和本机复核。业务身份映射、带固定水位的完整读取、规模与保留期限仍待 Commerce、Auth 和数据治理责任方核定。
+
+## LC-10 和 LC-12 的就绪条件
+
+- 触达已具备[HTTP 签名适配和回执鉴权](../../../services/engagement-service/src/main/java/com/acme/marketing/engagement/infrastructure/EngagementConfiguration.java)。本机 R1 没有配置真实渠道端点。[渠道接口](../../../runtime-spi/provider-connector-spi/src/main/java/com/acme/marketing/provider/ProviderConnector.java)仅定义发送。LC-10 需真实渠道确认受理、送达、退订和未知结果查询，并确定加购和支付退出事件的生产来源。
+- 裂变已有[资格、配额和持久化履约记录](../../REFERRAL_IMPLEMENTATION_STATUS.md)。LC-12 仍缺已批准的首单定义、试点商户的可信主体与原生交易证据映射。LC-13 依赖实际发奖、撤销和激活就绪证据。

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { readFile } from 'node:fs/promises'
 
 test('funding reconciliation shows scoped postings, refunds and exact minor units', async ({ page }, info) => {
   await page.clock.setFixedTime(new Date('2026-09-17T03:00:00Z'))
@@ -46,7 +47,7 @@ test('funding reconciliation shows scoped postings, refunds and exact minor unit
       from: url.searchParams.get('from'), to: url.searchParams.get('to'), campaignId, unassigned: url.searchParams.get('unassigned') === 'true',
       hasMore: more, nextCursor: more ? 'posting-confirm' : null,
       items: [{ ledgerId: more ? 'posting-confirm' : 'posting-refund', postedAt: '2026-09-16T16:00:00Z',
-        applicationId: 'application-1', campaignId, currency: 'CNY', resourceKey: 'BUDGET:PLATFORM:platform:CNY',
+        applicationId: more ? '=ext-app' : 'application-1', campaignId, currency: 'CNY', resourceKey: 'BUDGET:PLATFORM:platform:CNY',
         operation: more ? 'CONFIRM' : 'REFUND', amountMinor: more ? '9007199254740993' : '-9007199254740992' }],
     } })
   })
@@ -56,11 +57,25 @@ test('funding reconciliation shows scoped postings, refunds and exact minor unit
   await page.getByRole('option', { name: '仅待归属流水' }).click()
   await page.getByRole('button', { name: '查询补贴流水' }).click()
   const table = page.getByRole('table', { name: '补贴流水' })
+  const download = async () => {
+    const [csv] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '导出已加载流水' }).click()])
+    expect(csv.suggestedFilename()).toMatch(/^subsidy-postings-.*\.csv$/)
+    return readFile((await csv.path())!, 'utf8')
+  }
   await expect(table.getByText('9,007,199,254,740,993', { exact: true })).toBeVisible()
   await expect(table.getByText('待归属', { exact: true })).toBeVisible()
+  const partial = await download()
+  expect(partial).toContain('"9007199254740993","CNY","补贴确认"')
+  expect(partial).toContain('"\'=ext-app"')
+  expect(partial).toContain('"还有下一页"')
+  expect(partial).not.toContain('posting-refund')
   await page.getByRole('button', { name: '加载更多流水' }).click()
   await expect(table.getByText('退款或冲正', { exact: true })).toBeVisible()
   await expect(page.getByText(/已加载净额 CNY 1（最小货币单位）/)).toBeVisible()
+  const allLoaded = await download()
+  expect(allLoaded).toContain('"-9007199254740992","CNY","退款或冲正"')
+  expect(allLoaded).toContain('"已读取至最后一页"')
+  expect(allLoaded).not.toContain('"还有下一页"')
   expect(requests.map(url => url.searchParams.get('unassigned'))).toEqual(['true', 'true'])
   expect(requests[1].searchParams.get('from')).toBe('2026-09-16T16:00:00.000Z')
   expect(requests[1].searchParams.get('cursor')).toBe('posting-confirm')
@@ -93,9 +108,11 @@ test('funding reconciliation shows scoped postings, refunds and exact minor unit
   await expect(page.getByRole('textbox', { name: '订单号' })).toHaveValue('settlement-order')
   await expect(page.getByText('资金服务未确认订单号，请重新查询。')).toBeVisible()
   await expect(table).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '导出已加载流水' })).toHaveCount(0)
   await page.getByRole('button', { name: '查询补贴流水' }).click()
   await expect(table.getByText('退款或冲正')).toBeVisible()
   await expect(table.getByText('-5,000', { exact: true })).toBeVisible()
+  expect(await download()).toContain('"settlement-order","已读取至最后一页"')
   expect(requests).toHaveLength(readsBeforeOrder)
   expect(orderRequests.map(url => url.searchParams.get('orderId'))).toEqual(['settlement-order', 'settlement-order'])
   expect(orderRequests.at(-1)?.searchParams.get('from')).toBe('2026-09-10T03:00:00.000Z')

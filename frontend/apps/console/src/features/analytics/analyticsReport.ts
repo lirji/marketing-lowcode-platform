@@ -1,4 +1,5 @@
 import { businessDayStart, displayTimestamp } from '../../components/dateTime'
+import { downloadCsv, formatCsv } from '../../shared/downloadCsv'
 import type { DashboardMetrics, SeriesPoint } from '../../shared/api/schemas'
 import { measurementCoverage } from '../../shared/model/measurementCoverage'
 import { displayMeasurementRoi, MEASUREMENT_EVENT_LABELS } from '../../shared/model/measurementMetrics'
@@ -27,14 +28,6 @@ export function displayMinor(value: number | bigint) {
   if (typeof value === 'number' && !Number.isSafeInteger(value)) return '金额超出精确显示范围'
   const minor = BigInt(value), absolute = minor < 0n ? -minor : minor
   return `${minor < 0n ? '-' : ''}${absolute / 100n}.${String(absolute % 100n).padStart(2, '0')}`
-}
-
-/** CSV中的外部字段按文本输出，避免计数名称等内容被表格软件解释为公式。 */
-function csvCell(value: string | number) {
-  let text = String(value)
-  const firstVisible = [...text].find(character => character.charCodeAt(0) > 0x1f && character.trim())
-  if (typeof value === 'string' && firstVisible && '=+-@'.includes(firstVisible)) text = "'" + text
-  return '"' + text.replaceAll('"', '""') + '"'
 }
 
 /** 拒绝JS已经无法精确表示的Long；不能把近似金额写入可下载报告。 */
@@ -72,17 +65,9 @@ export function reportCsv(report: AnalyticsReport) {
       ['时间序列', displayTimestamp(point.at), point.conversions, '次', '转化数'],
     ]),
   ]
-  return '\uFEFF' + rows.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n'
+  return formatCsv(rows)
 }
 
 export function downloadReport(report: AnalyticsReport) {
-  const url = URL.createObjectURL(new Blob([reportCsv(report)], { type: 'text/csv;charset=utf-8' }))
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = `marketing-report-${report.range.to.replaceAll(':', '-')}.csv`
-  document.body.append(anchor)
-  anchor.click()
-  anchor.remove()
-  // 下载消费者可能异步读取Blob，稍后释放而不是在click同步栈里失效。
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  downloadCsv(reportCsv(report), `marketing-report-${report.range.to.replaceAll(':', '-')}.csv`)
 }
