@@ -11,6 +11,9 @@ const mocks = {
   audiences: vi.fn<(...args: unknown[]) => Promise<AudienceView[]>>(),
   previewAudience: vi.fn(),
   snapshotAudience: vi.fn(),
+  profileSource: vi.fn(),
+  profileEstimate: vi.fn(),
+  profileSnapshot: vi.fn(),
   fields: vi.fn<(...args: unknown[]) => Promise<FieldDefinition[]>>(),
 }
 
@@ -27,6 +30,9 @@ vi.mock('../../shared/api/client', async (importOriginal) => {
       fields: () => mocks.fields(),
       previewAudience: () => mocks.previewAudience(),
       snapshotAudience: () => mocks.snapshotAudience(),
+      audienceProfileSource: () => mocks.profileSource(),
+      audienceProfileEstimate: (...args: unknown[]) => mocks.profileEstimate(...args),
+      audienceProfileSnapshot: (...args: unknown[]) => mocks.profileSnapshot(...args),
     },
   }
 })
@@ -86,6 +92,9 @@ describe('AudienceBuilderPage', () => {
     mocks.fields.mockReset()
     mocks.previewAudience.mockReset()
     mocks.snapshotAudience.mockReset()
+    mocks.profileSource.mockReset().mockResolvedValue({ enabled: false, fieldIds: [] })
+    mocks.profileEstimate.mockReset()
+    mocks.profileSnapshot.mockReset()
   })
 
   it('never creates browser-generated members while the real profile source is unavailable', async () => {
@@ -94,14 +103,43 @@ describe('AudienceBuilderPage', () => {
     mocks.fields.mockResolvedValue([{ fieldId: 'level', valueType: 'STRING' }])
     renderAudience()
     await screen.findByDisplayValue('GOLD')
-    expect(screen.getByText('画像来源尚未接入')).toBeInTheDocument()
+    expect(await screen.findByText('画像来源尚未接入')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '预估人数' })).toBeDisabled()
     expect(screen.getByRole('button', { name: '保存快照' })).toBeDisabled()
     await userEvent.click(screen.getByRole('button', { name: '预估人数' }))
     await userEvent.click(screen.getByRole('button', { name: '保存快照' }))
     expect(mocks.previewAudience).not.toHaveBeenCalled()
     expect(mocks.snapshotAudience).not.toHaveBeenCalled()
+    expect(mocks.profileEstimate).not.toHaveBeenCalled()
+    expect(mocks.profileSnapshot).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: '保存规则' })).toBeEnabled()
+  })
+
+  it('previews and snapshots the saved rule via Commerce, and reuses a failed command key on retry', async () => {
+    mocks.audiences.mockResolvedValue([{ segmentId: 'member-rule', version: 2, name: '商城会员', status: 'ACTIVE',
+      rule: { match: 'ALL', conditions: [{ fieldId: 'member.level', operator: 'EQ', value: 'VIP' }] } }])
+    mocks.fields.mockResolvedValue([{ fieldId: 'member.level', valueType: 'STRING' }])
+    mocks.profileSource.mockResolvedValue({ enabled: true, fieldIds: ['member.level'] })
+    mocks.profileEstimate.mockResolvedValue({ memberCount: 3, asOf: '2026-11-24T08:00:00Z' })
+    mocks.profileSnapshot.mockRejectedValueOnce(new Error('timeout')).mockResolvedValueOnce({
+      snapshotId: 'commerce-verified', memberCount: 4, asOf: '2026-11-24T08:00:00Z', expiresAt: '2026-11-24T08:05:00Z',
+    })
+    renderAudience()
+    const preview = screen.getByRole('button', { name: '预估人数' })
+    const snapshot = screen.getByRole('button', { name: '保存快照' })
+    await waitFor(() => expect(preview).toBeEnabled())
+    await userEvent.click(preview)
+    expect(await screen.findByText(/3 人 · 数据时间/)).toBeInTheDocument()
+    expect(mocks.profileEstimate).toHaveBeenCalledWith('member-rule', 2)
+    await userEvent.click(snapshot)
+    expect(await screen.findByText('快照保存失败')).toBeInTheDocument()
+    await userEvent.click(snapshot)
+    expect(await screen.findByText(/已保存快照 commerce-verified，共 4 人/)).toBeInTheDocument()
+    expect(mocks.profileSnapshot.mock.calls[0]).toEqual(mocks.profileSnapshot.mock.calls[1])
+    await userEvent.type(screen.getByLabelText('条件 1 值'), 'X')
+    expect(preview).toBeDisabled()
+    expect(snapshot).toBeDisabled()
+    expect(screen.queryByText(/3 人 · 数据时间/)).not.toBeInTheDocument()
   })
 
   it('does not seed PLUS 家电 mock rules when the API is empty', async () => {

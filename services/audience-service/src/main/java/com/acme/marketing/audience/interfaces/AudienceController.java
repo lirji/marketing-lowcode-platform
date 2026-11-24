@@ -1,6 +1,7 @@
 package com.acme.marketing.audience.interfaces;
 
 import com.acme.marketing.audience.application.AudienceService;
+import com.acme.marketing.audience.application.CommerceAudienceService;
 import com.acme.marketing.platform.web.PersistentIdempotentCommandExecutor;
 import com.acme.marketing.platform.web.TenantContextHolder;
 import jakarta.validation.Valid;
@@ -23,10 +24,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class AudienceController {
     private final AudienceService service;
     private final PersistentIdempotentCommandExecutor commands;
+    private final CommerceAudienceService commerce;
 
-    public AudienceController(AudienceService service, PersistentIdempotentCommandExecutor commands) {
+    public AudienceController(AudienceService service, PersistentIdempotentCommandExecutor commands, CommerceAudienceService commerce) {
         this.service = service;
         this.commands = commands;
+        this.commerce = commerce;
     }
 
     @PostMapping("/fields") @ResponseStatus(HttpStatus.CREATED)
@@ -58,6 +61,25 @@ public class AudienceController {
     public AudienceService.AudiencePage audiencePage(@RequestParam(required = false) Integer limit,
             @RequestParam(required = false) String q, @RequestParam(required = false) String cursor) {
         return service.audiencePage(limit, q, cursor);
+    }
+
+    /** 告知当前租户已装配的画像来源能力。 */
+    @GetMapping("/audiences/profile-source")
+    public CommerceAudienceService.SourceStatus profileSource() {
+        return commerce.status();
+    }
+
+    /** 对已保存规则执行真实商城数据圈选。 */
+    @GetMapping("/audiences/{segmentId}/versions/{version}/profile-estimate")
+    public CommerceAudienceService.Estimate profileEstimate(@PathVariable String segmentId, @PathVariable long version) {
+        return commerce.estimate(segmentId, version);
+    }
+
+    /** 对同一版本重新获取完整数据，由服务端生成快照。 */
+    @PostMapping("/audiences/{segmentId}/versions/{version}/profile-snapshots") @ResponseStatus(HttpStatus.CREATED)
+    public AudienceService.SnapshotView profileSnapshot(@PathVariable String segmentId, @PathVariable long version,
+            @RequestHeader("Idempotency-Key") String key) {
+        return commerce.snapshot(segmentId, version, key);
     }
 
     @PostMapping("/audiences/{segmentId}/versions/{version}:preview")

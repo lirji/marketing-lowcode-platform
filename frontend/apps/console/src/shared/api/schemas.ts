@@ -477,6 +477,16 @@ export const audiencePreviewSchema = z.object({
   calculatedAt: z.string().optional(),
 })
 
+export const audienceProfileSourceSchema = z.object({
+  enabled: z.boolean(),
+  fieldIds: z.array(z.string()),
+})
+
+export const audienceProfileEstimateSchema = z.object({
+  memberCount: z.number().int().nonnegative(),
+  asOf: z.iso.datetime({ offset: true }),
+})
+
 export const audienceSnapshotSchema = z.object({
   snapshotId: z.string(),
   segmentId: z.string(),
@@ -484,6 +494,11 @@ export const audienceSnapshotSchema = z.object({
   memberCount: z.number().optional(),
   checksum: z.string().optional(),
   state: z.string().optional(),
+})
+
+export const audienceProfileSnapshotSchema = audienceProfileEstimateSchema.extend({
+  snapshotId: z.string(),
+  expiresAt: z.iso.datetime({ offset: true }),
 })
 
 export const fieldDefinitionSchema = z.object({

@@ -3,7 +3,7 @@ import { RecordTable } from '../../components/RecordTable'
 import { DateTimePicker } from '../../components/DateTimePicker'
 import { FieldHint } from '../../components/FieldHint'
 import { Select } from '../../components/Select'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Eye, Plus, Save, ShieldCheck, Trash2 } from 'lucide-react'
 import { Badge, Button, EmptyState, Panel, PanelHeader, StateBanner } from '../../components/ui'
@@ -14,6 +14,8 @@ import type { AudienceView, FieldDefinition } from '../../shared/api/schemas'
 import { DesignerWorkspace } from './DesignerWorkspace'
 
 type Condition = { id: number; field: string; operator: string; value: string }
+type ProfileTarget = { segmentId: string; version: number }
+const profileTime = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'medium', timeZone: 'Asia/Shanghai' })
 
 const UI_OPERATORS = ['=', '!=', '>', '>=', '<', '<=', 'IN'] as const
 const ORDERED_VALUE_TYPES: ReadonlySet<string> = new Set(['DECIMAL', 'INSTANT'])
@@ -80,9 +82,14 @@ function AudienceEditor({ selectedId }: { selectedId: string }) {
   const [notice, setNotice] = useState('')
   const [selectionError, setSelectionError] = useState('')
   const [hydrated, setHydrated] = useState(false)
+  const [savedRule, setSavedRule] = useState('')
+  const pendingSnapshot = useRef<{ target: ProfileTarget; key: string } | undefined>(undefined)
   const canWrite = auth.hasPermission('audience:write')
-  const audiences = useQuery({ queryKey: ['audiences'], queryFn: api.audiences, enabled: !api.demoMode && auth.hasPermission('audience:read') })
-  const fields = useQuery({ queryKey: ['fields'], queryFn: api.fields, enabled: !api.demoMode && auth.hasPermission('audience-field:read') })
+  const identity = `${auth.tenantId}:${auth.subject}`
+  const canRead = !api.demoMode && auth.hasPermission('audience:read')
+  const audiences = useQuery({ queryKey: ['audiences', identity], queryFn: api.audiences, enabled: canRead })
+  const fields = useQuery({ queryKey: ['fields', identity], queryFn: api.fields, enabled: !api.demoMode && auth.hasPermission('audience-field:read') })
+  const profileSource = useQuery({ queryKey: ['audience-profile-source', identity], queryFn: api.audienceProfileSource, enabled: canRead })
   const fieldOptions = fieldOptionsFrom(fields.data)
   const resetDraft = () => {
     setSegmentId('')
@@ -90,14 +97,18 @@ function AudienceEditor({ selectedId }: { selectedId: string }) {
     setName('')
     setMatch('ALL')
     setConditions([])
+    setSavedRule('')
   }
   const applySegment = (item: AudienceView) => {
     setSelectionError('')
     setSegmentId(item.segmentId)
     setVersion(item.version)
     setName(item.name)
-    setMatch(item.rule?.match === 'ANY' ? 'ANY' : 'ALL')
-    setConditions(fromAudience(item))
+    const selectedMatch = item.rule?.match === 'ANY' ? 'ANY' : 'ALL'
+    const selectedConditions = fromAudience(item)
+    setMatch(selectedMatch)
+    setConditions(selectedConditions)
+    setSavedRule(JSON.stringify(toRule(selectedMatch, selectedConditions)))
   }
 
   useEffect(() => {
@@ -119,17 +130,31 @@ function AudienceEditor({ selectedId }: { selectedId: string }) {
     return updated
   }))
   const save = useMutation({
-    mutationFn: async () => {
-      const id = segmentId || `seg-${crypto.randomUUID().slice(0, 8)}`
-      return api.createAudience({ segmentId: id, name, rule: toRule(match, conditions) })
-    },
-    onSuccess: (value) => {
+    mutationFn: api.createAudience,
+    onSuccess: (value, input) => {
       setSegmentId(value.segmentId)
       setVersion(value.version)
+      setSavedRule(JSON.stringify(input.rule))
       setNotice(`已写入 ${value.segmentId} v${value.version}`)
       void queryClient.invalidateQueries({ queryKey: ['audiences'] })
     },
   })
+  const estimate = useMutation({
+    mutationFn: (target: ProfileTarget) => api.audienceProfileEstimate(target.segmentId, target.version),
+  })
+  const snapshot = useMutation({
+    mutationFn: ({ target, key }: { target: ProfileTarget; key: string }) => api.audienceProfileSnapshot(target.segmentId, target.version, key),
+    onSuccess: () => { pendingSnapshot.current = undefined },
+  })
+  const sameTarget = (target?: ProfileTarget) => target?.segmentId === segmentId && target.version === version
+  const currentRule = toRule(match, conditions)
+  const configured = profileSource.data?.enabled === true
+  const supported = conditions.length > 0 && conditions.every((condition) => profileSource.data?.fieldIds.includes(condition.field))
+  const clean = !!segmentId && version !== undefined && !selectionError && JSON.stringify(currentRule) === savedRule
+  const busy = save.isPending || estimate.isPending || snapshot.isPending
+  const canCompute = configured && supported && clean && !busy
+  const shownEstimate = clean && sameTarget(estimate.variables) ? estimate.data : undefined
+  const shownSnapshot = clean && sameTarget(snapshot.variables?.target) ? snapshot.data : undefined
   const fieldMeta = (fieldId: string) => fields.data?.find((item) => item.fieldId === fieldId)
 
   return <DesignerWorkspace
@@ -138,13 +163,27 @@ function AudienceEditor({ selectedId }: { selectedId: string }) {
     description="保存圈选规则与字段用途；真实人群的计算需要已接入的画像来源。"
     meta={version ? `v${version}` : undefined}
     actions={<>
-      <Button disabled title="画像来源接入后可预估真实人群"><Eye size={15} />预估人数</Button>
-      <Button disabled title="真实人群计算完成后可生成快照"><ShieldCheck size={15} />保存快照</Button>
-      {!api.demoMode && canWrite && <Button tone="primary" disabled={save.isPending || !name.trim() || Boolean(selectionError)} onClick={() => save.mutate()}><Save size={15} />保存规则</Button>}
+      <Button disabled={!canCompute || !auth.hasPermission('audience:preview')} onClick={() => {
+        if (version !== undefined) estimate.mutate({ segmentId, version })
+      }}><Eye size={15} />预估人数</Button>
+      <Button disabled={!canCompute || !auth.hasPermission('audience:snapshot')} onClick={() => {
+        if (version === undefined) return
+        const target = { segmentId, version }
+        const operation = pendingSnapshot.current
+        const key = operation && sameTarget(operation.target) ? operation.key : crypto.randomUUID()
+        pendingSnapshot.current = { target, key }
+        snapshot.mutate({ target, key })
+      }}><ShieldCheck size={15} />保存快照</Button>
+      {!api.demoMode && canWrite && <Button tone="primary" disabled={busy || !name.trim() || Boolean(selectionError)} onClick={() => save.mutate({
+        segmentId: segmentId || `seg-${crypto.randomUUID().slice(0, 8)}`, name, rule: currentRule,
+      })}><Save size={15} />保存规则</Button>}
     </>}
     notices={<>
       {selectionError && <StateBanner tone="error" title="无法打开所选人群" detail={selectionError} />}
-      {!api.demoMode && <StateBanner tone="info" title="画像来源尚未接入" detail="可以保存圈选规则；接入真实会员画像后才能预估人数和生成完整人群快照。" />}
+      {canRead && profileSource.data?.enabled === false && <StateBanner tone="info" title="画像来源尚未接入" detail="当前租户可以保存圈选规则。开通商城会员画像后可预估人数和生成快照。" />}
+      {profileSource.isError && <StateBanner tone="error" title="画像来源状态加载失败" detail={problemDetail(profileSource.error)} />}
+      {clean && estimate.isError && sameTarget(estimate.variables) && <StateBanner tone="error" title="人数预估失败" detail={problemDetail(estimate.error)} />}
+      {clean && snapshot.isError && sameTarget(snapshot.variables?.target) && <StateBanner tone="error" title="快照保存失败" detail={problemDetail(snapshot.error)} />}
       {notice && <StateBanner tone="success" title="已写入控制面" detail={notice} />}
       {audiences.isError && <StateBanner tone="error" title="人群加载失败" detail={problemDetail(audiences.error)} />}
       {fields.isError && <StateBanner tone="error" title="字段目录加载失败" detail={problemDetail(fields.error)} />}
@@ -154,7 +193,7 @@ function AudienceEditor({ selectedId }: { selectedId: string }) {
     {!api.demoMode && <Panel className="form-grid designer-fields">
       <label className="field"><span>人群名称</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="未命名人群" /></label>
       <label className="field"><span>已保存版本</span>
-        <Select aria-label="已保存版本" value={segmentId} onChange={(event) => {
+        <Select aria-label="已保存版本" disabled={busy} value={segmentId} onChange={(event) => {
           const item = (audiences.data ?? []).find((row) => row.segmentId === event.target.value)
           if (item) applySegment(item)
           else resetDraft()
@@ -202,7 +241,14 @@ function AudienceEditor({ selectedId }: { selectedId: string }) {
         <p className="muted">排除集尚未接入控制面，不会显示虚构快照。</p>
       </Panel>
       <aside className="designer-content">
-        <Panel><PanelHeader eyebrow="PREVIEW" title="人群预估" aside={<Badge tone="warn">待接入数据源</Badge>} /><p>暂无可验证的真实人数。规则已保存不代表全量人群已完成计算。</p></Panel>
+        <Panel>
+          <PanelHeader eyebrow="PREVIEW" title="人群预估" aside={configured ? <Badge tone="good">商城会员画像</Badge> : undefined} />
+          {estimate.isPending && <p role="status">正在读取商城会员画像…</p>}
+          {shownEstimate && <p>{shownEstimate.memberCount.toLocaleString('zh-CN')} 人 · 数据时间 {profileTime.format(new Date(shownEstimate.asOf))}</p>}
+          {configured && !clean && <p>保存当前规则后可预估人数和生成快照。</p>}
+          {configured && clean && !supported && <p>商城画像当前支持会员等级字段，调整圈选规则后重试。</p>}
+          {shownSnapshot && <p role="status">已保存快照 {shownSnapshot.snapshotId}，共 {shownSnapshot.memberCount.toLocaleString('zh-CN')} 人，有效至 {profileTime.format(new Date(shownSnapshot.expiresAt))}。</p>}
+        </Panel>
         <Panel><PanelHeader eyebrow="DATA GOVERNANCE" title="字段来源与用途" /><LiveProvenance fields={fields.data ?? []} used={conditions.map((item) => item.field)} /></Panel>
       </aside>
     </div>

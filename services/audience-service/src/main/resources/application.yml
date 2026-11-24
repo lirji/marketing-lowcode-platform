@@ -18,6 +18,12 @@ mybatis:
 marketing.security:
   mode: ${MARKETING_SECURITY_MODE:DEV}
   dev-headers-enabled: ${MARKETING_DEV_HEADERS_ENABLED:true}
+marketing.audience.commerce:
+  enabled: ${MARKETING_COMMERCE_PROFILE_ENABLED:false}
+  tenant: ${MARKETING_COMMERCE_PROFILE_TENANT:}
+  base-url: ${MARKETING_COMMERCE_PROFILE_BASE_URL:}
+  bearer-token: ${MARKETING_COMMERCE_PROFILE_BEARER_TOKEN:}
+  allow-local-http: ${MARKETING_COMMERCE_PROFILE_ALLOW_LOCAL_HTTP:false}
 management.endpoints.web.exposure.include: health,info,prometheus
 server.shutdown: graceful
 spring.lifecycle.timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}

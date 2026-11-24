@@ -5,6 +5,7 @@ import com.acme.marketing.platform.error.ConflictException;
 import com.acme.marketing.platform.error.NotFoundException;
 import com.acme.marketing.platform.web.TenantContextHolder;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +31,8 @@ public class AudienceService {
     private static final String SNAPSHOT_MEMBERS_INVALID_MESSAGE = "快照成员必须非空白且不能超过 " + MAX_SNAPSHOT_MEMBERS + " 人";
     private static final String SNAPSHOT_TIME_INVALID_MESSAGE = "快照时间必须满足 watermark <= asOf < expiresAt";
     private static final String MEMBERSHIP_INVALID_MESSAGE = "成员主体不能为空、版本必须为正整数且必须明确成员状态";
+    private static final String COMMERCE_SNAPSHOT_PREFIX = "commerce-";
+    private static final Duration COMMERCE_SNAPSHOT_TTL = Duration.ofMinutes(5);
     private final AudienceRepository repository;
     private final ObjectMapper objectMapper;
     private final Clock clock;
@@ -118,13 +121,24 @@ public class AudienceService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("audience:snapshot");
         segment(scope.tenantId().value(), segmentId, version);
+        return persistSnapshot(scope.tenantId().value(), segmentId, version, UUID.randomUUID().toString(), request);
+    }
+
+    /** 仅可信来源计算可写入该类快照，过期后重新从商城计算。 */
+    SnapshotView createCommerceSnapshot(String segmentId, long version, Set<String> subjects, Instant asOf) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("audience:snapshot");
+        var request = new SnapshotRequest(subjects, asOf, asOf, asOf.plus(COMMERCE_SNAPSHOT_TTL));
+        return persistSnapshot(scope.tenantId().value(), segmentId, version, COMMERCE_SNAPSHOT_PREFIX + UUID.randomUUID(), request);
+    }
+
+    private SnapshotView persistSnapshot(String tenant, String segmentId, long version, String snapshotId, SnapshotRequest request) {
         if (!request.expiresAt().isAfter(clock.instant())) throw new IllegalArgumentException(SNAPSHOT_EXPIRED_MESSAGE);
         List<String> hashes = request.subjectTokens().stream().map(AudienceService::subjectHash).sorted().distinct().toList();
         String checksum = "sha256:" + Digests.sha256Hex(String.join("\n", hashes));
-        String snapshotId = UUID.randomUUID().toString();
         SnapshotView snapshot = new SnapshotView(snapshotId, segmentId, version, request.asOf(), request.watermark(),
                 request.expiresAt(), hashes.size(), checksum, "READY");
-        repository.saveSnapshot(scope.tenantId().value(), snapshot, hashes, clock.instant());
+        repository.saveSnapshot(tenant, snapshot, hashes, clock.instant());
         return snapshot;
     }
 
@@ -134,6 +148,9 @@ public class AudienceService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("audience:stream-update");
         snapshot(scope.tenantId().value(), snapshotId);
+        if (snapshotId.startsWith(COMMERCE_SNAPSHOT_PREFIX)) {
+            throw CommerceProfileError.SNAPSHOT_IMMUTABLE.conflict();
+        }
         String hash = subjectHash(update.subjectToken());
         // 唯一键与条件 upsert 同时覆盖首条成员的并发插入，避免先查空行再 INSERT 的竞争。
         var current = repository.saveMembershipIfNewer(scope.tenantId().value(), snapshotId, hash, update.version(),
@@ -150,7 +167,12 @@ public class AudienceService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("audience:lookup");
         SnapshotView snapshot = snapshot(scope.tenantId().value(), snapshotId);
-        if (!usedAt.isBefore(snapshot.expiresAt())) {
+        boolean stale = !usedAt.isBefore(snapshot.expiresAt());
+        if (snapshotId.startsWith(COMMERCE_SNAPSHOT_PREFIX)
+                && (stale || usedAt.isBefore(snapshot.asOf()) || !clock.instant().isBefore(snapshot.expiresAt()))) {
+            return new MembershipView(snapshotId, subjectToken, false, 0, "STALE_REJECTED");
+        }
+        if (stale) {
             return switch (stalePolicy) {
                 case REJECT_CANDIDATE -> new MembershipView(snapshotId, subjectToken, false, 0, "STALE_REJECTED");
                 case GENERIC_PATH -> new MembershipView(snapshotId, subjectToken, false, 0, "STALE_GENERIC_PATH");
@@ -166,7 +188,7 @@ public class AudienceService {
                 .orElseGet(() -> new MembershipView(snapshotId, subjectToken, false, 0, reason));
     }
 
-    private SegmentView segment(String tenantId, String segmentId, long version) {
+    SegmentView segment(String tenantId, String segmentId, long version) {
         return repository.findSegment(tenantId, segmentId, version)
                 .orElseThrow(() -> new NotFoundException("SEGMENT_NOT_FOUND", "segment version not found"));
     }
@@ -176,7 +198,7 @@ public class AudienceService {
                 .orElseThrow(() -> new NotFoundException("SNAPSHOT_NOT_FOUND", "audience snapshot not found"));
     }
 
-    private Map<String, ValueType> validateRule(String tenantId, SegmentRule rule) {
+    Map<String, ValueType> validateRule(String tenantId, SegmentRule rule) {
         if (rule.conditions().isEmpty()) throw new IllegalArgumentException("segment rule is empty");
         Set<String> fieldIds = rule.conditions().stream().map(Condition::fieldId)
                 .collect(java.util.stream.Collectors.toSet());

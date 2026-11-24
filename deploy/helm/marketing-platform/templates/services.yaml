@@ -81,6 +81,17 @@ spec:
             - {name: TRACING_SAMPLE_PROBABILITY, value: {{ default $.Values.global.tracingSampleProbability $service.tracingSampleProbability | quote }}}
             - {name: LOGGING_STRUCTURED_FORMAT_CONSOLE, value: ecs}
             - {name: MANAGEMENT_METRICS_DISTRIBUTION_PERCENTILESHISTOGRAM_HTTP_SERVER_REQUESTS, value: "true"}
+            {{- if eq $name "audience-service" }}
+            {{- with $service.commerceProfile }}
+            {{- if .enabled }}
+            - {name: MARKETING_COMMERCE_PROFILE_ENABLED, value: "true"}
+            - {name: MARKETING_COMMERCE_PROFILE_TENANT, value: {{ required "commerceProfile.tenant is required" .tenant | quote }}}
+            - {name: MARKETING_COMMERCE_PROFILE_BASE_URL, value: {{ required "commerceProfile.baseUrl is required" .baseUrl | quote }}}
+            - name: MARKETING_COMMERCE_PROFILE_BEARER_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ $.Values.global.externalSecretName }}, key: commerce-profile-bearer-token}}
+            {{- end }}
+            {{- end }}
+            {{- end }}
             {{- if has $name (list "marketing-control-service" "offer-decision-service" "benefit-funding-service" "event-gateway-service" "journey-service" "engagement-service" "measurement-service") }}
             - {name: KAFKA_BOOTSTRAP_SERVERS, value: {{ $.Values.external.kafka.bootstrapServers | quote }}}
             - {name: SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL, value: {{ $.Values.external.kafka.securityProtocol | quote }}}

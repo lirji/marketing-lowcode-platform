@@ -574,6 +574,71 @@ paths:
       parameters: [{$ref: '#/components/parameters/SegmentId'}, {$ref: '#/components/parameters/Version'}]
       requestBody: {$ref: '#/components/requestBodies/JsonArray'}
       responses: *ok
+  /api/v1/audiences/profile-source:
+    get:
+      tags: [Audience]
+      operationId: getAudienceProfileSource
+      x-required-permission: audience:read
+      responses:
+        '200':
+          description: Tenant-scoped Commerce source configuration and supported field IDs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled, fieldIds]
+                properties:
+                  enabled: {type: boolean}
+                  fieldIds: {type: array, items: {type: string}}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/audiences/{segmentId}/versions/{version}/profile-estimate:
+    get:
+      tags: [Audience]
+      operationId: estimateCommerceAudience
+      x-required-permission: audience:preview
+      description: Counts matches of the saved rule over the bounded Commerce population. Returns no subject identifiers.
+      parameters: [{$ref: '#/components/parameters/SegmentId'}, {$ref: '#/components/parameters/Version'}]
+      responses:
+        '200':
+          description: Count and observation time for the read.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [memberCount, asOf]
+                properties:
+                  memberCount: {type: integer, minimum: 0, maximum: 10000}
+                  asOf: {type: string, format: date-time}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/audiences/{segmentId}/versions/{version}/profile-snapshots:
+    post:
+      tags: [Audience]
+      operationId: createCommerceAudienceSnapshot
+      x-required-permission: audience:snapshot
+      description: >-
+        Recalculates over a complete Commerce read and persists an immutable five-minute snapshot.
+        Replaying the same command key and rule version returns the first receipt.
+        The operation persists snapshot membership for inspection.
+      parameters: [{$ref: '#/components/parameters/SegmentId'}, {$ref: '#/components/parameters/Version'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      responses:
+        '201':
+          description: Persisted Commerce snapshot metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [snapshotId, segmentId, segmentVersion, asOf, watermark, expiresAt, memberCount, checksum, state]
+                properties:
+                  snapshotId: {type: string}
+                  segmentId: {type: string}
+                  segmentVersion: {type: integer, format: int64, minimum: 1}
+                  asOf: {type: string, format: date-time}
+                  watermark: {type: string, format: date-time}
+                  expiresAt: {type: string, format: date-time}
+                  memberCount: {type: integer, minimum: 0, maximum: 10000}
+                  checksum: {type: string}
+                  state: {type: string, enum: [READY]}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/audiences/{segmentId}/versions/{version}/snapshots:
     post:
       tags: [Audience]
@@ -601,7 +666,8 @@ paths:
         Unique-key arbitration applies only newer versions, including concurrent first writes.
         Older updates return the actual current member/version with STALE_UPDATE_IGNORED.
         The same version with a different member value returns 409 AUDIENCE_MEMBERSHIP_VERSION_CONFLICT;
-        the same version/value is an idempotent replay. These updates do not freeze snapshot membership.
+        the same version/value is an idempotent replay. Commerce snapshots reject all explicit writes
+        with 409 AUDIENCE_PROFILE_SNAPSHOT_IMMUTABLE.
       parameters: [{$ref: '#/components/parameters/SnapshotId'}]
       requestBody: {$ref: '#/components/requestBodies/JsonObject'}
       responses: *ok
@@ -609,7 +675,9 @@ paths:
     get:
       tags: [Audience]
       operationId: getAudienceMembership
-      description: At usedAt equal to or later than expiresAt, the requested stalePolicy applies. usedAt is an explicit historical lookup time, not an assertion of current eligibility.
+      description: >-
+        For explicit imports, stalePolicy applies at or past expiry. Commerce snapshots reject reads for
+        times before their observation and reject expired membership regardless of the requested stalePolicy.
       parameters:
         - {$ref: '#/components/parameters/SnapshotId'}
         - {$ref: '#/components/parameters/SubjectToken'}

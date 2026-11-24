@@ -11,6 +11,7 @@ test('audience authoring preserves rules without fabricating population or snaps
   })
   await page.route('**/api/v1/fields', (route) => route.fulfill({ json: [{ fieldId: 'level', valueType: 'STRING', owner: 'member', provenance: 'contract-fixture', classification: 'INTERNAL', maxAgeSeconds: 300 }] }))
   await page.route('**/api/v1/audiences', (route) => route.fulfill({ json: [{ segmentId: 'saved-rule', version: 1, name: '会员等级规则', status: 'ACTIVE', rule: { match: 'ALL', conditions: [{ fieldId: 'level', operator: 'EQ', value: 'GOLD' }] } }] }))
+  await page.route('**/api/v1/audiences/profile-source', (route) => route.fulfill({ json: { enabled: false, fieldIds: [] } }))
   await page.goto('/designers/audience')
   await expect(page.getByRole('heading', { name: '会员等级规则' })).toBeVisible()
   await expect(page.getByText('画像来源尚未接入')).toBeVisible()
