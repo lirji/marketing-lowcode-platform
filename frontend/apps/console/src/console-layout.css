@@ -219,6 +219,7 @@
 .workbench-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:12px; }
 .workbench-trial-result { margin-top:16px; padding:14px; border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--canvas); }
 .workbench-trial-result .workbench-facts { margin-top:10px; }
+.subsidy-posting-order > span { min-width:0; overflow-wrap:anywhere; }
 .offer-comparison-form { display:grid; gap:12px; margin-top:12px; }
 .offer-comparison-form > .field-hint, .offer-comparison-results > p { margin:0; }
 .offer-comparison-form > .workbench-actions { margin-top:0; }

@@ -84,7 +84,7 @@ function SubsidyPostingSearch({ scope }: { scope: string }) {
         {form.selection && form.selection !== UNASSIGNED && !campaigns.data?.some(campaign => campaign.id === form.selection) && <option value={form.selection}>{form.selection}</option>}
         {campaigns.data?.map(campaign => <option key={campaign.id} value={campaign.id}>{campaign.name} · {campaign.id}</option>)}
       </Select></label>
-      <label className="field"><span>订单号</span><input aria-describedby="posting-order-hint" aria-invalid={!validOrder}
+      <label className="field"><span>订单号</span><input aria-label="订单号" aria-describedby="posting-order-hint" aria-invalid={!validOrder}
         value={form.orderId} onChange={event => setForm(current => ({ ...current, orderId: event.target.value }))} />
         <FieldHint id="posting-order-hint">填写营销轨迹使用的完整订单号，区分大小写。可留空。</FieldHint></label>
       <div className="toolbar subsidy-posting-actions span-2"><Button tone="primary" type="submit" disabled={!validRange || !validOrder || postings.isFetching}>查询补贴流水</Button></div>
@@ -93,7 +93,7 @@ function SubsidyPostingSearch({ scope }: { scope: string }) {
     </form>
     {campaigns.isError && <p className="field-hint">活动列表读取失败，仍可查询全部可见或待归属流水。 <Button onClick={() => void campaigns.refetch()}>重试活动列表</Button></p>}
     {applied && <p className="field-hint">已查询范围 {displayTimestamp(applied.from)} 至 {displayTimestamp(applied.to)}。{applied.selection === UNASSIGNED ? '仅待归属流水' : applied.selection ? activityLabel(applied.selection) : '全部可见流水'}。</p>}
-    {applied?.orderId && <p className="field-hint">订单号 {applied.orderId}</p>}
+    {applied?.orderId && <p className="field-hint subsidy-posting-order"><span>订单号 {applied.orderId}</span></p>}
     {applied && postings.isPending && <StateBanner tone="loading" title="正在读取补贴流水" detail="金额以资金账本的已入账记录为准。" />}
     {postings.isError && <StateBanner tone="error" title="补贴流水读取失败" detail={problemDetail(postings.error)} />}
     {postings.isSuccess && items.length === 0 && <EmptyState title="没有匹配的补贴流水" detail="可调整入账时间或活动归属后重试。" />}

@@ -99,4 +99,11 @@ test('funding reconciliation shows scoped postings, refunds and exact minor unit
   expect(requests).toHaveLength(readsBeforeOrder)
   expect(orderRequests.map(url => url.searchParams.get('orderId'))).toEqual(['settlement-order', 'settlement-order'])
   expect(orderRequests.at(-1)?.searchParams.get('from')).toBe('2026-09-10T03:00:00.000Z')
+
+  const longOrder = 'W'.repeat(128)
+  await page.getByRole('textbox', { name: '订单号', exact: true }).fill(longOrder)
+  await page.getByRole('button', { name: '查询补贴流水' }).click()
+  const orderScope = page.getByText('订单号 ' + longOrder, { exact: true })
+  await expect(orderScope).toBeVisible()
+  expect(await orderScope.evaluate(label => label.scrollWidth)).toBeLessThanOrEqual(await orderScope.evaluate(label => label.clientWidth) + 1)
 })
