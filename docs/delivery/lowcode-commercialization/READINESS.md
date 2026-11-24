@@ -28,6 +28,19 @@
 
 LC-03 在 LC-02 签收后开始，重点验收支付证据、准确绑定和退款状态对支付确认的约束。缺少绑定或支付证据时保留待核查。LC-04 核验出资方退款金额与完整样本，再按既有幂等资金命令验证。生产开关由 LC-06 审批阶段处理。
 
+### 跨项目资料查找结果
+
+已查找本地 `/Users/liruijun/personal/LLM` 的合同索引、项目交付文档，以及交易、商城、认证、权益和对账仓库的验收目录。现有资料按用途归档如下。
+
+| 来源 | 找到的资料与适用范围 | LC-02 结论 |
+| --- | --- | --- |
+| 交易中心 | `deploy/demo-business-manifest.json` 包含报价、已支付订单、实收和退款标识。生成脚本 `scripts/seed-demo-business.py` 指定 `transaction_center_dev` 和演示环境。 `docs/TRADE_RECONCILIATION_FACT_EXPORT_DESIGN.md` 定义以交易资金账本为准的渠道收退款事实 | 可作隔离联调用例和权威字段对照。当前缺少已授权商户凭证及营销补贴退款分摊 |
+| 认证与商城 | Auth 的 `docs/implementation/oa-auth/commerce-readiness/TARGET_ACCEPTANCE.md` 将生产目标列为待定。商城的本机机器配对用于会员等级预估。营销资金仓库已有 Casdoor 交易绑定授权模型 | 本机身份验收和会员权限供参考。未找到正式交易机器身份与试点租户、组织、门店的签收记录 |
+| 对账与权益 | Recon 的 `docs/deploy/marketing-3way-onboarding.md` 定义发放、账务、渠道三方对账。 `docs/benefit-center-integration.md` 界定现金和券的对账，主键为应发与履约记录 | 可复用账务差异定位的经验。当前发放终态与交易退款后应冲回的订单补贴分属不同事实 |
+| 工作区合同索引 | `.project-network/contracts/contract-registry.yaml` 收录源码接口。商城既有架构复验的 `CONTRACT_READINESS.md` 将其匹配试点标为未准备好，适用离线比较 | 未找到本次满减试点已签收的门店和授权环境，也未找到同单已签收的支付、分次退款和出资分摊样本 |
+
+本轮依据用户要求查找已有授权记录。LC-02 仍等待业务签收，LC-03 与 LC-04 尚无自动记账所需的完整输入。
+
 ## LC-07 商城会员基线准备
 
 本机营销 `dev-tenant` 的真实会员等级预估返回一位匹配会员，其他未配对租户的来源保持关闭。验证对象为本机商城示例租户数据。历史本机验证已覆盖五分钟快照、重放和到期拒绝。
