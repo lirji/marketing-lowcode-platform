@@ -47,9 +47,9 @@ public class BenefitFundingService {
     private static final Duration MAX_POSTING_RANGE = Duration.ofDays(31);
     private static final String RECONCILE_PERMISSION = "funding:reconcile";
     private static final String ATTRIBUTION_PERMISSION = "funding:attribute";
-    private static final int MAX_ATTRIBUTION_TOKEN_LENGTH = 2_000_000;
+    private static final int MAX_ORIGINAL_OFFER_TOKEN_LENGTH = 2_000_000;
     private static final String ATTRIBUTION_MISMATCH = "SUBSIDY_ATTRIBUTION_EVIDENCE_MISMATCH";
-    private static final String ATTRIBUTION_MISMATCH_MESSAGE = "报价与资金申请保存的原始凭证不一致";
+    private static final String ORIGINAL_OFFER_MISMATCH_MESSAGE = "报价与资金申请保存的原始凭证不一致";
     private final BenefitFundingRepository repository;
     private final ObjectMapper mapper;
     private final Clock clock;
@@ -697,30 +697,10 @@ public class BenefitFundingService {
     public SubsidyAttribution attributeSubsidyCampaign(String applicationId, SubsidyAttributionRequest request) {
         TenantScope scope = TenantContextHolder.requireCurrent();
         scope.requirePermission(ATTRIBUTION_PERMISSION);
-        String token = request.offerToken();
-        if (token == null || token.isBlank() || token.length() > MAX_ATTRIBUTION_TOKEN_LENGTH) {
-            throw new IllegalArgumentException("请提供长度合法的原始签名报价");
-        }
-        String tenantId = scope.tenantId().value();
-        var row = repository.findAttributionEvidenceForUpdate(tenantId, applicationId)
-                .filter(evidence -> evidence.applicationId().equals(applicationId))
-                .orElseThrow(() -> new NotFoundException("APPLICATION_NOT_FOUND", "promotion application not found"));
-        scope.requireOrganization(row.organizationId());
-        Set<String> shops = stringSet(row.shopIdsJson());
-        shops.forEach(scope::requireShop);
-        if (shops.isEmpty() || !row.tokenDigest().equals(Digests.sha256Hex(token))) {
-            throw new ConflictException(ATTRIBUTION_MISMATCH, ATTRIBUTION_MISMATCH_MESSAGE);
-        }
-        // 摘要匹配后，以已保存的预留时间验签。此处只恢复归属，不让过期报价重新参与预留。
-        OfferTokenClaims claims = OfferTokenCodec.verify(token, tokenTrust::resolve, scope.tenantId(),
-                row.cartDigest(), Clock.fixed(Instant.parse(row.createdAt()), ZoneOffset.UTC));
-        if (!row.quoteId().equals(claims.quoteId()) || !row.decisionRequestId().equals(claims.decisionRequestId())
-                || !row.organizationId().equals(claims.organizationId()) || !shops.equals(Set.copyOf(claims.shopIds()))
-                || (!claims.orderId().isBlank() && !row.orderId().equals(claims.orderId()))
-                || row.generation() != claims.generation() || !Instant.parse(row.expiresAt()).equals(claims.expiresAt())) {
-            throw new ConflictException(ATTRIBUTION_MISMATCH, ATTRIBUTION_MISMATCH_MESSAGE);
-        }
-        String campaignId = claims.campaignId();
+        VerifiedReservation evidence = verifyOriginalOfferForUpdate(
+                scope, applicationId, request.offerToken(), ATTRIBUTION_MISMATCH);
+        var row = evidence.row();
+        String campaignId = evidence.claims().campaignId();
         if (campaignId == null) {
             throw new ConflictException("SUBSIDY_ATTRIBUTION_CAMPAIGN_MISSING", "原始签名报价未声明活动归属");
         }
@@ -733,12 +713,43 @@ public class BenefitFundingService {
         }
         Instant attributedAt = clock.instant();
         int updated = repository.updateCampaignAttribution(new BenefitFundingRepository.AttributionWrite(
-                tenantId, applicationId, campaignId, scope.actorId(), format(attributedAt)));
+                scope.tenantId().value(), applicationId, campaignId, scope.actorId(), format(attributedAt)));
         if (updated != 1) {
             throw new ConflictException("SUBSIDY_ATTRIBUTION_CONCURRENT_MODIFICATION", "资金申请归属已变更，请重新查询");
         }
         return new SubsidyAttribution(applicationId, campaignId, attributedAt);
     }
+
+    /** 在调用方事务内锁定资金申请，共用原始签名报价的证明规则。 */
+    VerifiedReservation verifyOriginalOfferForUpdate(
+            TenantScope scope, String applicationId, String token, String mismatchCode) {
+        if (token == null || token.isBlank() || token.length() > MAX_ORIGINAL_OFFER_TOKEN_LENGTH) {
+            throw new IllegalArgumentException("请提供长度合法的原始签名报价");
+        }
+        String tenantId = scope.tenantId().value();
+        var row = repository.findAttributionEvidenceForUpdate(tenantId, applicationId)
+                .filter(evidence -> evidence.applicationId().equals(applicationId))
+                .orElseThrow(() -> new NotFoundException("APPLICATION_NOT_FOUND", "promotion application not found"));
+        scope.requireOrganization(row.organizationId());
+        Set<String> shops = stringSet(row.shopIdsJson());
+        shops.forEach(scope::requireShop);
+        if (shops.isEmpty() || !row.tokenDigest().equals(Digests.sha256Hex(token))) {
+            throw new ConflictException(mismatchCode, ORIGINAL_OFFER_MISMATCH_MESSAGE);
+        }
+        // 使用已保存的预留时间验证历史签名，报价有效期仍由原预留命令执行。
+        OfferTokenClaims claims = OfferTokenCodec.verify(token, tokenTrust::resolve, scope.tenantId(),
+                row.cartDigest(), Clock.fixed(Instant.parse(row.createdAt()), ZoneOffset.UTC));
+        if (!row.quoteId().equals(claims.quoteId()) || !row.decisionRequestId().equals(claims.decisionRequestId())
+                || !row.organizationId().equals(claims.organizationId()) || !shops.equals(Set.copyOf(claims.shopIds()))
+                || (!claims.orderId().isBlank() && !row.orderId().equals(claims.orderId()))
+                || row.generation() != claims.generation() || !Instant.parse(row.expiresAt()).equals(claims.expiresAt())) {
+            throw new ConflictException(mismatchCode, ORIGINAL_OFFER_MISMATCH_MESSAGE);
+        }
+        return new VerifiedReservation(row, claims);
+    }
+
+    /** 已与持久化申请比对的签名声明，仅在应用层用例内部传递。 */
+    record VerifiedReservation(BenefitFundingRepository.AttributionEvidenceRow row, OfferTokenClaims claims) { }
 
     private BenefitFundingRepository.SubsidyPostingFilter subsidyPostingFilter(TenantScope scope, Instant from,
             Instant to, String campaignId, String orderId, boolean unassigned) {

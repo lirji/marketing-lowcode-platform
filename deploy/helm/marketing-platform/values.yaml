@@ -80,6 +80,8 @@ services:
     tradeReceiptsEnabled: false
     tradeReceiptsTopicPrefix: ""
     tradeReceiptsConsumerGroup: mk-trade-receipts-v1
+    tradeOrderBindingsEnabled: false
+    tradeOrderBindingSources: ""
     benefitCenterBaseUrl: http://benefit-center:8083
     riskPlatformBaseUrl: http://fraud-gateway.risk-platform.svc:8082
     awardDefaultMode: LEGACY

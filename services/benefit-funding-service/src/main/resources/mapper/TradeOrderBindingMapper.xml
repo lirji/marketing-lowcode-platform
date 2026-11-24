@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.benefit.infrastructure.persistence.mapper.TradeOrderBindingMapper">
+    <select id="findBinding"
+            resultType="com.acme.marketing.benefit.application.TradeOrderBindingRepository$Binding">
+        SELECT tenant_id AS tenantId, application_id AS applicationId,
+               source_tenant_id AS sourceTenantId, source_order_id AS sourceOrderId,
+               receipt_event_id AS receiptEventId, evidence_version AS evidenceVersion,
+               bound_by AS boundBy, bound_at AS boundAt
+        FROM mk_trade_order_binding
+        WHERE tenant_id = #{tenantId} AND application_id = #{applicationId}
+    </select>
+    <select id="findReceipt"
+            resultType="com.acme.marketing.benefit.application.TradeOrderBindingRepository$ReceiptEvidence">
+        SELECT event_id AS eventId, evidence_version AS evidenceVersion, currency
+        FROM mk_trade_receipt_inbox
+        WHERE source_tenant_id = #{sourceTenantId} AND source_order_id = #{sourceOrderId}
+        ORDER BY evidence_version DESC, event_id ASC
+        LIMIT 1
+    </select>
+    <insert id="insertBinding">
+        INSERT INTO mk_trade_order_binding
+            (tenant_id, application_id, source_tenant_id, source_order_id, receipt_event_id,
+             evidence_version, bound_by, bound_at)
+        VALUES
+            (#{tenantId}, #{applicationId}, #{sourceTenantId}, #{sourceOrderId}, #{receiptEventId},
+             #{evidenceVersion}, #{boundBy}, #{boundAt})
+    </insert>
+</mapper>

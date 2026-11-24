@@ -279,6 +279,7 @@
                campaign_attributed_at AS attributedAt
         FROM mk_promotion_application
         WHERE tenant_id = #{tenantId} AND application_id = #{applicationId}
+          AND CAST(tenant_id AS BINARY) = CAST(#{tenantId} AS BINARY)
         FOR UPDATE
     </select>
     <update id="updateCampaignAttribution">

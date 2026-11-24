@@ -28,6 +28,9 @@ marketing.trade-receipts:
   enabled: ${MARKETING_TRADE_RECEIPTS_ENABLED:false}
   topic-prefix: ${MARKETING_TRADE_RECEIPTS_TOPIC_PREFIX:}
   consumer-group: ${MARKETING_TRADE_RECEIPTS_CONSUMER_GROUP:mk-trade-receipts-v1}
+marketing.trade-order-bindings:
+  enabled: ${MARKETING_TRADE_ORDER_BINDINGS_ENABLED:false}
+  sources: ${MARKETING_TRADE_ORDER_BINDING_SOURCES:}
 marketing.benefit.outbox-enabled: ${MARKETING_BENEFIT_OUTBOX_ENABLED:false}
 marketing.funding.budget-bucket-count: ${MARKETING_FUNDING_BUDGET_BUCKET_COUNT:16}
 marketing.benefit-center:

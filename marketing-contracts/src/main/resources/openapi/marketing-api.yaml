@@ -894,6 +894,26 @@ paths:
       responses: *created
   /api/v1/promotion-applications/{applicationId}:confirm:
     post: {tags: [Benefit], operationId: confirmPromotion, parameters: [{$ref: '#/components/parameters/ApplicationId'}, {$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /internal/v1/promotion-applications/{applicationId}/trade-order-binding:
+    put:
+      tags: [Benefit]
+      operationId: bindTradeOrder
+      x-internal: true
+      x-required-permission: trade-order-binding:write
+      description: >-
+        Funding service only. Requires an OIDC machine subject authorized for the marketing tenant and native
+        trade tenant pair, with access to the application organization and shops. The original signed offer
+        must name the native order. The highest native receipt version in the funding inbox must match its currency.
+        This records an immutable binding without posting to the funding ledger. Repeated requests return the
+        first binding and its audit reference. No Idempotency-Key is required.
+      parameters: [{$ref: '#/components/parameters/ApplicationId'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TradeOrderBindingRequest'}}}}
+      responses:
+        '200': {description: First binding or its idempotent replay, content: {application/json: {schema: {$ref: '#/components/schemas/TradeOrderBinding'}}}}
+        '403': {description: Machine subject or source tenant pair is unauthorized, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        '404': {description: Binding is disabled or the application is absent in the authenticated tenant}
+        '409': {description: Signed evidence or existing binding conflicts, or the receipt is missing, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/promotion-applications/{applicationId}:cancel:
     post: {tags: [Benefit], operationId: cancelPromotion, parameters: [{$ref: '#/components/parameters/ApplicationId'}, {$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
   /api/v1/promotion-applications/{applicationId}:refund:
@@ -2145,6 +2165,23 @@ components:
       additionalProperties: false
       required: [references]
       properties: {references: {type: array, minItems: 1, uniqueItems: true, items: {type: string, pattern: '^.+@[1-9][0-9]*$'}}}
+    TradeOrderBindingRequest:
+      type: object
+      required: [sourceTenantId, sourceOrderId, offerToken]
+      properties:
+        sourceTenantId: {type: string, pattern: '^[1-9][0-9]{0,18}$', description: Native Trade tenant as a positive signed 64-bit integer}
+        sourceOrderId: {type: string, pattern: '^[1-9][0-9]{0,18}$', description: Native Trade order as a positive signed 64-bit integer}
+        offerToken: {type: string, minLength: 1, maxLength: 2000000, writeOnly: true}
+    TradeOrderBinding:
+      type: object
+      required: [applicationId, sourceTenantId, sourceOrderId, receiptEventId, evidenceVersion, boundAt]
+      properties:
+        applicationId: {type: string}
+        sourceTenantId: {type: string, pattern: '^[1-9][0-9]{0,18}$'}
+        sourceOrderId: {type: string, pattern: '^[1-9][0-9]{0,18}$'}
+        receiptEventId: {type: string, format: uuid}
+        evidenceVersion: {type: string, pattern: '^[1-9][0-9]{0,18}$'}
+        boundAt: {type: string, format: date-time}
     BenefitReleaseEligibility:
       type: object
       additionalProperties: false

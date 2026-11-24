@@ -972,6 +972,15 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         return getSubsidyPostings(path).stream().mapToLong(row -> row.path("amountMinor").asLong()).sum();
     }
 
+    @Test
+    void tradeOrderBindingRouteIsDisabledByDefault() throws Exception {
+        var request = base("/internal/v1/promotion-applications/example/trade-order-binding")
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString("{}"))
+                .build();
+        assertEquals(404, client.send(request, HttpResponse.BodyHandlers.discarding()).statusCode());
+    }
+
     private List<JsonNode> getSubsidyPostings(String path) throws Exception {
         List<JsonNode> rows = new ArrayList<>();
         JsonNode response = get(path);
