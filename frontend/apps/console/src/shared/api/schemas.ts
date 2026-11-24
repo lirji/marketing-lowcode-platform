@@ -98,6 +98,44 @@ export const definitionViewSchema = z.object({
 })
 export type DefinitionView = z.infer<typeof definitionViewSchema>
 
+const offerVersionNumber = z.number().int().positive()
+export const offerVersionPageSchema = z.object({
+  campaignId: z.string(),
+  definitionId: z.string(),
+  items: z.array(z.object({
+    version: offerVersionNumber,
+    status: z.string(),
+    createdAt: z.iso.datetime(),
+  })).max(50),
+  nextBeforeVersion: offerVersionNumber.nullable(),
+}).refine(page => page.items.every((item, index) => index === 0 || item.version < page.items[index - 1].version)
+    && (page.nextBeforeVersion === null || page.nextBeforeVersion === page.items.at(-1)?.version),
+  'Offer 版本顺序或游标与响应记录不一致')
+
+export const MAX_OFFER_COMPARISON_SCENARIOS = 10
+export type OfferComparisonScenario = { skuId: string; shopId: string; amountMinor: string; occurredAt: string }
+export type OfferComparisonInput = {
+  campaignId: string
+  baselineVersion: number
+  candidateVersion: number
+  scenarios: OfferComparisonScenario[]
+}
+
+const offerComparisonResultSchema = z.object({
+  discountMinor: z.number().int().nonnegative(),
+  payableMinor: z.number().int().nonnegative(),
+  outcome: z.enum(['APPLIED', 'THRESHOLD_NOT_MET', 'PRODUCT_SCOPE_MISMATCH', 'OUTSIDE_VALIDITY', 'NOT_APPLIED']),
+})
+export const offerComparisonSchema = z.object({
+  baselineVersion: offerVersionNumber,
+  candidateVersion: offerVersionNumber,
+  rows: z.array(z.object({
+    baseline: offerComparisonResultSchema,
+    candidate: offerComparisonResultSchema,
+  })).min(1).max(MAX_OFFER_COMPARISON_SCENARIOS),
+})
+export type OfferComparison = z.infer<typeof offerComparisonSchema>
+
 export const approvalRoleSchema = z.enum(['BUSINESS', 'FINANCE', 'COMPLIANCE', 'MERCHANT'])
 export type ApprovalRole = z.infer<typeof approvalRoleSchema>
 

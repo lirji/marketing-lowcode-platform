@@ -6,6 +6,7 @@ import com.acme.marketing.decision.model.CartLine;
 import com.acme.marketing.decision.model.Money;
 import com.acme.marketing.decision.model.OfferCandidate;
 import com.acme.marketing.decision.model.PriceStage;
+import com.acme.marketing.decision.model.PromotionKind;
 import com.acme.marketing.decision.pricing.PricingEngine;
 import com.acme.marketing.decision.runtime.OfferPolicy;
 import com.acme.marketing.decision.runtime.OfferPolicyGraphCompiler;
@@ -19,6 +20,8 @@ import org.springframework.stereotype.Component;
 @Component
 public final class GraphSimulationService {
     private static final String PREVIEW_LINE = "preview-line";
+    private static final String CNY = "CNY";
+    private static final String THRESHOLD_TEMPLATE = "STORE_SKU_FIXED_DISCOUNT_V1";
     private static final String PRICE_ONLY_NOTICE = "金额试算：未核验生效时间、库存与领取资格";
     private static final String CONTEXT_NOTICE = "商品试跑：按报送的商品、门店和时间计算，库存与预算未核验";
     private static final java.util.Set<String> SCOPED_FIELDS = java.util.Set.of(
@@ -54,7 +57,7 @@ public final class GraphSimulationService {
                 .anyMatch(field -> !node.config().getOrDefault(field, "").isBlank()))) {
             throw OfferPolicyError.PREVIEW_CONTEXT_REQUIRED.exception();
         }
-        String currency = facts.getOrDefault("currency", "CNY");
+        String currency = facts.getOrDefault("currency", CNY);
         Money amount = new Money(currency, Long.parseLong(facts.getOrDefault("amountMinor", "0")));
         Cart cart = new Cart(currency, List.of(new CartLine(PREVIEW_LINE, PREVIEW_LINE, PREVIEW_LINE,
                 "", "", 1, amount, Money.zero(currency), false)));
@@ -81,17 +84,62 @@ public final class GraphSimulationService {
         } catch (DateTimeParseException | NullPointerException invalid) {
             throw new IllegalArgumentException("offer preview occurredAt must be an ISO-8601 instant", invalid);
         }
-        Money amount = new Money(facts.getOrDefault("currency", "CNY"), Long.parseLong(facts.getOrDefault("amountMinor", "0")));
-        Cart cart = new Cart(amount.currency(), List.of(new CartLine(PREVIEW_LINE, sku, shop,
-                "", "", 1, amount, Money.zero(amount.currency()), false)));
+        Money amount = new Money(facts.getOrDefault("currency", CNY), Long.parseLong(facts.getOrDefault("amountMinor", "0")));
+        return previewProduct(graph.definitionId(), scopedPolicies(graph), productCart(sku, shop, amount), occurredAt);
+    }
+
+    /** 每个版本只编译一次，同一场景的购物车与时间同时用于两个版本。 */
+    Comparison compare(long baselineVersion, GraphDefinition baseline, long candidateVersion,
+            GraphDefinition candidate, List<ProductScenario> scenarios) {
+        var baselinePolicies = comparablePolicies(baselineVersion, baseline);
+        var candidatePolicies = comparablePolicies(candidateVersion, candidate);
+        var rows = scenarios.stream().map(scenario -> {
+            Cart cart = productCart(scenario.skuId(), scenario.shopId(), new Money(CNY, scenario.amountMinor()));
+            var before = previewProduct(baseline.definitionId(), baselinePolicies, cart, scenario.occurredAt());
+            var after = previewProduct(candidate.definitionId(), candidatePolicies, cart, scenario.occurredAt());
+            return new ComparisonRow(ProductResult.from(before), ProductResult.from(after));
+        }).toList();
+        return new Comparison(baselineVersion, candidateVersion, rows);
+    }
+
+    private List<OfferPolicy> comparablePolicies(long version, GraphDefinition graph) {
+        if (!THRESHOLD_TEMPLATE.equals(graph.annotations().get("template"))) {
+            throw OfferPolicyError.COMPARISON_UNSUPPORTED.atVersion(version);
+        }
+        List<OfferPolicy> policies;
+        try {
+            policies = scopedPolicies(graph);
+        } catch (IllegalArgumentException | com.acme.marketing.platform.error.ConflictException invalid) {
+            throw OfferPolicyError.COMPARISON_UNSUPPORTED.atVersion(version);
+        }
+        if (policies.size() != 1) throw OfferPolicyError.COMPARISON_UNSUPPORTED.atVersion(version);
+        var policy = policies.getFirst();
+        if (!CNY.equals(policy.pricingCurrency()) || policy.skuIds().size() != 1 || policy.shopIds().size() != 1
+                || policy.candidate().stage() != PriceStage.SHOP
+                || policy.candidate().formula().kind() != PromotionKind.FIXED_OFF) {
+            throw OfferPolicyError.COMPARISON_UNSUPPORTED.atVersion(version);
+        }
+        return policies;
+    }
+
+    private List<OfferPolicy> scopedPolicies(GraphDefinition graph) {
         List<OfferPolicy> policies = new OfferPolicyGraphCompiler().compile(graph).policies();
         if (policies.stream().anyMatch(policy -> !policy.channels().isEmpty() || !policy.categoryIds().isEmpty()
                 || !policy.requiredAudienceSnapshotId().isEmpty() || !policy.candidate().eligibleLineIds().isEmpty()
                 || policy.candidate().stage() == PriceStage.SHIPPING)) {
             throw OfferPolicyError.PREVIEW_CONTEXT_REQUIRED.exception();
         }
+        return policies;
+    }
+
+    private static Cart productCart(String sku, String shop, Money amount) {
+        return new Cart(amount.currency(), List.of(new CartLine(PREVIEW_LINE, sku, shop,
+                "", "", 1, amount, Money.zero(amount.currency()), false)));
+    }
+
+    private Simulation previewProduct(String definitionId, List<OfferPolicy> policies, Cart cart, Instant occurredAt) {
         List<TraceStep> trace = new ArrayList<>();
-        trace.add(new TraceStep(graph.definitionId(), "product-preview", CONTEXT_NOTICE));
+        trace.add(new TraceStep(definitionId, "product-preview", CONTEXT_NOTICE));
         List<OfferCandidate> candidates = new ArrayList<>();
         for (OfferPolicy policy : policies) {
             String offerId = policy.candidate().offerId();
@@ -109,7 +157,7 @@ public final class GraphSimulationService {
         var result = new PricingEngine().price(cart, candidates);
         for (OfferCandidate candidate : candidates) {
             boolean applied = result.appliedOffers().stream().anyMatch(offer -> offer.offerId().equals(candidate.offerId()));
-            String outcome = applied ? "APPLIED" : amount.minorUnits() < candidate.formula().thresholdMinor()
+            String outcome = applied ? "APPLIED" : result.original().minorUnits() < candidate.formula().thresholdMinor()
                     ? "THRESHOLD_NOT_MET" : "NOT_APPLIED";
             trace.add(new TraceStep(candidate.offerId(), "product-preview", outcome));
         }
@@ -129,6 +177,17 @@ public final class GraphSimulationService {
     public record Simulation(long subtotalMinor, long discountMinor, long payableMinor, List<TraceStep> trace) implements SimulationResult {
         public Simulation {
             trace = List.copyOf(trace);
+        }
+    }
+
+    /** 单商品订单场景的金额单位为人民币分；场景保持请求顺序。 */
+    public record ProductScenario(String skuId, String shopId, long amountMinor, Instant occurredAt) { }
+    public record Comparison(long baselineVersion, long candidateVersion, List<ComparisonRow> rows) { }
+    public record ComparisonRow(ProductResult baseline, ProductResult candidate) { }
+    public record ProductResult(long discountMinor, long payableMinor, String outcome) {
+        private static ProductResult from(Simulation simulation) {
+            return new ProductResult(simulation.discountMinor(), simulation.payableMinor(),
+                    simulation.trace().getLast().outcome());
         }
     }
 }

@@ -228,6 +228,46 @@ public class ControlApplicationService {
         return definition(scope, definitionId, version).view();
     }
 
+    /** 当前活动的历史版本按不可变版本号翻页，状态和创建时间均来自定义记录。 */
+    public OfferVersionPage offerVersions(String campaignId, String definitionId, Long beforeVersion, int limit) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("definition:read");
+        requireCampaignScope(scope, campaignId, false);
+        var rows = repository.findOfferVersions(scope.tenantId().value(), campaignId, definitionId,
+                Dialect.OFFER_DECISION_DAG.name(), beforeVersion, limit + 1);
+        var items = rows.stream().limit(limit).map(row -> new OfferVersion(
+                row.versionNo(), DefinitionVersion.Status.valueOf(row.status()), Instant.parse(row.createdAt()))).toList();
+        return new OfferVersionPage(campaignId, definitionId, items,
+                rows.size() > limit ? items.getLast().version() : null);
+    }
+
+    /** 两个显式版本必须分别属于当前活动。按已保存图计算，不执行预算或履约操作。 */
+    public GraphSimulationService.Comparison compareOffers(String campaignId, String definitionId,
+            long baselineVersion, long candidateVersion, List<GraphSimulationService.ProductScenario> scenarios) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("definition:read");
+        scope.requirePermission("definition:simulate");
+        requireCampaignScope(scope, campaignId, false);
+        if (baselineVersion == candidateVersion) throw OfferPolicyError.COMPARISON_SAME_VERSION.exception();
+        var baseline = comparisonGraph(scope, campaignId, definitionId, baselineVersion);
+        var candidate = comparisonGraph(scope, campaignId, definitionId, candidateVersion);
+        return simulationService.compare(baselineVersion, baseline, candidateVersion, candidate, scenarios);
+    }
+
+    private GraphDefinition comparisonGraph(TenantScope scope, String campaignId, String definitionId, long version) {
+        var target = definition(scope, definitionId, version);
+        if (!target.view().campaignId().equals(campaignId) || target.graph().dialect() != Dialect.OFFER_DECISION_DAG) {
+            throw OfferPolicyError.COMPARISON_SCOPE_MISMATCH.exception();
+        }
+        if (!validSimulationGraph(target.graph())) throw OfferPolicyError.COMPARISON_UNSUPPORTED.atVersion(version);
+        return target.graph();
+    }
+
+    /** 翻页游标为本页末尾版本号，空值说明已读完当前定义的全部历史。 */
+    public record OfferVersionPage(String campaignId, String definitionId, List<OfferVersion> items,
+            Long nextBeforeVersion) { }
+    public record OfferVersion(long version, DefinitionVersion.Status status, Instant createdAt) { }
+
     /** 裂变校验只确认共享规则语义；真实目录与发布闭包未完成时返回明确告警，不授予审批资格。 */
     @Transactional
     public ValidationResult validate(String definitionId, long version) {
@@ -271,9 +311,7 @@ public class ControlApplicationService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("definition:simulate");
         StoredDefinition stored = definition(scope, definitionId, version);
-        List<ValidationIssue> issues = new GraphValidator(registry.all(), GraphValidator.Limits.productionDefaults())
-                .validate(stored.graph());
-        if (issues.stream().anyMatch(issue -> issue.severity() == ValidationIssue.Severity.ERROR)) {
+        if (!validSimulationGraph(stored.graph())) {
             throw new ConflictException("DEFINITION_INVALID", "definition must pass validation before simulation");
         }
         if (stored.graph().dialect() == Dialect.REFERRAL_POLICY && (facts == null
@@ -281,6 +319,11 @@ public class ControlApplicationService {
             throw new IllegalArgumentException("REFERRAL_SIMULATION_STRING_VALUES_REQUIRED");
         Map<String, String> typedFacts = mapper.convertValue(facts, new tools.jackson.core.type.TypeReference<Map<String, String>>() { });
         return simulationService.preview(stored.graph(), typedFacts);
+    }
+
+    private boolean validSimulationGraph(GraphDefinition graph) {
+        return new GraphValidator(registry.all(), GraphValidator.Limits.productionDefaults()).validate(graph)
+                .stream().noneMatch(issue -> issue.severity() == ValidationIssue.Severity.ERROR);
     }
 
     /** 读取请求正文前检查当前定义范围，禁止无权请求消耗仿真计算预算。 */

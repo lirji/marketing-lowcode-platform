@@ -50,6 +50,9 @@ public interface ControlRepository {
     void saveDefinition(DefinitionWrite write);
     Optional<DefinitionRow> findLatestDefinition(String tenantId, String campaignId, String dialect);
     Optional<DefinitionRow> findDefinition(String tenantId, String definitionId, long version);
+    /** 只查询同活动的 Offer 版本元数据，避免历史页读取整份图。 */
+    List<OfferVersionRow> findOfferVersions(String tenantId, String campaignId, String definitionId,
+            String dialect, Long beforeVersion, int limit);
     int updateDefinitionStatus(String tenantId, String definitionId, long version, String status, String updatedAt);
 
     void saveApprovalCase(ApprovalCaseWrite write);
@@ -115,6 +118,7 @@ public interface ControlRepository {
             String updatedAt) { }
     record DefinitionRow(String campaignId, String definitionId, long versionNo, String dialect, String graphJson,
             String semanticHash, String status, String createdBy, String createdAt, String updatedAt) { }
+    record OfferVersionRow(long versionNo, String status, String createdAt) { }
     record ApprovalCaseWrite(String tenantId, String caseId, String definitionId, long definitionVersion,
             String submittedBy, String requiredRoles, String status, String createdAt, String updatedAt) { }
     record TermsWrite(String tenantId, String termsId, String definitionId, long definitionVersion,

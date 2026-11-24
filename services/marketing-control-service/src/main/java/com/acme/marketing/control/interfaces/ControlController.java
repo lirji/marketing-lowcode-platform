@@ -9,9 +9,15 @@ import com.acme.marketing.lowcode.model.GraphDefinition;
 import com.acme.marketing.lowcode.model.NodeDefinition;
 import com.acme.marketing.platform.web.TenantContextHolder;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -28,6 +34,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1")
 public class ControlController {
+    private static final String PRODUCT_SCOPE_ID = "[A-Za-z0-9_.:@/-]{1,128}";
+    private static final int CAMPAIGN_ID_MAX_LENGTH = 64;
+    private static final int INSTANT_MAX_LENGTH = 40;
+    private static final int MAX_OFFER_PAGE_SIZE = 50;
+    private static final int MAX_COMPARISON_SCENARIOS = 10;
     private final ControlApplicationService service;
     private final DefaultNodeRegistry registry;
     private final ControlCommandExecutor commands;
@@ -90,6 +101,43 @@ public class ControlController {
     public ControlApplicationService.DefinitionView latestDefinition(
             @RequestParam String campaignId, @RequestParam com.acme.marketing.lowcode.model.Dialect dialect) {
         return service.latestDefinition(campaignId, dialect);
+    }
+
+    /** 版本选择仅需要元数据，分页独立于最新版本读取。 */
+    @GetMapping("/definitions/{definitionId}/versions")
+    public ControlApplicationService.OfferVersionPage offerVersions(@PathVariable String definitionId,
+            @RequestParam @NotBlank @Size(max = CAMPAIGN_ID_MAX_LENGTH) String campaignId,
+            @RequestParam(required = false) @Positive Long beforeVersion,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_OFFER_PAGE_SIZE) int limit) {
+        return service.offerVersions(campaignId, definitionId, beforeVersion, limit);
+    }
+
+    /** 批次为纯计算，用户重试使用同一版本和场景，无需占用命令幂等记录。 */
+    @PostMapping("/definitions/{definitionId}/versions:compare-offer")
+    public GraphSimulationService.Comparison compareOffers(@PathVariable String definitionId,
+            @Valid @RequestBody OfferComparisonInput input) {
+        return service.compareOffers(input.campaignId(), definitionId, input.baselineVersion(), input.candidateVersion(),
+                input.scenarios().stream().map(OfferComparisonScenario::scenario).toList());
+    }
+
+    /** 金额采用人民币分的十进制整数字符串，避免小数截断或浮点舍入。 */
+    public record OfferComparisonInput(@NotBlank @Size(max = CAMPAIGN_ID_MAX_LENGTH) String campaignId,
+            @NotNull @Positive Long baselineVersion, @NotNull @Positive Long candidateVersion,
+            @Valid @NotNull @Size(min = 1, max = MAX_COMPARISON_SCENARIOS) List<@NotNull OfferComparisonScenario> scenarios) { }
+
+    public record OfferComparisonScenario(@NotNull @Pattern(regexp = PRODUCT_SCOPE_ID) String skuId,
+            @NotNull @Pattern(regexp = PRODUCT_SCOPE_ID) String shopId,
+            @NotNull @Pattern(regexp = "[0-9]{1,14}") String amountMinor,
+            @NotBlank @Size(max = INSTANT_MAX_LENGTH) String occurredAt) {
+        /** 显式转换为一个时间点，沿用商品试跑的 UTC 契约。 */
+        GraphSimulationService.ProductScenario scenario() {
+            try {
+                return new GraphSimulationService.ProductScenario(skuId, shopId, Long.parseLong(amountMinor),
+                        Instant.parse(occurredAt));
+            } catch (DateTimeParseException invalid) {
+                throw new IllegalArgumentException("offer preview occurredAt must be an ISO-8601 instant", invalid);
+            }
+        }
     }
 
     @GetMapping("/definitions/{definitionId}/versions/{version}")

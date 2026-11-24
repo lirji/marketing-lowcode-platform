@@ -108,6 +108,48 @@ paths:
       operationId: getDefinitionVersion
       parameters: [{$ref: '#/components/parameters/DefinitionId'}, {$ref: '#/components/parameters/Version'}]
       responses: *ok
+  /api/v1/definitions/{definitionId}/versions:
+    get:
+      tags: [Control]
+      operationId: listOfferVersions
+      x-required-permission: definition:read
+      description: Returns saved Offer version metadata in descending version order for the visible campaign and definition.
+      parameters:
+        - {$ref: '#/components/parameters/DefinitionId'}
+        - {in: query, name: campaignId, required: true, schema: {type: string, maxLength: 64}}
+        - {in: query, name: beforeVersion, schema: {type: integer, format: int64, minimum: 1}, description: Exclusive cursor from nextBeforeVersion.}
+        - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+      responses:
+        '200':
+          description: Saved Offer version metadata. A null cursor indicates the last page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OfferVersionPage'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+  /api/v1/definitions/{definitionId}/versions:compare-offer:
+    post:
+      tags: [Control]
+      operationId: compareOfferVersions
+      x-required-permission: definition:simulate
+      description: Pure pricing for two distinct saved store SKU fixed-discount template versions. Also requires definition:read. Both versions receive identical CNY single-product scenarios in request order. Inventory, budget reservations, other campaigns and fulfillment are outside the calculation.
+      parameters: [{$ref: '#/components/parameters/DefinitionId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OfferComparisonInput'}
+      responses:
+        '200':
+          description: Results in request order with exact version numbers.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OfferComparison'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
   /api/v1/definitions/{definitionId}/versions/{version}:validate:
     post:
       tags: [Control]
@@ -1331,6 +1373,65 @@ components:
     JsonArray: {description: Successful collection, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/JsonObject'}}}}}
     Problem: {description: RFC 9457 problem response, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
   schemas:
+    OfferVersionPage:
+      type: object
+      required: [campaignId, definitionId, items, nextBeforeVersion]
+      properties:
+        campaignId: {type: string}
+        definitionId: {type: string}
+        nextBeforeVersion: {type: [integer, 'null'], format: int64, minimum: 1}
+        items:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            required: [version, status, createdAt]
+            properties:
+              version: {type: integer, format: int64, minimum: 1}
+              status: {type: string, enum: [DRAFT, VALIDATED, IN_REVIEW, APPROVED, RELEASED, REJECTED]}
+              createdAt: {type: string, format: date-time}
+    OfferComparisonInput:
+      type: object
+      required: [campaignId, baselineVersion, candidateVersion, scenarios]
+      properties:
+        campaignId: {type: string, minLength: 1, maxLength: 64}
+        baselineVersion: {type: integer, format: int64, minimum: 1}
+        candidateVersion: {type: integer, format: int64, minimum: 1}
+        scenarios:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            type: object
+            required: [skuId, shopId, amountMinor, occurredAt]
+            properties:
+              skuId: {type: string, pattern: '^[A-Za-z0-9_.:@/-]{1,128}$'}
+              shopId: {type: string, pattern: '^[A-Za-z0-9_.:@/-]{1,128}$'}
+              amountMinor: {type: string, pattern: '^[0-9]{1,14}$', description: Exact integer CNY minor units.}
+              occurredAt: {type: string, format: date-time, maxLength: 40}
+    OfferComparison:
+      type: object
+      required: [baselineVersion, candidateVersion, rows]
+      properties:
+        baselineVersion: {type: integer, format: int64, minimum: 1}
+        candidateVersion: {type: integer, format: int64, minimum: 1}
+        rows:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            type: object
+            required: [baseline, candidate]
+            properties:
+              baseline: {$ref: '#/components/schemas/OfferComparisonResult'}
+              candidate: {$ref: '#/components/schemas/OfferComparisonResult'}
+    OfferComparisonResult:
+      type: object
+      required: [discountMinor, payableMinor, outcome]
+      properties:
+        discountMinor: {type: integer, format: int64, minimum: 0}
+        payableMinor: {type: integer, format: int64, minimum: 0}
+        outcome: {type: string, enum: [APPLIED, THRESHOLD_NOT_MET, PRODUCT_SCOPE_MISMATCH, OUTSIDE_VALIDITY, NOT_APPLIED]}
     DecisionDeploymentPosition:
       type: object
       additionalProperties: false

@@ -76,6 +76,11 @@ public class MybatisControlRepository implements ControlRepository {
     @Override public Optional<DefinitionRow> findDefinition(String tenantId, String definitionId, long version) {
         return Optional.ofNullable(mapper.selectDefinition(tenantId, definitionId, version));
     }
+    /** 主键前缀包含租户与定义，使用版本号游标支持稳定的倒序分页。 */
+    @Override public List<OfferVersionRow> findOfferVersions(String tenantId, String campaignId, String definitionId,
+            String dialect, Long beforeVersion, int limit) {
+        return mapper.selectOfferVersions(tenantId, campaignId, definitionId, dialect, beforeVersion, limit);
+    }
     @Override public int updateDefinitionStatus(String tenantId, String definitionId, long version, String status,
             String updatedAt) { return mapper.updateDefinitionStatus(tenantId, definitionId, version, status, updatedAt); }
     @Override public void saveApprovalCase(ApprovalCaseWrite write) { one(mapper.insertApprovalCase(write), "保存审批单"); }

@@ -26,6 +26,9 @@ import {
   compileReportSchema,
   dashboardSchema,
   definitionBundleSchema,
+  offerComparisonSchema,
+  offerVersionPageSchema,
+  type OfferComparisonInput,
   enrollmentViewSchema,
   fieldDefinitionSchema,
   graphDefinitionSchema,
@@ -221,6 +224,31 @@ export const api = {
     request(`/api/v1/definitions/latest?campaignId=${encodeURIComponent(campaignId)}&dialect=${encodeURIComponent(dialect)}`, undefined, (value) => parseWith(definitionBundleSchema, value)),
   getDefinition: (definitionId: string, version: number) =>
     request(`/api/v1/definitions/${encodeURIComponent(definitionId)}/versions/${version}`, undefined, (value) => parseWith(definitionBundleSchema, value)),
+  offerVersions: (campaignId: string, definitionId: string, beforeVersion?: number) => {
+    const params = new URLSearchParams({ campaignId })
+    if (beforeVersion !== undefined) params.set('beforeVersion', String(beforeVersion))
+    return request(`/api/v1/definitions/${encodeURIComponent(definitionId)}/versions?${params}`, undefined, value => {
+      const page = parseWith(offerVersionPageSchema, value)
+      if (page.campaignId !== campaignId || page.definitionId !== definitionId
+          || (beforeVersion !== undefined && page.items.some(item => item.version >= beforeVersion))) {
+        throw new Error('版本列表回执与当前查询不一致。')
+      }
+      return page
+    })
+  },
+  compareOffers: (definitionId: string, input: OfferComparisonInput) =>
+    request(`/api/v1/definitions/${encodeURIComponent(definitionId)}/versions:compare-offer`, { method: 'POST', body: JSON.stringify(input) }, value => {
+      const result = parseWith(offerComparisonSchema, value)
+      const matchesAmounts = result.rows.every((row, index) => {
+        const amount = Number(input.scenarios[index]?.amountMinor)
+        return [row.baseline, row.candidate].every(side => side.discountMinor + side.payableMinor === amount)
+      })
+      if (result.baselineVersion !== input.baselineVersion || result.candidateVersion !== input.candidateVersion
+          || result.rows.length !== input.scenarios.length || !matchesAmounts) {
+        throw new Error('比较回执与提交的版本或订单场景不一致。')
+      }
+      return result
+    }),
   nodeRegistry: () => request('/api/v1/registries/nodes', undefined, (value) => zArray(nodeRegistrySchema, value)),
   validate: (definitionId: string, version: number) =>
     request(`/api/v1/definitions/${encodeURIComponent(definitionId)}/versions/${version}:validate`, { method: 'POST', headers: commandHeaders() }, (value) => parseWith(validationResultSchema, value)),

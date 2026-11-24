@@ -219,3 +219,21 @@
 .workbench-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:12px; }
 .workbench-trial-result { margin-top:16px; padding:14px; border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--canvas); }
 .workbench-trial-result .workbench-facts { margin-top:10px; }
+.offer-comparison-form { display:grid; gap:12px; margin-top:12px; }
+.offer-comparison-form > .field-hint, .offer-comparison-results > p { margin:0; }
+.offer-comparison-form > .workbench-actions { margin-top:0; }
+.offer-comparison-scenario { min-inline-size:0; margin:0; padding:12px; border:1px solid var(--line); border-radius:var(--radius-sm); }
+.offer-comparison-scenario legend { padding-inline:5px; font-weight:650; }
+.offer-comparison-scenario > .button { margin-top:8px; }
+.offer-comparison-results { display:grid; gap:12px; margin-top:16px; min-width:0; font-variant-numeric:tabular-nums; }
+.offer-comparison-scroll-hint { display:none; }
+@media (min-width:1180px) {
+  .offer-comparison-scenario .offer-scenario-fields { grid-template-columns:repeat(3,minmax(0,1fr)) minmax(250px,1.35fr); }
+}
+@media (max-width:1179px) {
+  .offer-comparison-scroll-hint { display:block; }
+}
+@media (max-width:720px) {
+  .offer-comparison-scenario .offer-scenario-fields { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+  .offer-scenario-fields > :nth-child(n+3) { grid-column:1/-1; }
+}

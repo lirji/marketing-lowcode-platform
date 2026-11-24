@@ -85,6 +85,18 @@
         SELECT <include refid="definitionColumns"/> FROM mk_definition_version
         WHERE tenant_id = #{tenantId} AND definition_id = #{definitionId} AND version_no = #{version}
     </select>
+    <select id="selectOfferVersions"
+            resultType="com.acme.marketing.control.application.ControlRepository$OfferVersionRow">
+        SELECT version_no AS versionNo, status, created_at AS createdAt
+        FROM mk_definition_version
+        WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId}
+          AND definition_id = #{definitionId} AND dialect = #{dialect}
+        <if test="beforeVersion != null">
+          AND version_no &lt; #{beforeVersion}
+        </if>
+        ORDER BY version_no DESC
+        LIMIT #{limit}
+    </select>
     <update id="updateDefinitionStatus">
         UPDATE mk_definition_version SET status = #{status}, updated_at = #{updatedAt}
         WHERE tenant_id = #{tenantId} AND definition_id = #{definitionId} AND version_no = #{version}

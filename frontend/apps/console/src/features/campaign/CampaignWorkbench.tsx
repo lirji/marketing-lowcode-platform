@@ -12,20 +12,13 @@ import { isReferralSimulation, type Campaign, type DefinitionBundle, type GraphD
 import { releaseScopeKey } from '../../shared/api/useReleasePages'
 import { useAuth } from '../../shared/auth/useAuth'
 import { CAMPAIGN_TYPE } from '../../shared/model/campaignType'
-import { CNY, OFFER_DIALECT, THRESHOLD_TEMPLATE, activeCampaignBudget, minorFromYuan, thresholdGraph } from './thresholdOffer'
+import {
+  CNY, OFFER_DIALECT, OFFER_VERSION_STATUS, THRESHOLD_TEMPLATE,
+  activeCampaignBudget, minorFromYuan, offerOutcomeLabel, offerStatusLabel, thresholdGraph, yuan,
+} from './thresholdOffer'
+import { OfferVersionComparison } from './OfferVersionComparison'
 
-const DefinitionStatus = {
-  DRAFT: 'DRAFT', VALIDATED: 'VALIDATED', IN_REVIEW: 'IN_REVIEW',
-  APPROVED: 'APPROVED', RELEASED: 'RELEASED', REJECTED: 'REJECTED',
-} as const
-const statusLabels: Record<string, string> = {
-  [DefinitionStatus.DRAFT]: '草稿', [DefinitionStatus.VALIDATED]: '已校验',
-  [DefinitionStatus.IN_REVIEW]: '审核中', [DefinitionStatus.APPROVED]: '已批准',
-  [DefinitionStatus.RELEASED]: '已发布', [DefinitionStatus.REJECTED]: '已驳回',
-}
 const ACTIVE_BENEFIT_STATUS = 'ACTIVE'
-const outcomes: Record<string, string> = { APPLIED: '命中满减', THRESHOLD_NOT_MET: '未达到门槛', PRODUCT_SCOPE_MISMATCH: '商品或门店不在范围内', OUTSIDE_VALIDITY: '订单时间不在活动有效期内', NOT_APPLIED: '未应用优惠' }
-const yuan = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: CNY })
 const dateNow = () => new Date().toISOString()
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1_000
 
@@ -78,7 +71,7 @@ function Workbench({ campaign, scope }: { campaign: Campaign; scope: string }) {
   const config = templateNodes.length === 1 && templateNodes[0].stableTypeId === 'offer.fixed' ? templateNodes[0].config : undefined
   return <>
     <Panel>
-      <PanelHeader title="活动范围" aside={<Badge tone={definition?.status === DefinitionStatus.RELEASED ? 'good' : 'neutral'}>{definition ? statusLabels[definition.status] ?? definition.status : '规则待确认'}</Badge>} />
+      <PanelHeader title="活动范围" aside={<Badge tone={definition?.status === OFFER_VERSION_STATUS.RELEASED ? 'good' : 'neutral'}>{definition ? offerStatusLabel[definition.status] ?? definition.status : '规则待确认'}</Badge>} />
       <dl className="workbench-facts"><div><dt>活动 ID</dt><dd>{campaign.id}</dd></div><div><dt>组织</dt><dd>{campaign.organizationId || '未声明'}</dd></div><div><dt>门店</dt><dd>{campaign.shopId || '全部门店'}</dd></div></dl>
     </Panel>
     {!canRead ? <StateBanner tone="warn" title="无规则读取权限" detail="查看 Offer 规则及其版本需要 definition:read 权限。" />
@@ -98,12 +91,14 @@ function Workbench({ campaign, scope }: { campaign: Campaign; scope: string }) {
         {currentApproval && <StateBanner tone="success" title="已提交规则审核" detail={`审核单 ${currentApproval.caseId}`} />}
         {(validate.isError || submit.isError) && <StateBanner tone="error" title="操作失败" detail={problemDetail(validate.error ?? submit.error)} />}
         {(canWrite || canSubmit) && <div className="workbench-actions">
-          {canWrite && <Button disabled={busy || definition.status !== DefinitionStatus.DRAFT} onClick={() => { submit.reset(); validate.mutate(definition) }}>校验当前版本</Button>}
-          {canSubmit && <Button tone="primary" disabled={busy || definition.status !== DefinitionStatus.VALIDATED} onClick={() => { validate.reset(); submit.mutate(definition) }}>提交审核</Button>}
+          {canWrite && <Button disabled={busy || definition.status !== OFFER_VERSION_STATUS.DRAFT} onClick={() => { submit.reset(); validate.mutate(definition) }}>校验当前版本</Button>}
+          {canSubmit && <Button tone="primary" disabled={busy || definition.status !== OFFER_VERSION_STATUS.VALIDATED} onClick={() => { validate.reset(); submit.mutate(definition) }}>提交审核</Button>}
         </div>}
       </Panel> : definition === null && campaign.shopId && canWrite
         ? <ThresholdTemplate campaign={campaign} scope={scope} onSaved={afterChange} />
         : <Panel><EmptyState title="此活动尚无 Offer 规则" detail={findNext} action={canWrite && <Link className="button secondary" to={`/designers/offer?${campaignQuery}`}>打开 Offer 设计器</Link>} /></Panel>}
+    {definition && config && auth.hasPermission('definition:simulate') && <OfferVersionComparison
+      key={`compare:${definition.definitionId}:${definition.version}`} definition={definition} config={config} scope={scope} />}
     {definition && config && auth.hasPermission('definition:simulate') && <OfferTrial key={`${definition.definitionId}:${definition.version}`} definition={definition} config={config} />}
     <Panel>
       <PanelHeader title="审核与发布" />
@@ -185,7 +180,7 @@ function OfferTrial({ definition, config }: { definition: DefinitionBundle; conf
     </form>
     {trial.isError && <StateBanner tone="error" title="商品试跑失败" detail={problemDetail(trial.error)} />}
     {current && <div className="workbench-trial-result" role="status">
-      <Badge tone={current.discountMinor > 0 ? 'good' : 'neutral'}>{outcomes[current.trace.at(-1)?.outcome ?? ''] ?? '已返回试跑结果'}</Badge>
+      <Badge tone={current.discountMinor > 0 ? 'good' : 'neutral'}>{offerOutcomeLabel[current.trace.at(-1)?.outcome ?? ''] ?? '已返回试跑结果'}</Badge>
       <dl className="workbench-facts"><div><dt>优惠前</dt><dd>{yuan.format(current.subtotalMinor / 100)}</dd></div><div><dt>优惠</dt><dd>{yuan.format(current.discountMinor / 100)}</dd></div><div><dt>试跑应付</dt><dd>{yuan.format(current.payableMinor / 100)}</dd></div></dl>
     </div>}
   </Panel>

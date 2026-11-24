@@ -125,6 +125,75 @@ class ControlFlowIntegrationTest extends MySqlIntegrationTest {
     }
 
     @Test
+    void listsAndComparesSavedOfferVersionsWithoutChangingThem() throws Exception {
+        var campaign = post("/api/v1/campaigns", "actor-author", null, Map.of(
+                "name", "compare threshold", "objective", "compare two saved offers",
+                "organizationId", "org-a", "shopId", "shop-a"));
+        String campaignId = campaign.get("id").asString();
+        String definitionId = "offer-" + campaignId;
+        for (int amount : List.of(5000, 6000)) {
+            var graph = new GraphDefinition(definitionId, Dialect.OFFER_DECISION_DAG, "1.0.0",
+                    List.of(new GraphNode("discount", "offer.fixed", "1.0.0", Map.of(
+                            "shopIds", "shop-a", "skuIds", "sku-a", "pricingCurrency", "CNY", "stage", "SHOP",
+                            "thresholdMinor", amount == 5000 ? "50000" : "49999", "amountMinor", String.valueOf(amount),
+                            "benefitDefinitionVersion", "coupon@1", "validFrom", "2026-01-01T00:00:00Z",
+                            "validTo", "2030-01-01T00:00:00Z"))), List.of(), Map.of(),
+                    Map.of("template", "STORE_SKU_FIXED_DISCOUNT_V1"));
+            post("/api/v1/definitions", "actor-author", null, Map.of("campaignId", campaignId, "graph", graph));
+        }
+        String versions = "/api/v1/definitions/" + definitionId + "/versions";
+        String history = versions + "?campaignId=" + campaignId + "&limit=1";
+        var first = get(history, "actor-reader");
+        assertEquals(2, first.get("items").get(0).get("version").asInt());
+        assertEquals("DRAFT", first.get("items").get(0).get("status").asString());
+        assertEquals(2, first.get("nextBeforeVersion").asInt());
+        var second = get(history + "&beforeVersion=2", "actor-reader");
+        assertEquals(1, second.get("items").get(0).get("version").asInt());
+        assertTrue(second.get("nextBeforeVersion").isNull());
+        assertEquals(400, client.send(request(versions + "?campaignId=" + campaignId + "&limit=0", "actor-reader")
+                .GET().build(), HttpResponse.BodyHandlers.ofString()).statusCode());
+        assertEquals(400, client.send(request(history, "actor-reader").setHeader("X-Dev-Shop-Ids", "shop-b")
+                .GET().build(), HttpResponse.BodyHandlers.ofString()).statusCode());
+
+        var boundary = Map.of("skuId", "sku-a", "shopId", "shop-a", "amountMinor", "49999",
+                "occurredAt", "2026-11-24T00:00:00Z");
+        var wrongSku = new LinkedHashMap<>(boundary);
+        wrongSku.put("skuId", "sku-b");
+        var wrongShop = new LinkedHashMap<>(boundary);
+        wrongShop.put("shopId", "shop-b");
+        var expired = new LinkedHashMap<>(boundary);
+        expired.put("occurredAt", "2030-01-01T00:00:00Z");
+        var input = new LinkedHashMap<String, Object>(Map.of("campaignId", campaignId, "baselineVersion", 1,
+                "candidateVersion", 2, "scenarios", List.of(boundary, wrongSku, expired, wrongShop)));
+        var result = post(versions + ":compare-offer", "actor-author", null, input);
+        assertEquals(1, result.get("baselineVersion").asInt());
+        assertEquals(2, result.get("candidateVersion").asInt());
+        assertEquals("THRESHOLD_NOT_MET", result.at("/rows/0/baseline/outcome").asString());
+        assertEquals("APPLIED", result.at("/rows/0/candidate/outcome").asString());
+        assertEquals(6000, result.at("/rows/0/candidate/discountMinor").asInt());
+        assertEquals(43999, result.at("/rows/0/candidate/payableMinor").asInt());
+        assertEquals("PRODUCT_SCOPE_MISMATCH", result.at("/rows/1/candidate/outcome").asString());
+        assertEquals("OUTSIDE_VALIDITY", result.at("/rows/2/candidate/outcome").asString());
+        assertEquals("PRODUCT_SCOPE_MISMATCH", result.at("/rows/3/candidate/outcome").asString());
+        assertEquals("DRAFT", get(versions + "/2", "actor-reader").get("status").asString());
+
+        var compareRequest = request(versions + ":compare-offer", "actor-reader").header("Content-Type", "application/json");
+        var forbidden = client.send(compareRequest.copy().setHeader("X-Dev-Permissions", "definition:read")
+                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(input))).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, forbidden.statusCode());
+        input.put("scenarios", java.util.Collections.nCopies(11, boundary));
+        assertEquals(400, client.send(compareRequest.copy().POST(HttpRequest.BodyPublishers.ofString(
+                mapper.writeValueAsString(input))).build(), HttpResponse.BodyHandlers.ofString()).statusCode());
+        input.put("scenarios", List.of(boundary));
+        input.put("candidateVersion", 1);
+        var sameVersion = client.send(compareRequest.POST(HttpRequest.BodyPublishers.ofString(
+                mapper.writeValueAsString(input))).build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(409, sameVersion.statusCode());
+        assertTrue(sameVersion.body().contains("OFFER_COMPARISON_SAME_VERSION"));
+    }
+
+    @Test
     void authorValidateSimulateAndApproveWithFourEyes() throws Exception {
         JsonNode campaign = post("/api/v1/campaigns", "actor-author", "idem-campaign-001",
                 Map.of("name", "Double 11", "objective", "GMV", "organizationId", "org-a", "shopId", "shop-a"));

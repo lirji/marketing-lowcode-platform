@@ -7,6 +7,24 @@ const BUDGET_ACCOUNT = /^BUDGET:([A-Za-z0-9_-]{1,128}):([A-Za-z0-9_-]{1,128}):CN
 const BUDGET_ACCOUNT_TYPE = 'BUDGET'
 const ACTIVE_ACCOUNT_STATE = 'ACTIVE'
 const skuPattern = /^[A-Za-z0-9_.:@/-]{1,128}$/
+export const isOfferScopeId = (value: string) => skuPattern.test(value)
+
+export const OFFER_VERSION_STATUS = {
+  DRAFT: 'DRAFT', VALIDATED: 'VALIDATED', IN_REVIEW: 'IN_REVIEW',
+  APPROVED: 'APPROVED', RELEASED: 'RELEASED', REJECTED: 'REJECTED',
+} as const
+
+export const offerStatusLabel: Record<string, string> = {
+  [OFFER_VERSION_STATUS.DRAFT]: '草稿', [OFFER_VERSION_STATUS.VALIDATED]: '已校验',
+  [OFFER_VERSION_STATUS.IN_REVIEW]: '审核中', [OFFER_VERSION_STATUS.APPROVED]: '已批准',
+  [OFFER_VERSION_STATUS.RELEASED]: '已发布', [OFFER_VERSION_STATUS.REJECTED]: '已驳回',
+}
+
+export const offerOutcomeLabel: Record<string, string> = {
+  APPLIED: '命中满减', THRESHOLD_NOT_MET: '未达到门槛', PRODUCT_SCOPE_MISMATCH: '商品或门店不在范围内',
+  OUTSIDE_VALIDITY: '订单时间不在活动有效期内', NOT_APPLIED: '未应用优惠', CURRENCY_MISMATCH: '币种不一致',
+}
+export const yuan = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: CNY })
 
 export function campaignWorkbenchPath(campaignId: string) {
   return `/campaigns/${encodeURIComponent(campaignId)}/workbench`
@@ -29,7 +47,7 @@ export function thresholdGraph(input: {
   const threshold = minorFromYuan(input.threshold), amount = minorFromYuan(input.discount)
   const funder = BUDGET_ACCOUNT.exec(input.budgetKey)
   if (!threshold || !amount || Number(amount) <= 0 || Number(amount) > Number(threshold) || !funder
-    || !skuPattern.test(input.skuId) || !skuPattern.test(input.shopId) || !input.benefit
+    || !isOfferScopeId(input.skuId) || !isOfferScopeId(input.shopId) || !input.benefit
     || !(Date.parse(input.validFrom) < Date.parse(input.validTo))) return undefined
 
   const definitionId = `offer-${input.campaignId}`

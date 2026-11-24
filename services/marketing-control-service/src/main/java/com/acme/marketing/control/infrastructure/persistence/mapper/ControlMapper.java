@@ -47,6 +47,9 @@ public interface ControlMapper {
             @Param("campaignId") String campaignId, @Param("dialect") String dialect);
     ControlRepository.DefinitionRow selectDefinition(@Param("tenantId") String tenantId,
             @Param("definitionId") String definitionId, @Param("version") long version);
+    List<ControlRepository.OfferVersionRow> selectOfferVersions(@Param("tenantId") String tenantId,
+            @Param("campaignId") String campaignId, @Param("definitionId") String definitionId,
+            @Param("dialect") String dialect, @Param("beforeVersion") Long beforeVersion, @Param("limit") int limit);
     int updateDefinitionStatus(@Param("tenantId") String tenantId, @Param("definitionId") String definitionId,
             @Param("version") long version, @Param("status") String status, @Param("updatedAt") String updatedAt);
     int insertApprovalCase(ControlRepository.ApprovalCaseWrite write);
