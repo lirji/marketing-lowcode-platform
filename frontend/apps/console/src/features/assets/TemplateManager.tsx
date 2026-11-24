@@ -46,7 +46,7 @@ function TemplateWorkspace() {
   const initialError = !searchPending && query.isError && rows.length === 0
   return <Panel><PanelHeader eyebrow="ENGAGEMENT TEMPLATES" title="渠道模板" />
     <p className="muted">列表展示各模板的最新版本。新版本按现有协议保存为已批准状态；历史版本及旅程引用保持原值，保存不会发送消息。</p>
-    <div className="toolbar"><Button tone="primary" disabled={!canWrite} onClick={() => { setSaved(null); setEditor({}) }}>新建消息模板</Button><Button disabled={api.demoMode || query.isFetching || searchPending} onClick={() => void query.refetch()}>刷新模板</Button></div>
+    <div className="action-bar toolbar"><Button tone="primary" disabled={!canWrite} onClick={() => { setSaved(null); setEditor({}) }}>新建消息模板</Button><Button disabled={api.demoMode || query.isFetching || searchPending} onClick={() => void query.refetch()}>刷新模板</Button></div>
     {!canWrite && <p className="muted">{api.demoMode ? '演示模式不保存模板，请连接真实服务。' : '需要 template:write 权限才能保存新版本。'}</p>}
     {saved && <StateBanner tone="success" title="模板版本已保存" detail={`${saved.templateId} v${saved.version} · ${stateLabel(saved.state)}；未发送消息，现有引用不会自动切换。`} />}
     {initialError && <><StateBanner tone="error" title="模板加载失败" detail={problemDetail(query.error)} /><Button onClick={() => void query.refetch()}>重试模板查询</Button></>}
@@ -62,7 +62,7 @@ function TemplateWorkspace() {
     {selected && <Modal title={selected.templateId} description={`消息模板 v${selected.version} · ${stateLabel(selected.state)}`} onClose={() => setSelected(null)}>
       <div className="approval-detail"><dl className="detail-facts"><div><dt>渠道</dt><dd>{selected.channel}</dd></div><div><dt>必需变量</dt><dd>{selected.requiredVariables.join(', ') || '无'}</dd></div><div><dt>创建时间（北京时间）</dt><dd>{templateTime(selected.createdAt)}</dd></div></dl>
       <h3>模板正文</h3><p className="template-content">{selected.content ?? '当前服务未返回正文，不能据此编辑。'}</p>
-      <footer className="modal-actions"><Button onClick={() => setSelected(null)}>关闭详情</Button></footer></div>
+      <footer className="action-bar action-bar--end modal-actions"><Button onClick={() => setSelected(null)}>关闭详情</Button></footer></div>
     </Modal>}
     {editor && <TemplateEditor source={editor.source} onClose={() => setEditor(null)} onSaved={(value) => { setSaved(value); setEditor(null); void queryClient.invalidateQueries({ queryKey: ['templates'] }) }} />}
   </Panel>
@@ -101,7 +101,7 @@ function TemplateEditor({ source, onClose, onSaved }: { source?: TemplateView; o
     <div className="approval-detail">
     {error != null && <StateBanner tone="error" title="模板保存失败" detail={problemDetail(error)} />}
     {pending && <StateBanner tone="loading" title="正在保存模板版本" detail="请等待结果。若连接中断，可保留原内容重试；离开不代表服务器取消保存。" />}
-    {confirmClose && <div role="alert"><p>当前修改尚未保存。关闭后将丢失这些输入。</p><div className="toolbar"><Button onClick={() => setConfirmClose(false)}>继续编辑</Button><Button onClick={onClose}>放弃修改并关闭</Button></div></div>}
+    {confirmClose && <div role="alert"><p>当前修改尚未保存。关闭后将丢失这些输入。</p><div className="action-bar toolbar"><Button onClick={() => setConfirmClose(false)}>继续编辑</Button><Button onClick={onClose}>放弃修改并关闭</Button></div></div>}
     <fieldset disabled={pending} className="template-fields">
       <label className="field"><span>模板 ID</span><input aria-label="模板 ID" aria-describedby="template-id-hint" value={form.templateId} readOnly={Boolean(source)} maxLength={128} onChange={(event) => patch('templateId', event.target.value)} /><FieldHint id="template-id-hint">唯一引用标识，最长128字符，不含空白；编辑现有模板时保持此 ID。</FieldHint></label>
       <label className="field"><span>目标版本</span><input aria-label="目标版本" aria-describedby="template-version-hint" type="number" min={source ? source.version + 1 : 1} max={Number.MAX_SAFE_INTEGER} step="1" value={form.version} onChange={(event) => patch('version', event.target.value)} /><FieldHint id="template-version-hint">{source ? `当前读取为 v${source.version}；保存更高的未占用整数版本。` : '新模板从1开始；重复版本会被拒绝，不能覆盖。'}</FieldHint></label>
@@ -110,6 +110,6 @@ function TemplateEditor({ source, onClose, onSaved }: { source?: TemplateView; o
       <label className="field"><span>必需变量</span><textarea aria-label="必需变量" aria-describedby="template-variables-hint" rows={3} value={form.variables} onChange={(event) => patch('variables', event.target.value)} /><FieldHint id="template-variables-hint">可留空；每行一个，最多32个。变量以字母或下划线开头，之后可用字母、数字、下划线、点和短横线，每个最长60字符。</FieldHint></label>
     </fieldset>
     {invalid && <p className="muted" role="status">{invalid}</p>}
-    <footer className="modal-actions"><Button disabled={pending} onClick={requestClose}>取消编辑</Button><Button tone="primary" disabled={pending || Boolean(invalid)} onClick={() => void save()}>{pending ? '保存中…' : '保存新版本'}</Button></footer></div>
+    <footer className="action-bar action-bar--end modal-actions"><Button disabled={pending} onClick={requestClose}>取消编辑</Button><Button tone="primary" disabled={pending || Boolean(invalid)} onClick={() => void save()}>{pending ? '保存中…' : '保存新版本'}</Button></footer></div>
   </Modal>
 }

@@ -109,7 +109,7 @@ function AnalyticsWorkspace({ scope }: { scope: string }) {
       <div className="analytics-filter">
         <div className="field">
           <span>报告时间</span>
-          <div className="analytics-period-controls">
+          <div className="action-bar analytics-period-controls">
             <div className="segmented" role="group" aria-label="报告时间范围">{Object.entries(ANALYTICS_PERIODS).map(([code, label]) => <button type="button" aria-pressed={period === code} className={period === code ? 'active' : ''} disabled={!canRead} onClick={() => choose(code as AnalyticsPeriod)} key={code}>{label}</button>)}</div>
             <Button disabled={!canRead} aria-expanded={customOpen} onClick={() => setCustomOpen(open => !open)}>自定义时间</Button>
           </div>
@@ -160,7 +160,7 @@ function AnalyticsWorkspace({ scope }: { scope: string }) {
     <div className="analytics-utilities">
       <p className="field-hint">投影完整水位 {displayTimestamp(watermark)}。收入和成本来自事件汇总。</p>
       {current && <p className="field-hint">读取完成 {displayTimestamp(current.fetchedAt)}。</p>}
-      <div className="toolbar">
+      <div className="action-bar toolbar">
         {canReconcile && withinLedgerWindow && <Link className="button secondary" to={`/operations?${postingParams}`}>核对补贴流水<ArrowUpRight size={15} aria-hidden="true" /></Link>}
         <Button disabled={!canRecompute || recompute.isPending} title="重算当前租户的归因明细，不受页面日期窗口限制" onClick={() => recompute.mutate()}>{recompute.isPending ? '正在重算…' : '重算全部归因'}</Button>
       </div>
@@ -185,6 +185,6 @@ function CustomAnalyticsRange({ range, apply }: { range: AnalyticsRange; apply: 
     <div className="field"><span>报告开始</span><DateTimePicker label="报告开始" value={from} onChange={setFrom} describedBy="analytics-custom-help" /></div>
     <div className="field"><span>报告结束</span><DateTimePicker label="报告结束" value={to} onChange={setTo} describedBy="analytics-custom-help" /></div>
     <p className="field-hint span-2" id="analytics-custom-help">{valid ? '按北京时间选择，包含开始时间，结束时间不计入，最长 366 天。' : '请选择有效范围，结束须晚于开始，且跨度最长 366 天。'}</p>
-    <div className="toolbar span-2"><Button type="submit" tone="primary" disabled={!valid}>查询自定义范围</Button></div>
+    <div className="action-bar toolbar span-2"><Button type="submit" tone="primary" disabled={!valid}>查询自定义范围</Button></div>
   </form>
 }

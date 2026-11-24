@@ -123,7 +123,7 @@ function DmnEditor() {
     {busy && <StateBanner tone="info" title="引擎计算中" detail="可以继续编辑；编辑后的草稿会忽略此次旧结果，请等待本次结束后重新计算。" />}
     <Panel>
       <PanelHeader title="字段与命中策略" eyebrow="TABLE SCHEMA" />
-      <div className="dmn-toolbar"><label>命中策略<Select aria-label="命中策略" value={table.hitPolicy} onChange={(event) => edit({ ...table, hitPolicy: event.target.value as DmnTable['hitPolicy'] })}><option value="UNIQUE">UNIQUE · 唯一命中</option><option value="FIRST">FIRST · 首条命中</option></Select></label><Badge tone="info">最多 32 条规则</Badge></div>
+      <div className="action-bar dmn-toolbar"><label>命中策略<Select aria-label="命中策略" value={table.hitPolicy} onChange={(event) => edit({ ...table, hitPolicy: event.target.value as DmnTable['hitPolicy'] })}><option value="UNIQUE">UNIQUE · 唯一命中</option><option value="FIRST">FIRST · 首条命中</option></Select></label><Badge tone="info">最多 32 条规则</Badge></div>
       <p className="dmn-help">字段名仅用字母、数字、下划线，以字母或下划线开头。UNIQUE 要求最多命中一条；FIRST 按表格顺序取首条。</p>
       {DIRECTIONS.map((kind) => <div className="dmn-column-group" key={kind}>
         <RecordTable label={kind === DIRECTION.INPUTS ? '输入字段' : '输出字段'} columns={['方向', '字段名', '类型', '操作']} actions>

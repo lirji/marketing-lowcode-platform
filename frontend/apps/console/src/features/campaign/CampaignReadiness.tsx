@@ -130,7 +130,7 @@ export function CampaignReadiness({ campaignId, campaignType }: { campaignId: st
       <ul>
         {items.map(item => <li key={item.label}><Badge tone={item.status === STATUS.READY ? 'good' : item.status === STATUS.NOT_APPLICABLE ? 'neutral' : 'warn'}>{item.status}</Badge>{item.label}</li>)}
       </ul>
-      {standard && releases.canRead && <div className="toolbar">
+      {standard && releases.canRead && <div className="action-bar toolbar">
         <span>已核对 {releases.items.length} 条发布清单</span>
         {releases.hasNextPage && <Button disabled={releases.isFetching} onClick={() => void releases.fetchNextPage()}>{releases.isFetchNextPageError ? '重试后续发布清单' : '继续核对发布清单'}</Button>}
         <Button disabled={releases.isFetching} onClick={() => void releases.refresh()}>重新核对发布清单</Button>

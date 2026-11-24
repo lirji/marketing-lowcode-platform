@@ -169,7 +169,7 @@ function DeadLetters() {
       <div className="danger-confirm">
         <p>重放仍会经过 schema 与同意校验，不会绕过资金不变量。</p>
         {replay.isError && <StateBanner tone="error" title="重放失败" detail={problemDetail(replay.error)} />}
-        <footer className="modal-actions">
+        <footer className="action-bar action-bar--end modal-actions">
           <Button onClick={() => setConfirmId(undefined)}>取消</Button>
           <Button tone="danger" disabled={replay.isPending} onClick={() => replay.mutate(confirmId)}>确认重放</Button>
         </footer>

@@ -41,7 +41,7 @@ function ReleaseBundles() {
           {campaignId && !campaigns.data?.some(item => item.id === campaignId) && <option value={campaignId}>{campaignId}</option>}
           {campaigns.data?.map(item => <option key={item.id} value={item.id}>{item.name} · {item.id}</option>)}
         </Select><FieldHint id="bundle-campaign-hint">仅显示当前身份可访问的活动，按活动查看组合版本。</FieldHint></label>
-          : <form className="bundle-inline" onSubmit={event => { event.preventDefault(); if (manualCampaign.trim()) select(manualCampaign.trim()) }}>
+          : <form className="action-bar action-bar--fields bundle-inline" onSubmit={event => { event.preventDefault(); if (manualCampaign.trim()) select(manualCampaign.trim()) }}>
             <label className="field"><span>活动 ID</span><input aria-label="活动 ID" value={manualCampaign} maxLength={64} onChange={event => setManualCampaign(event.target.value)} aria-describedby="bundle-id-hint" /><FieldHint id="bundle-id-hint">填写要查看的业务活动编号。</FieldHint></label><Button type="submit" disabled={!manualCampaign.trim()}>查看活动组合</Button>
           </form>}
         {campaigns.isError && <><StateBanner tone="error" title="活动列表读取失败" detail={problemDetail(campaigns.error)} /><Button onClick={() => void campaigns.refetch()}>重试活动列表</Button></>}
@@ -79,7 +79,7 @@ function CampaignBundles({ campaignId, scope, selected, onSelect }: { campaignId
       {readError && <><StateBanner tone="error" title="组合版本读取失败" detail={problemDetail(readError)} /><Button onClick={() => void (latest.isError ? latest.refetch() : history.refetch())}>重新读取版本</Button></>}
       {latest.isSuccess && head === 0 && <EmptyState title="当前活动暂无组合版本" detail="暂存本活动的发布清单后，可创建首个组合版本。" />}
       {latest.isSuccess && head > 0 && <>
-        <form className="bundle-inline" onSubmit={event => { event.preventDefault(); if (positive(jump) && Number(jump) <= head) { onSelect(Number(jump)); setJump('') } }}>
+        <form className="action-bar action-bar--fields bundle-inline" onSubmit={event => { event.preventDefault(); if (positive(jump) && Number(jump) <= head) { onSelect(Number(jump)); setJump('') } }}>
           <label className="field"><span>查看历史版本</span><input type="number" aria-label="组合版本号" min={1} max={head} value={jump} placeholder={String(target ?? head)} onChange={event => setJump(event.target.value)} aria-describedby="bundle-version-hint" /><FieldHint id="bundle-version-hint">输入 1 至 {head} 之间的版本号，最新为 v{head}。</FieldHint></label>
           <Button type="submit" disabled={!positive(jump) || Number(jump) > head}>查看版本</Button>
           {target !== head && <Button onClick={() => onSelect(head)}>查看最新版本</Button>}
@@ -105,7 +105,7 @@ function BundleDetails({ bundle, scope }: { bundle: ReleaseBundle; scope: string
   const prepare = useMutation({ mutationFn: () => api.bundleReadiness(bundle, true), onSettled: () => ready.refetch() })
   const evidence = !ready.isError && ready.data ? new Map(ready.data.members.map(item => [item.manifestId, item])) : undefined
   return <>
-    <Panel><PanelHeader title="成员与运行就绪" aside={<div className="bundle-actions"><Button disabled={ready.isFetching || prepare.isPending} onClick={() => void ready.refetch()}>刷新就绪</Button>
+    <Panel><PanelHeader title="成员与运行就绪" aside={<div className="action-bar bundle-actions"><Button disabled={ready.isFetching || prepare.isPending} onClick={() => void ready.refetch()}>刷新就绪</Button>
       {auth.hasPermission('release:activate') && <Button disabled={prepare.isPending} onClick={() => prepare.mutate()}>{prepare.isPending ? '正在准备…' : '准备运行端'}</Button>}</div>} />
       {ready.isError && <StateBanner tone="error" title="就绪状态读取失败" detail={problemDetail(ready.error)} />}
       {prepare.isError && <StateBanner tone="error" title="运行端准备失败" detail={problemDetail(prepare.error)} />}

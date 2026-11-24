@@ -203,7 +203,7 @@ function ScopedReleaseWizard({ open, onClose, onRequestActivate }: ReleaseWizard
           <option value="">请选择</option>
           {approved.map((item: ApprovalView) => <option value={item.caseId} key={item.caseId}>{item.definitionId} · v{item.definitionVersion} · {item.caseId}</option>)}
         </Select></label>
-        <div className="toolbar"><span>已加载 {approved.length} 条批准单{approvals.hasNextPage ? '，还有更多' : ''}</span>{approvals.hasNextPage && <Button disabled={approvals.isFetching} onClick={() => void approvals.fetchNextPage()}>{approvals.isFetchNextPageError ? '重试加载更多批准单' : '加载更多批准单'}</Button>}<Button disabled={api.demoMode || !auth.hasPermission('definition:read') || approvals.isFetching} onClick={() => { selectApproval(''); void approvals.refresh() }}>刷新批准单</Button></div>
+        <div className="action-bar toolbar"><span>已加载 {approved.length} 条批准单{approvals.hasNextPage ? '，还有更多' : ''}</span>{approvals.hasNextPage && <Button disabled={approvals.isFetching} onClick={() => void approvals.fetchNextPage()}>{approvals.isFetchNextPageError ? '重试加载更多批准单' : '加载更多批准单'}</Button>}<Button disabled={api.demoMode || !auth.hasPermission('definition:read') || approvals.isFetching} onClick={() => { selectApproval(''); void approvals.refresh() }}>刷新批准单</Button></div>
         {definition.data && <small>{definition.data.dialect} · {choice?.runtime ?? '不支持'} runtime</small>}
       </section>
 
@@ -240,7 +240,7 @@ function ScopedReleaseWizard({ open, onClose, onRequestActivate }: ReleaseWizard
         {stagedRelease && <div className="release-ready"><CheckCircle2 size={16} /><span>{stagedRelease.state} · readyReplicas {stagedRelease.readyReplicas} · capacity {stagedRelease.readyCapacity}</span></div>}
       </section>
 
-      <footer className="modal-actions">
+      <footer className="action-bar action-bar--end modal-actions">
         <Button onClick={onClose}>关闭</Button>
         <Button tone="primary" disabled={!ready || !auth.hasPermission('release:activate')} title={!auth.hasPermission('release:activate') ? '缺少 release:activate' : ready ? '进入激活确认' : 'RUNTIME_NOT_READY：继续等待 ACK'} onClick={() => stagedRelease && onRequestActivate(stagedRelease)}>
           进入激活确认

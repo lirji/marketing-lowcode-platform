@@ -84,7 +84,7 @@ function ReleaseCenter() {
     </>} />
     <DemoBanner />
     {!api.demoMode && !releases.canRead && <StateBanner tone="warn" title="没有发布读取权限" detail="需要 release:read 权限才能查看当前范围的发布清单。" />}
-    {!api.demoMode && releases.canRead && <div className="toolbar"><label className="field"><span>发布状态</span><Select aria-label="发布状态" aria-describedby="release-state-hint" value={releaseStatus ?? ''} disabled={pending} onChange={(event) => setReleaseStatus((event.target.value || undefined) as ReleaseStatus | undefined)}><option value="">全部状态</option><option value={ReleaseState.STAGED}>已暂存</option><option value={ReleaseState.ACTIVE}>已激活</option><option value={ReleaseState.ROLLED_BACK}>已回滚</option><option value={ReleaseState.REVOKED}>已撤销</option></Select><FieldHint id="release-state-hint">按当前组织和门店范围在服务端筛选，按清单创建时间由新到旧加载。</FieldHint></label><Button disabled={pending || releases.isFetching} onClick={() => void releases.refresh()}>刷新发布清单</Button></div>}
+    {!api.demoMode && releases.canRead && <div className="action-bar action-bar--fields toolbar"><label className="field"><span>发布状态</span><Select aria-label="发布状态" aria-describedby="release-state-hint" value={releaseStatus ?? ''} disabled={pending} onChange={(event) => setReleaseStatus((event.target.value || undefined) as ReleaseStatus | undefined)}><option value="">全部状态</option><option value={ReleaseState.STAGED}>已暂存</option><option value={ReleaseState.ACTIVE}>已激活</option><option value={ReleaseState.ROLLED_BACK}>已回滚</option><option value={ReleaseState.REVOKED}>已撤销</option></Select><FieldHint id="release-state-hint">按当前组织和门店范围在服务端筛选，按清单创建时间由新到旧加载。</FieldHint></label><Button disabled={pending || releases.isFetching} onClick={() => void releases.refresh()}>刷新发布清单</Button></div>}
     {!api.demoMode && releases.canRead && <p>已加载 {releases.items.length} 条发布清单{releases.hasNextPage ? '，还有更多' : ''}</p>}
     {!api.demoMode && releases.canRead && releases.isLoading && <StateBanner tone="info" title="正在加载发布清单" detail="正在读取当前权限范围内的记录。" />}
 
@@ -118,7 +118,7 @@ function ReleaseCenter() {
             {chosen && <RecordTable label="回滚目标详情" columns={['清单 ID', '代际', '有效期至（北京时间）', '定义 ID', '定义版本']}>{chosen.artifacts.map((artifact) => <tr key={artifact.artifactId}><td>{chosen.manifestId}</td><td>{chosen.generation}</td><td><RecordTime value={chosen.expiresAt} /></td><td>{artifact.definitionId}</td><td>{artifact.definitionVersion}</td></tr>)}</RecordTable>}
           </>}
           <label className="confirm-check"><input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} />我已核对作用范围、流量和回滚目标</label>
-          <footer className="modal-actions">
+          <footer className="action-bar action-bar--end modal-actions">
             <Button disabled={pending} onClick={() => closeConfirm()}>取消</Button>
             <Button tone={confirm === 'kill' ? 'danger' : 'primary'} disabled={!canExecute || activate.isPending || rollback.isPending || kill.isPending} title={api.demoMode ? '演示模式不可执行' : '确认执行'} onClick={() => {
               if (!canExecute || !actionTarget) return

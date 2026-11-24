@@ -81,7 +81,7 @@ export function BundleControls({ bundle, scope, ready }: { bundle: ReleaseBundle
         detail={`${bundle.environment} / ${bundle.cell}，已应用序号 ${summary.data.appliedSequence}。新参与使用该位置的生效版本，已有参与保留原版本。`} />}
       {write.isError && !confirm && <StateBanner tone={unknown ? 'warn' : 'error'} title={unknown ? '原发布请求结果待确认' : '发布命令未完成'} detail={problemDetail(write.error)} />}
       {unknown && write.variables && !confirm && <Button disabled={pending || !auth.hasPermission(permission[write.variables.input.action])} onClick={() => write.mutate(write.variables!)}>用原请求查询发布回执</Button>}
-      <div className="bundle-actions">
+      <div className="action-bar bundle-actions">
         <Button tone="primary" disabled={!allowed('ACTIVATE') || pending || unknown} onClick={() => open('ACTIVATE')}>整体生效 v{bundle.version}</Button>
         <Button disabled={!allowed('ROLLBACK') || pending || unknown} onClick={() => open('ROLLBACK')}>整体回滚至 v{bundle.version}</Button>
       </div>
@@ -90,7 +90,7 @@ export function BundleControls({ bundle, scope, ready }: { bundle: ReleaseBundle
       {operation && <div className="bundle-result">
         <h3>{trackedId ? '当前跟踪的发布操作' : '此位置最近的发布操作'}</h3>
         <OperationDetails operation={operation} />
-        <div className="bundle-actions">
+        <div className="action-bar bundle-actions">
           {operation.state === OperationState.PENDING && <Button disabled={pending || !auth.hasPermission(permission[operation.action])} onClick={() => retry.mutate(operation.operationId)}>继续原操作</Button>}
           {trackedId && latest?.operationId && latest.operationId !== trackedId && <Button disabled={pending} onClick={() => { setTrackedId(''); retry.reset() }}>查看最近操作</Button>}
         </div>
@@ -104,7 +104,7 @@ export function BundleControls({ bundle, scope, ready }: { bundle: ReleaseBundle
         <div><dt>部署单元</dt><dd>{bundle.cell}</dd></div><div><dt>目标组合</dt><dd>v{bundle.version} · {bundle.bundleId}</dd></div></dl>
         <p>本次命令以已应用序号 {confirm.input.expectedAppliedSequence} 为前提。全体运行成员确认后，新参与将使用目标组合。</p>
         {write.isError && <StateBanner tone={unknown ? 'warn' : 'error'} title={unknown ? '提交结果待确认' : '发布请求失败'} detail={problemDetail(write.error)} />}
-        <footer className="modal-actions"><Button disabled={pending} onClick={close}>关闭</Button>
+        <footer className="action-bar action-bar--end modal-actions"><Button disabled={pending} onClick={close}>关闭</Button>
           {unknown ? <Button disabled={pending || !auth.hasPermission(permission[confirm.input.action])} onClick={() => write.mutate(confirm)}>用原请求查询发布回执</Button> :
             <Button tone="primary" disabled={pending || !allowed(confirm.input.action) || confirm.input.expectedAppliedSequence !== summary.data?.appliedSequence} onClick={() => write.mutate(confirm)}>确认{actions[confirm.input.action]}</Button>}
         </footer>

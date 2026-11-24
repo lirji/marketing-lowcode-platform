@@ -292,7 +292,7 @@ export function BenefitEditorPage() {
                 detail={`当前权益是 ${form.type}，所选 SKU ${selectedSku?.skuId} 是 ${selectedSku?.benefitType}。保存已禁用，请改类型或换模板。`}
               />
             )}
-            <div className="sku-bind-actions">
+            <div className="action-bar sku-bind-actions">
               <p>选完模板只改本地表单，必须点保存才会写入 benefitSkuId。{dirty ? ' 当前有未保存更改。' : ''}</p>
               {saveButton('保存')}
             </div>

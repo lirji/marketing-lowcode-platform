@@ -37,7 +37,7 @@ export function AssetTable({ rows, columns, label, editHref, search, bodyState }
     </RecordTable>)}
     {selected && <Modal title={selected[0]} description={`${label}详情`} onClose={() => setSelected(null)}>
       <dl className="detail-facts">{columns.map((column, index) => <div key={column}><dt>{column === '创建时间' ? '创建时间（北京时间）' : column}</dt><dd>{assetValue(selected[index], column)}</dd></div>)}</dl>
-      <footer className="modal-actions"><Button onClick={() => setSelected(null)}>关闭详情</Button></footer>
+      <footer className="action-bar action-bar--end modal-actions"><Button onClick={() => setSelected(null)}>关闭详情</Button></footer>
     </Modal>}
   </>
 }

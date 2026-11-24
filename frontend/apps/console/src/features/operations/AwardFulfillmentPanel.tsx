@@ -50,7 +50,7 @@ export function AwardFulfillmentPanel({ intentId, onClose }: { intentId: string;
         {value.items.map((item) => <tr key={item.clientItemId}><td>{item.clientItemId}</td><td>{item.skuId}</td><td>{item.skuVersion ?? '未提供'}</td><td>{item.quantity}</td><td>{item.status}</td></tr>)}
       </RecordTable>}
     </>}
-    <div className="award-fulfillment-actions">
+    <div className="action-bar award-fulfillment-actions">
       <Button onClick={() => void query.refetch()} disabled={query.isFetching || refresh.isPending}>读取最新记录</Button>
       <Button onClick={() => refresh.mutate()} disabled={!value?.refreshEnabled || refresh.isPending || query.isFetching || value.synchronizationState === SYNC_STATUS.RUNNING}>重新查询权益中心</Button>
     </div>

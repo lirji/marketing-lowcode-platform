@@ -53,7 +53,7 @@ function GovernanceQueue() {
     {notice && <StateBanner tone="success" title="审核决定已记录" detail={notice} />}
     {!api.demoMode && !approvals.canRead && <StateBanner tone="warn" title="没有查看审核单的权限" detail="需要定义读取或审核角色权限。" />}
     {approvals.isError && <StateBanner tone="error" title={approvals.isFetchNextPageError ? '后续审核单加载失败' : '审核队列加载失败'} detail={problemDetail(approvals.error)} />}
-    <div className="toolbar">
+    <div className="action-bar action-bar--fields toolbar">
       <label className="field"><span>审核状态</span><Select aria-label="审核状态" aria-describedby="approval-status-hint" value={status} disabled={api.demoMode || !approvals.canRead || decide.isPending} onChange={(event) => { setStatus(event.target.value as ApprovalStatus | ''); setSelected(null); setNotice('') }}><option value="OPEN">待审核</option><option value="APPROVED">已批准</option><option value="REJECTED">已驳回</option><option value="">全部状态</option></Select><FieldHint id="approval-status-hint">按当前组织和门店范围在服务端筛选，按提交时间由新到旧加载。</FieldHint></label>
       <Button disabled={api.demoMode || !approvals.canRead || approvals.isFetching || decide.isPending} onClick={() => { setSelected(null); void approvals.refresh() }}>刷新审核队列</Button>
     </div>
@@ -61,7 +61,7 @@ function GovernanceQueue() {
       <Panel>
         <PanelHeader eyebrow="VISIBLE QUEUE" title="审核队列" aside={<Badge tone="warn">已加载 {items.length} 项{approvals.hasNextPage ? '，还有更多' : ''}</Badge>} />
         {api.demoMode ? <EmptyState title="演示模式不展示真实审核单" detail="关闭 DEMO_MODE 后读取真实审批分页。" /> : !approvals.canRead ? null : approvals.isPending ? <StateBanner tone="loading" title="正在加载审核单" detail="正在读取当前权限范围内的记录。" /> : items.length === 0 ? (approvals.isError ? null : <EmptyState title="当前筛选没有审核单" detail="可切换审核状态或刷新队列核对新提交。" />) : <RecordTable label={status === APPROVAL_STATUS.OPEN ? '待审核变更' : '审核记录'} columns={['审核单 ID', '定义 ID', '定义版本', '状态', '提交人', '所需角色', '已批准人数', '所需人数', '更新时间（北京时间）', '操作']} actions>{items.map((item) => <tr key={item.caseId}><td>{item.caseId}</td><td>{item.definitionId}</td><td>{item.definitionVersion}</td><td><Badge tone={item.status === APPROVAL_STATUS.APPROVED ? 'good' : item.status === APPROVAL_STATUS.REJECTED ? 'danger' : 'warn'}>{item.status}</Badge></td><td>{item.submittedBy}</td><td>{item.requiredRoles.map((role) => ROLE_LABEL[role]).join('、')}</td><td>{Object.keys(item.approvals).length}</td><td>{item.requiredRoles.length}</td><td><RecordTime value={item.updatedAt} /></td><td><Button aria-label={`查看审核：${item.caseId}`} onClick={() => { setSelected(item); setComment(''); decide.reset() }}><Eye size={15} />查看审核</Button></td></tr>)}</RecordTable>}
-        {approvals.hasNextPage && <div className="toolbar"><Button disabled={approvals.isFetching || decide.isPending} onClick={() => void approvals.fetchNextPage()}>{approvals.isFetchingNextPage ? '正在加载…' : approvals.isFetchNextPageError ? '重试加载更多审核单' : '加载更多审核单'}</Button></div>}
+        {approvals.hasNextPage && <div className="action-bar toolbar"><Button disabled={approvals.isFetching || decide.isPending} onClick={() => void approvals.fetchNextPage()}>{approvals.isFetchingNextPage ? '正在加载…' : approvals.isFetchNextPageError ? '重试加载更多审核单' : '加载更多审核单'}</Button></div>}
         {!api.demoMode && approvals.canRead && !approvals.isPending && !approvals.isError && <p className="muted">{approvals.hasNextPage ? '数量仅代表已加载记录。' : '本次查询已加载到底。'}审核状态可能变化，操作前可刷新核对。</p>}
       </Panel>
       <aside>
@@ -99,7 +99,7 @@ function GovernanceQueue() {
           </dl>
           {Object.keys(selected.approvals).length > 0 ? <RecordTable label="已记录的审核" columns={['角色', '审核人']}>{Object.entries(selected.approvals).map(([role, actor]) => <tr key={role}><td>{ROLE_LABEL[role as ApprovalRole] ?? role}</td><td>{actor}</td></tr>)}</RecordTable> : <p>尚无审核记录</p>}
           <label className="field"><span>审核意见（必填，写入审计，最多 128 字）</span><textarea maxLength={128} value={comment} onChange={(event) => setComment(event.target.value)} placeholder="说明依据与风险判断" /></label>
-          <footer className="modal-actions">
+          <footer className="action-bar action-bar--end modal-actions">
             <Button disabled={decide.isPending} onClick={() => setSelected(null)}>关闭详情</Button>
             <Button tone="danger" disabled={api.demoMode || !availableRole || !comment.trim() || selected.submittedBy === auth.subject || decide.isPending} title={selected.submittedBy === auth.subject ? '提交者不能审批自己的变更' : '确认驳回'} onClick={() => availableRole && decide.mutate({ caseId: selected.caseId, role: availableRole, decision: 'REJECT' })}>驳回</Button>
             <Button tone="primary" disabled={api.demoMode || !availableRole || !comment.trim() || selected.submittedBy === auth.subject || decide.isPending} title={selected.submittedBy === auth.subject ? '提交者不能审批自己的变更' : api.demoMode ? '演示模式不可执行' : '确认批准'} onClick={() => availableRole && decide.mutate({ caseId: selected.caseId, role: availableRole, decision: 'APPROVE' })}><Check size={15} />确认批准</Button>

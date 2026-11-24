@@ -3,7 +3,7 @@ import { X } from 'lucide-react'
 import { runtimeConfig } from '../shared/config/runtime'
 
 export function PageHeader({ eyebrow, title, description, actions }: { eyebrow?: string; title: string; description: string; actions?: ReactNode }) {
-  return <header className="page-heading"><div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h1>{title}</h1><p>{description}</p></div>{actions && <div className="heading-actions">{actions}</div>}</header>
+  return <header className="page-heading"><div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h1>{title}</h1><p>{description}</p></div>{actions && <div className="action-bar action-bar--end heading-actions">{actions}</div>}</header>
 }
 
 export function Button({ tone = 'secondary', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: 'primary' | 'secondary' | 'danger' | 'ghost' }) {
@@ -19,7 +19,7 @@ export function Panel({ className = '', children }: { className?: string; childr
 }
 
 export function PanelHeader({ eyebrow, title, aside }: { eyebrow?: string; title: string; aside?: ReactNode }) {
-  return <div className="panel-head"><div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h2>{title}</h2></div>{aside}</div>
+  return <div className="panel-head"><div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h2>{title}</h2></div>{aside && <div className="action-bar action-bar--end panel-actions">{aside}</div>}</div>
 }
 
 export function StateBanner({ tone, title, detail, action }: { tone: 'loading' | 'error' | 'warn' | 'success' | 'info'; title: string; detail: string; action?: ReactNode }) {

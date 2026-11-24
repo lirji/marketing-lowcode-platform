@@ -8,13 +8,15 @@ export function ListToolbar({ query, onQueryChange, searchLabel, placeholder, co
   query: string; onQueryChange: (value: string) => void; searchLabel: string; placeholder: string
   count?: number; unit: string; describedBy?: string; children?: ReactNode; onReset?: () => void; onRefresh?: () => void; busy?: boolean
 }) {
-  return <div className="list-toolbar">
-    <div className="list-filters">
-      <label className="field-search"><Search size={16} aria-hidden="true" /><span className="sr-only">{searchLabel}</span><input type="search" aria-describedby={describedBy} value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder={placeholder} /></label>
-      {query && <button className="search-clear" type="button" aria-label={labels.clearSearch} onClick={() => onQueryChange('')}><X size={15} /></button>}
+  return <div className="action-bar list-toolbar">
+    <div className="action-bar list-filters">
+      <div className="action-bar list-search">
+        <label className="field-search"><Search size={16} aria-hidden="true" /><span className="sr-only">{searchLabel}</span><input type="search" aria-describedby={describedBy} value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder={placeholder} /></label>
+        {query && <Button className="toolbar-icon" aria-label={labels.clearSearch} onClick={() => onQueryChange('')}><X size={15} aria-hidden="true" /></Button>}
+      </div>
       {children}
       {onReset && <Button tone="ghost" onClick={onReset}>{labels.clear}</Button>}
     </div>
-    <div className="list-tools"><span className="list-count" aria-live="polite">{count === undefined ? busy ? labels.loading : '—' : <><strong>{count}</strong> {unit}</>}</span>{onRefresh && <Button className="refresh-button" onClick={onRefresh} disabled={busy} aria-label={labels.refresh} title={labels.refresh}><RotateCw size={15} className={busy ? 'is-spinning' : ''} /></Button>}</div>
+    <div className="action-bar list-tools"><span className="list-count" aria-live="polite">{count === undefined ? busy ? labels.loading : '—' : <><strong>{count}</strong> {unit}</>}</span>{onRefresh && <Button className="toolbar-icon" onClick={onRefresh} disabled={busy} aria-label={labels.refresh} title={labels.refresh}><RotateCw size={15} className={busy ? 'is-spinning' : ''} aria-hidden="true" /></Button>}</div>
   </div>
 }

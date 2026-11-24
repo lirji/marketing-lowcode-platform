@@ -379,7 +379,7 @@ export function ReferralDesignerPage() {
               <FactField label="累计退款（最小货币单位）" hint="填写已发生的累计退款金额，与结算金额使用相同单位。" value={facts.cumulativeRefundMinor} error={errorOf(factErrors, 'cumulativeRefundMinor')} onChange={(value) => setFacts((current) => ({ ...current, cumulativeRefundMinor: value }))} />
               <FactField label="币种" hint="填写三位大写币种，例如 CNY。" value={facts.currency} error={errorOf(factErrors, 'currency')} onChange={(value) => setFacts((current) => ({ ...current, currency: value }))} />
             </div>
-            <div className="referral-aside-actions">
+            <div className="action-bar referral-aside-actions">
               <Button onClick={() => setFacts(documentedSimulationExample())}>填入控制面测试示例</Button>
               <small>示例来自预览合同，不是生产默认政策。</small>
             </div>

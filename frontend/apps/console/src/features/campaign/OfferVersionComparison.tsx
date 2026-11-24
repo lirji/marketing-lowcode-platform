@@ -94,7 +94,7 @@ export function OfferVersionComparison({ definition, config, scope }: {
         detail={problemDetail(history.error)} action={<Button onClick={() => void history.refetch()}>重试</Button>} />}
       {history.isSuccess && versions.length < 2 && !history.hasNextPage && <EmptyState
         title="至少需要两个已保存版本" detail="在 Offer 设计器中修改并保存后，回到这里对比。" />}
-      {history.hasNextPage && <div className="workbench-actions">
+      {history.hasNextPage && <div className="action-bar workbench-actions">
         <Button disabled={running || history.isFetching} onClick={() => void history.fetchNextPage()}>{history.isFetchingNextPage ? '正在加载版本…' : history.isFetchNextPageError ? '重试加载旧版本' : '加载更早版本'}</Button>
         {history.isFetchNextPageError && <span className="field-hint" role="alert">{problemDetail(history.error)}</span>}
       </div>}
@@ -122,7 +122,7 @@ export function OfferVersionComparison({ definition, config, scope }: {
         </fieldset>)}
         {baselineVersion === candidateVersion && <p className="field-hint" role="status">请选择两个不同的已保存版本。</p>}
         {targetsReady && !ready && <p className="field-hint" role="status">请补全商品、门店、订单时间与金额。金额可填到分。</p>}
-        <div className="workbench-actions">
+        <div className="action-bar workbench-actions">
           <Button disabled={running || scenarios.length >= MAX_OFFER_COMPARISON_SCENARIOS} onClick={add}>添加场景</Button>
           <Button tone="primary" type="submit" disabled={!ready || running}>{running ? '正在对比…' : '运行版本对比'}</Button>
           <span className="field-hint">已配置 {scenarios.length} 个场景，最多 {MAX_OFFER_COMPARISON_SCENARIOS} 个。</span>

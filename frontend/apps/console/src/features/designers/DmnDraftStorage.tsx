@@ -110,7 +110,7 @@ export function DmnDraftStorage({ table, onRestore }: { table: DmnTable; onResto
     <PanelHeader eyebrow="DRAFT VERSIONS" title="活动与草稿版本" aside={<Badge tone={saved && !dirty ? 'good' : 'warn'}>{saved && !dirty ? `已保存 · v${saved.version}` : '未保存草稿'}</Badge>} />
     <p className="dmn-help">保存保留当前规则与字段，包括尚未填写完整的内容。测试输入和计算结果不保存；草稿保存后仍需分析，尚未接入审核和发布。</p>
     {api.demoMode && <StateBanner tone="info" title="演示模式不保存版本" detail="当前允许编辑与试算；请切换真实环境后保存到数据库。" />}
-    <div className="dmn-toolbar"><label>归属活动<Select aria-label="DMN 归属活动" value={campaignId} disabled={!canList || !canRead || !!busy} onChange={(event) => requestLoad(event.target.value)}><option value="" disabled>请选择有权限的活动</option>{campaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.name} · {campaign.id}</option>)}</Select></label>
+    <div className="action-bar dmn-toolbar"><label>归属活动<Select aria-label="DMN 归属活动" value={campaignId} disabled={!canList || !canRead || !!busy} onChange={(event) => requestLoad(event.target.value)}><option value="" disabled>请选择有权限的活动</option>{campaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.name} · {campaign.id}</option>)}</Select></label>
       <Button disabled={!campaignId || !canRead || !!busy} onClick={() => requestLoad(campaignId)}>{busy === 'load' ? '正在加载…' : '加载最新版本'}</Button>
       <Button tone="primary" disabled={!ready || !canWrite || !!busy || conflict || (!!saved && !dirty)} onClick={() => void save()}>{busy === 'save' ? '正在保存…' : '保存草稿版本'}</Button>
     </div>
@@ -119,6 +119,6 @@ export function DmnDraftStorage({ table, onRestore }: { table: DmnTable; onResto
     {listError && <><StateBanner tone="error" title="未能加载活动" detail={listError} /><Button onClick={() => setListAttempt((value) => value + 1)}>重试活动列表</Button></>}
     {canList && !listError && campaigns.length === 0 && <p className="dmn-help">当前没有可选择的活动；请先创建活动或确认访问范围。</p>}
     {error && <StateBanner tone="error" title={conflict ? '草稿版本冲突' : '未完成草稿操作'} detail={error} />}
-    {pending !== undefined && <div role="group" aria-label="确认替换未保存草稿"><StateBanner tone="warn" title="有未保存修改" detail="加载服务端草稿会替换当前表格。请选择保留编辑，或确认放弃未保存修改后加载。" /><div className="dmn-actions"><Button onClick={() => setPending(undefined)}>保留当前编辑</Button><Button onClick={() => void load(pending)}>放弃修改并加载</Button></div></div>}
+    {pending !== undefined && <div role="group" aria-label="确认替换未保存草稿"><StateBanner tone="warn" title="有未保存修改" detail="加载服务端草稿会替换当前表格。请选择保留编辑，或确认放弃未保存修改后加载。" /><div className="action-bar"><Button onClick={() => setPending(undefined)}>保留当前编辑</Button><Button onClick={() => void load(pending)}>放弃修改并加载</Button></div></div>}
   </Panel>
 }

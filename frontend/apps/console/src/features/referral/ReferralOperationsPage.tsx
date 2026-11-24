@@ -84,7 +84,7 @@ export function ReferralOperationsPage() {
       />
       {!live && <StateBanner tone="warn" title="演示模式" detail="DEMO_MODE 不会查询裂变主库。关闭后按活动读取真实参与、关系和奖励。" />}
       {live && campaigns.isError && <StateBanner tone="error" title="活动列表加载失败" detail={problemDetail(campaigns.error)} />}
-      <div className="toolbar">
+      <div className="action-bar toolbar">
         <label className="compact-select">
           <span className="sr-only">活动</span>
           <Select aria-label="活动" value={confirmed ? campaignId : ''} disabled={options.length === 0} onChange={(event) => setCampaign(event.target.value)}>

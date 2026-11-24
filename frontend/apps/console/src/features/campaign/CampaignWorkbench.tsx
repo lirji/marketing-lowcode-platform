@@ -92,7 +92,7 @@ function Workbench({ campaign, scope }: { campaign: Campaign; scope: string }) {
         {currentValidation && <StateBanner tone={currentValidation.valid ? 'success' : 'warn'} title={currentValidation.valid ? '当前版本校验通过' : '当前版本校验未通过'} detail={currentValidation.issues.map(issue => issue.message).join('。') || `v${definition.version}`} />}
         {currentApproval && <StateBanner tone="success" title="已提交规则审核" detail={`审核单 ${currentApproval.caseId}`} />}
         {(validate.isError || submit.isError) && <StateBanner tone="error" title="操作失败" detail={problemDetail(validate.error ?? submit.error)} />}
-        {(canWrite || canSubmit) && <div className="workbench-actions">
+        {(canWrite || canSubmit) && <div className="action-bar workbench-actions">
           {canWrite && <Button disabled={busy || definition.status !== OFFER_VERSION_STATUS.DRAFT} onClick={() => { submit.reset(); validate.mutate(definition) }}>校验当前版本</Button>}
           {canSubmit && <Button tone="primary" disabled={busy || definition.status !== OFFER_VERSION_STATUS.VALIDATED} onClick={() => { validate.reset(); submit.mutate(definition) }}>提交审核</Button>}
         </div>}
@@ -105,7 +105,7 @@ function Workbench({ campaign, scope }: { campaign: Campaign; scope: string }) {
     <Panel>
       <PanelHeader title="审核与发布" />
       <p className="field-hint">规则批准后，在发布中心编译和暂存指定版本。活动工作台保存规则后可在这里继续跟踪。</p>
-      <div className="workbench-actions">
+      <div className="action-bar workbench-actions">
         {canRead && <Link className="button secondary" to="/governance">查看审核</Link>}
         {auth.hasPermission('release:read') && <><Link className="button secondary" to="/releases">打开发布中心</Link><Link className="button secondary" to={`/releases/bundles?${campaignQuery}`}>查看活动组合发布</Link></>}
         {auth.hasPermission('measurement:read') && <Link className="button secondary" to={`/analytics?${campaignQuery}`}>查看活动报表</Link>}
@@ -114,7 +114,7 @@ function Workbench({ campaign, scope }: { campaign: Campaign; scope: string }) {
     {(canTrace || canReconcile) && <Panel>
       <PanelHeader title="履约与对账" />
       <p className="field-hint">按交易订单号核对营销决策。补贴流水按确认和退款的实际入账时间查询。</p>
-      <div className="workbench-actions">
+      <div className="action-bar workbench-actions">
         {canTrace && <Link className="button secondary" to="/operations?traceKind=order">按订单查营销轨迹</Link>}
         {canReconcile && <Link className="button secondary"
           to={`/operations?tab=funding&postingCampaignId=${encodeURIComponent(campaign.id)}`}>查看本活动补贴流水</Link>}
@@ -162,7 +162,7 @@ function ThresholdTemplate({ campaign, scope, onSaved }: { campaign: Campaign; s
       {(benefits.isError || accounts.isError) && <div className="span-2"><StateBanner tone="error" title="权益或预算读取失败" detail={problemDetail(benefits.error ?? accounts.error)} action={<Button onClick={() => { if (benefits.isError) void benefits.refetch(); if (accounts.isError) void accounts.refetch() }}>重试</Button>} /></div>}
       {canReadBenefits && canReadFunding && benefits.isSuccess && accounts.isSuccess && (!availableBenefits.length || !budgets.length) && <div className="span-2"><StateBanner tone="warn" title="尚缺可用权益或预算账户" detail="请先在权益与资金中准备已激活的权益版本和 CNY 出资账户。" /></div>}
       {save.isError && <div className="span-2"><StateBanner tone="error" title="满减规则保存失败" detail={problemDetail(save.error)} /></div>}
-      <div className="span-2 workbench-actions"><Button tone="primary" type="submit" disabled={!valid || save.isPending}>{save.isPending ? '正在保存…' : '保存满减规则'}</Button></div>
+      <div className="action-bar span-2 workbench-actions"><Button tone="primary" type="submit" disabled={!valid || save.isPending}>{save.isPending ? '正在保存…' : '保存满减规则'}</Button></div>
     </form>
   </Panel>
 }
@@ -187,7 +187,7 @@ function OfferTrial({ definition, config }: { definition: DefinitionBundle; conf
       <label className="field"><span>单商品订单金额（元）</span><input aria-label="单商品订单金额（元）" value={amount} onChange={event => setAmount(event.target.value)} inputMode="decimal" required /></label>
       <div className="field"><span>订单时间</span><DateTimePicker label="订单时间" value={at} onChange={setAt} /></div>
       <p className="field-hint span-2">按输入的单商品订单计算。库存、预算预占及其他活动冲突需在发布及履约链路核验。</p>
-      <div className="span-2 workbench-actions"><Button type="submit" disabled={!facts.amountMinor || !facts.skuId || !facts.shopId || !at || trial.isPending}>{trial.isPending ? '正在试跑…' : '运行商品试跑'}</Button></div>
+      <div className="action-bar span-2 workbench-actions"><Button type="submit" disabled={!facts.amountMinor || !facts.skuId || !facts.shopId || !at || trial.isPending}>{trial.isPending ? '正在试跑…' : '运行商品试跑'}</Button></div>
     </form>
     {trial.isError && <StateBanner tone="error" title="商品试跑失败" detail={problemDetail(trial.error)} />}
     {current && <div className="workbench-trial-result" role="status">

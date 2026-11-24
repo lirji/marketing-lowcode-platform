@@ -87,7 +87,7 @@ function SubsidyPostingSearch({ scope }: { scope: string }) {
       <label className="field"><span>订单号</span><input aria-label="订单号" aria-describedby="posting-order-hint" aria-invalid={!validOrder}
         value={form.orderId} onChange={event => setForm(current => ({ ...current, orderId: event.target.value }))} />
         <FieldHint id="posting-order-hint">填写营销轨迹使用的完整订单号，区分大小写。可留空。</FieldHint></label>
-      <div className="toolbar subsidy-posting-actions span-2"><Button tone="primary" type="submit" disabled={!validRange || !validOrder || postings.isFetching}>查询补贴流水</Button></div>
+      <div className="action-bar toolbar subsidy-posting-actions span-2"><Button tone="primary" type="submit" disabled={!validRange || !validOrder || postings.isFetching}>查询补贴流水</Button></div>
       {!validRange && <p className="field-hint span-2" role="status">{span > MAX_SUBSIDY_RANGE_MS ? '查询范围最长 31 天。' : '请填写有效的开始和结束时间，且结束须晚于开始。'}</p>}
       {!validOrder && <p className="field-hint span-2" role="status">订单号最多 {MAX_SUBSIDY_ORDER_ID_LENGTH} 个字符。</p>}
     </form>
@@ -107,6 +107,6 @@ function SubsidyPostingSearch({ scope }: { scope: string }) {
         </tr>)}
       </RecordTable>
     </>}
-    {postings.hasNextPage && <div className="toolbar"><Button onClick={() => void postings.fetchNextPage()} disabled={postings.isFetching}>{postings.isFetchNextPageError ? '重试加载更多' : '加载更多流水'}</Button></div>}
+    {postings.hasNextPage && <div className="action-bar toolbar"><Button onClick={() => void postings.fetchNextPage()} disabled={postings.isFetching}>{postings.isFetchNextPageError ? '重试加载更多' : '加载更多流水'}</Button></div>}
   </Panel>
 }
