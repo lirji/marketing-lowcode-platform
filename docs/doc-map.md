@@ -1,6 +1,14 @@
 # 文档同步地图
 
-最新增量同步：2026-11-18，`completion-20261116/S11e–g6b3a`，基线 `d57a5722bcef30e2cb603a39caa9201a4b921bf5`。控制面组合准备、成员归属、V8迁移、完整签名导出、运行端精确准备、V9组合证据/当前就绪计算、V10同slot保护、整体激活授权签名与Decision V4/Journey V3持久接收、固定参与凭证、Decision V5/Journey V4运行端slot保护及Flink固定成员执行/独立凭证状态/事件schema、Decision签名参与求值及V6唯一准入、真实Flink探针/ACK合同及无状态处理/JAR身份、Journey V5持久挑战及子任务证据对应 [组合设计](delivery/completion-20261116/ATOMIC_RELEASE_DESIGN.md)、[发布接口](operations/RELEASE_WIZARD_API.md) 和 [机器合同](../marketing-contracts/src/main/resources/openapi/marketing-api.yaml)。当前支持准备、授权持久接收及签名参与消费；唯一准入已实现并隔离验证；真实应用指针写入、Control整体发布与混合版本启用门禁仍待实现，尚不支持线上整体激活；未迁移共享库或部署。
+最新增量同步为 2026-11-24 的满减工作台和订单补贴核对。核对基线为 `3937c9a`。本机 Docker 资金服务代码为 `029b3c3`，控制台代码为 `97ec348`。
+
+| 代码区域 | 权威入口 | 同步内容 |
+| --- | --- | --- |
+| 活动工作台和版本对比 | [控制台规则编写](../README.md#控制台规则编写)、[低代码运行时](lowcode/RUNTIME.md) | 满减模板、纯定价、已签活动归属和资金入账时点 |
+| 订单轨迹、资金申请及补贴流水 | [按订单核对](operations/RUNBOOK.md#按订单核对营销补贴流水)、[OpenAPI](../marketing-contracts/src/main/resources/openapi/marketing-api.yaml) | 订单精确匹配、权限、窗口、活动条件、游标和回显 |
+| Docker 与跨系统验收 | [交付记录](delivery/operator-status-accuracy/PROGRESS.md#按订单核对补贴流水) | 本机镜像、实测结果以及交易中心待接入条件 |
+
+历史增量同步：2026-11-18，`completion-20261116/S11e–g6b3a`，基线 `d57a5722bcef30e2cb603a39caa9201a4b921bf5`。控制面组合准备、成员归属、V8迁移、完整签名导出、运行端精确准备、V9组合证据/当前就绪计算、V10同slot保护、整体激活授权签名与Decision V4/Journey V3持久接收、固定参与凭证、Decision V5/Journey V4运行端slot保护及Flink固定成员执行/独立凭证状态/事件schema、Decision签名参与求值及V6唯一准入、真实Flink探针/ACK合同及无状态处理/JAR身份、Journey V5持久挑战及子任务证据对应 [组合设计](delivery/completion-20261116/ATOMIC_RELEASE_DESIGN.md)、[发布接口](operations/RELEASE_WIZARD_API.md) 和 [机器合同](../marketing-contracts/src/main/resources/openapi/marketing-api.yaml)。截至该阶段，已支持准备、授权持久接收及签名参与消费；唯一准入已实现并隔离验证；真实应用指针写入、Control整体发布与混合版本启用门禁仍待实现，尚不支持线上整体激活；未迁移共享库或部署。 后续整体激活与回滚验收见[实施进度](delivery/completion-20261116/PROGRESS.md)。
 
 上次阶段同步：2026-11-16，`completion-20261116/S04`，源码基线 `94d133442733587e3aa0acb37fd27194f7d5195a`。本次同步 CI 基础设施/目录合同样例与验收边界；S03 真实本地 R1 已通过，当前本机多数业务镜像仍为历史版本，不能视为新镜像或空环境全链路已通过。
 

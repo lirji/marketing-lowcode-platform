@@ -70,6 +70,8 @@ Drools executable model 只做受控条件匹配和候选推理；Money 计算�
 
 指定门店 SKU 满减模板写入 `pricingCurrency: CNY`，编译生成 `marketing-offer-policy/2`。运行时只使用同时匹配门店、商品范围和币种的商品行计算门槛和分摊。历史 `marketing-offer-policy/1` 制品沿用原定价语义与字节格式。发布和加载均核对受签名保护的 ABI。启用模板前先升级各目标单元的 Decision 运行时，再升级编译器、Control 和控制台。
 
+满减版本对比使用同一活动的两个已保存版本，按相同单商品人民币场景运行纯定价。组合发布的正式路径按已签参与凭证选择运行版本，签名报价携带该活动归属和订单号，供资金服务创建申请。资金确认与退款写入各自的实际入账时点。运营可使用同一订单号查决策轨迹和补贴流水，核对步骤见[运行手册](../operations/RUNBOOK.md#按订单核对营销补贴流水)。
+
 ## 插件开发约束
 
 扩展点是 schema、compiler adapter 或 provider connector，不允许上传任意 jar 后直接进入生产 JVM。插件必须具备源码审查、签名、SBOM、许可证/漏洞扫描、ABI compatibility test、恶意样例、资源配额和 canary。新增副作用节点必须定义业务幂等键、timeout/UNKNOWN 语义、retry classification、compensation 和审计字段。

@@ -71,3 +71,14 @@
 
 - 资金补录与覆盖校验提交 3fa41a0；报表来源、活动报表入口和北京时间日分桶提交 858609b。前端构建、lint 和 275 项单元测试通过。桌面和移动端全量浏览器 108 项通过，12 项按需启动专用环境或数据的用例跳过。20 个 JSON 契约和 Java 契约检查通过。
 - 证据目录 `~/.local/share/marketing-delivery/operator-status-accuracy/subsidy-attribution/`。日志包括资金、测量、前端构建、浏览器与隔离种子校验。在原项目目录复用任务分支。历史共享业务数据和环境部署待另行执行。
+
+## 按订单核对补贴流水
+
+2026-11-24，营销订单查询代码 `029b3c3`，控制台长订单号显示修正 `97ec348`。订单轨迹可带入同一订单号查询营销补贴。资金服务采用独立的按订单接口，按资金申请的原订单号过滤，沿用组织、全部门店、活动、入账窗口和分页游标约束。操作与诊断见[运行手册](../../operations/RUNBOOK.md#按订单核对营销补贴流水)。
+
+- 本机 Docker 项目 `marketing-r1` 按资金服务、控制台的顺序更新。资金服务镜像 revision 为 `029b3c3`，控制台镜像 revision 为 `97ec348`，两者健康检查通过。控制台端口为 `8084`。另 11 个容器与 3 个 Flink 作业持续运行。
+- 桌面与手机通过真实网关调用按订单接口，返回 HTTP 200，回显订单号和活动范围。无匹配记录时显示空态。测试覆盖 128 字符订单号换行及页面宽度。浏览器核验仅查询。
+- 19 项资金 MySQL 集成及 16 项 Java 契约测试通过。隔离的已签组合发布、定价、预占、确认、分次退款与按订单对账通过。前端 276 单测及 114 项浏览器回归通过，12 项依赖专项环境的用例默认跳过。Compose、Helm 和监控规则验证通过。
+- 在交易中心 `d85d392` 源码快照运行 5 项独立 MySQL 测试，验证实收、退款、财务事实和授权合同。支付渠道仍为测试输入。真实商户的支付回执、退款回执及跨系统订单和租户映射仍待授权环境验收。
+
+本机部署及浏览器证据见 `~/.local/share/marketing-delivery/subsidy-order-lookup/` 的 `local-rollout-result.json`、`local-console-final-result.json` 与 `local-browser-result.json`。测试证据见同目录的 `backend.log`、`bundle-order.log`、`trade-receipts.log`、`frontend-e2e.log` 和 `deployment-checks.log`。
