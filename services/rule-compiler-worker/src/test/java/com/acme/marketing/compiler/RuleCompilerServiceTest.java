@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.acme.marketing.compiler.application.RuleCompilerService;
 import com.acme.marketing.compiler.infrastructure.InMemoryArtifactStore;
 import com.acme.marketing.contracts.artifact.ArtifactAttestation;
+import com.acme.marketing.decision.runtime.OfferPolicyArtifact;
 import com.acme.marketing.lowcode.model.Dialect;
 import com.acme.marketing.lowcode.model.GraphDefinition;
 import com.acme.marketing.lowcode.model.GraphEdge;
@@ -15,11 +16,13 @@ import com.acme.marketing.platform.crypto.SigningKeyRing;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.ObjectMapper;
 
 class RuleCompilerServiceTest {
@@ -117,6 +120,34 @@ class RuleCompilerServiceTest {
                 RuleCompilerService.Format.DRL, "offer", null, executable, null)).valid());
         assertTrue(!service.compile("tenant-a", new RuleCompilerService.CompileRequest("bad-dmn", 1,
                 RuleCompilerService.Format.DMN, "https://acme.example/bad", "bad", external, null)).valid());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void offerPayloadAndAttestationUseTheSameAbi(boolean scoped) {
+        var keys = new SigningKeyRing("test-key", Ed25519.generateKeyPair());
+        var mapper = new ObjectMapper();
+        var service = new RuleCompilerService(new InMemoryArtifactStore(), mapper, Clock.systemUTC(), keys);
+        var base = request(RuleCompilerService.Format.OFFER_POLICY).graph();
+        var fixed = base.nodes().getFirst();
+        var config = new HashMap<>(fixed.config());
+        if (scoped) {
+            config.put("pricingCurrency", "CNY");
+        }
+        var graph = new GraphDefinition("definition-a", base.dialect(), "1.0.0",
+                List.of(new GraphNode(fixed.id(), "offer.fixed", "1.0.0", config)),
+                List.of(), Map.of(), Map.of());
+        var report = service.compile("tenant-a", new RuleCompilerService.CompileRequest(
+                "definition-a", 1, RuleCompilerService.Format.OFFER_POLICY, null, null, null, graph));
+
+        assertTrue(report.valid(), () -> String.join("\n", report.messages()));
+        var artifact = service.artifact("tenant-a", report.artifactId());
+        var payload = mapper.readValue(artifact.payload(), OfferPolicyArtifact.class);
+        assertEquals(scoped ? OfferPolicyArtifact.SCOPED_ABI : OfferPolicyArtifact.LEGACY_ABI, report.abi());
+        assertEquals(report.abi(), payload.abi());
+        assertEquals(scoped, mapper.readTree(artifact.payload()).path("policies").get(0).has("pricingCurrency"));
+        assertTrue(ArtifactAttestation.verify(keys.publicKey(report.signatureKeyId()), "tenant-a",
+                artifact.reference("s3://artifacts/" + artifact.artifactId())));
     }
 
     private static RuleCompilerService.CompileRequest request(RuleCompilerService.Format format) {

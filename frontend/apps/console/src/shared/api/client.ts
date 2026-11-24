@@ -65,6 +65,11 @@ let unauthorizedHandler: () => void = () => undefined
 let identityProvider: () => { tenantId?: string; actorId?: string } = () => ({})
 let sessionVersion = 0
 const HTTP_NOT_FOUND = 404
+const DEFINITION_NOT_FOUND = 'DEFINITION_NOT_FOUND'
+
+export function isDefinitionNotFound(error: unknown) {
+  return error instanceof ApiProblem && error.status === HTTP_NOT_FOUND && error.code === DEFINITION_NOT_FOUND
+}
 
 /** 使旧会话的读写回执失效；清查询缓存本身不会取消 mutation 的 onSuccess。 */
 export function invalidateApiSession() {
@@ -210,6 +215,8 @@ export const api = {
     }, (value) => parseWith(campaignSchema, value)),
   saveDefinition: (payload: { campaignId: string; graph: GraphDefinition }) =>
     request('/api/v1/definitions', { method: 'POST', headers: commandHeaders(), body: JSON.stringify(payload) }, (value) => parseWith(definitionBundleSchema, value)),
+  initializeOffer: (payload: { campaignId: string; graph: GraphDefinition }, idempotencyKey: string) =>
+    request('/api/v1/definitions/initial-offer', { method: 'POST', headers: commandHeaders(idempotencyKey), body: JSON.stringify(payload) }, (value) => parseWith(definitionBundleSchema, value)),
   latestDefinition: (campaignId: string, dialect: string) =>
     request(`/api/v1/definitions/latest?campaignId=${encodeURIComponent(campaignId)}&dialect=${encodeURIComponent(dialect)}`, undefined, (value) => parseWith(definitionBundleSchema, value)),
   getDefinition: (definitionId: string, version: number) =>

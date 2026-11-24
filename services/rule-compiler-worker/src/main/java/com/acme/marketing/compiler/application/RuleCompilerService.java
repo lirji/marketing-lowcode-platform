@@ -4,6 +4,7 @@ import com.acme.marketing.contracts.artifact.ArtifactBundle;
 import com.acme.marketing.contracts.artifact.ArtifactAttestation;
 import com.acme.marketing.decision.rule.DecisionTableAdapter;
 import com.acme.marketing.decision.rule.RuleEngineAdapter;
+import com.acme.marketing.decision.runtime.OfferPolicyArtifact;
 import com.acme.marketing.lowcode.compiler.CanonicalGraphHasher;
 import com.acme.marketing.lowcode.model.GraphDefinition;
 import com.acme.marketing.referral.ReferralPlanCompiler;
@@ -95,12 +96,18 @@ public final class RuleCompilerService {
             }
             case OFFER_POLICY -> {
                 try {
-                    executable = json(new OfferPolicyGraphCompiler().compile(request.graph()));
+                    var artifact = new OfferPolicyGraphCompiler().compile(request.graph());
+                    abi = artifact.abi();
+                    var payload = mapper.valueToTree(artifact);
+                    if (OfferPolicyArtifact.LEGACY_ABI.equals(abi)) {
+                        // 保留旧制品的 JSON 字段及摘要，滚动部署期间仍可被旧运行时读取。
+                        payload.path("policies").forEach(policy -> ((tools.jackson.databind.node.ObjectNode) policy).remove("pricingCurrency"));
+                    }
+                    executable = json(payload);
                 } catch (RuntimeException invalid) {
                     return CompileReport.invalid(List.of("OFFER_POLICY_LOWERING_FAILED: " + invalid.getMessage()));
                 }
                 messages = List.of("semanticHash=" + new CanonicalGraphHasher().semanticHash(request.graph()));
-                abi = "marketing-offer-policy/1";
                 sourceDigest = new CanonicalGraphHasher().semanticHash(request.graph());
             }
             case REFERRAL_PLAN -> {

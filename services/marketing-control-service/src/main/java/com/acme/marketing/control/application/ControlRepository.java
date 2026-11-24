@@ -109,7 +109,7 @@ public interface ControlRepository {
             String organizationId, String shopId, String createdAt, String updatedAt, String campaignType) { }
     record CampaignRow(String campaignId, String name, String objective, String status, String createdAt,
             String updatedAt, String campaignType) { }
-    record CampaignOwnershipRow(String organizationId, String shopId) { }
+    record CampaignOwnershipRow(String organizationId, String shopId, String campaignType) { }
     record DefinitionWrite(String tenantId, String definitionId, String campaignId, long versionNo, String dialect,
             String graphJson, String semanticHash, String status, String createdBy, String createdAt,
             String updatedAt) { }

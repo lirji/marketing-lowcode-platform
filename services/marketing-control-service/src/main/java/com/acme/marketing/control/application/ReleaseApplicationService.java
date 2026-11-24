@@ -474,7 +474,7 @@ public class ReleaseApplicationService {
         }
         if ("decision".equals(request.runtime()) && (request.artifacts().size() != 1
                 || request.artifacts().stream().filter(artifact -> "OFFER_POLICY".equals(artifact.type())
-                        && "marketing-offer-policy/1".equals(artifact.abi())).count() != 1)) {
+                        && com.acme.marketing.decision.runtime.OfferPolicyArtifact.supports(artifact.abi())).count() != 1)) {
             throw new ConflictException("DECISION_ARTIFACT_CLOSURE_INVALID",
                     "decision release requires exactly one compatible offer policy artifact");
         }
@@ -550,7 +550,8 @@ public class ReleaseApplicationService {
     }
 
     private static void requireOfferCompilation(GraphDefinition graph, ArtifactReference artifact) {
-        if (com.acme.marketing.decision.runtime.OfferPolicyGraphCompiler.requiresRecompilation(graph, artifact.artifactId())) {
+        if (com.acme.marketing.decision.runtime.OfferPolicyGraphCompiler.requiresRecompilation(graph, artifact.artifactId())
+                || !com.acme.marketing.decision.runtime.OfferPolicyGraphCompiler.expectedAbi(graph).equals(artifact.abi())) {
             throw OfferPolicyError.RECOMPILE_REQUIRED.exception();
         }
     }

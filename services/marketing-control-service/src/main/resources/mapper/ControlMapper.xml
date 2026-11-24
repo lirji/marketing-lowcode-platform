@@ -40,7 +40,7 @@
     </select>
     <select id="selectCampaignOwnership"
             resultType="com.acme.marketing.control.application.ControlRepository$CampaignOwnershipRow">
-        SELECT organization_id AS organizationId, shop_id AS shopId
+        SELECT organization_id AS organizationId, shop_id AS shopId, campaign_type AS campaignType
         FROM mk_campaign
         WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId}
         <if test="lock">FOR UPDATE</if>

@@ -93,6 +93,15 @@ paths:
         - {in: query, name: campaignId, required: true, schema: {type: string}}
         - {in: query, name: dialect, required: true, schema: {type: string, enum: [OFFER_DECISION_DAG, AUDIENCE_EXPRESSION, JOURNEY_STATE_MACHINE, DMN_DECISION_TABLE, BENEFIT_POLICY]}}
       responses: *ok
+  /api/v1/definitions/initial-offer:
+    post:
+      tags: [Control]
+      operationId: initializeCampaignOffer
+      x-required-permission: definition:write
+      description: Initializes the first Offer for a scoped STANDARD campaign with an explicit shop. Concurrent initialization returns 409 if an Offer already exists.
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {$ref: '#/components/requestBodies/SaveDefinition'}
+      responses: *created
   /api/v1/definitions/{definitionId}/versions/{version}:
     get:
       tags: [Control]
@@ -109,6 +118,7 @@ paths:
     post:
       tags: [Control]
       operationId: simulateDefinition
+      description: Offer simulation accepts string amountMinor and currency. Supplying skuId, shopId and occurredAt (UTC ISO-8601) runs scoped single-product pricing without stock, budget or other campaigns.
       parameters: [{$ref: '#/components/parameters/DefinitionId'}, {$ref: '#/components/parameters/Version'}]
       requestBody: {$ref: '#/components/requestBodies/JsonObject'}
       responses: *ok

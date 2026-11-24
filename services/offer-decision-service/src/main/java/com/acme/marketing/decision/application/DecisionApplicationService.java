@@ -77,13 +77,10 @@ public final class DecisionApplicationService {
         List<OfferCandidate> candidates = new ArrayList<>();
         List<CandidateTrace> trace = new ArrayList<>();
         for (OfferPolicy policy : snapshot.policies()) {
-            String rejection = rejection(scope.tenantId().value(), request, policy, now);
-            if (rejection == null) {
-                candidates.add(policy.candidate());
-                trace.add(new CandidateTrace(policy.candidate().offerId(), "ELIGIBLE"));
-            } else {
-                trace.add(new CandidateTrace(policy.candidate().offerId(), rejection));
-            }
+            var candidate = policy.candidateFor(request.cart());
+            String rejection = rejection(scope.tenantId().value(), request, policy, now, candidate.isPresent());
+            if (rejection == null) candidates.add(candidate.orElseThrow());
+            trace.add(new CandidateTrace(policy.candidate().offerId(), rejection == null ? "ELIGIBLE" : rejection));
         }
         PricingResult result = pricing.price(request.cart(), candidates);
         String quoteId = UUID.randomUUID().toString();
@@ -126,13 +123,10 @@ public final class DecisionApplicationService {
         return bundlePlans.resolve(scope, request, now);
     }
 
-    private String rejection(String tenantId, DecisionRequest request, OfferPolicy policy, Instant now) {
+    private String rejection(String tenantId, DecisionRequest request, OfferPolicy policy, Instant now, boolean scopeMatches) {
         if (now.isBefore(policy.validFrom()) || !now.isBefore(policy.validTo())) return "OUTSIDE_VALIDITY";
         if (!policy.channels().isEmpty() && !policy.channels().contains(request.channel())) return "CHANNEL_MISMATCH";
-        boolean scopeMatches = request.cart().lines().stream().anyMatch(line ->
-                (policy.skuIds().isEmpty() || policy.skuIds().contains(line.skuId()))
-                        && (policy.categoryIds().isEmpty() || policy.categoryIds().contains(line.categoryId()))
-                        && (policy.shopIds().isEmpty() || policy.shopIds().contains(line.shopId())));
+        if (!policy.pricingCurrency().isEmpty() && !policy.pricingCurrency().equals(request.cart().currency())) return "CURRENCY_MISMATCH";
         if (!scopeMatches) return "PRODUCT_SCOPE_MISMATCH";
         if (!policy.requiredAudienceSnapshotId().isEmpty()
                 && !audiences.isMember(tenantId, policy.requiredAudienceSnapshotId(), request.subjectToken(), now)) {

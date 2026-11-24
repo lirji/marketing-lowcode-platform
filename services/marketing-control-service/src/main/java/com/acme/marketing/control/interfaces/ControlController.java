@@ -63,11 +63,27 @@ public class ControlController {
     public ControlApplicationService.DefinitionView saveDefinition(
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody SaveDefinitionInput input) {
-        com.acme.marketing.lowcode.validation.ReferralGraphInputGuard.validate(mapper.convertValue(input.graph(), Map.class));
-        SaveDefinitionRequest request = new SaveDefinitionRequest(input.campaignId(), mapper.treeToValue(input.graph(), GraphDefinition.class));
-        return commands.execute(TenantContextHolder.requireCurrent().tenantId(), "definition.save", idempotencyKey,
-                request, ControlApplicationService.DefinitionView.class,
+        var request = definitionRequest(input);
+        return commands.execute(TenantContextHolder.requireCurrent().tenantId(), "definition.save", idempotencyKey, request,
+                ControlApplicationService.DefinitionView.class,
                 () -> service.saveDefinition(request.campaignId(), request.graph()));
+    }
+
+    /** 使用独立路径，让旧服务拒绝模板初始化，而不是把它当作无条件保存。 */
+    @PostMapping("/definitions/initial-offer")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ControlApplicationService.DefinitionView initializeOffer(
+            @RequestHeader("Idempotency-Key") String idempotencyKey, @Valid @RequestBody SaveDefinitionInput input) {
+        service.authorizeOfferInitialization(input.campaignId());
+        var request = definitionRequest(input);
+        return commands.execute(TenantContextHolder.requireCurrent().tenantId(), "definition.initialize-offer", idempotencyKey,
+                request, ControlApplicationService.DefinitionView.class,
+                () -> service.initializeOffer(request.campaignId(), request.graph()));
+    }
+
+    private SaveDefinitionRequest definitionRequest(SaveDefinitionInput input) {
+        com.acme.marketing.lowcode.validation.ReferralGraphInputGuard.validate(mapper.convertValue(input.graph(), Map.class));
+        return new SaveDefinitionRequest(input.campaignId(), mapper.treeToValue(input.graph(), GraphDefinition.class));
     }
 
     @GetMapping("/definitions/latest")

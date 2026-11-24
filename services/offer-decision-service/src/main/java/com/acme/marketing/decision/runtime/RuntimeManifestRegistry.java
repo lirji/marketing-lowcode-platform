@@ -24,7 +24,7 @@ public final class RuntimeManifestRegistry {
     private static final int MAX_CANDIDATES = 1_000;
     private static final int MAX_POLICY_ARTIFACT_BYTES = 1_048_576;
     private static final String POLICY_ARTIFACT_TYPE = "OFFER_POLICY";
-    private static final String POLICY_ARTIFACT_ABI = "marketing-offer-policy/1";
+    private static final String POLICY_ARTIFACT_REFERENCE_INVALID = "POLICY_ARTIFACT_REFERENCE_INVALID";
 
     private final ManifestVerifier manifestVerifier;
     private final ActivationDirectiveVerifier activationVerifier;
@@ -167,7 +167,11 @@ public final class RuntimeManifestRegistry {
             throw new ConflictException("POLICY_ARTIFACT_CHECKSUM_MISMATCH",
                     "policy bytes do not match the signed release manifest");
         }
-        List<OfferPolicy> policies = decode(policyArtifactBytes).policies();
+        OfferPolicyArtifact artifact = decode(policyArtifactBytes);
+        if (!artifact.abi().equals(policyReference.abi())) {
+            throw new ConflictException(POLICY_ARTIFACT_REFERENCE_INVALID, "compiled offer policy does not match its signed ABI");
+        }
+        List<OfferPolicy> policies = artifact.policies();
         if (policies.isEmpty() || policies.size() > MAX_CANDIDATES
                 || policies.stream().map(policy -> policy.candidate().offerId()).distinct().count() != policies.size()) {
             throw new ConflictException("POLICY_ARTIFACT_INVALID", "policy artifact must contain unique bounded offers");
@@ -318,10 +322,10 @@ public final class RuntimeManifestRegistry {
     private ArtifactReference policyReference(ReleaseManifest manifest) {
         List<ArtifactReference> matches = manifest.artifacts().stream()
                 .filter(reference -> POLICY_ARTIFACT_TYPE.equals(reference.type())
-                        && POLICY_ARTIFACT_ABI.equals(reference.abi()))
+                        && OfferPolicyArtifact.supports(reference.abi()))
                 .toList();
         if (matches.size() != 1 || manifest.artifacts().size() != 1) {
-            throw new ConflictException("POLICY_ARTIFACT_REFERENCE_INVALID",
+            throw new ConflictException(POLICY_ARTIFACT_REFERENCE_INVALID,
                     "decision manifest must contain exactly one compatible offer policy artifact");
         }
         return matches.getFirst();

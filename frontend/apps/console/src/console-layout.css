@@ -208,3 +208,14 @@
   .analytics-filter .field { min-width:0; }
   .analytics-filter-panel .analytics-campaign-filter { flex-basis:100%; }
 }
+
+.campaign-workbench { display:grid; gap:20px; align-content:start; }
+.campaign-workbench .page-heading { margin-bottom:0; }
+.campaign-workbench-link { color:var(--teal); text-decoration:none; }
+.campaign-workbench-link:hover { text-decoration:underline; text-underline-offset:3px; }
+.workbench-facts { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr)); gap:12px 18px; margin:0; }
+.workbench-facts dt { color:var(--ink-600); font-size:var(--text-xs); }
+.workbench-facts dd { margin:2px 0 0; overflow-wrap:anywhere; font-weight:650; font-variant-numeric:tabular-nums; }
+.workbench-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.workbench-trial-result { margin-top:16px; padding:14px; border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--canvas); }
+.workbench-trial-result .workbench-facts { margin-top:10px; }

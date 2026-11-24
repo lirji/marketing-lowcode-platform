@@ -47,7 +47,7 @@ class ContractSpecificationsTest {
             "/api/v1/referral-campaigns/{campaignId}/relations",
             "/api/v1/referral-campaigns/{campaignId}/rewards",
             "/api/v1/referral-campaigns/{campaignId}/summary", "/api/v1/definitions",
-            "/api/v1/definitions/latest", "/api/v1/definitions/{definitionId}/versions/{version}",
+            "/api/v1/definitions/latest", "/api/v1/definitions/initial-offer", "/api/v1/definitions/{definitionId}/versions/{version}",
             "/api/v1/definitions/{definitionId}/versions/{version}:validate",
             "/api/v1/definitions/{definitionId}/versions/{version}:simulate",
             "/api/v1/definitions/{definitionId}/versions/{version}:simulate-journey",

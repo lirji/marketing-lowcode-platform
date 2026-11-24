@@ -26,7 +26,7 @@ class ReferralControlPreviewTest {
             Clock.fixed(Instant.parse("2026-09-01T00:00:30Z"), ZoneOffset.UTC), new DefaultNodeRegistry(), new GraphSimulationService(), null);
     @BeforeEach void bindScope() {
         TenantContextHolder.set(new TenantScope(new TenantId("tenant-a"), Set.of("*"), Set.of("*"), "operator", Set.of("*")));
-        when(repository.findCampaignOwnership("tenant-a", "campaign", false)).thenReturn(Optional.of(new ControlRepository.CampaignOwnershipRow("org", "shop")));
+        when(repository.findCampaignOwnership("tenant-a", "campaign", false)).thenReturn(Optional.of(new ControlRepository.CampaignOwnershipRow("org", "shop", "REFERRAL")));
     }
     @AfterEach void clearScope() { TenantContextHolder.clear(); }
 

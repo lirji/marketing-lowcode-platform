@@ -44,25 +44,28 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.health.contributor.Status;
 import tools.jackson.databind.ObjectMapper;
 
 class DecisionApplicationServiceTest {
     private static final Instant NOW = Instant.parse("2026-01-01T00:00:00Z");
 
-    @Test
-    void trustedManifestAudienceAndPricingProduceVerifiableQuote() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void trustedManifestAudienceAndPricingProduceVerifiableQuote(boolean scoped) throws Exception {
         KeyPair releaseKeys = Ed25519.generateKeyPair();
         ObjectMapper mapper = new ObjectMapper();
         OfferPolicy policy = new OfferPolicy(candidate(), NOW.minusSeconds(10), NOW.plusSeconds(600),
-                Set.of("CHECKOUT"), Set.of(), Set.of("home"), Set.of("shop-1"), "audience-v1");
-        byte[] policyArtifact = mapper.writeValueAsBytes(new OfferPolicyArtifact(List.of(policy)));
+                Set.of("CHECKOUT"), Set.of("sku-1"), Set.of("home"), Set.of("shop-1"), "audience-v1", scoped ? "CNY" : "");
+        var policyPayload = new OfferPolicyArtifact(List.of(policy));
+        byte[] policyArtifact = mapper.writeValueAsBytes(policyPayload);
         String checksum = "sha256:" + Digests.sha256Hex(policyArtifact);
         String sourceDigest = "sha256:" + "b".repeat(64);
         String artifactSignature = ArtifactAttestation.sign(releaseKeys.getPrivate(), "tenant-a", "artifact-1",
-                "offer-definition", 1, "OFFER_POLICY", "marketing-offer-policy/1", checksum, sourceDigest);
-        ReleaseManifest unsigned = manifest(checksum, sourceDigest, artifactSignature);
+                "offer-definition", 1, "OFFER_POLICY", policyPayload.abi(), checksum, sourceDigest);
+        ReleaseManifest unsigned = manifest(checksum, sourceDigest, artifactSignature, policyPayload.abi());
         ReleaseManifest signed = new ReleaseManifestSigner().sign(unsigned, releaseKeys.getPrivate());
         RuntimeManifestRegistry registry = new RuntimeManifestRegistry(
                 new PinnedManifestVerifier(Map.of("release-key", releaseKeys.getPublic())),
@@ -89,14 +92,16 @@ class DecisionApplicationServiceTest {
         TenantScope scope = new TenantScope(new TenantId("tenant-a"), Set.of("org-a"), Set.of("shop-1"),
                 "decision-client", Set.of("decision:evaluate"));
         Cart cart = new Cart("CNY", List.of(new CartLine("line-1", "sku-1", "shop-1", "home", "brand-1",
-                1, new Money("CNY", 10_000), new Money("CNY", 1_000), false)));
+                1, new Money("CNY", 10_000), new Money("CNY", 1_000), false),
+                new CartLine("line-2", "sku-2", "shop-1", "home", "brand-1", 1, new Money("CNY", 8_000), Money.zero("CNY"), false)));
         DecisionApplicationService.DecisionRequest request = new DecisionApplicationService.DecisionRequest(
                 "request-1", "idem-request-1", "org-a", "order-1", "subject-1", "CHECKOUT", NOW, cart,
                 Set.of("audience-v1"));
 
         DecisionApplicationService.DecisionResponse response = service.evaluate(scope, request);
 
-        assertEquals(8_000, response.pricing().payable().minorUnits());
+        assertEquals(16_000, response.pricing().payable().minorUnits());
+        assertEquals(scoped, response.pricing().linePayables().get("line-2").minorUnits() == 8_000);
         assertFalse(response.offerToken().isBlank());
         OfferTokenClaims claims = OfferTokenCodec.verify(response.offerToken(), offerKeys::publicKey,
                 new TenantId("tenant-a"), cart.digest(), Clock.fixed(NOW, ZoneOffset.UTC));
@@ -104,9 +109,9 @@ class DecisionApplicationServiceTest {
         assertTrue(response.candidates().stream().allMatch(trace -> trace.outcome().equals("ELIGIBLE")));
     }
 
-    private static ReleaseManifest manifest(String checksum, String sourceDigest, String artifactSignature) {
+    private static ReleaseManifest manifest(String checksum, String sourceDigest, String artifactSignature, String abi) {
         ArtifactReference artifact = new ArtifactReference("artifact-1", "OFFER_POLICY", "s3://artifacts/a1",
-                checksum, sourceDigest, "compiler-key", artifactSignature, "marketing-offer-policy/1",
+                checksum, sourceDigest, "compiler-key", artifactSignature, abi,
                 "offer-definition", 1);
         return new ReleaseManifest("manifest-1", new TenantId("tenant-a"), "prod", "cell-a", "decision", "main",
                 1, 0, List.of(), List.of(), List.of(artifact), Map.of("terms", "terms-v1"), 0,

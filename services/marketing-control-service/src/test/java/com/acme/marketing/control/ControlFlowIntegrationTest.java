@@ -91,6 +91,40 @@ class ControlFlowIntegrationTest extends MySqlIntegrationTest {
     }
 
     @Test
+    void firstOfferResistsConcurrentInitializationAndReplaysTheWinner() throws Exception {
+        var campaign = post("/api/v1/campaigns", "actor-author", "idem-threshold-campaign",
+                Map.of("name", "shop threshold", "objective", "validate fixed threshold", "organizationId", "org-a", "shopId", "shop-a"));
+        String campaignId = campaign.get("id").asString();
+        String path = "/api/v1/definitions/initial-offer";
+        String offerId = "offer-" + campaignId;
+        var graph = new GraphDefinition(offerId, Dialect.OFFER_DECISION_DAG, "1.0.0",
+                List.of(new GraphNode("discount", "offer.fixed", "1.0.0", Map.of(
+                        "shopIds", "shop-a", "skuIds", "sku-a", "pricingCurrency", "CNY", "thresholdMinor", "50000",
+                        "amountMinor", "5000", "benefitDefinitionVersion", "coupon@1",
+                        "validFrom", "2026-01-01T00:00:00Z", "validTo", "2030-01-01T00:00:00Z"))), List.of(), Map.of(), Map.of());
+        var payload = Map.of("campaignId", campaignId, "graph", graph);
+        String body = mapper.writeValueAsString(payload);
+        var requests = List.of("template-initial-left", "template-initial-right").stream()
+                .map(key -> client.sendAsync(request(path, "actor-author").header("Idempotency-Key", key)
+                        .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build(),
+                        HttpResponse.BodyHandlers.ofString())).toList();
+        var results = requests.stream().map(java.util.concurrent.CompletableFuture::join).toList();
+        assertEquals(List.of(201, 409), results.stream().map(HttpResponse::statusCode).sorted().toList());
+        int winner = results.getFirst().statusCode() == 201 ? 0 : 1;
+        String key = winner == 0 ? "template-initial-left" : "template-initial-right";
+        assertEquals("DRAFT", post(path, "actor-author", key, payload).get("status").asString());
+        var forbidden = client.send(request(path, "actor-author").setHeader("X-Dev-Shop-Ids", "shop-b")
+                .header("Idempotency-Key", key).header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(400, forbidden.statusCode());
+        assertTrue(forbidden.body().contains("shop is outside authenticated scope"));
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM mk_definition_version WHERE tenant_id='tenant-a' AND campaign_id=?", Integer.class, campaignId));
+        var trial = post("/api/v1/definitions/" + offerId + "/versions/1:simulate", "actor-author", null,
+                Map.of("amountMinor", "50000", "shopId", "shop-a", "skuId", "sku-a", "occurredAt", "2026-11-24T01:00:00Z", "currency", "CNY"));
+        assertEquals(5000, trial.get("discountMinor").asLong());
+    }
+
+    @Test
     void authorValidateSimulateAndApproveWithFourEyes() throws Exception {
         JsonNode campaign = post("/api/v1/campaigns", "actor-author", "idem-campaign-001",
                 Map.of("name", "Double 11", "objective", "GMV", "organizationId", "org-a", "shopId", "shop-a"));

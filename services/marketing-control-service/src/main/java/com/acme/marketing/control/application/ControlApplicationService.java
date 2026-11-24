@@ -154,6 +154,42 @@ public class ControlApplicationService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("definition:write");
         requireCampaignScope(scope, campaignId, true);
+        return storeDefinition(scope, campaignId, graph);
+    }
+
+    /** 在幂等回执回放前也检查当前身份的权限和活动归属。 */
+    public void authorizeOfferInitialization(String campaignId) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("definition:write");
+        requireCampaignScope(scope, campaignId, false);
+    }
+
+    /** 模板只初始化空白 Offer；复用活动行锁，防止另一位运营的规则被模板抢占。 */
+    @Transactional
+    public DefinitionView initializeOffer(String campaignId, GraphDefinition graph) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("definition:write");
+        var owner = ControlCampaignScope.require(repository, scope, campaignId, true);
+        if (!Campaign.Type.STANDARD.name().equals(owner.campaignType()) || owner.shopId() == null || owner.shopId().isBlank()) {
+            throw OfferPolicyError.INITIAL_OFFER_REQUIRES_SHOP.exception();
+        }
+        if (repository.findLatestDefinition(scope.tenantId().value(), campaignId, Dialect.OFFER_DECISION_DAG.name()).isPresent()) {
+            throw OfferPolicyError.INITIAL_OFFER_ALREADY_EXISTS.exception();
+        }
+        var policies = new com.acme.marketing.decision.runtime.OfferPolicyGraphCompiler().compile(graph).policies();
+        if (policies.size() != 1) throw OfferPolicyError.INITIAL_OFFER_REQUIRES_SHOP.exception();
+        var policy = policies.getFirst();
+        var formula = policy.candidate().formula();
+        if (!policy.shopIds().equals(Set.of(owner.shopId())) || policy.skuIds().size() != 1
+                || !"CNY".equals(policy.pricingCurrency())
+                || formula.kind() != com.acme.marketing.decision.model.PromotionKind.FIXED_OFF
+                || formula.valueMinor() <= 0 || formula.valueMinor() > formula.thresholdMinor()) {
+            throw OfferPolicyError.INITIAL_OFFER_REQUIRES_SHOP.exception();
+        }
+        return storeDefinition(scope, campaignId, graph);
+    }
+
+    private DefinitionView storeDefinition(TenantScope scope, String campaignId, GraphDefinition graph) {
         List<String> owners = repository.findDefinitionOwners(scope.tenantId().value(), graph.definitionId());
         if (!owners.isEmpty() && !owners.getFirst().equals(campaignId)) {
             throw new ConflictException("DEFINITION_CAMPAIGN_CONFLICT",

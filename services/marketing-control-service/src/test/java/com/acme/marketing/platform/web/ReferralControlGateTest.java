@@ -31,7 +31,7 @@ class ReferralControlGateTest {
                 new ControlRepository.DefinitionRow("campaign", "fixture", 1, "REFERRAL_POLICY", mapper.writeValueAsString(graph),
                         "hash", "VALIDATED", "fixture", "2026-09-01T00:00:00Z", "2026-09-01T00:00:00Z")));
         when(repository.findCampaignOwnership("tenant-a", "campaign", false)).thenReturn(Optional.of(
-                new ControlRepository.CampaignOwnershipRow("org", "shop")));
+                new ControlRepository.CampaignOwnershipRow("org", "shop", "REFERRAL")));
         var service = new ControlApplicationService(repository, mapper, Clock.systemUTC(), new DefaultNodeRegistry(),
                 new GraphSimulationService(), null);
         TenantContextHolder.set(new TenantScope(new TenantId("tenant-a"), Set.of("*"), Set.of("*"), "fixture", Set.of("*")));

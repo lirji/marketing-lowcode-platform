@@ -68,6 +68,8 @@ Drools executable model 只做受控条件匹配和候选推理；Money 计算�
 
 2026-10 正确性修复保持现有 Offer payload ABI 和签名字段不变，新优惠制品 ID 为 `offer_policy-v2-<digest>`，ID 本身受编译器签名保护。仅含旧 `basisPoints` 的百分比图，旧编译器可能生成零比例；其旧制品在 stage、ACK、activate、rollback 时被 `OFFER_RECOMPILE_REQUIRED` 拒绝，必须重新编译。不会原地重签、覆盖或自动停用当前线上制品；运维应盘点此类活跃版本，按正常审批/发布流程迁移，回滚目标也要满足新护栏。
 
+指定门店 SKU 满减模板写入 `pricingCurrency: CNY`，编译生成 `marketing-offer-policy/2`。运行时只使用同时匹配门店、商品范围和币种的商品行计算门槛和分摊。历史 `marketing-offer-policy/1` 制品沿用原定价语义与字节格式。发布和加载均核对受签名保护的 ABI。启用模板前先升级各目标单元的 Decision 运行时，再升级编译器、Control 和控制台。
+
 ## 插件开发约束
 
 扩展点是 schema、compiler adapter 或 provider connector，不允许上传任意 jar 后直接进入生产 JVM。插件必须具备源码审查、签名、SBOM、许可证/漏洞扫描、ABI compatibility test、恶意样例、资源配额和 canary。新增副作用节点必须定义业务幂等键、timeout/UNKNOWN 语义、retry classification、compensation 和审计字段。

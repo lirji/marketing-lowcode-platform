@@ -5,6 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.acme.marketing.control.application.GraphSimulationService;
+import com.acme.marketing.decision.model.Cart;
+import com.acme.marketing.decision.model.CartLine;
+import com.acme.marketing.decision.model.Money;
+import com.acme.marketing.decision.pricing.PricingEngine;
 import com.acme.marketing.decision.runtime.OfferPolicyGraphCompiler;
 import com.acme.marketing.lowcode.model.Dialect;
 import com.acme.marketing.lowcode.model.GraphDefinition;
@@ -67,6 +71,46 @@ class OfferSimulationTest {
                 node("two", "offer.fixed", Map.of("offerId", "duplicate", "stage", "PLATFORM", "amountMinor", "100"))));
         assertThrows(IllegalArgumentException.class, () -> simulation.simulate(graph, Map.of("amountMinor", "1000")));
         assertThrows(IllegalArgumentException.class, () -> compiler.compile(graph));
+    }
+
+    @Test
+    void scopedPreviewReportsThresholdProductAndValiditySeparately() {
+        var graph = thresholdOffer();
+        var facts = new HashMap<>(Map.of("shopId", "shop-a", "skuId", "sku-a", "currency", "CNY",
+                "occurredAt", "2026-01-01T00:00:00Z", "amountMinor", "50000"));
+        assertEquals(5000, simulation.simulate(graph, facts).discountMinor());
+        facts.put("amountMinor", "49999");
+        assertEquals("THRESHOLD_NOT_MET", simulation.simulate(graph, facts).trace().getLast().outcome());
+        facts.put("shopId", "shop-b");
+        assertEquals("PRODUCT_SCOPE_MISMATCH", simulation.simulate(graph, facts).trace().getLast().outcome());
+        facts.put("occurredAt", "2030-01-01T00:00:00Z");
+        assertEquals("OUTSIDE_VALIDITY", simulation.simulate(graph, facts).trace().getLast().outcome());
+    }
+
+    @Test
+    void mixedCartCannotReachThresholdWithOtherProductsOrReceiveDiscountOnOtherLines() {
+        var policy = compiler.compile(thresholdOffer()).policies().getFirst();
+        var otherSku = line("other-sku", "sku-b", "shop-a", 80000);
+        var otherShop = line("other-shop", "sku-a", "shop-b", 90000);
+        var mixed = new Cart("CNY", List.of(line("matched", "sku-a", "shop-a", 49000), otherSku, otherShop));
+        var pricing = new PricingEngine();
+        assertEquals(0, pricing.price(mixed, List.of(policy.candidateFor(mixed).orElseThrow())).totalDiscount().minorUnits());
+        var eligible = new Cart("CNY", List.of(line("matched", "sku-a", "shop-a", 50000), otherSku, otherShop));
+        var result = pricing.price(eligible, List.of(policy.candidateFor(eligible).orElseThrow()));
+        assertEquals(Map.of("matched", new Money("CNY", 5000)), result.appliedOffers().getFirst().lineDiscounts());
+        assertTrue(policy.candidateFor(new Cart("CNY", List.of(otherSku, otherShop))).isEmpty());
+        var foreign = new Cart("USD", List.of(new CartLine("matched", "sku-a", "shop-a", "", "", 1,
+                new Money("USD", 50000), Money.zero("USD"), false)));
+        assertTrue(policy.candidateFor(foreign).isEmpty());
+    }
+
+    private static GraphDefinition thresholdOffer() {
+        return graph(List.of(node("discount", "offer.fixed", Map.of("amountMinor", "5000", "thresholdMinor", "50000",
+                "skuIds", "sku-a", "shopIds", "shop-a", "pricingCurrency", "CNY"))));
+    }
+
+    private static CartLine line(String id, String sku, String shop, long price) {
+        return new CartLine(id, sku, shop, "", "", 1, new Money("CNY", price), Money.zero("CNY"), false);
     }
 
     private static GraphNode node(String id, String type, Map<String, String> config) {

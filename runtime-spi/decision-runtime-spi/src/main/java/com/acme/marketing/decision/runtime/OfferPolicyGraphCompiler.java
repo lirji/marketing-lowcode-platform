@@ -22,6 +22,7 @@ import java.util.stream.Collectors;
 public final class OfferPolicyGraphCompiler {
     /** 标识已修复比例别名语义的编译器；该 ID 前缀被 ArtifactAttestation 签名覆盖。 */
     public static final String ARTIFACT_ID_PREFIX = "offer_policy-v2-";
+    private static final String PRICING_CURRENCY = "pricingCurrency";
     private static final String PREVIEW_BENEFIT_VERSION = "preview-only";
 
     /** 旧编译器把仅含 basisPoints 的策略编译成零比例；重新激活前必须重新编译。 */
@@ -29,6 +30,13 @@ public final class OfferPolicyGraphCompiler {
         return !artifactId.startsWith(ARTIFACT_ID_PREFIX) && graph.nodes().stream().anyMatch(node ->
                 "offer.percentage".equals(node.stableTypeId()) && node.config().containsKey("basisPoints")
                         && !node.config().containsKey("discountBasisPoints"));
+    }
+
+    /** 发布门禁从已审批的图推导 ABI，避免使用忽略新字段的旧编译制品。 */
+    public static String expectedAbi(GraphDefinition graph) {
+        return graph.nodes().stream().anyMatch(node -> (node.stableTypeId().equals("offer.fixed")
+                || node.stableTypeId().equals("offer.percentage")) && !node.config().getOrDefault(PRICING_CURRENCY, "").isEmpty())
+                ? OfferPolicyArtifact.SCOPED_ABI : OfferPolicyArtifact.LEGACY_ABI;
     }
 
     /** 严格编译已有策略 ABI；不支持的图语义不得静默丢弃。 */
@@ -104,7 +112,7 @@ public final class OfferPolicyGraphCompiler {
         return new OfferPolicy(candidate(node, true), Instant.parse(required(config, "validFrom")),
                 Instant.parse(required(config, "validTo")), strings(config.get("channels")),
                 strings(config.get("skuIds")), strings(config.get("categoryIds")), strings(config.get("shopIds")),
-                config.getOrDefault("requiredAudienceSnapshotId", ""));
+                config.getOrDefault("requiredAudienceSnapshotId", ""), config.getOrDefault(PRICING_CURRENCY, ""));
     }
 
     private OfferCandidate candidate(GraphNode node, boolean publishing) {
