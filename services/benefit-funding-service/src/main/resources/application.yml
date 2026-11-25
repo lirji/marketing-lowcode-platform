@@ -36,6 +36,23 @@ marketing.trade-order-bindings:
     issuer-uri: ${MARKETING_TRADE_ORDER_BINDING_CASDOOR_ISSUER_URI:}
     jwk-set-uri: ${MARKETING_TRADE_ORDER_BINDING_CASDOOR_JWK_SET_URI:}
     grants: ${MARKETING_TRADE_ORDER_BINDING_CASDOOR_GRANTS:[]}
+marketing.checkout-funding:
+  enabled: ${CHECKOUT_FUNDING_ENABLED:false}
+  accept-new: ${CHECKOUT_FUNDING_ACCEPT_NEW:true}
+  trade-base-url: ${CHECKOUT_FUNDING_TRADE_BASE_URL:}
+  trade-token: ${CHECKOUT_FUNDING_TRADE_TOKEN:}
+  key-id: ${CHECKOUT_FUNDING_KEY_ID:}
+  private-key: ${CHECKOUT_FUNDING_PRIVATE_KEY:}
+  public-key: ${CHECKOUT_FUNDING_PUBLIC_KEY:}
+  actor: ${CHECKOUT_FUNDING_ACTOR:}
+  tenant: ${CHECKOUT_FUNDING_TENANT:}
+  trade-tenant: ${CHECKOUT_FUNDING_TRADE_TENANT:}
+  organization: ${CHECKOUT_FUNDING_ORGANIZATION:}
+  shop: ${CHECKOUT_FUNDING_SHOP:}
+  store: ${CHECKOUT_FUNDING_STORE:}
+  campaign: ${CHECKOUT_FUNDING_CAMPAIGN:}
+  scope-version: ${CHECKOUT_FUNDING_SCOPE_VERSION:}
+  funder: ${CHECKOUT_FUNDING_FUNDER:}
 marketing.benefit.outbox-enabled: ${MARKETING_BENEFIT_OUTBOX_ENABLED:false}
 marketing.funding.budget-bucket-count: ${MARKETING_FUNDING_BUDGET_BUCKET_COUNT:16}
 marketing.benefit-center:

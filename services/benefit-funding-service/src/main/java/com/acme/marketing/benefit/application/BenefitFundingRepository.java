@@ -50,6 +50,10 @@ public interface BenefitFundingRepository {
     int updateExpiryFailure(ExpiryFailureWrite write);
     int updateApplicationState(String tenantId, String applicationId, String stateName, String updatedAt);
     Optional<StoredApplicationRow> findApplicationForUpdate(String tenantId, String applicationId);
+    /** 同订单只能有一份试点资金申请，签名与预留在同一事务中存储。 */
+    int sealCheckout(CheckoutBinding binding);
+    /** 读取可重放的原始回执及当前申请状态。 */
+    Optional<CheckoutBindingRow> findCheckout(String tenantId, String reference);
     /** 锁定单个申请，避免并发补录覆盖首次审计记录。 */
     Optional<AttributionEvidenceRow> findAttributionEvidenceForUpdate(String tenantId, String applicationId);
     int updateCampaignAttribution(AttributionWrite write);
@@ -133,7 +137,12 @@ public interface BenefitFundingRepository {
     record ExpiryFailureWrite(String tenantId, String applicationId, int attempts, String nextAttemptAt,
             String lastError) { }
     record StoredApplicationRow(String applicationId, String orderId, String organizationId,
-            String shopIdsJson, String state, String expiresAt) { }
+            String shopIdsJson, String state, String expiresAt, String checkoutRef) { }
+    /** 在预算申请完成前固化可供交易中心验签的首次回执。 */
+    record CheckoutBinding(String tenantId, String applicationId, String reference, String tradeTenant, String receipt) { }
+    /** 结算重试以原生订单和原始报价摘要核对首次承诺。 */
+    record CheckoutBindingRow(String applicationId, String orderId, String tradeTenant, String tokenDigest,
+            String receipt, String state, String currency, long discountMinor) { }
     record ReservationItemRow(String resourceKey, long originalAmount, long reservedAmount,
             long consumedAmount, long refundedAmount, long releasedAmount, long reservationEpoch) { }
     record ApplicationRow(String quoteId, String orderId, String cartDigest, long generation,

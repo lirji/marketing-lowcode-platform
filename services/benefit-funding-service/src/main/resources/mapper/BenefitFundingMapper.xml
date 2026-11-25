@@ -239,13 +239,14 @@
             resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$ExpiredApplicationRow">
         SELECT tenant_id AS tenantId, application_id AS applicationId
         FROM mk_promotion_application
-        WHERE state_name = 'RESERVED' AND expires_at &lt;= #{now} AND expiry_next_attempt_at &lt;= #{now}
+        WHERE state_name = 'RESERVED' AND checkout_ref IS NULL
+          AND expires_at &lt;= #{now} AND expiry_next_attempt_at &lt;= #{now}
         <if test="tenantId != null">AND tenant_id = #{tenantId}</if>
         ORDER BY expires_at LIMIT #{limit}
     </select>
     <update id="expireApplication">
         UPDATE mk_promotion_application SET state_name = 'EXPIRED', updated_at = #{updatedAt}
-        WHERE tenant_id = #{tenantId} AND application_id = #{applicationId} AND state_name = 'RESERVED'
+        WHERE tenant_id = #{tenantId} AND application_id = #{applicationId} AND state_name = 'RESERVED' AND checkout_ref IS NULL
     </update>
     <select id="selectExpiryAttemptsForUpdate" resultType="java.lang.Integer">
         SELECT expiry_attempts FROM mk_promotion_application
@@ -265,7 +266,7 @@
     <select id="selectApplicationForUpdate"
             resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$StoredApplicationRow">
         SELECT application_id AS applicationId, order_id AS orderId, organization_id AS organizationId,
-               shop_ids_json AS shopIdsJson, state_name AS state, expires_at AS expiresAt
+               shop_ids_json AS shopIdsJson, state_name AS state, expires_at AS expiresAt, checkout_ref AS checkoutRef
         FROM mk_promotion_application
         WHERE tenant_id = #{tenantId} AND application_id = #{applicationId}
         FOR UPDATE
@@ -281,6 +282,20 @@
         WHERE tenant_id = #{tenantId} AND application_id = #{applicationId}
           AND CAST(tenant_id AS BINARY) = CAST(#{tenantId} AS BINARY)
         FOR UPDATE
+    </select>
+    <update id="sealCheckout">
+        UPDATE mk_promotion_application
+        SET checkout_ref=#{reference}, checkout_trade_tenant=#{tradeTenant}, checkout_funding_receipt=#{receipt}
+        WHERE tenant_id=#{tenantId} AND application_id=#{applicationId} AND checkout_ref IS NULL AND state_name='RESERVED'
+    </update>
+    <select id="findCheckout" useCache="false"
+            resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$CheckoutBindingRow">
+        SELECT application_id AS applicationId, order_id AS orderId, checkout_trade_tenant AS tradeTenant,
+            token_digest AS tokenDigest, checkout_funding_receipt AS receipt, state_name AS state,
+            currency_code AS currency, total_discount AS discountMinor
+        FROM mk_promotion_application
+        WHERE tenant_id=#{tenantId} AND checkout_ref=#{reference}
+          AND CAST(tenant_id AS BINARY)=CAST(#{tenantId} AS BINARY)
     </select>
     <update id="updateCampaignAttribution">
         UPDATE mk_promotion_application

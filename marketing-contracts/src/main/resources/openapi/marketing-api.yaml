@@ -998,6 +998,43 @@ paths:
       responses: *created
   /api/v1/promotion-applications/{applicationId}:confirm:
     post: {tags: [Benefit], operationId: confirmPromotion, parameters: [{$ref: '#/components/parameters/ApplicationId'}, {$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {$ref: '#/components/requestBodies/JsonObject'}, responses: *ok}
+  /api/v1/promotion-applications/checkout-pilot/{reference}:reserve:
+    post:
+      tags: [Benefit]
+      operationId: reserveCheckoutPilotBudget
+      x-required-permission: 'promotion:checkout-pilot'
+      parameters:
+        - {name: reference, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [checkoutQuoteToken]
+              properties:
+                checkoutQuoteToken: {type: string, minLength: 1, maxLength: 24000}
+      responses: &checkoutFundingResponses
+        '200':
+          description: Stored funding state. The same signed funding receipt is replayed while reserved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [applicationId, state]
+                properties:
+                  applicationId: {type: string, format: uuid}
+                  state: {type: string, enum: [RESERVED, CONFIRMED, CANCELLED]}
+                  fundingReceipt: {type: [string, 'null'], maxLength: 4096}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/promotion-applications/checkout-pilot/{reference}:reconcile:
+    post:
+      tags: [Benefit]
+      operationId: reconcileCheckoutPilotBudget
+      x-required-permission: 'promotion:checkout-pilot'
+      parameters:
+        - {name: reference, in: path, required: true, schema: {type: string, format: uuid}}
+      responses: *checkoutFundingResponses
   /internal/v1/promotion-applications/{applicationId}/trade-order-binding:
     put:
       tags: [Benefit]

@@ -16,6 +16,7 @@ import com.acme.marketing.contracts.offer.OfferTokenClaims;
 import com.acme.marketing.contracts.offer.OfferTokenCodec;
 import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.crypto.Ed25519;
+import com.acme.marketing.platform.crypto.SignedTokenCodec;
 import com.acme.marketing.platform.identity.TenantId;
 import com.acme.marketing.testsupport.MySqlIntegrationTest;
 import com.sun.net.httpserver.HttpServer;
@@ -62,6 +63,12 @@ import tools.jackson.databind.ObjectMapper;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
     private static final KeyPair OFFER_KEYS = Ed25519.generateKeyPair();
+    private static final KeyPair CHECKOUT_KEYS = Ed25519.generateKeyPair();
+    private static final String CHECKOUT_TENANT = "tenant-checkout-funding";
+    private static final String CHECKOUT_ACTOR = "pilot-budget-machine";
+    private static final String CHECKOUT_BEARER = java.util.UUID.randomUUID().toString() + java.util.UUID.randomUUID();
+    private static final ConcurrentHashMap<String, Map<String, Object>> CHECKOUT_FACTS = new ConcurrentHashMap<>();
+    private static final HttpServer CHECKOUT_TRADE = checkoutTrade();
     private static final String CART_DIGEST = "sha256:" + "c".repeat(64);
     private static final Instant BEIJING_MIDNIGHT = Instant.parse("2026-09-16T16:00:00Z");
     private static final AtomicReference<Instant> POSTING_TIME = new AtomicReference<>();
@@ -132,13 +139,134 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
                 () -> "tenant-a=CENTER,tenant-shadow=SHADOW,tenant-coupon=SHADOW");
         registry.add("marketing.award.relay-enabled", () -> "true");
         registry.add("marketing.award.relay-initial-delay-ms", () -> "3600000");
+        registry.add("marketing.checkout-funding.enabled", () -> "true");
+        registry.add("marketing.checkout-funding.trade-base-url", () -> "http://127.0.0.1:" + CHECKOUT_TRADE.getAddress().getPort());
+        registry.add("marketing.checkout-funding.trade-token", () -> CHECKOUT_BEARER);
+        registry.add("marketing.checkout-funding.key-id", () -> "budget-test");
+        registry.add("marketing.checkout-funding.public-key", () -> Base64.getEncoder().encodeToString(CHECKOUT_KEYS.getPublic().getEncoded()));
+        registry.add("marketing.checkout-funding.private-key", () -> Base64.getEncoder().encodeToString(CHECKOUT_KEYS.getPrivate().getEncoded()));
+        registry.add("marketing.checkout-funding.tenant", () -> CHECKOUT_TENANT);
+        registry.add("marketing.checkout-funding.actor", () -> CHECKOUT_ACTOR);
+        registry.add("marketing.checkout-funding.trade-tenant", () -> "906021");
+        registry.add("marketing.checkout-funding.organization", () -> "org-a");
+        registry.add("marketing.checkout-funding.shop", () -> "shop-1");
+        registry.add("marketing.checkout-funding.store", () -> "lc02-store");
+        registry.add("marketing.checkout-funding.campaign", () -> "lc02-campaign");
+        registry.add("marketing.checkout-funding.scope-version", () -> "lc02-r1");
+        registry.add("marketing.checkout-funding.funder", () -> "lc02-budget");
     }
 
     @AfterAll
     static void stopBenefitCenter() {
         BENEFIT_CENTER.stop(0);
         RISK_PLATFORM.stop(0);
+        CHECKOUT_TRADE.stop(0);
         RISK_SERVER_EXECUTOR.shutdownNow();
+    }
+
+    @Test
+    void checkoutBudgetReplaysAndOnlySettlesAgainstTerminalNativeFacts() throws Exception {
+        String budget = "BUDGET:PLATFORM:lc02-budget:CNY";
+        var account = postRaw("/api/v1/funding/accounts", Map.of("resourceKey", budget, "type", "BUDGET",
+                "currency", "CNY", "authorized", 2000, "fencingEpoch", 1), "checkout-budget-create", CHECKOUT_TENANT);
+        assertEquals(201, account.statusCode(), account.body());
+        var now = Instant.now();
+        String one = java.util.UUID.randomUUID().toString(), two = java.util.UUID.randomUUID().toString();
+        String firstToken = checkoutProof(one, "101", now), secondToken = checkoutProof(two, "102", now);
+        var reservePath = "/api/v1/promotion-applications/checkout-pilot/";
+        var first = checkoutCall(reservePath + one + ":reserve", Map.of("checkoutQuoteToken", firstToken), CHECKOUT_ACTOR, 200);
+        assertEquals("RESERVED", first.path("state").asString());
+        var signed = SignedTokenCodec.decodeAndVerify(first.path("fundingReceipt").asString(), ignored -> CHECKOUT_KEYS.getPublic());
+        assertEquals("101", signed.claims().get("orderId"));
+        assertEquals("1000", signed.claims().get("discountMinor"));
+        assertEquals(first, checkoutCall(reservePath + one + ":reserve", Map.of("checkoutQuoteToken", firstToken), CHECKOUT_ACTOR, 200));
+        checkoutCall(reservePath + one + ":reserve", Map.of("checkoutQuoteToken", firstToken), "another-machine", 403);
+        checkoutCall(reservePath + two + ":reserve", Map.of("checkoutQuoteToken", firstToken), CHECKOUT_ACTOR, 409);
+        var second = checkoutCall(reservePath + two + ":reserve", Map.of("checkoutQuoteToken", secondToken), CHECKOUT_ACTOR, 200);
+        var third = java.util.UUID.randomUUID().toString();
+        checkoutCall(reservePath + third + ":reserve", Map.of("checkoutQuoteToken", checkoutProof(third, "103", now)), CHECKOUT_ACTOR, 409);
+        var generic = postRaw("/api/v1/promotion-applications/" + first.path("applicationId").asString() + ":cancel",
+            Map.of("expectedFencingEpochs", Map.of(budget, 1)), "checkout-generic-cancel", CHECKOUT_TENANT);
+        assertEquals(409, generic.statusCode(), generic.body());
+
+        POSTING_TIME.set(now.plusSeconds(1000));
+        service.expireDueReservations(200);
+        markCheckout(one, "CLOSING", "UNPAID", null);
+        assertEquals("RESERVED", checkoutCall(reservePath + one + ":reconcile", Map.of(), CHECKOUT_ACTOR, 200).path("state").asString());
+        assertEquals(2000L, checkoutBucketTotal("reserved_amount"));
+        markCheckout(one, "PAID", "PAID", now.plusSeconds(450));
+        assertEquals("CONFIRMED", checkoutCall(reservePath + one + ":reconcile", Map.of(), CHECKOUT_ACTOR, 200).path("state").asString());
+        assertEquals("CONFIRMED", checkoutCall(reservePath + one + ":reconcile", Map.of(), CHECKOUT_ACTOR, 200).path("state").asString());
+        markCheckout(two, "CANCELLED", "UNPAID", null);
+        var released = checkoutCall(reservePath + two + ":reconcile", Map.of(), CHECKOUT_ACTOR, 200);
+        assertEquals(second.path("applicationId"), released.path("applicationId"));
+        assertEquals("CANCELLED", released.path("state").asString());
+        assertTrue(released.path("fundingReceipt").isNull() || released.path("fundingReceipt").isMissingNode());
+        assertEquals(0L, checkoutBucketTotal("reserved_amount"));
+        assertEquals(1000L, checkoutBucketTotal("consumed_amount"));
+        assertEquals(1000L, checkoutBucketTotal("available_amount"));
+    }
+
+    private long checkoutBucketTotal(String column) {
+        return jdbc.queryForObject("SELECT SUM(" + column + ") FROM mk_resource_escrow_bucket WHERE tenant_id=?", Long.class, CHECKOUT_TENANT);
+    }
+
+    private JsonNode checkoutCall(String path, Object body, String actor, int status) throws Exception {
+        var request = base(path, CHECKOUT_TENANT).setHeader("X-Dev-Actor-Id", actor)
+                .setHeader("X-Dev-Permissions", "promotion:checkout-pilot")
+                .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body)));
+        var result = client.send(request.build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(status, result.statusCode(), result.body());
+        return mapper.readTree(result.body());
+    }
+
+    private static String checkoutProof(String reference, String orderId, Instant now) {
+        String token = SignedTokenCodec.encode("offer-test-key", OFFER_KEYS.getPrivate(), Map.ofEntries(
+            Map.entry("purpose", "marketing.checkout-price/v1"), Map.entry("marketingTenantId", CHECKOUT_TENANT),
+            Map.entry("tradeTenantId", "906021"), Map.entry("tradeQuoteRef", reference), Map.entry("scopeVersion", "lc02-r1"),
+            Map.entry("organizationId", "org-a"), Map.entry("shopId", "shop-1"), Map.entry("campaignId", "lc02-campaign"),
+            Map.entry("marketingQuoteId", java.util.UUID.randomUUID().toString()), Map.entry("cartDigest", CART_DIGEST),
+            Map.entry("generation", "1"), Map.entry("currency", "CNY"), Map.entry("funderId", "lc02-budget"),
+            Map.entry("grossMinor", "11800"), Map.entry("discountMinor", "1000"), Map.entry("payableMinor", "10800"),
+            Map.entry("expiresAt", now.plusSeconds(120).toString())));
+        CHECKOUT_FACTS.put(reference, Map.ofEntries(Map.entry("tradeTenantId", "906021"), Map.entry("tradeQuoteRef", reference),
+            Map.entry("orderId", orderId), Map.entry("scopeVersion", "lc02-r1"), Map.entry("storeId", "lc02-store"),
+            Map.entry("priceProofHash", Digests.sha256Hex(token)), Map.entry("currency", "CNY"), Map.entry("grossMinor", "11800"),
+            Map.entry("discountMinor", "1000"), Map.entry("payableMinor", "10800"), Map.entry("orderStatus", "PENDING_PAYMENT"),
+            Map.entry("financialStatus", "UNPAID"), Map.entry("orderExpiresAt", now.plusSeconds(450).toString())));
+        return token;
+    }
+
+    private static void markCheckout(String reference, String status, String financialStatus, Instant paidAt) {
+        var facts = new java.util.HashMap<>(CHECKOUT_FACTS.get(reference));
+        facts.put("orderStatus", status);
+        facts.put("financialStatus", financialStatus);
+        if (paidAt != null) facts.put("paidAt", paidAt.toString());
+        CHECKOUT_FACTS.put(reference, facts);
+    }
+
+    private static HttpServer checkoutTrade() {
+        try {
+            var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            server.createContext("/internal/v1/checkout-pilot/quote-references/", exchange -> {
+                try (exchange) {
+                    var path = exchange.getRequestURI().getPath().split("/");
+                    var facts = path.length == 7 ? CHECKOUT_FACTS.get(path[5]) : null;
+                    if (facts == null || !("Bearer " + CHECKOUT_BEARER).equals(exchange.getRequestHeaders().getFirst("Authorization"))) {
+                        exchange.sendResponseHeaders(404, -1);
+                        return;
+                    }
+                    byte[] body = new ObjectMapper().writeValueAsBytes(facts);
+                    exchange.getResponseHeaders().set("Content-Type", "application/json");
+                    exchange.sendResponseHeaders(200, body.length);
+                    exchange.getResponseBody().write(body);
+                }
+            });
+            server.start();
+            return server;
+        } catch (IOException failure) {
+            throw new IllegalStateException("无法启动隔离交易证据端", failure);
+        }
     }
 
     @Test

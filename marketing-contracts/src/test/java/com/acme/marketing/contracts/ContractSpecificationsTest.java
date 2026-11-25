@@ -88,6 +88,8 @@ class ContractSpecificationsTest {
             "/internal/v1/promotion-applications/{applicationId}/trade-order-binding",
             "/internal/v1/promotion-applications/{applicationId}/trade-order-binding/casdoor",
             "/api/v1/promotion-applications", "/api/v1/promotion-applications/{applicationId}:confirm",
+            "/api/v1/promotion-applications/checkout-pilot/{reference}:reserve",
+            "/api/v1/promotion-applications/checkout-pilot/{reference}:reconcile",
             "/api/v1/promotion-applications/{applicationId}:cancel",
             "/api/v1/promotion-applications/{applicationId}:refund",
             "/api/v1/promotion-applications/{applicationId}:reverse",

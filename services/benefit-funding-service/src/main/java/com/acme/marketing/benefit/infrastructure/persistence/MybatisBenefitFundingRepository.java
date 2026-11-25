@@ -102,6 +102,12 @@ public class MybatisBenefitFundingRepository implements BenefitFundingRepository
             String applicationId) {
         return Optional.ofNullable(mapper.selectAttributionEvidenceForUpdate(tenantId, applicationId));
     }
+    /** 与已有预算申请使用同一个数据库事务。 */
+    @Override public int sealCheckout(CheckoutBinding binding) { return mapper.sealCheckout(binding); }
+    /** 返回首次固化的试点回执。 */
+    @Override public Optional<CheckoutBindingRow> findCheckout(String tenantId, String reference) {
+        return Optional.ofNullable(mapper.findCheckout(tenantId, reference));
+    }
     @Override public int updateCampaignAttribution(AttributionWrite write) {
         return mapper.updateCampaignAttribution(write);
     }

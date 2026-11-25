@@ -63,6 +63,11 @@ public interface BenefitFundingMapper {
             @Param("applicationId") String applicationId);
     BenefitFundingRepository.AttributionEvidenceRow selectAttributionEvidenceForUpdate(
             @Param("tenantId") String tenantId, @Param("applicationId") String applicationId);
+    /** 与预算预留同事务固化原生订单关系和签名。 */
+    int sealCheckout(BenefitFundingRepository.CheckoutBinding binding);
+    /** 按当前营销租户查单，不回传其他租户的预留凭证。 */
+    BenefitFundingRepository.CheckoutBindingRow findCheckout(@Param("tenantId") String tenantId,
+            @Param("reference") String reference);
     int updateCampaignAttribution(BenefitFundingRepository.AttributionWrite write);
     List<BenefitFundingRepository.ReservationItemRow> selectReservationItems(@Param("tenantId") String tenantId,
             @Param("applicationId") String applicationId, @Param("lock") boolean lock);

@@ -322,6 +322,22 @@ public class BenefitFundingService {
             throw new ConflictException("FENCING_EPOCHS_INCOMPLETE",
                     "every reserved resource requires exactly one fencing epoch");
         }
+        String applicationId = UUID.randomUUID().toString();
+        Instant now = clock.instant();
+        var write = new BenefitFundingRepository.ApplicationWrite(
+                tenantId, applicationId, claims.quoteId(), claims.decisionRequestId(), request.orderId(),
+                claims.organizationId(), json(new java.util.TreeSet<>(claims.shopIds())), request.cartDigest(),
+                Digests.sha256Hex(request.offerToken()), claims.generation(), ApplicationState.RESERVED.name(),
+                claims.totalDiscountMinorUnits(), claims.offerLines().getFirst().currency(),
+                format(claims.expiresAt()), format(now), format(now), format(now), claims.campaignId());
+        return reserveResources(write, demands, request.expectedFencingEpochs(), now);
+    }
+
+    /** 试点和普通报价复用同一份预算分桶、账本及出箱规则。 */
+    private ApplicationView reserveResources(BenefitFundingRepository.ApplicationWrite write,
+            Map<String, ResourceDemand> demands, Map<String, Long> epochs, Instant now) {
+        String tenantId = write.tenantId();
+        String applicationId = write.applicationId();
         List<ResourceAccount> accounts = loadAccountsForReserve(
                 tenantId, demands.keySet().stream().sorted().toList());
         Map<String, ResourceAccount> byKey = new LinkedHashMap<>();
@@ -333,10 +349,10 @@ public class BenefitFundingService {
             if (account.type() != demand.type() || !account.currency().equals(demand.currency())) {
                 throw new ConflictException("RESOURCE_SEMANTICS_MISMATCH", demand.resourceKey());
             }
-            long expectedEpoch = request.expectedFencingEpochs().get(demand.resourceKey());
+            long expectedEpoch = epochs.get(demand.resourceKey());
             if (account.type() == ResourceAccount.Type.BUDGET) {
                 mutations.put(demand.resourceKey(), reserveBudgetBuckets(
-                        tenantId, account, demand.amount(), expectedEpoch, claims.quoteId()));
+                        tenantId, account, demand.amount(), expectedEpoch, write.quoteId()));
             } else {
                 ResourceAccount next = account.reserve(demand.amount(), expectedEpoch);
                 saveAccount(tenantId, next);
@@ -345,14 +361,7 @@ public class BenefitFundingService {
                         next.fencingEpoch(), next.version(), 0, demand.amount())));
             }
         }
-        String applicationId = UUID.randomUUID().toString();
-        Instant now = clock.instant();
-        boolean created = repository.trySaveApplication(new BenefitFundingRepository.ApplicationWrite(
-                tenantId, applicationId, claims.quoteId(), claims.decisionRequestId(), request.orderId(),
-                claims.organizationId(), json(new java.util.TreeSet<>(claims.shopIds())), request.cartDigest(),
-                Digests.sha256Hex(request.offerToken()), claims.generation(), ApplicationState.RESERVED.name(),
-                claims.totalDiscountMinorUnits(), claims.offerLines().getFirst().currency(),
-                format(claims.expiresAt()), format(now), format(now), format(now), claims.campaignId()));
+        boolean created = repository.trySaveApplication(write);
         if (!created) {
             throw new ConflictException("OFFER_TOKEN_REPLAYED", "offer token quote was already reserved");
         }
@@ -367,18 +376,77 @@ public class BenefitFundingService {
                     repository.saveEscrowAllocation(new BenefitFundingRepository.EscrowAllocationWrite(
                             tenantId, applicationId, demand.resourceKey(), mutation.bucketId(), mutation.amount(),
                             mutation.amount(), 0, 0, 0, mutation.fencingEpoch()));
-                    ledger(tenantId, applicationId, request.orderId(), demand.resourceKey(), "RESERVE",
+                    ledger(tenantId, applicationId, write.orderId(), demand.resourceKey(), "RESERVE",
                             "AVAILABLE", "RESERVED", mutation.amount(), mutation.version(), mutation.bucketId(),
                             null, now);
                 }
             } else {
-                ledger(tenantId, applicationId, request.orderId(), demand.resourceKey(), "RESERVE",
+                ledger(tenantId, applicationId, write.orderId(), demand.resourceKey(), "RESERVE",
                         "AVAILABLE", "RESERVED", demand.amount(), firstMutation.version(), 0, null, now);
             }
         }
         outbox(tenantId, applicationId, "PromotionReserved", now);
         return application(tenantId, applicationId);
     }
+
+    /** 在报价引用下串行化预留，首次预算分录和签名回执同事务提交。 */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public ApplicationView reserveCheckout(TenantScope scope, CheckoutReservation request,
+            java.util.function.Function<String, String> signReceipt) {
+        String tenantId = scope.tenantId().value();
+        return command(tenantId, "checkout:" + request.reference(), request.proofHash(), ApplicationView.class, () -> {
+            Instant now = clock.instant();
+            if (!request.quoteExpiresAt().isAfter(now) || !request.orderExpiresAt().isAfter(now)) {
+                throw new ConflictException("CHECKOUT_FUNDING_EXPIRED", "试点订单或原报价已过期");
+            }
+            String budget = "BUDGET:PLATFORM:" + request.funderId() + ':' + request.currency();
+            ResourceAccount account = loadAccount(tenantId, budget, false);
+            String applicationId = UUID.randomUUID().toString();
+            var write = new BenefitFundingRepository.ApplicationWrite(tenantId, applicationId, request.marketingQuoteId(),
+                    request.reference(), request.orderId(), request.organization(), json(List.of(request.shop())),
+                    request.cartDigest(), request.proofHash(), request.generation(), ApplicationState.RESERVED.name(),
+                    request.discountMinor(), request.currency(), format(request.orderExpiresAt()), format(now), format(now),
+                    format(now), request.campaign());
+            var result = reserveResources(write,
+                    Map.of(budget, new ResourceDemand(budget, ResourceAccount.Type.BUDGET, request.currency(), request.discountMinor())),
+                    Map.of(budget, account.fencingEpoch()), now);
+            if (repository.sealCheckout(new BenefitFundingRepository.CheckoutBinding(tenantId, applicationId,
+                    request.reference(), request.tradeTenant(), signReceipt.apply(applicationId))) != 1) {
+                throw new IllegalStateException("试点资金预留回执未保存");
+            }
+            return result;
+        });
+    }
+
+    /** 只接受调用方已从交易核实的不可逆终态，报价失效可晚于渠道受理。 */
+    @Transactional
+    public ApplicationView settleCheckout(TenantScope scope, String applicationId, String reference, boolean paid) {
+        String tenantId = scope.tenantId().value();
+        var application = lockApplication(tenantId, applicationId);
+        requireApplicationScope(scope, application);
+        if (!reference.equals(application.checkoutRef())) throw checkoutEvidenceRequired();
+        var target = paid ? ApplicationState.CONFIRMED : ApplicationState.CANCELLED;
+        if (application.state() != target) {
+            if (application.state() != ApplicationState.RESERVED) throw checkoutEvidenceRequired();
+            apply(tenantId, application, lockItems(tenantId, applicationId),
+                    paid ? Operation.CONFIRM : Operation.RELEASE, Map.of(), null);
+            Instant now = clock.instant();
+            if (repository.updateApplicationState(tenantId, applicationId, target.name(), format(now)) != 1) {
+                throw new IllegalStateException("试点资金终态未提交");
+            }
+            outbox(tenantId, applicationId, "Promotion" + target.name(), now);
+        }
+        return application(tenantId, applicationId);
+    }
+
+    private static ConflictException checkoutEvidenceRequired() {
+        return new ConflictException("CHECKOUT_FUNDING_EVIDENCE_REQUIRED", "试点预算只能通过交易证据结算");
+    }
+
+    /** 已核验试点报价、原订单和资金范围，应用层只接受上述字段入账。 */
+    public record CheckoutReservation(String reference, String tradeTenant, String orderId, String marketingQuoteId,
+            String organization, String shop, String cartDigest, String proofHash, long generation, String campaign,
+            String funderId, String currency, long discountMinor, Instant quoteExpiresAt, Instant orderExpiresAt) { }
 
     @Transactional
     public ApplicationView confirm(String applicationId, String commandId, SettlementRequest request) {
@@ -446,7 +514,8 @@ public class BenefitFundingService {
     private boolean expireCandidate(ExpiredApplication candidate, TenantScope scope, Instant now) {
         StoredApplication application = lockApplication(candidate.tenantId(), candidate.applicationId());
         if (scope != null) requireApplicationScope(scope, application);
-        if (application.state() != ApplicationState.RESERVED || application.expiresAt().isAfter(now)) return false;
+        if (application.checkoutRef() != null || application.state() != ApplicationState.RESERVED
+                || application.expiresAt().isAfter(now)) return false;
         List<ReservationItem> items = lockItems(candidate.tenantId(), candidate.applicationId());
         apply(candidate.tenantId(), application, items, Operation.RELEASE, Map.of(), null);
         int updated = repository.expireApplication(
@@ -479,6 +548,7 @@ public class BenefitFundingService {
         return command(scope.tenantId().value(), commandId, hash, ApplicationView.class, () -> {
             StoredApplication application = lockApplication(scope.tenantId().value(), applicationId);
             requireApplicationScope(scope, application);
+            if (application.checkoutRef() != null) throw checkoutEvidenceRequired();
             if (application.state() != expected) throw new ConflictException("APPLICATION_STATE_CONFLICT", expected.name());
             if (operation == Operation.CONFIRM && !application.expiresAt().isAfter(clock.instant())) {
                 throw new ConflictException("OFFER_RESERVATION_EXPIRED", "expired reservation cannot be confirmed");
@@ -498,6 +568,7 @@ public class BenefitFundingService {
         String tenantId = scope.tenantId().value();
         StoredApplication application = lockApplication(tenantId, applicationId);
         requireApplicationScope(scope, application);
+        if (application.checkoutRef() != null) throw checkoutEvidenceRequired();
         if (application.state() != ApplicationState.CONFIRMED
                 && application.state() != ApplicationState.PARTIALLY_REFUNDED) {
             throw new ConflictException("APPLICATION_STATE_CONFLICT", "confirmed application required");
@@ -1118,7 +1189,7 @@ public class BenefitFundingService {
                 .orElseThrow(() -> new NotFoundException(
                         "APPLICATION_NOT_FOUND", "promotion application not found"));
         return new StoredApplication(row.applicationId(), row.orderId(), row.organizationId(),
-                stringSet(row.shopIdsJson()), ApplicationState.valueOf(row.state()), Instant.parse(row.expiresAt()));
+                stringSet(row.shopIdsJson()), ApplicationState.valueOf(row.state()), Instant.parse(row.expiresAt()), row.checkoutRef());
     }
 
     private static void requireApplicationScope(TenantScope scope, StoredApplication application) {
@@ -1367,7 +1438,7 @@ public class BenefitFundingService {
     }
     private record StoredApplication(String applicationId, String orderId, String organizationId,
             Set<String> shopIds, ApplicationState state,
-            Instant expiresAt) { }
+            Instant expiresAt, String checkoutRef) { }
     private record ExpiredApplication(String tenantId, String applicationId) { }
     private record ReservationItem(String resourceKey, long originalAmount, long reservedAmount,
             long consumedAmount, long refundedAmount, long releasedAmount, long reservationEpoch) { }
