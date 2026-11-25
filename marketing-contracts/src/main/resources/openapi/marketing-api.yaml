@@ -732,6 +732,39 @@ paths:
         required: true
         content: {application/json: {schema: {type: array, minItems: 1, maxItems: 50, items: {$ref: '#/components/schemas/BundleDecisionRequest'}}}}
       responses: *list
+  /api/v1/decisions/checkout-pilot:evaluate:
+    post:
+      tags: [Decision]
+      operationId: evaluateCheckoutPilotDecision
+      x-required-permission: 'decision:checkout-pilot'
+      description: Requires decision:evaluate and a dedicated trade machine mapped to one scope and active bundle. The participation and idempotency key bind the trade quote reference. A matching offer returns checkoutQuoteToken for the trade pricing boundary. offerToken is empty on this route.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CheckoutPilotDecisionRequest'}}}
+      responses:
+        '200':
+          description: Trial pricing result with checkoutQuoteToken only when the offer applies
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requestId, quoteId, generation, pricing, offerToken, candidates, durationMicros, decidedAt]
+                properties:
+                  requestId: {type: string}
+                  quoteId: {type: string}
+                  generation: {type: integer, format: int64}
+                  pricing: {type: object}
+                  offerToken: {type: string, enum: ['']}
+                  candidates: {type: array, items: {type: object}}
+                  durationMicros: {type: integer, format: int64}
+                  decidedAt: {type: string, format: date-time}
+                  checkoutQuoteToken:
+                    type: string
+                    maxLength: 24000
+                    description: Ed25519 proof with purpose marketing.checkout-price/v1 for freezing this trade quote
+        '400': {$ref: '#/components/responses/Problem'}
+        '403': {$ref: '#/components/responses/Problem'}
+        '409': {$ref: '#/components/responses/Problem'}
   /api/v1/decisions/runtime/release-bundle-directives:
     post:
       operationId: recordDecisionBundleDirective
@@ -2379,14 +2412,36 @@ components:
         cart: {$ref: '#/components/schemas/Cart'}
         audienceSnapshotIds: {type: array, uniqueItems: true, items: {type: string}}
         bundleContext: {$ref: '#/components/schemas/BundleDecisionContext'}
+        checkout: {$ref: '#/components/schemas/CheckoutPilotContext'}
     UnboundDecisionRequest:
       allOf:
         - {$ref: '#/components/schemas/DecisionRequest'}
         - not: {required: [bundleContext]}
+        - not: {required: [checkout]}
     BundleDecisionRequest:
       allOf:
         - {$ref: '#/components/schemas/DecisionRequest'}
         - required: [bundleContext]
+        - not: {required: [checkout]}
+    CheckoutPilotDecisionRequest:
+      allOf:
+        - {$ref: '#/components/schemas/DecisionRequest'}
+        - required: [bundleContext, checkout]
+          properties:
+            channel: {const: WEB}
+            orderId: {const: ''}
+    CheckoutPilotContext:
+      type: object
+      additionalProperties: false
+      required: [tradeTenantId, tradeQuoteRef, scopeVersion, sourceDigest, eligibleSkuId, funderId, expiresAt]
+      properties:
+        tradeTenantId: {type: string, pattern: '^[1-9][0-9]{0,18}$'}
+        tradeQuoteRef: {type: string, format: uuid}
+        scopeVersion: {type: string, maxLength: 64}
+        sourceDigest: {type: string, pattern: '^[0-9a-f]{64}$'}
+        eligibleSkuId: {type: string, maxLength: 64}
+        funderId: {type: string, maxLength: 64}
+        expiresAt: {type: string, format: date-time}
     BundleDecisionContext:
       type: object
       additionalProperties: false

@@ -77,7 +77,7 @@ public class DecisionController {
     }
 
     private static void requireBundleMode(DecisionApplicationService.DecisionRequest request, boolean required) {
-        if (request == null || (request.bundleContext() != null) != required)
+        if (request == null || request.checkout() != null || (request.bundleContext() != null) != required)
             throw com.acme.marketing.contracts.release.ReleaseBundleProtocolError.PARTICIPATION_INVALID.invalid();
     }
 

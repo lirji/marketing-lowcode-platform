@@ -59,6 +59,9 @@ public final class DecisionApplicationService {
 
     public DecisionResponse evaluate(TenantScope scope, DecisionRequest request) {
         scope.requirePermission("decision:evaluate");
+        if (request.checkout() != null) {
+            CheckoutPilotAuthority.requirePermission(scope);
+        }
         if (request.organizationId() != null) scope.requireOrganization(request.organizationId());
         request.cart().lines().stream().map(line -> line.shopId()).distinct().forEach(scope::requireShop);
         killSwitch.check(scope.tenantId().value());
@@ -84,10 +87,13 @@ public final class DecisionApplicationService {
         }
         PricingResult result = pricing.price(request.cart(), candidates);
         String quoteId = UUID.randomUUID().toString();
-        String token = !signOffer || result.appliedOffers().isEmpty() ? "" : token(scope, request, snapshot, result, quoteId, now);
+        boolean applicable = signOffer && !result.appliedOffers().isEmpty();
+        String token = applicable && request.checkout() == null ? token(scope, request, snapshot, result, quoteId, now) : "";
+        String checkoutProof = applicable && request.checkout() != null
+                ? CheckoutQuoteProof.sign(offerKeys, scope, request, result, quoteId, snapshot.generation(), now) : null;
         long durationMicros = (System.nanoTime() - started) / 1_000;
         return new DecisionResponse(request.requestId(), quoteId, snapshot.generation(), result, token,
-                trace, durationMicros, now);
+                trace, durationMicros, now, checkoutProof);
     }
 
     /** 对真实精确成员执行同一报价路径；探针输入仅在进程内使用，不签 OfferToken 或写业务报价。 */
@@ -157,11 +163,19 @@ public final class DecisionApplicationService {
     public record DecisionRequest(String requestId, String idempotencyKey, String organizationId, String orderId,
             String subjectToken, String channel, Instant occurredAt, Cart cart, Set<String> audienceSnapshotIds,
             @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
-            BundleContext bundleContext) {
+            BundleContext bundleContext,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            CheckoutContext checkout) {
         /** 缺省新字段不改变旧调用和JSON摘要，旧幂等记录仍可重放。 */
         public DecisionRequest(String requestId, String idempotencyKey, String organizationId, String orderId,
                 String subjectToken, String channel, Instant occurredAt, Cart cart, Set<String> audienceSnapshotIds) {
-            this(requestId, idempotencyKey, organizationId, orderId, subjectToken, channel, occurredAt, cart, audienceSnapshotIds, null);
+            this(requestId, idempotencyKey, organizationId, orderId, subjectToken, channel, occurredAt, cart, audienceSnapshotIds, null, null);
+        }
+        public DecisionRequest(String requestId, String idempotencyKey, String organizationId, String orderId,
+                String subjectToken, String channel, Instant occurredAt, Cart cart, Set<String> audienceSnapshotIds,
+                BundleContext bundleContext) {
+            this(requestId, idempotencyKey, organizationId, orderId, subjectToken, channel, occurredAt, cart,
+                    audienceSnapshotIds, bundleContext, null);
         }
         public DecisionRequest {
             if (requestId == null || requestId.isBlank() || idempotencyKey == null || idempotencyKey.isBlank()
@@ -184,8 +198,18 @@ public final class DecisionApplicationService {
         }
     }
     public record CandidateTrace(String offerId, String outcome) { }
+    /** 交易端提供原报价身份和摘要，使用受信机器范围进行验证。 */
+    public record CheckoutContext(String tradeTenantId, String tradeQuoteRef, String scopeVersion, String sourceDigest,
+            String eligibleSkuId, String funderId, Instant expiresAt) { }
+
     public record DecisionResponse(String requestId, String quoteId, long generation, PricingResult pricing,
-            String offerToken, List<CandidateTrace> candidates, long durationMicros, Instant decidedAt) {
+            String offerToken, List<CandidateTrace> candidates, long durationMicros, Instant decidedAt,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            String checkoutQuoteToken) {
+        public DecisionResponse(String requestId, String quoteId, long generation, PricingResult pricing,
+                String offerToken, List<CandidateTrace> candidates, long durationMicros, Instant decidedAt) {
+            this(requestId, quoteId, generation, pricing, offerToken, candidates, durationMicros, decidedAt, null);
+        }
         public DecisionResponse { candidates = List.copyOf(candidates); }
     }
     @FunctionalInterface

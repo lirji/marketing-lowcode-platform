@@ -50,6 +50,7 @@ class DecisionBundleEvaluationIntegrationTest {
     private static final String IMAGE = "sha256:" + "a".repeat(64), JAR = "sha256:" + "b".repeat(64), JOB = "c".repeat(32);
     private static final String APPLICATION = "/api/v1/decisions/runtime/release-bundle-applications/campaign/";
     private static final Instant NOW = Instant.now();
+    private static final String CHECKOUT_TENANT = "checkout-price-" + UUID.randomUUID();
     private static final MutableClock TIME = new MutableClock();
     private static final org.testcontainers.mysql.MySQLContainer MYSQL = mysql();
     private static final org.testcontainers.containers.GenericContainer<?> REDIS = new org.testcontainers.containers.GenericContainer<>("redis:7-alpine")
@@ -95,6 +96,16 @@ class DecisionBundleEvaluationIntegrationTest {
         r.add("marketing.participation.signing-public-key-base64", () -> encoded(PARTICIPATION.getPublic().getEncoded()));
         r.add("marketing.compiler.trusted-key-id", () -> "compiler"); r.add("marketing.compiler.public-key-base64", () -> encoded(COMPILER.getPublic().getEncoded()));
         r.add("marketing.participation.trusted-key-id", () -> "participation"); r.add("marketing.participation.public-key-base64", () -> encoded(PARTICIPATION.getPublic().getEncoded()));
+        r.add("marketing.checkout-pilot.enabled", () -> "true");
+        r.add("marketing.checkout-pilot.tenant", () -> CHECKOUT_TENANT);
+        r.add("marketing.checkout-pilot.actor", () -> "pilot-quote-machine");
+        r.add("marketing.checkout-pilot.organization", () -> "org");
+        r.add("marketing.checkout-pilot.shop", () -> "shop");
+        r.add("marketing.checkout-pilot.campaign", () -> "campaign");
+        r.add("marketing.checkout-pilot.scope-version", () -> "lc02-store-r1");
+        r.add("marketing.checkout-pilot.sku", () -> "sku");
+        r.add("marketing.checkout-pilot.funder", () -> "lc02-mug-r1");
+        r.add("marketing.checkout-pilot.trade-tenant", () -> "906021");
     }
     @BeforeAll static void startRedis() {
         REDIS.start(); connections = new LettuceConnectionFactory(REDIS.getHost(), REDIS.getMappedPort(6379));
@@ -114,7 +125,7 @@ class DecisionBundleEvaluationIntegrationTest {
     @Autowired BundleDirectiveRepository directives;
     @Autowired PlatformTransactionManager transactions;
     @Autowired PinnedReleaseBundleActivationVerifier activationVerifier;
-    private final String tenant = "evaluation-" + UUID.randomUUID();
+    private String tenant = "evaluation-" + UUID.randomUUID();
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
 
     @Test void exactParticipationSurvivesNewerReceiptAndConcurrentReplayWithoutLegacyActivation() throws Exception {
@@ -133,6 +144,53 @@ class DecisionBundleEvaluationIntegrationTest {
         assertCode(404, "ACTIVE_MANIFEST_NOT_FOUND", send(builder("/api/v1/decisions:evaluate").POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(legacy)))));
         assertCode(400, "RELEASE_BUNDLE_PARTICIPATION_INVALID", send(legacy));
         assertCode(400, "RELEASE_BUNDLE_PARTICIPATION_INVALID", send(builder("/api/v1/decisions:evaluate").POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(input)))));
+    }
+
+    @Test void checkoutProofBindsTheTradeReferenceAndRemainsDistinctFromOrderFunding() throws Exception {
+        tenant = CHECKOUT_TENANT;
+        var source = installed(1, true);
+        String tradeRef = UUID.randomUUID().toString();
+        String owner = "a".repeat(64);
+        String sourceDigest = "b".repeat(64);
+        var proof = proof(source, "checkout-binding", tradeRef, owner);
+        var cart = new Cart("CNY", List.of(new CartLine("sku", "sku", "shop", "", "", 2,
+                new Money("CNY", 5900), Money.zero("CNY"), false)));
+        var checkout = new DecisionApplicationService.CheckoutContext("906021", tradeRef, "lc02-store-r1",
+                sourceDigest, "sku", "lc02-mug-r1", NOW.plusSeconds(160));
+        var request = new DecisionRequest(tradeRef, "checkout:" + tradeRef, "org", "", owner, "WEB", NOW, cart,
+                Set.of(), new BundleContext("campaign", tradeRef, proof), checkout);
+        assertCode(400, "RELEASE_BUNDLE_PARTICIPATION_INVALID", send(request));
+        assertCode(403, "CHECKOUT_PILOT_SCOPE_DENIED",
+                send(checkout(request).setHeader("X-Dev-Actor-Id", "other")));
+        assertCode(403, "PERMISSION_DENIED",
+                send(checkout(request).setHeader("X-Dev-Permissions", "decision:evaluate")));
+
+        var response = send(checkout(request));
+        assertEquals(200, response.statusCode(), response.body());
+        var body = mapper.readTree(response.body());
+        assertEquals("", body.path("offerToken").asString());
+        String token = body.path("checkoutQuoteToken").asString();
+        var claims = com.acme.marketing.platform.crypto.SignedTokenCodec.decodeAndVerify(token, offerKeys::publicKey).claims();
+        assertEquals("marketing.checkout-price/v1", claims.get("purpose"));
+        assertEquals(tradeRef, claims.get("tradeQuoteRef"));
+        assertEquals(sourceDigest, claims.get("sourceDigest"));
+        assertEquals(owner, claims.get("ownerRef"));
+        assertEquals("11800", claims.get("grossMinor"));
+        assertEquals("1000", claims.get("discountMinor"));
+        assertEquals("10800", claims.get("payableMinor"));
+        assertEquals("sku~sku~2~5900~10800", claims.get("lines"));
+        assertEquals(checkout.expiresAt(), Instant.parse(claims.get("expiresAt")));
+        var invalid = assertThrows(com.acme.marketing.contracts.offer.OfferTokenException.class,
+                () -> OfferTokenCodec.verify(token, offerKeys::publicKey, new TenantId(tenant), cart.digest(), TIME));
+        assertEquals("OFFER_TOKEN_INVALID", invalid.code());
+        assertEquals(body, mapper.readTree(send(checkout(request)).body()));
+        var altered = new DecisionApplicationService.CheckoutContext("906021", tradeRef, "lc02-store-r1",
+                "c".repeat(64), "sku", "lc02-mug-r1", checkout.expiresAt());
+        assertCode(409, "IDEMPOTENCY_PAYLOAD_CONFLICT", send(checkout(new DecisionRequest(tradeRef, request.idempotencyKey(),
+                "org", "", owner, "WEB", NOW, cart, Set.of(), request.bundleContext(), altered))));
+
+        TIME.now = checkout.expiresAt();
+        assertEquals(400, send(checkout(request)).statusCode());
     }
 
     @Test void identityScopeSignaturesAndMissingTrustRejectBeforeReturningAQuote() throws Exception {
@@ -354,10 +412,17 @@ class DecisionBundleEvaluationIntegrationTest {
     }
 
     private ReleaseBundleActivationDirective installed(long generation) throws Exception {
-        var candidate = new OfferCandidate("offer-" + generation, "benefit", PriceStage.PLATFORM,
-                new PromotionFormula(PromotionKind.FIXED_OFF, 5000, 2000, 0, 2000, 1), Set.of(), "discount", HitPolicy.BEST, 1, 100, Set.of(),
-                List.of(new FundingRule("PLATFORM", "platform", 10000)), "OFFER_MATCHED");
-        var policy = new OfferPolicy(candidate, NOW.minusSeconds(10), NOW.plusSeconds(3600), Set.of("CHECKOUT"), Set.of(), Set.of(), Set.of("shop"), "");
+        return installed(generation, false);
+    }
+
+    private ReleaseBundleActivationDirective installed(long generation, boolean checkout) throws Exception {
+        var candidate = new OfferCandidate("offer-" + generation, "benefit", checkout ? PriceStage.SHOP : PriceStage.PLATFORM,
+                checkout ? new PromotionFormula(PromotionKind.FIXED_OFF, 10000, 1000, 0, 1000, 1)
+                        : new PromotionFormula(PromotionKind.FIXED_OFF, 5000, 2000, 0, 2000, 1),
+                Set.of(), "discount", HitPolicy.BEST, 1, 100, Set.of(),
+                List.of(new FundingRule("PLATFORM", checkout ? "lc02-mug-r1" : "platform", 10000)), "OFFER_MATCHED");
+        var policy = new OfferPolicy(candidate, NOW.minusSeconds(10), NOW.plusSeconds(3600), Set.of(checkout ? "WEB" : "CHECKOUT"),
+                checkout ? Set.of("sku") : Set.of(), Set.of(), Set.of("shop"), "");
         byte[] payload = mapper.writeValueAsBytes(new OfferPolicyArtifact(List.of(policy)));
         var member = member(generation, payload, "decision", "main"); runtime.install(tenant, "release", member, payload);
         var peer = member(generation, payload, "journey", "other"); var members = List.of(member, peer);
@@ -404,6 +469,11 @@ class DecisionBundleEvaluationIntegrationTest {
                 .header("X-Dev-Tenant-Id", tenant).header("X-Dev-Actor-Id", "test").header("X-Dev-Organization-Ids", "*").header("X-Dev-Shop-Ids", "*").header("X-Dev-Permissions", "*");
     }
     private HttpRequest.Builder request(DecisionRequest input) { return builder("/api/v1/decisions/bundle:evaluate").POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(input))); }
+    private HttpRequest.Builder checkout(DecisionRequest input) {
+        return builder("/api/v1/decisions/checkout-pilot:evaluate").setHeader("X-Dev-Actor-Id", "pilot-quote-machine")
+                .setHeader("X-Dev-Permissions", "decision:evaluate,decision:checkout-pilot")
+                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(input)));
+    }
     private HttpResponse<String> send(DecisionRequest input) throws Exception { return send(request(input)); }
     private HttpResponse<String> send(HttpRequest.Builder request) throws Exception { return http.send(request.build(), HttpResponse.BodyHandlers.ofString()); }
     private void assertCode(int status, String code, HttpResponse<String> response) {

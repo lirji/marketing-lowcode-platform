@@ -61,6 +61,19 @@ marketing.deployment-inventory:
   tenant: ${DECISION_DEPLOYMENT_PIPELINE_TENANT:}
   actor: ${DECISION_DEPLOYMENT_PIPELINE_ACTOR:}
 
+# 试点只允许明确配对的交易签价机器和业务范围。
+marketing.checkout-pilot:
+  enabled: ${MARKETING_CHECKOUT_PILOT_ENABLED:false}
+  tenant: ${MARKETING_CHECKOUT_PILOT_TENANT:}
+  actor: ${MARKETING_CHECKOUT_PILOT_ACTOR:}
+  organization: ${MARKETING_CHECKOUT_PILOT_ORGANIZATION:}
+  shop: ${MARKETING_CHECKOUT_PILOT_SHOP:}
+  campaign: ${MARKETING_CHECKOUT_PILOT_CAMPAIGN:}
+  scope-version: ${MARKETING_CHECKOUT_PILOT_SCOPE_VERSION:}
+  sku: ${MARKETING_CHECKOUT_PILOT_SKU:}
+  funder: ${MARKETING_CHECKOUT_PILOT_FUNDER:}
+  trade-tenant: ${MARKETING_CHECKOUT_PILOT_TRADE_TENANT:}
+
 # 实例专用身份由部署方注入，每个接流量实例持有独立私钥；目标作业身份取自受信部署配置。
 marketing.execution:
   instance-id: ${DECISION_EXECUTION_INSTANCE_ID:}
