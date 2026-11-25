@@ -7,6 +7,9 @@ RUN apt-get update \
 WORKDIR /workspace
 COPY .mvn .mvn
 COPY mvnw pom.xml ./
+# 在共享构建层安装 Maven，本地依赖缓存不参与 Wrapper 下载和解压。
+ENV MAVEN_USER_HOME=/opt/maven-wrapper
+RUN ./mvnw --version
 COPY platform-common platform-common
 COPY platform-web platform-web
 COPY marketing-contracts marketing-contracts
