@@ -19,7 +19,9 @@ const INITIAL_LINKED_RANGE_MS = 7 * 24 * 60 * 60 * 1_000
 const OPERATIONS = { CONFIRM: '补贴确认', REFUND: '退款或冲正' } as const
 const POSTING_COLUMNS = ['金额（最小货币单位）', '币种', '入账类型', '入账时间（北京时间）', '活动 ID', '出资账户', '资金申请 ID', '流水 ID']
 const PAGINATION = { PARTIAL: '还有下一页', EXHAUSTED: '已读取至最后一页' }
-const BINDING_STATUS = { UNBOUND: '待绑定', BOUND: '已绑定', EVIDENCE_MISSING: '首次回执待核查' } as const
+const BINDING_STATUS = {
+  UNBOUND: '待绑定', BOUND: '已绑定', EVIDENCE_MISSING: '首次回执待核查', CHECKOUT_BOUND: '试点订单已绑定',
+} as const
 const BINDING_COLUMNS = ['绑定状态', '资金申请 ID', '活动 ID', '首次回执版本', '绑定时间（北京时间）']
 
 export function SubsidyPostingsPanel() {
@@ -154,7 +156,7 @@ function OrderBindingEvidence({ scope, orderId, selection, revision }: {
   const unsupported = bindings.error instanceof ApiProblem && bindings.error.status === 404
   return <section aria-label="订单绑定证据">
     <h3>订单绑定证据</h3>
-    <p className="field-hint">按订单和活动归属查询所有可见预算申请，包含尚未入账的申请。已绑定表示首次交易回执可核对。</p>
+    <p className="field-hint">可查询尚未入账的预算申请。试点订单已绑定表示付款前已核对交易订单。已绑定表示首次交易回执可核对。</p>
     {bindings.isPending && <StateBanner tone="loading" title="正在读取绑定证据" detail="可继续查看补贴流水。" />}
     {bindings.isError && !bindings.data && (unsupported
       ? <p className="field-hint">当前资金服务尚未提供订单绑定查询。</p>

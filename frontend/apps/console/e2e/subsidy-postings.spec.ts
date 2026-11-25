@@ -147,12 +147,14 @@ test('order reconciliation explains binding evidence even when no subsidy has po
     expect(params.has('from')).toBe(false)
     expect(params.has('to')).toBe(false)
     expect(params.get('unassigned')).toBe('true')
+    expect(params.get('includeCheckoutBinding')).toBe('true')
     const after = params.get('after')
     expect(after).toBe(after ? 'application-waiting' : null)
     const bound = { campaignId: null, boundAt: '2026-09-15T23:34:00Z', evidenceVersion: '9007199254740993' }
     return route.fulfill({ json: { orderId: params.get('orderId'), campaignId: null, unassigned: true,
       items: after ? [{ ...bound, applicationId: 'application-with-receipt', status: 'BOUND' },
-        { ...bound, applicationId: 'application-without-receipt', status: 'EVIDENCE_MISSING' }]
+        { ...bound, applicationId: 'application-without-receipt', status: 'EVIDENCE_MISSING' },
+        { ...bound, applicationId: 'application-checkout', status: 'CHECKOUT_BOUND', evidenceVersion: null }]
         : [{ applicationId: 'application-waiting', campaignId: null, status: 'UNBOUND', evidenceVersion: null, boundAt: null }],
       nextCursor: after ? null : 'application-waiting' } })
   })
@@ -172,6 +174,10 @@ test('order reconciliation explains binding evidence even when no subsidy has po
   await expect(bound.getByRole('cell', { name: '9007199254740993', exact: true })).toBeVisible()
   await expect(bound.locator('time')).toHaveAttribute('datetime', '2026-09-15T23:34:00Z')
   await expect(table.getByRole('cell', { name: '首次回执待核查' })).toBeVisible()
+  const checkout = table.getByRole('row').filter({ has: page.getByRole('cell', { name: 'application-checkout', exact: true }) })
+  await expect(checkout.getByRole('cell', { name: '试点订单已绑定', exact: true })).toBeVisible()
+  await expect(checkout.getByRole('cell', { name: '—', exact: true })).toBeVisible()
+  await expect(checkout.locator('time')).toHaveAttribute('datetime', '2026-09-15T23:34:00Z')
   await expect(page.getByRole('button', { name: '加载更多绑定证据' })).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
   await page.screenshot({ path: info.outputPath('order-binding-evidence.png'), fullPage: true })

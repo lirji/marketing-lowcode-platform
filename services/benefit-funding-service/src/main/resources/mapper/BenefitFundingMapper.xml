@@ -439,6 +439,7 @@
             resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$OrderBindingRow">
         SELECT a.application_id AS applicationId, a.campaign_id AS campaignId,
                b.evidence_version AS evidenceVersion, b.bound_at AS boundAt,
+               CASE WHEN a.checkout_ref IS NOT NULL THEN a.created_at ELSE NULL END AS checkoutBoundAt,
                receipt.event_id IS NOT NULL AS evidencePresent
         FROM mk_promotion_application a
         LEFT JOIN mk_trade_order_binding b ON b.tenant_id = a.tenant_id AND b.application_id = a.application_id

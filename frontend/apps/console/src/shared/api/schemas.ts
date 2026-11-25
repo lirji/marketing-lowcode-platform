@@ -327,6 +327,7 @@ export const orderBindingEvidencePageSchema = z.object({
   nextCursor: z.string().regex(/^[A-Za-z0-9_.:-]{1,64}$/).nullable(),
   items: z.array(z.discriminatedUnion('status', [
     z.object({ ...bindingIdentity, status: z.literal('UNBOUND'), boundAt: z.null(), evidenceVersion: z.null() }),
+    z.object({ ...bindingIdentity, status: z.literal('CHECKOUT_BOUND'), boundAt: z.iso.datetime(), evidenceVersion: z.null() }),
     z.object({ ...bindingIdentity, status: z.enum(['BOUND', 'EVIDENCE_MISSING']),
       boundAt: z.iso.datetime(), evidenceVersion: z.string().regex(/^[1-9][0-9]*$/) }),
   ])).max(50),

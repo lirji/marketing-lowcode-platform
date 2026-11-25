@@ -447,7 +447,7 @@ export const api = {
     })
   },
   orderBindingEvidence: (query: { orderId: string; campaignId?: string; unassigned: boolean; after?: string }) => {
-    const params = new URLSearchParams({ orderId: query.orderId })
+    const params = new URLSearchParams({ orderId: query.orderId, includeCheckoutBinding: 'true' })
     if (query.campaignId) params.set('campaignId', query.campaignId)
     if (query.unassigned) params.set('unassigned', 'true')
     if (query.after) params.set('after', query.after)

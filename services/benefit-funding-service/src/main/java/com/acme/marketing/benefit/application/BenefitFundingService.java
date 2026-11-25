@@ -710,9 +710,10 @@ public class BenefitFundingService {
         return new OrderSubsidyPostingPage(orderId, subsidyPostingPage(scope, from, to, filter, limit, cursor));
     }
 
-    /** 绑定先于入账，独立查询可以在资金流水为空时查询授权申请的首次交易回执状态。 */
+    /** 绑定先于入账，资金流水为空时也能核对授权申请的订单或首次交易回执。 */
     @Transactional(readOnly = true)
-    public OrderBindingEvidencePage orderBindingEvidence(String orderId, String campaignId, boolean unassigned, String after) {
+    public OrderBindingEvidencePage orderBindingEvidence(String orderId, String campaignId, boolean unassigned, String after,
+            boolean includeCheckoutBinding) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission(RECONCILE_PERMISSION);
         requirePostingOrderId(orderId);
@@ -727,13 +728,19 @@ public class BenefitFundingService {
                 unassigned, scope.organizations().contains("*") ? null : scope.organizations(),
                 scope.shops().contains("*") ? null : json(scope.shops()));
         var rows = repository.findOrderBindings(filter, after, ORDER_BINDING_PAGE_SIZE + 1);
-        var items = rows.stream().limit(ORDER_BINDING_PAGE_SIZE).map(BenefitFundingService::bindingEvidence).toList();
+        var items = rows.stream().limit(ORDER_BINDING_PAGE_SIZE)
+                .map(row -> bindingEvidence(row, includeCheckoutBinding)).toList();
         return new OrderBindingEvidencePage(orderId, campaignId, unassigned, items,
                 rows.size() > ORDER_BINDING_PAGE_SIZE ? items.getLast().applicationId() : null);
     }
 
-    private static OrderBindingEvidence bindingEvidence(BenefitFundingRepository.OrderBindingRow row) {
+    /** 首次交易回执优先展示，旧调用方继续使用原有状态。 */
+    private static OrderBindingEvidence bindingEvidence(BenefitFundingRepository.OrderBindingRow row, boolean includeCheckoutBinding) {
         if (row.evidenceVersion() == null) {
+            if (includeCheckoutBinding && row.checkoutBoundAt() != null) {
+                return new OrderBindingEvidence(row.applicationId(), row.campaignId(), BindingEvidenceStatus.CHECKOUT_BOUND.code,
+                        Instant.parse(row.checkoutBoundAt()), null);
+            }
             return new OrderBindingEvidence(row.applicationId(), row.campaignId(), BindingEvidenceStatus.UNBOUND.code, null, null);
         }
         // 绑定记录保留首次版本；对应回执已丢失或不匹配时仍可凭该版本继续核查。
@@ -1302,7 +1309,7 @@ public class BenefitFundingService {
     private enum Operation { CONFIRM, RELEASE, REFUND }
     /** 控制台使用协议码解释回执状态，状态变更不依赖枚举顺序。 */
     private enum BindingEvidenceStatus {
-        UNBOUND("UNBOUND"), BOUND("BOUND"), EVIDENCE_MISSING("EVIDENCE_MISSING");
+        UNBOUND("UNBOUND"), BOUND("BOUND"), EVIDENCE_MISSING("EVIDENCE_MISSING"), CHECKOUT_BOUND("CHECKOUT_BOUND");
 
         private final String code;
 

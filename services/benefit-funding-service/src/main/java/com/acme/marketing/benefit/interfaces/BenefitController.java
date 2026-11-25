@@ -154,8 +154,9 @@ public class BenefitController {
     @GetMapping("/funding/subsidy-postings/by-order/bindings")
     public BenefitFundingService.OrderBindingEvidencePage orderBindingEvidence(@RequestParam String orderId,
             @RequestParam(required = false) String campaignId, @RequestParam(defaultValue = "false") boolean unassigned,
-            @RequestParam(required = false) String after) {
-        return service.orderBindingEvidence(orderId, campaignId, unassigned, after);
+            @RequestParam(required = false) String after,
+            @RequestParam(defaultValue = "false") boolean includeCheckoutBinding) {
+        return service.orderBindingEvidence(orderId, campaignId, unassigned, after, includeCheckoutBinding);
     }
 
     /** 对账汇总继承流水读取权限，并返回实际采用的范围与币种。 */

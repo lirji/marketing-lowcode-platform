@@ -180,9 +180,9 @@ public interface BenefitFundingRepository {
     /** 查询范围来自已验证的资金对账身份，空组织或门店参数表示相应维度具有全域授权。 */
     record OrderBindingFilter(String tenantId, String orderId, String campaignId, boolean unassigned,
             Set<String> organizations, String allowedShopsJson) { }
-    /** 缺少版本表示尚未绑定；已绑定时还需核对首次回执。 */
+    /** 付款前绑定来自资金申请，首次回执绑定须另外核对原始事件。 */
     record OrderBindingRow(String applicationId, String campaignId, Long evidenceVersion, String boundAt,
-            boolean evidencePresent) { }
+            String checkoutBoundAt, boolean evidencePresent) { }
     /** 跨流水汇总使用数据库精确十进制，允许结果超过单笔 long 金额范围。 */
     record SubsidySummaryRow(String currency, boolean unassigned, long postingCount,
             BigDecimal confirmedAmountMinor, BigDecimal reversedAmountMinor) { }

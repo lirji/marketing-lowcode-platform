@@ -1,5 +1,6 @@
 package com.acme.marketing.benefit;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -179,6 +180,17 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         var signed = SignedTokenCodec.decodeAndVerify(first.path("fundingReceipt").asString(), ignored -> CHECKOUT_KEYS.getPublic());
         assertEquals("101", signed.claims().get("orderId"));
         assertEquals("1000", signed.claims().get("discountMinor"));
+        String bindingPath = "/api/v1/funding/subsidy-postings/by-order/bindings?orderId=101";
+        var legacyBinding = getTenant(bindingPath, CHECKOUT_TENANT).path("items").get(0);
+        assertEquals("UNBOUND", legacyBinding.path("status").asString());
+        String checkoutBindingPath = bindingPath + "&campaignId=lc02-campaign&includeCheckoutBinding=true";
+        var binding = getTenant(checkoutBindingPath, CHECKOUT_TENANT).path("items").get(0);
+        assertEquals(first.path("applicationId"), binding.path("applicationId"));
+        assertEquals("CHECKOUT_BOUND", binding.path("status").asString());
+        assertDoesNotThrow(() -> Instant.parse(binding.path("boundAt").asString()));
+        assertTrue(binding.path("evidenceVersion").isNull());
+        assertTrue(exchange(base(checkoutBindingPath, CHECKOUT_TENANT).setHeader("X-Dev-Shop-Ids", "shop-other")
+                .GET().build()).path("items").isEmpty());
         assertEquals(first, checkoutCall(reservePath + one + ":reserve", Map.of("checkoutQuoteToken", firstToken), CHECKOUT_ACTOR, 200));
         checkoutCall(reservePath + one + ":reserve", Map.of("checkoutQuoteToken", firstToken), "another-machine", 403);
         checkoutCall(reservePath + two + ":reserve", Map.of("checkoutQuoteToken", firstToken), CHECKOUT_ACTOR, 409);
