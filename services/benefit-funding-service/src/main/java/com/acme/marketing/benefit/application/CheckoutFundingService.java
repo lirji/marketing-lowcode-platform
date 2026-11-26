@@ -110,22 +110,29 @@ public class CheckoutFundingService {
         var request = new BenefitFundingService.CheckoutReservation(reference, facts.tradeTenantId(), facts.orderId(),
                 claims.get("marketingQuoteId"), claims.get("organizationId"), claims.get("shopId"), claims.get("cartDigest"),
                 hash, positive(claims.get("generation")), claims.get("campaignId"), claims.get("funderId"), facts.currency(),
-                discount, quoteExpiry, facts.orderExpiresAt());
+                discount, quoteExpiry, facts.orderExpiresAt(), facts.readableOrderNo());
         funding.reserveCheckout(scope, request, applicationId -> sign(tenant, reference, facts, applicationId));
         return replay(repository.findCheckout(tenant, reference).orElseThrow(), hash);
     }
 
     /** 只有交易已入账或可靠关单才可确认或释放，渠道处理中保持原预算。 */
-    public Reservation reconcile(TenantScope scope, String reference) {
+    public Reservation reconcile(TenantScope scope, String reference, boolean refreshOrderNumber) {
         requireScope(scope, reference);
         String tenant = scope.tenantId().value();
         var current = repository.findCheckout(tenant, reference)
                 .orElseThrow(() -> new NotFoundException("CHECKOUT_FUNDING_NOT_FOUND", "试点预算预留不存在"));
-        if (!"RESERVED".equals(current.state())) return response(current);
+        boolean reserved = "RESERVED".equals(current.state());
+        if (!reserved && (!refreshOrderNumber || current.orderNo() != null)) return response(current);
         var facts = evidence(reference);
         require(current.tradeTenant().equals(facts.tradeTenantId()) && current.orderId().equals(facts.orderId())
                 && current.tokenDigest().equals(facts.priceProofHash()) && current.currency().equals(facts.currency())
                 && Long.toString(current.discountMinor()).equals(facts.discountMinor()));
+        // 旧申请只能从同一可信原生订单补展示号，已经结算的申请不再推进资金状态。
+        String orderNo = facts.readableOrderNo();
+        if (current.orderNo() == null && orderNo != null) {
+            repository.recordCheckoutOrderNo(tenant, reference, current.orderId(), current.tokenDigest(), orderNo);
+        }
+        if (!reserved) return response(current);
         boolean paid = facts.paidAt() != null && PAID.contains(facts.financialStatus());
         boolean cancelled = facts.paidAt() == null && "CANCELLED".equals(facts.orderStatus()) && "UNPAID".equals(facts.financialStatus());
         if (paid || cancelled) funding.settleCheckout(scope, current.applicationId(), reference, paid);
@@ -224,5 +231,11 @@ public class CheckoutFundingService {
     @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
     private record OrderFacts(String tradeTenantId, String tradeQuoteRef, String orderId, String scopeVersion, String storeId,
             String priceProofHash, String currency, String grossMinor, String discountMinor, String payableMinor,
-            String orderStatus, String financialStatus, Instant paidAt, Instant orderExpiresAt) { }
+            String orderStatus, String financialStatus, Instant paidAt, Instant orderExpiresAt,
+            String orderNo, String businessNo) {
+        String readableOrderNo() {
+            String number = businessNo == null ? orderNo : businessNo;
+            return matches(number, "TRD-ORD-[0-9]{6}-[0-9]{10}") ? number : null;
+        }
+    }
 }

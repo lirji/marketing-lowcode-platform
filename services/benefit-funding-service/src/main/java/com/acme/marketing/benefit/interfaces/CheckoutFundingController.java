@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** 机器按原交易报价取得预算回执及核对资金终态。 */
@@ -33,9 +34,10 @@ public class CheckoutFundingController {
 
     /** 结算前向交易核对当前状态，调用方不能自行声明付款或取消。 */
     @PostMapping(BASE + "/{reference}:reconcile")
-    public ResponseEntity<CheckoutFundingService.Reservation> reconcile(@PathVariable String reference) {
+    public ResponseEntity<CheckoutFundingService.Reservation> reconcile(@PathVariable String reference,
+            @RequestParam(defaultValue = "false") boolean refreshOrderNumber) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-            .body(service.reconcile(TenantContextHolder.requireCurrent(), reference));
+            .body(service.reconcile(TenantContextHolder.requireCurrent(), reference, refreshOrderNumber));
     }
 
     /** 只接收原始签价，订单和预算状态由服务端查询。 */

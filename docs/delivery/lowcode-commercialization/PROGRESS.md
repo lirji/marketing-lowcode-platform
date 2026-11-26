@@ -56,3 +56,5 @@
 旧客户端仍可按首次交易回执查询。订单绑定接口支持可选的 `includeCheckoutBinding=true`，继续按租户、组织、门店和活动筛选。
 
 资金模块 108 项、控制台 277 项单测及 118 项桌面与移动端浏览器用例通过，浏览器 12 项按环境跳过。隔离联跑及远端检查以 `~/.local/share/marketing-delivery/lowcode-commercialization/lc02-funding-receipt/delivery-result.json` 为证据索引。
+
+试点交易回执增加可读订单号。资金服务 V19 按可信订单证据保存 `TRD-ORD` 号，原生交易订单 ID 保留用于签名、资金和事件关联。订单绑定及补贴流水支持输入标准订单号或原生 ID。历史试点申请可由原结算机器使用 `reconcile?refreshOrderNumber=true` 从可信交易证据补上标准号，原结算终态和支持的幂等回执保持原语义。

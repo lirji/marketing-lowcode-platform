@@ -65,6 +65,10 @@ public interface BenefitFundingMapper {
             @Param("tenantId") String tenantId, @Param("applicationId") String applicationId);
     /** 与预算预留同事务固化原生订单关系和签名。 */
     int sealCheckout(BenefitFundingRepository.CheckoutBinding binding);
+
+    /** 只有原生交易绑定完全一致的申请能记录展示号。 */
+    int recordCheckoutOrderNo(@Param("tenantId") String tenantId, @Param("reference") String reference,
+            @Param("orderId") String orderId, @Param("proofHash") String proofHash, @Param("orderNo") String orderNo);
     /** 按当前营销租户查单，不回传其他租户的预留凭证。 */
     BenefitFundingRepository.CheckoutBindingRow findCheckout(@Param("tenantId") String tenantId,
             @Param("reference") String reference);

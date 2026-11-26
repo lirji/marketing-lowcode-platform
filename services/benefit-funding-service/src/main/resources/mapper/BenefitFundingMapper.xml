@@ -285,14 +285,21 @@
     </select>
     <update id="sealCheckout">
         UPDATE mk_promotion_application
-        SET checkout_ref=#{reference}, checkout_trade_tenant=#{tradeTenant}, checkout_funding_receipt=#{receipt}
+        SET checkout_ref=#{reference}, checkout_trade_tenant=#{tradeTenant}, checkout_funding_receipt=#{receipt},
+            checkout_order_no=#{orderNo}
         WHERE tenant_id=#{tenantId} AND application_id=#{applicationId} AND checkout_ref IS NULL AND state_name='RESERVED'
+    </update>
+    <update id="recordCheckoutOrderNo">
+        UPDATE mk_promotion_application SET checkout_order_no=#{orderNo}
+        WHERE tenant_id=#{tenantId} AND CAST(tenant_id AS BINARY)=CAST(#{tenantId} AS BINARY)
+          AND checkout_ref=#{reference} AND order_id=#{orderId} AND token_digest=#{proofHash}
+          AND checkout_order_no IS NULL
     </update>
     <select id="findCheckout" useCache="false"
             resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$CheckoutBindingRow">
         SELECT application_id AS applicationId, order_id AS orderId, checkout_trade_tenant AS tradeTenant,
             token_digest AS tokenDigest, checkout_funding_receipt AS receipt, state_name AS state,
-            currency_code AS currency, total_discount AS discountMinor
+            currency_code AS currency, total_discount AS discountMinor, checkout_order_no AS orderNo
         FROM mk_promotion_application
         WHERE tenant_id=#{tenantId} AND checkout_ref=#{reference}
           AND CAST(tenant_id AS BINARY)=CAST(#{tenantId} AS BINARY)
@@ -416,8 +423,9 @@
         <if test="scope.campaignId != null">AND CAST(a.campaign_id AS BINARY) = CAST(#{scope.campaignId} AS BINARY)</if>
         <if test="scope.orderId != null">
             <!-- 等值谓词使用订单索引，二进制比较避免默认排序规则把不同订单号合并。 -->
-            AND a.order_id = #{scope.orderId}
-            AND CAST(a.order_id AS BINARY) = CAST(#{scope.orderId} AS BINARY)
+            AND ((a.order_id = #{scope.orderId}
+                AND CAST(a.order_id AS BINARY) = CAST(#{scope.orderId} AS BINARY))
+              OR a.checkout_order_no = CAST(#{scope.orderId} AS CHAR CHARACTER SET ascii) COLLATE ascii_bin)
         </if>
         <if test="scope.unassigned">AND a.campaign_id IS NULL</if>
     </sql>
@@ -440,7 +448,7 @@
         SELECT a.application_id AS applicationId, a.campaign_id AS campaignId,
                b.evidence_version AS evidenceVersion, b.bound_at AS boundAt,
                CASE WHEN a.checkout_ref IS NOT NULL THEN a.created_at ELSE NULL END AS checkoutBoundAt,
-               receipt.event_id IS NOT NULL AS evidencePresent
+               receipt.event_id IS NOT NULL AS evidencePresent, a.checkout_order_no AS orderNo
         FROM mk_promotion_application a
         LEFT JOIN mk_trade_order_binding b ON b.tenant_id = a.tenant_id AND b.application_id = a.application_id
             AND CAST(b.tenant_id AS BINARY) = CAST(a.tenant_id AS BINARY)

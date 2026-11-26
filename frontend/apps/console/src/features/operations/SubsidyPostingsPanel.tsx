@@ -22,7 +22,7 @@ const PAGINATION = { PARTIAL: '还有下一页', EXHAUSTED: '已读取至最后�
 const BINDING_STATUS = {
   UNBOUND: '待绑定', BOUND: '已绑定', EVIDENCE_MISSING: '首次回执待核查', CHECKOUT_BOUND: '试点订单已绑定',
 } as const
-const BINDING_COLUMNS = ['绑定状态', '资金申请 ID', '活动 ID', '首次回执版本', '绑定时间（北京时间）']
+const BINDING_COLUMNS = ['交易订单号', '绑定状态', '资金申请 ID', '活动 ID', '首次回执版本', '绑定时间（北京时间）']
 
 export function SubsidyPostingsPanel() {
   const auth = useAuth()
@@ -165,7 +165,7 @@ function OrderBindingEvidence({ scope, orderId, selection, revision }: {
     {bindings.isSuccess && items.length === 0 && <EmptyState title="没有匹配的预算申请" detail="请核对订单号、活动归属或当前门店范围。" />}
     {items.length > 0 && <RecordTable label="订单绑定证据" columns={BINDING_COLUMNS}>
       {items.map(item => <tr key={item.applicationId}>
-        <td>{BINDING_STATUS[item.status]}</td><td>{item.applicationId}</td><td>{item.campaignId ?? '待归属'}</td>
+        <td>{item.orderNo ?? '—'}</td><td>{BINDING_STATUS[item.status]}</td><td>{item.applicationId}</td><td>{item.campaignId ?? '待归属'}</td>
         <td>{item.evidenceVersion ?? '—'}</td><td>{item.boundAt ? <RecordTime value={item.boundAt} /> : '—'}</td>
       </tr>)}
     </RecordTable>}

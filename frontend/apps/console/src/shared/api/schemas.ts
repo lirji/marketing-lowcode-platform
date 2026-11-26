@@ -319,7 +319,7 @@ export const orderSubsidyPostingPageSchema = z.object({
   page: subsidyPostingPageSchema,
 })
 
-const bindingIdentity = { applicationId: z.string().min(1), campaignId: z.string().nullable() }
+const bindingIdentity = { applicationId: z.string().min(1), campaignId: z.string().nullable(), orderNo: z.string().optional() }
 export const orderBindingEvidencePageSchema = z.object({
   orderId: z.string().min(1),
   campaignId: z.string().nullable(),

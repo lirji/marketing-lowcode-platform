@@ -104,6 +104,9 @@ public class MybatisBenefitFundingRepository implements BenefitFundingRepository
     }
     /** 与已有预算申请使用同一个数据库事务。 */
     @Override public int sealCheckout(CheckoutBinding binding) { return mapper.sealCheckout(binding); }
+    @Override public int recordCheckoutOrderNo(String tenantId, String reference, String orderId, String proofHash, String orderNo) {
+        return mapper.recordCheckoutOrderNo(tenantId, reference, orderId, proofHash, orderNo);
+    }
     /** 返回首次固化的试点回执。 */
     @Override public Optional<CheckoutBindingRow> findCheckout(String tenantId, String reference) {
         return Optional.ofNullable(mapper.findCheckout(tenantId, reference));

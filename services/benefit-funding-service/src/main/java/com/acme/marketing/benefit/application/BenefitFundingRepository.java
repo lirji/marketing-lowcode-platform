@@ -52,6 +52,9 @@ public interface BenefitFundingRepository {
     Optional<StoredApplicationRow> findApplicationForUpdate(String tenantId, String applicationId);
     /** 同订单只能有一份试点资金申请，签名与预留在同一事务中存储。 */
     int sealCheckout(CheckoutBinding binding);
+
+    /** 以原报价、原订单和报价摘要锁定历史补录对象，首次展示号不可被覆盖。 */
+    int recordCheckoutOrderNo(String tenantId, String reference, String orderId, String proofHash, String orderNo);
     /** 读取可重放的原始回执及当前申请状态。 */
     Optional<CheckoutBindingRow> findCheckout(String tenantId, String reference);
     /** 锁定单个申请，避免并发补录覆盖首次审计记录。 */
@@ -139,10 +142,10 @@ public interface BenefitFundingRepository {
     record StoredApplicationRow(String applicationId, String orderId, String organizationId,
             String shopIdsJson, String state, String expiresAt, String checkoutRef) { }
     /** 在预算申请完成前固化可供交易中心验签的首次回执。 */
-    record CheckoutBinding(String tenantId, String applicationId, String reference, String tradeTenant, String receipt) { }
+    record CheckoutBinding(String tenantId, String applicationId, String reference, String tradeTenant, String receipt, String orderNo) { }
     /** 结算重试以原生订单和原始报价摘要核对首次承诺。 */
     record CheckoutBindingRow(String applicationId, String orderId, String tradeTenant, String tokenDigest,
-            String receipt, String state, String currency, long discountMinor) { }
+            String receipt, String state, String currency, long discountMinor, String orderNo) { }
     record ReservationItemRow(String resourceKey, long originalAmount, long reservedAmount,
             long consumedAmount, long refundedAmount, long releasedAmount, long reservationEpoch) { }
     record ApplicationRow(String quoteId, String orderId, String cartDigest, long generation,
@@ -182,7 +185,7 @@ public interface BenefitFundingRepository {
             Set<String> organizations, String allowedShopsJson) { }
     /** 付款前绑定来自资金申请，首次回执绑定须另外核对原始事件。 */
     record OrderBindingRow(String applicationId, String campaignId, Long evidenceVersion, String boundAt,
-            String checkoutBoundAt, boolean evidencePresent) { }
+            String checkoutBoundAt, boolean evidencePresent, String orderNo) { }
     /** 跨流水汇总使用数据库精确十进制，允许结果超过单笔 long 金额范围。 */
     record SubsidySummaryRow(String currency, boolean unassigned, long postingCount,
             BigDecimal confirmedAmountMinor, BigDecimal reversedAmountMinor) { }

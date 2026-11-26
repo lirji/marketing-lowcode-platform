@@ -187,6 +187,13 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         var binding = getTenant(checkoutBindingPath, CHECKOUT_TENANT).path("items").get(0);
         assertEquals(first.path("applicationId"), binding.path("applicationId"));
         assertEquals("CHECKOUT_BOUND", binding.path("status").asString());
+        String readableOrder = "TRD-ORD-261126-0000000101";
+        assertEquals(readableOrder, binding.path("orderNo").asString());
+        String byNumber = "/api/v1/funding/subsidy-postings/by-order/bindings?orderId=" + readableOrder
+            + "&includeCheckoutBinding=true";
+        assertEquals(binding, getTenant(byNumber, CHECKOUT_TENANT).path("items").get(0));
+        assertTrue(exchange(base(byNumber, CHECKOUT_TENANT).setHeader("X-Dev-Shop-Ids", "shop-other")
+            .GET().build()).path("items").isEmpty());
         assertDoesNotThrow(() -> Instant.parse(binding.path("boundAt").asString()));
         assertTrue(binding.path("evidenceVersion").isNull());
         assertTrue(exchange(base(checkoutBindingPath, CHECKOUT_TENANT).setHeader("X-Dev-Shop-Ids", "shop-other")
@@ -242,7 +249,8 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
             Map.entry("grossMinor", "11800"), Map.entry("discountMinor", "1000"), Map.entry("payableMinor", "10800"),
             Map.entry("expiresAt", now.plusSeconds(120).toString())));
         CHECKOUT_FACTS.put(reference, Map.ofEntries(Map.entry("tradeTenantId", "906021"), Map.entry("tradeQuoteRef", reference),
-            Map.entry("orderId", orderId), Map.entry("scopeVersion", "lc02-r1"), Map.entry("storeId", "lc02-store"),
+            Map.entry("orderId", orderId), Map.entry("businessNo", "TRD-ORD-261126-" + "0".repeat(10 - orderId.length()) + orderId),
+            Map.entry("scopeVersion", "lc02-r1"), Map.entry("storeId", "lc02-store"),
             Map.entry("priceProofHash", Digests.sha256Hex(token)), Map.entry("currency", "CNY"), Map.entry("grossMinor", "11800"),
             Map.entry("discountMinor", "1000"), Map.entry("payableMinor", "10800"), Map.entry("orderStatus", "PENDING_PAYMENT"),
             Map.entry("financialStatus", "UNPAID"), Map.entry("orderExpiresAt", now.plusSeconds(450).toString())));

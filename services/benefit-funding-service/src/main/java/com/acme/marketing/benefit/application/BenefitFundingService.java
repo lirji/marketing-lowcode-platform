@@ -411,7 +411,7 @@ public class BenefitFundingService {
                     Map.of(budget, new ResourceDemand(budget, ResourceAccount.Type.BUDGET, request.currency(), request.discountMinor())),
                     Map.of(budget, account.fencingEpoch()), now);
             if (repository.sealCheckout(new BenefitFundingRepository.CheckoutBinding(tenantId, applicationId,
-                    request.reference(), request.tradeTenant(), signReceipt.apply(applicationId))) != 1) {
+                    request.reference(), request.tradeTenant(), signReceipt.apply(applicationId), request.orderNo())) != 1) {
                 throw new IllegalStateException("试点资金预留回执未保存");
             }
             return result;
@@ -446,7 +446,7 @@ public class BenefitFundingService {
     /** 已核验试点报价、原订单和资金范围，应用层只接受上述字段入账。 */
     public record CheckoutReservation(String reference, String tradeTenant, String orderId, String marketingQuoteId,
             String organization, String shop, String cartDigest, String proofHash, long generation, String campaign,
-            String funderId, String currency, long discountMinor, Instant quoteExpiresAt, Instant orderExpiresAt) { }
+            String funderId, String currency, long discountMinor, Instant quoteExpiresAt, Instant orderExpiresAt, String orderNo) { }
 
     @Transactional
     public ApplicationView confirm(String applicationId, String commandId, SettlementRequest request) {
@@ -739,14 +739,14 @@ public class BenefitFundingService {
         if (row.evidenceVersion() == null) {
             if (includeCheckoutBinding && row.checkoutBoundAt() != null) {
                 return new OrderBindingEvidence(row.applicationId(), row.campaignId(), BindingEvidenceStatus.CHECKOUT_BOUND.code,
-                        Instant.parse(row.checkoutBoundAt()), null);
+                        Instant.parse(row.checkoutBoundAt()), null, row.orderNo());
             }
-            return new OrderBindingEvidence(row.applicationId(), row.campaignId(), BindingEvidenceStatus.UNBOUND.code, null, null);
+            return new OrderBindingEvidence(row.applicationId(), row.campaignId(), BindingEvidenceStatus.UNBOUND.code, null, null, row.orderNo());
         }
         // 绑定记录保留首次版本；对应回执已丢失或不匹配时仍可凭该版本继续核查。
         var status = row.evidencePresent() ? BindingEvidenceStatus.BOUND : BindingEvidenceStatus.EVIDENCE_MISSING;
         return new OrderBindingEvidence(row.applicationId(), row.campaignId(), status.code,
-                Instant.parse(row.boundAt()), row.evidenceVersion().toString());
+                Instant.parse(row.boundAt()), row.evidenceVersion().toString(), row.orderNo());
     }
 
     private SubsidyPostingPage subsidyPostingPage(TenantScope scope, Instant from, Instant to,
@@ -1539,7 +1539,8 @@ public class BenefitFundingService {
 
     /** 首次绑定的审计概要，证据版本通过十进制字符串保留精度。 */
     public record OrderBindingEvidence(String applicationId, String campaignId, String status, Instant boundAt,
-            String evidenceVersion) { }
+            String evidenceVersion,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) String orderNo) { }
 
     /** 回显订单及活动筛选，分页按资金申请 ID 继续。 */
     public record OrderBindingEvidencePage(String orderId, String campaignId, boolean unassigned,
