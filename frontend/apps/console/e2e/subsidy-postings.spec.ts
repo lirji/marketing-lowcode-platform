@@ -154,7 +154,7 @@ test('order reconciliation explains binding evidence even when no subsidy has po
     return route.fulfill({ json: { orderId: params.get('orderId'), campaignId: null, unassigned: true,
       items: after ? [{ ...bound, applicationId: 'application-with-receipt', status: 'BOUND' },
         { ...bound, applicationId: 'application-without-receipt', status: 'EVIDENCE_MISSING' },
-        { ...bound, applicationId: 'application-checkout', status: 'CHECKOUT_BOUND', evidenceVersion: null }]
+        { ...bound, applicationId: 'application-checkout', orderNo: 'TRD-ORD-260916-0123456789', status: 'CHECKOUT_BOUND', evidenceVersion: null }]
         : [{ applicationId: 'application-waiting', campaignId: null, status: 'UNBOUND', evidenceVersion: null, boundAt: null }],
       nextCursor: after ? null : 'application-waiting' } })
   })
@@ -176,6 +176,7 @@ test('order reconciliation explains binding evidence even when no subsidy has po
   await expect(table.getByRole('cell', { name: '首次回执待核查' })).toBeVisible()
   const checkout = table.getByRole('row').filter({ has: page.getByRole('cell', { name: 'application-checkout', exact: true }) })
   await expect(checkout.getByRole('cell', { name: '试点订单已绑定', exact: true })).toBeVisible()
+  await expect(checkout.getByRole('cell', { name: 'TRD-ORD-260916-0123456789', exact: true })).toBeVisible()
   await expect(checkout.getByRole('cell', { name: '—', exact: true })).toBeVisible()
   await expect(checkout.locator('time')).toHaveAttribute('datetime', '2026-09-15T23:34:00Z')
   await expect(page.getByRole('button', { name: '加载更多绑定证据' })).toHaveCount(0)
