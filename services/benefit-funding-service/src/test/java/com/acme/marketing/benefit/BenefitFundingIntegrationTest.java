@@ -192,6 +192,9 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         String byNumber = "/api/v1/funding/subsidy-postings/by-order/bindings?orderId=" + readableOrder
             + "&includeCheckoutBinding=true";
         assertEquals(binding, getTenant(byNumber, CHECKOUT_TENANT).path("items").get(0));
+        String applicationNo = binding.path("applicationNo").asString();
+        assertTrue(applicationNo.matches("MKT-FAP-[0-9]{6}-[0-9]{10}"));
+        assertEquals(binding, getTenant(byNumber.replace(readableOrder, applicationNo), CHECKOUT_TENANT).path("items").get(0));
         assertTrue(exchange(base(byNumber, CHECKOUT_TENANT).setHeader("X-Dev-Shop-Ids", "shop-other")
             .GET().build()).path("items").isEmpty());
         assertDoesNotThrow(() -> Instant.parse(binding.path("boundAt").asString()));

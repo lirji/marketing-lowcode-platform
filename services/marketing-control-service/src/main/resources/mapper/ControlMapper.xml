@@ -4,20 +4,28 @@
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.acme.marketing.control.infrastructure.persistence.mapper.ControlMapper">
 
+    <select id="lockCampaignNumber" resultType="string" useCache="false">
+        SELECT business_no FROM mk_campaign WHERE business_no=#{number} FOR UPDATE
+    </select>
+    <select id="lockApprovalNumber" resultType="string" useCache="false">
+        SELECT business_no FROM mk_approval_case WHERE business_no=#{number} FOR UPDATE
+    </select>
     <insert id="insertCampaign">
         INSERT INTO mk_campaign
-            (tenant_id, campaign_id, name, objective, status, organization_id, shop_id, created_at, updated_at, campaign_type)
+            (tenant_id, campaign_id, name, objective, status, organization_id, shop_id, created_at, updated_at, campaign_type, business_no)
         VALUES
             (#{tenantId}, #{campaignId}, #{name}, #{objective}, #{status}, #{organizationId}, #{shopId},
-             #{createdAt}, #{updatedAt}, #{campaignType})
+             #{createdAt}, #{updatedAt}, #{campaignType}, #{businessNo})
     </insert>
     <select id="selectCampaigns"
             resultType="com.acme.marketing.control.application.ControlRepository$CampaignRow">
-        SELECT campaign_id AS campaignId, name, objective, status, created_at AS createdAt, updated_at AS updatedAt, campaign_type AS campaignType
+        SELECT campaign_id AS campaignId, name, objective, status, created_at AS createdAt, updated_at AS updatedAt, campaign_type AS campaignType, business_no AS businessNo
         FROM mk_campaign
         <!-- 范围标识按TenantScope精确匹配，不能被默认不区分大小写排序规则放宽。 -->
         WHERE tenant_id = #{tenantId}
         <if test="campaignType != null">AND campaign_type=#{campaignType}</if>
+        <if test="businessNo != null">AND business_no=#{businessNo}</if>
+        <if test="originalId != null">AND campaign_id=#{originalId} AND CAST(campaign_id AS BINARY)=CAST(#{originalId} AS BINARY)</if>
         <!-- OGNL单字符单引号是Character；权限集合是String，需显式字符串通配。 -->
         <if test='!organizations.contains("*")'>
             AND CAST(organization_id AS BINARY) IN
@@ -105,10 +113,10 @@
     <insert id="insertApprovalCase">
         INSERT INTO mk_approval_case
             (tenant_id, case_id, definition_id, definition_version, submitted_by, required_roles,
-             status, created_at, updated_at)
+             status, created_at, updated_at, business_no)
         VALUES
             (#{tenantId}, #{caseId}, #{definitionId}, #{definitionVersion}, #{submittedBy},
-             #{requiredRoles}, #{status}, #{createdAt}, #{updatedAt})
+             #{requiredRoles}, #{status}, #{createdAt}, #{updatedAt}, #{businessNo})
     </insert>
     <insert id="insertTerms">
         INSERT INTO mk_terms_snapshot
@@ -127,7 +135,7 @@
     </update>
     <sql id="approvalColumns">
         case_id AS caseId, definition_id AS definitionId, definition_version AS definitionVersion,
-        submitted_by AS submittedBy, required_roles AS requiredRoles, status, updated_at AS updatedAt
+        submitted_by AS submittedBy, required_roles AS requiredRoles, status, updated_at AS updatedAt, business_no AS businessNo
     </sql>
     <select id="selectApprovalCase"
             resultType="com.acme.marketing.control.application.ControlRepository$ApprovalCaseRow">
@@ -174,6 +182,8 @@
         SELECT <include refid="approvalColumns"/> FROM mk_approval_case a
         WHERE <include refid="approvalVisibleScope"/>
         <if test="status != null">AND a.status = #{status}</if>
+        <if test="businessNo != null">AND a.business_no = CAST(#{businessNo} AS CHAR CHARACTER SET ascii) COLLATE ascii_bin</if>
+        <if test="originalId != null">AND a.case_id = #{originalId} AND CAST(a.case_id AS BINARY) = CAST(#{originalId} AS BINARY)</if>
         <if test="cursorCreatedAt != null">
             AND (a.created_at &lt; #{cursorCreatedAt} OR (a.created_at = #{cursorCreatedAt} AND a.case_id &lt; #{cursorCaseId}))
         </if>

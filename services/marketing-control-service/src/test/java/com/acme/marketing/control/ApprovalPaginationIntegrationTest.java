@@ -74,6 +74,16 @@ class ApprovalPaginationIntegrationTest extends MySqlIntegrationTest {
         seed("visible", "org-a", "shop-a", "OPEN", 2, EARLY);
         seed("hidden", "org-b", "shop-b", "OPEN", 1, EARLY);
         seed("org-wide", "org-a", null, "REJECTED", 1, EARLY);
+        String visibleNo = "MKT-APR-261101-0000000001";
+        String hiddenNo = "MKT-APR-261101-0000000002";
+        jdbc.update("UPDATE mk_approval_case SET business_no=? WHERE tenant_id=? AND case_id='visible-000'", visibleNo, tenant);
+        jdbc.update("UPDATE mk_approval_case SET business_no=? WHERE tenant_id=? AND case_id='hidden-000'", hiddenNo, tenant);
+        String lookup = "/api/v1/approvals/page?number=";
+        var byNumber = body(send(request(lookup + visibleNo))).path("items");
+        assertEquals(1, byNumber.size());
+        assertEquals(visibleNo, byNumber.get(0).path("businessNo").asString());
+        assertEquals(byNumber, body(send(request(lookup + "visible-000"))).path("items"));
+        assertTrue(body(send(request(lookup + hiddenNo))).path("items").isEmpty());
         for (String query : List.of("limit=0", "limit=101", "limit=-1", "status=", "status=unknown", "cursor=", "cursor=%20", "cursor=" + "x".repeat(65))) {
             assertCode(send(request("/api/v1/approvals/page?" + query)), 400, "APPROVAL_QUERY_INVALID");
         }

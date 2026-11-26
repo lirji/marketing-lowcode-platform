@@ -218,6 +218,13 @@
              #{shopIdsJson}, #{cartDigest}, #{tokenDigest}, #{generationNo}, #{stateName}, #{totalDiscount},
              #{currencyCode}, #{expiresAt}, #{createdAt}, #{updatedAt}, #{expiryNextAttemptAt}, #{campaignId})
     </insert>
+    <update id="assignApplicationNumber">
+        UPDATE mk_promotion_application SET business_no=#{businessNo}
+        WHERE tenant_id=#{tenantId} AND application_id=#{applicationId} AND business_no IS NULL
+    </update>
+    <select id="lockLedgerNumber" resultType="string" useCache="false">
+        SELECT business_no FROM mk_funding_ledger WHERE business_no=#{businessNo} FOR UPDATE
+    </select>
     <insert id="insertReservationItem">
         INSERT INTO mk_reservation_item
             (tenant_id, application_id, resource_key, resource_type, currency_code, original_amount,
@@ -326,7 +333,7 @@
         SELECT quote_id AS quoteId, order_id AS orderId, cart_digest AS cartDigest,
                generation_no AS generation, state_name AS state, total_discount AS totalDiscount,
                currency_code AS currency, expires_at AS expiresAt, created_at AS createdAt,
-               updated_at AS updatedAt
+               updated_at AS updatedAt, business_no AS businessNo
         FROM mk_promotion_application
         WHERE tenant_id = #{tenantId} AND application_id = #{applicationId}
     </select>
@@ -423,9 +430,18 @@
         <if test="scope.campaignId != null">AND CAST(a.campaign_id AS BINARY) = CAST(#{scope.campaignId} AS BINARY)</if>
         <if test="scope.orderId != null">
             <!-- 等值谓词使用订单索引，二进制比较避免默认排序规则把不同订单号合并。 -->
-            AND ((a.order_id = #{scope.orderId}
-                AND CAST(a.order_id AS BINARY) = CAST(#{scope.orderId} AS BINARY))
-              OR a.checkout_order_no = CAST(#{scope.orderId} AS CHAR CHARACTER SET ascii) COLLATE ascii_bin)
+            <choose>
+                <when test='scope.orderId.startsWith("MKT-FAP-")'>
+                    AND a.business_no=CAST(#{scope.orderId} AS CHAR CHARACTER SET ascii) COLLATE ascii_bin
+                </when>
+                <when test='scope.orderId.startsWith("TRD-ORD-")'>
+                    AND (a.checkout_order_no=CAST(#{scope.orderId} AS CHAR CHARACTER SET ascii) COLLATE ascii_bin
+                         OR (a.order_id=#{scope.orderId} AND CAST(a.order_id AS BINARY)=CAST(#{scope.orderId} AS BINARY)))
+                </when>
+                <otherwise>
+                    AND a.order_id=#{scope.orderId} AND CAST(a.order_id AS BINARY)=CAST(#{scope.orderId} AS BINARY)
+                </otherwise>
+            </choose>
         </if>
         <if test="scope.unassigned">AND a.campaign_id IS NULL</if>
     </sql>
@@ -448,7 +464,7 @@
         SELECT a.application_id AS applicationId, a.campaign_id AS campaignId,
                b.evidence_version AS evidenceVersion, b.bound_at AS boundAt,
                CASE WHEN a.checkout_ref IS NOT NULL THEN a.created_at ELSE NULL END AS checkoutBoundAt,
-               receipt.event_id IS NOT NULL AS evidencePresent, a.checkout_order_no AS orderNo
+               receipt.event_id IS NOT NULL AS evidencePresent, a.checkout_order_no AS orderNo, a.business_no AS applicationNo
         FROM mk_promotion_application a
         LEFT JOIN mk_trade_order_binding b ON b.tenant_id = a.tenant_id AND b.application_id = a.application_id
             AND CAST(b.tenant_id AS BINARY) = CAST(a.tenant_id AS BINARY)
@@ -481,7 +497,7 @@
             resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$SubsidyPostingRow">
         SELECT l.ledger_id AS ledgerId, l.posting_time_utc AS postingTime, l.application_id AS applicationId,
                a.campaign_id AS campaignId, l.resource_key AS resourceKey, r.currency_code AS currency,
-               l.operation_name AS operation, l.amount_value AS amount
+               l.operation_name AS operation, l.amount_value AS amount, a.business_no AS applicationNo, l.business_no AS ledgerNo
         <include refid="subsidyPostingScope"/>
         <if test="cursor != null">
             AND (l.posting_time_utc &gt; #{cursor.postingTime}
@@ -568,11 +584,11 @@
         INSERT INTO mk_funding_ledger
             (tenant_id, ledger_id, application_id, order_id, resource_key, escrow_bucket_id,
              operation_name, debit_bucket, credit_bucket, amount_value, account_version,
-             correction_of, occurred_at)
+             correction_of, occurred_at, business_no)
         VALUES
             (#{tenantId}, #{ledgerId}, #{applicationId}, #{orderId}, #{resourceKey}, #{escrowBucketId},
              #{operation}, #{debitBucket}, #{creditBucket}, #{amount}, #{accountVersion},
-             #{correctionOf}, #{occurredAt})
+             #{correctionOf}, #{occurredAt}, #{businessNo})
     </insert>
     <insert id="insertOutbox">
         INSERT INTO mk_benefit_outbox

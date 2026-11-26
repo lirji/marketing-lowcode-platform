@@ -172,6 +172,12 @@ public class MybatisBenefitFundingRepository implements BenefitFundingRepository
         one(mapper.updateCommandCompleted(tenantId, commandId, responseJson), "完成权益命令");
     }
     @Override public void saveLedger(LedgerWrite write) { one(mapper.insertLedger(write), "保存资金流水"); }
+    @Override public int assignApplicationNumber(String tenantId, String applicationId, String businessNo) {
+        return mapper.assignApplicationNumber(tenantId, applicationId, businessNo);
+    }
+    @Override public boolean ledgerNumberTaken(String businessNo) {
+        return mapper.lockLedgerNumber(businessNo) != null;
+    }
     @Override public void saveOutbox(OutboxWrite write) { one(mapper.insertOutbox(write), "保存权益事件"); }
     @Override public int incrementOutboxPosition(String tenantId, String aggregateId, String updatedAt) {
         return mapper.incrementOutboxPosition(tenantId, aggregateId, updatedAt);

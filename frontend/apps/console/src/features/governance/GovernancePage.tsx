@@ -30,7 +30,7 @@ function GovernanceQueue() {
     mutationFn: async ({ caseId, role, decision }: { caseId: string; role: ApprovalRole; decision: 'APPROVE' | 'REJECT' }) =>
       api.decideApproval(caseId, role, decision, comment.trim().slice(0, 128)),
     onSuccess: (value) => {
-      setNotice(`${value.caseId} 已记录 ${value.status}，审计哈希链已追加。`)
+      setNotice(`${value.businessNo ?? value.caseId} 已记录 ${value.status}，审计哈希链已追加。`)
       setSelected(null)
       setComment('')
       void queryClient.invalidateQueries({ queryKey: ['approvals'] })
@@ -60,7 +60,7 @@ function GovernanceQueue() {
     <div className="governance-layout">
       <Panel>
         <PanelHeader eyebrow="VISIBLE QUEUE" title="审核队列" aside={<Badge tone="warn">已加载 {items.length} 项{approvals.hasNextPage ? '，还有更多' : ''}</Badge>} />
-        {api.demoMode ? <EmptyState title="演示模式不展示真实审核单" detail="关闭 DEMO_MODE 后读取真实审批分页。" /> : !approvals.canRead ? null : approvals.isPending ? <StateBanner tone="loading" title="正在加载审核单" detail="正在读取当前权限范围内的记录。" /> : items.length === 0 ? (approvals.isError ? null : <EmptyState title="当前筛选没有审核单" detail="可切换审核状态或刷新队列核对新提交。" />) : <RecordTable label={status === APPROVAL_STATUS.OPEN ? '待审核变更' : '审核记录'} columns={['审核单 ID', '定义 ID', '定义版本', '状态', '提交人', '所需角色', '已批准人数', '所需人数', '更新时间（北京时间）', '操作']} actions>{items.map((item) => <tr key={item.caseId}><td>{item.caseId}</td><td>{item.definitionId}</td><td>{item.definitionVersion}</td><td><Badge tone={item.status === APPROVAL_STATUS.APPROVED ? 'good' : item.status === APPROVAL_STATUS.REJECTED ? 'danger' : 'warn'}>{item.status}</Badge></td><td>{item.submittedBy}</td><td>{item.requiredRoles.map((role) => ROLE_LABEL[role]).join('、')}</td><td>{Object.keys(item.approvals).length}</td><td>{item.requiredRoles.length}</td><td><RecordTime value={item.updatedAt} /></td><td><Button aria-label={`查看审核：${item.caseId}`} onClick={() => { setSelected(item); setComment(''); decide.reset() }}><Eye size={15} />查看审核</Button></td></tr>)}</RecordTable>}
+        {api.demoMode ? <EmptyState title="演示模式不展示真实审核单" detail="关闭 DEMO_MODE 后读取真实审批分页。" /> : !approvals.canRead ? null : approvals.isPending ? <StateBanner tone="loading" title="正在加载审核单" detail="正在读取当前权限范围内的记录。" /> : items.length === 0 ? (approvals.isError ? null : <EmptyState title="当前筛选没有审核单" detail="可切换审核状态或刷新队列核对新提交。" />) : <RecordTable label={status === APPROVAL_STATUS.OPEN ? '待审核变更' : '审核记录'} columns={['审核单号', '定义 ID', '定义版本', '状态', '提交人', '所需角色', '已批准人数', '所需人数', '更新时间（北京时间）', '操作']} actions>{items.map((item) => <tr key={item.caseId}><td>{item.businessNo ?? item.caseId}</td><td>{item.definitionId}</td><td>{item.definitionVersion}</td><td><Badge tone={item.status === APPROVAL_STATUS.APPROVED ? 'good' : item.status === APPROVAL_STATUS.REJECTED ? 'danger' : 'warn'}>{item.status}</Badge></td><td>{item.submittedBy}</td><td>{item.requiredRoles.map((role) => ROLE_LABEL[role]).join('、')}</td><td>{Object.keys(item.approvals).length}</td><td>{item.requiredRoles.length}</td><td><RecordTime value={item.updatedAt} /></td><td><Button aria-label={`查看审核：${item.caseId}`} onClick={() => { setSelected(item); setComment(''); decide.reset() }}><Eye size={15} />查看审核</Button></td></tr>)}</RecordTable>}
         {approvals.hasNextPage && <div className="action-bar toolbar"><Button disabled={approvals.isFetching || decide.isPending} onClick={() => void approvals.fetchNextPage()}>{approvals.isFetchingNextPage ? '正在加载…' : approvals.isFetchNextPageError ? '重试加载更多审核单' : '加载更多审核单'}</Button></div>}
         {!api.demoMode && approvals.canRead && !approvals.isPending && !approvals.isError && <p className="muted">{approvals.hasNextPage ? '数量仅代表已加载记录。' : '本次查询已加载到底。'}审核状态可能变化，操作前可刷新核对。</p>}
       </Panel>
@@ -91,7 +91,7 @@ function GovernanceQueue() {
           {decide.isPending && <StateBanner tone="loading" title="正在记录审核决定，请等待结果" detail="关闭页面不会撤销已经提交的决定。" />}
           <StateBanner tone="warn" title="批准后不会立即生效" detail="仍需编译、签名、运行时 ACK 和发布法定人数。" />
           <dl>
-            <div><dt>审核单 ID</dt><dd>{selected.caseId}</dd></div>
+            <div><dt>审核单号</dt><dd>{selected.businessNo ?? selected.caseId}</dd></div>
             <div><dt>定义 ID</dt><dd>{selected.definitionId}</dd></div>
             <div><dt>定义版本</dt><dd>{selected.definitionVersion}</dd></div>
             <div><dt>提交人</dt><dd>{selected.submittedBy}</dd></div>

@@ -1,5 +1,6 @@
 package com.acme.marketing.control.application;
 
+import com.acme.marketing.platform.identity.BusinessNumber;
 import static com.acme.marketing.platform.time.SqlTime.format;
 
 import com.acme.marketing.control.domain.ApprovalCase;
@@ -67,11 +68,14 @@ public class ControlApplicationService {
         scope.requireOrganization(organizationId);
         if (shopId != null && !shopId.isBlank()) scope.requireShop(shopId);
         Instant now = clock.instant();
-        Campaign campaign = new Campaign(scope.tenantId().value(), UUID.randomUUID().toString(), name, objective,
-                Campaign.Status.DRAFT, now, now, campaignType);
-        repository.saveCampaign(new ControlRepository.CampaignWrite(campaign.tenantId(), campaign.id(),
-                campaign.name(), campaign.objective(), campaign.status().name(), organizationId, shopId,
-                format(now), format(now), campaign.campaignType().name()));
+        Campaign campaign = issueNumber(BusinessNumber.Type.CAMPAIGN, now, number -> {
+            var candidate = new Campaign(scope.tenantId().value(), number, name, objective,
+                    Campaign.Status.DRAFT, now, now, campaignType);
+            repository.saveCampaign(new ControlRepository.CampaignWrite(candidate.tenantId(), candidate.id(),
+                    candidate.name(), candidate.objective(), candidate.status().name(), organizationId, shopId,
+                    format(now), format(now), candidate.campaignType().name(), number));
+            return candidate;
+        }, repository::campaignNumberTaken);
         audit(scope.tenantId().value(), scope.actorId(), "CAMPAIGN_CREATED", campaign.id(), now);
         return CampaignView.from(campaign);
     }
@@ -81,14 +85,21 @@ public class ControlApplicationService {
 
     /** 类型筛选在SQL执行，并继续应用租户、组织和门店隔离。 */
     public List<CampaignView> campaigns(Campaign.Type campaignType) {
+        return campaigns(campaignType, null);
+    }
+
+    /** 可读号和原活动号分别使用唯一索引，仍执行组织及门店范围过滤。 */
+    public List<CampaignView> campaigns(Campaign.Type campaignType, String number) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("campaign:read");
         if (scope.organizations().isEmpty()) return List.of();
+        boolean readable = BusinessNumber.matches(BusinessNumber.Type.CAMPAIGN, number);
         return repository.findCampaigns(scope.tenantId().value(), scope.organizations(), scope.shops(),
-                        campaignType == null ? null : campaignType.name()).stream()
+                        campaignType == null ? null : campaignType.name(), readable ? number : null,
+                        readable ? null : number).stream()
                 .map(row -> new CampaignView(row.campaignId(), row.name(), row.objective(),
                         Campaign.Status.valueOf(row.status()), Instant.parse(row.createdAt()),
-                        Instant.parse(row.updatedAt()), Campaign.Type.valueOf(row.campaignType())))
+                        Instant.parse(row.updatedAt()), Campaign.Type.valueOf(row.campaignType()), row.businessNo()))
                 .toList();
     }
 
@@ -358,12 +369,14 @@ public class ControlApplicationService {
             throw new ConflictException("DEFINITION_NOT_VALIDATED", "validate definition before submission");
         }
         Set<ApprovalCase.Role> roles = requiredRoles(stored.graph());
-        String caseId = UUID.randomUUID().toString();
         Instant now = clock.instant();
-        repository.saveApprovalCase(new ControlRepository.ApprovalCaseWrite(scope.tenantId().value(), caseId,
-                definitionId, version, scope.actorId(),
-                roles.stream().map(Enum::name).sorted().reduce((left, right) -> left + ',' + right).orElse(""),
-                ApprovalCase.Status.OPEN.name(), format(now), format(now)));
+        String caseId = issueNumber(BusinessNumber.Type.APPROVAL, now, number -> {
+            repository.saveApprovalCase(new ControlRepository.ApprovalCaseWrite(scope.tenantId().value(), number,
+                    definitionId, version, scope.actorId(),
+                    roles.stream().map(Enum::name).sorted().reduce((left, right) -> left + ',' + right).orElse(""),
+                    ApprovalCase.Status.OPEN.name(), format(now), format(now), number));
+            return number;
+        }, repository::approvalNumberTaken);
         String termsContent = termsContent(stored.graph());
         String termsHash = "sha256:" + com.acme.marketing.platform.crypto.Digests.sha256Hex(termsContent);
         repository.saveTerms(new ControlRepository.TermsWrite(scope.tenantId().value(),
@@ -372,7 +385,7 @@ public class ControlApplicationService {
                 DefinitionVersion.Status.IN_REVIEW, now);
         audit(scope.tenantId().value(), scope.actorId(), "DEFINITION_SUBMITTED", definitionId + ':' + version, now);
         return new ApprovalView(caseId, definitionId, version, scope.actorId(), roles, Map.of(),
-                ApprovalCase.Status.OPEN, now);
+                ApprovalCase.Status.OPEN, now, caseId);
     }
 
     @Transactional
@@ -420,11 +433,16 @@ public class ControlApplicationService {
         var query = new ControlRepository.ApprovalListQuery(scope.tenantId().value(), scope.organizations(),
                 scope.shops(), null, null, null, ApprovalPaging.MAX_PAGE_SIZE);
         return repository.findApprovalCases(query).stream()
-                .map(row -> ApprovalView.from(approval(scope.tenantId().value(), row))).toList();
+                .map(row -> ApprovalView.from(approval(scope.tenantId().value(), row), row.businessNo())).toList();
     }
 
     /** 按不可变提交时间与ID翻页；状态可变，刷新后从第一页重新核对当前事实。 */
     public ApprovalPage approvalPage(Integer limit, String status, String cursor) {
+        return approvalPage(limit, status, cursor, null);
+    }
+
+    /** 新旧审批号均进行精确查找，决定写入仍使用原审批单 ID。 */
+    public ApprovalPage approvalPage(Integer limit, String status, String cursor, String number) {
         var scope = approvalReadScope();
         var input = ApprovalPaging.validate(limit, status, cursor);
         String createdAt = null;
@@ -434,12 +452,14 @@ public class ControlApplicationService {
             // 游标允许已改变审核状态，但必须仍在当前租户/组织/门店的可见范围。
             createdAt = repository.findApprovalCursor(pointQuery).orElseThrow(ApprovalPaging::invalidCursor).createdAt();
         }
+        boolean readable = BusinessNumber.matches(BusinessNumber.Type.APPROVAL, number);
         var query = new ControlRepository.ApprovalListQuery(scope.tenantId().value(), scope.organizations(),
-                scope.shops(), input.status(), createdAt, input.cursor(), input.limit() + 1);
+                scope.shops(), input.status(), createdAt, input.cursor(), input.limit() + 1,
+                readable ? number : null, readable ? null : number);
         var rows = repository.findApprovalPage(query);
         boolean hasMore = rows.size() > input.limit();
         var items = rows.stream().limit(input.limit())
-                .map(row -> ApprovalView.from(approval(scope.tenantId().value(), row))).toList();
+                .map(row -> ApprovalView.from(approval(scope.tenantId().value(), row), row.businessNo())).toList();
         return new ApprovalPage(items, hasMore ? items.getLast().caseId() : null, hasMore, input.status());
     }
 
@@ -556,17 +576,31 @@ public class ControlApplicationService {
         }
     }
 
+    /** 只有已被占用的业务号可以重试，授权、版本等其它约束按原错误返回。 */
+    private static <T> T issueNumber(BusinessNumber.Type type, Instant now,
+            java.util.function.Function<String,T> write, java.util.function.Predicate<String> taken) {
+        for (int attempt = 0; attempt < BusinessNumber.MAX_ISSUE_ATTEMPTS; attempt++) {
+            String number = BusinessNumber.next(type, now);
+            try {
+                return write.apply(number);
+            } catch (org.springframework.dao.DuplicateKeyException duplicate) {
+                if (attempt == BusinessNumber.MAX_ISSUE_ATTEMPTS - 1 || !taken.test(number)) throw duplicate;
+            }
+        }
+        throw new IllegalStateException("business number allocation exhausted");
+    }
+
     private void audit(String tenantId, String actorId, String action, String resource, Instant now) {
         ControlAuditChain.append(repository, tenantId, actorId, action, resource, now);
     }
 
     public record CampaignView(String id, String name, String objective, Campaign.Status status,
-            Instant createdAt, Instant updatedAt, Campaign.Type campaignType) {
+            Instant createdAt, Instant updatedAt, Campaign.Type campaignType, String businessNo) {
         /** 历史幂等回执缺少新字段时补STANDARD，保留原活动身份。 */
         public CampaignView { if (campaignType == null) campaignType = Campaign.Type.STANDARD; }
         static CampaignView from(Campaign campaign) {
             return new CampaignView(campaign.id(), campaign.name(), campaign.objective(), campaign.status(),
-                    campaign.createdAt(), campaign.updatedAt(), campaign.campaignType());
+                    campaign.createdAt(), campaign.updatedAt(), campaign.campaignType(), campaign.id());
         }
     }
     // 注册节点只用于发现与编译；控制面虽可同源校验/预览，尚未接入真实SKU闭包及冻结条款前不得产生批准资格。
@@ -585,11 +619,14 @@ public class ControlApplicationService {
     }
     public record ApprovalView(String caseId, String definitionId, long definitionVersion, String submittedBy,
             Set<ApprovalCase.Role> requiredRoles, Map<ApprovalCase.Role, String> approvals,
-            ApprovalCase.Status status, Instant updatedAt) {
+            ApprovalCase.Status status, Instant updatedAt, String businessNo) {
         static ApprovalView from(ApprovalCase approval) {
+            return from(approval, BusinessNumber.matches(BusinessNumber.Type.APPROVAL, approval.id()) ? approval.id() : null);
+        }
+        static ApprovalView from(ApprovalCase approval, String businessNo) {
             return new ApprovalView(approval.id(), approval.definitionId(), approval.definitionVersion(),
                     approval.submittedBy(), approval.requiredRoles(), approval.approvals(),
-                    approval.status(), approval.updatedAt());
+                    approval.status(), approval.updatedAt(), businessNo);
         }
     }
     public record TermsView(String termsId, String definitionId, long definitionVersion,

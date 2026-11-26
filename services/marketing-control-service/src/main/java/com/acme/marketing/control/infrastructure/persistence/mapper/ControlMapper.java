@@ -26,9 +26,14 @@ public interface ControlMapper {
     int insertReleaseBundleMember(ControlRepository.ReleaseBundleMemberWrite write);
     String selectReleaseBundleOwner(@Param("tenantId") String tenantId,
             @Param("manifestId") String manifestId, @Param("lock") boolean lock);
+    /** 只在发号碰撞时读取既有编号。 */
+    String lockCampaignNumber(@Param("number") String number);
+    /** 只在发号碰撞时读取既有编号。 */
+    String lockApprovalNumber(@Param("number") String number);
     int insertCampaign(ControlRepository.CampaignWrite write);
     List<ControlRepository.CampaignRow> selectCampaigns(@Param("tenantId") String tenantId,
-            @Param("organizations") Set<String> organizations, @Param("shops") Set<String> shops, @Param("campaignType") String campaignType);
+            @Param("organizations") Set<String> organizations, @Param("shops") Set<String> shops, @Param("campaignType") String campaignType,
+            @Param("businessNo") String businessNo, @Param("originalId") String originalId);
     ControlRepository.CampaignOwnershipRow selectCampaignOwnership(@Param("tenantId") String tenantId,
             @Param("campaignId") String campaignId, @Param("lock") boolean lock);
     ControlRepository.DmnDraftRow selectLatestDmnDraft(@Param("tenantId") String tenantId,

@@ -11,7 +11,11 @@ import java.util.Set;
  */
 public interface ControlRepository {
     void saveCampaign(CampaignWrite write);
-    List<CampaignRow> findCampaigns(String tenantId, Set<String> organizations, Set<String> shops, String campaignType);
+    /** 只用于判定活动号碰撞，全局索引同时覆盖历史展示号。 */
+    boolean campaignNumberTaken(String number);
+    /** 只用于判定审批号碰撞，现有审批链不靠它查询身份。 */
+    boolean approvalNumberTaken(String number);
+    List<CampaignRow> findCampaigns(String tenantId, Set<String> organizations, Set<String> shops, String campaignType, String businessNo, String originalId);
     Optional<CampaignOwnershipRow> findCampaignOwnership(String tenantId, String campaignId, boolean lock);
 
     /** 以始终存在的活动行分配版本，避免在空历史范围上获取间隙锁。 */
@@ -109,9 +113,14 @@ public interface ControlRepository {
     void completeCommand(String tenantId, String operationName, String idempotencyKey, String responseJson);
 
     record CampaignWrite(String tenantId, String campaignId, String name, String objective, String status,
-            String organizationId, String shopId, String createdAt, String updatedAt, String campaignType) { }
+            String organizationId, String shopId, String createdAt, String updatedAt, String campaignType, String businessNo) {
+        public CampaignWrite(String tenantId, String campaignId, String name, String objective, String status,
+                String organizationId, String shopId, String createdAt, String updatedAt, String campaignType) {
+            this(tenantId, campaignId, name, objective, status, organizationId, shopId, createdAt, updatedAt, campaignType, null);
+        }
+    }
     record CampaignRow(String campaignId, String name, String objective, String status, String createdAt,
-            String updatedAt, String campaignType) { }
+            String updatedAt, String campaignType, String businessNo) { }
     record CampaignOwnershipRow(String organizationId, String shopId, String campaignType) { }
     record DefinitionWrite(String tenantId, String definitionId, String campaignId, long versionNo, String dialect,
             String graphJson, String semanticHash, String status, String createdBy, String createdAt,
@@ -120,16 +129,31 @@ public interface ControlRepository {
             String semanticHash, String status, String createdBy, String createdAt, String updatedAt) { }
     record OfferVersionRow(long versionNo, String status, String createdAt) { }
     record ApprovalCaseWrite(String tenantId, String caseId, String definitionId, long definitionVersion,
-            String submittedBy, String requiredRoles, String status, String createdAt, String updatedAt) { }
+            String submittedBy, String requiredRoles, String status, String createdAt, String updatedAt, String businessNo) {
+        public ApprovalCaseWrite(String tenantId, String caseId, String definitionId, long definitionVersion,
+                String submittedBy, String requiredRoles, String status, String createdAt, String updatedAt) {
+            this(tenantId, caseId, definitionId, definitionVersion, submittedBy, requiredRoles, status, createdAt, updatedAt, null);
+        }
+    }
     record TermsWrite(String tenantId, String termsId, String definitionId, long definitionVersion,
             String contentJson, String contentHash, String createdAt) { }
     record ApprovalDecisionWrite(String tenantId, String caseId, String roleName, String actorId,
             String decidedAt) { }
     record ApprovalCaseRow(String caseId, String definitionId, long definitionVersion, String submittedBy,
-            String requiredRoles, String status, String updatedAt) { }
+            String requiredRoles, String status, String updatedAt, String businessNo) {
+        public ApprovalCaseRow(String caseId, String definitionId, long definitionVersion, String submittedBy,
+                String requiredRoles, String status, String updatedAt) {
+            this(caseId, definitionId, definitionVersion, submittedBy, requiredRoles, status, updatedAt, null);
+        }
+    }
     /** 仅承载已验证的查询条件；范围谓词必须先于LIMIT执行。 */
     record ApprovalListQuery(String tenantId, Set<String> organizations, Set<String> shops, String status,
-            String cursorCreatedAt, String cursorCaseId, int limit) { }
+            String cursorCreatedAt, String cursorCaseId, int limit, String businessNo, String originalId) {
+        public ApprovalListQuery(String tenantId, Set<String> organizations, Set<String> shops, String status,
+                String cursorCreatedAt, String cursorCaseId, int limit) {
+            this(tenantId, organizations, shops, status, cursorCreatedAt, cursorCaseId, limit, null, null);
+        }
+    }
     record ApprovalCursorRow(String createdAt, String caseId) { }
     record ApprovalDecisionRow(String roleName, String actorId) { }
     record TermsRow(String termsId, String contentJson, String contentHash, String createdAt) { }

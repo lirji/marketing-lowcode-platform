@@ -14,6 +14,7 @@ export const problemDetailSchema: z.ZodType<ProblemDetail> = z.object({
 
 export const campaignSchema = z.object({
   id: z.string(),
+  businessNo: z.string().nullish(),
   name: z.string(),
   objective: z.string(),
   status: z.enum(['DRAFT', 'IN_REVIEW', 'APPROVED', 'ACTIVE', 'PAUSED', 'ENDED']),
@@ -141,6 +142,7 @@ export type ApprovalRole = z.infer<typeof approvalRoleSchema>
 
 export const approvalViewSchema = z.object({
   caseId: z.string(),
+  businessNo: z.string().nullish(),
   definitionId: z.string(),
   definitionVersion: z.number(),
   submittedBy: z.string(),
@@ -311,6 +313,7 @@ export const subsidyPostingPageSchema = z.object({
   items: z.array(z.object({
     ledgerId: z.string(), postedAt: z.string(), applicationId: z.string(), campaignId: z.string().nullable(),
     currency: z.string(), resourceKey: z.string(), operation: z.enum(['CONFIRM', 'REFUND']),
+    applicationNo: z.string().nullish(), ledgerNo: z.string().nullish(),
     amountMinor: z.string().regex(/^-?[1-9][0-9]*$/),
   })).max(100),
 })
@@ -319,7 +322,7 @@ export const orderSubsidyPostingPageSchema = z.object({
   page: subsidyPostingPageSchema,
 })
 
-const bindingIdentity = { applicationId: z.string().min(1), campaignId: z.string().nullable(), orderNo: z.string().optional() }
+const bindingIdentity = { applicationId: z.string().min(1), campaignId: z.string().nullable(), orderNo: z.string().optional(), applicationNo: z.string().nullish() }
 export const orderBindingEvidencePageSchema = z.object({
   orderId: z.string().min(1),
   campaignId: z.string().nullable(),

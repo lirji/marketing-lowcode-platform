@@ -47,6 +47,13 @@ public interface BenefitFundingMapper {
             @Param("resourceKey") String resourceKey);
     int insertJourneyGrant(BenefitFundingRepository.JourneyGrantWrite write);
     int insertApplication(BenefitFundingRepository.ApplicationWrite write);
+
+    /** 申请事务已写入主行，只有一份展示号能更新成功。 */
+    int assignApplicationNumber(@Param("tenantId") String tenantId, @Param("applicationId") String applicationId,
+            @Param("businessNo") String businessNo);
+
+    /** 只用于判定全局唯一编号冲突。 */
+    String lockLedgerNumber(@Param("businessNo") String businessNo);
     int insertReservationItem(BenefitFundingRepository.ReservationItemWrite write);
     int insertEscrowAllocation(BenefitFundingRepository.EscrowAllocationWrite write);
     List<BenefitFundingRepository.ExpiredApplicationRow> selectExpiredApplications(

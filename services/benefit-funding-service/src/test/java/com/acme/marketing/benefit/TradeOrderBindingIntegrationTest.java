@@ -3,6 +3,7 @@ package com.acme.marketing.benefit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.acme.marketing.benefit.application.BenefitFundingService;
 import com.acme.marketing.benefit.application.TradeOrderBindingMachineAuthority;
@@ -261,7 +262,8 @@ class TradeOrderBindingIntegrationTest extends MySqlIntegrationTest {
         assertEquals("BOUND", bound.path("status").asString());
         assertEquals(Long.toString(originalVersion), bound.path("evidenceVersion").asString());
         assertEquals(Instant.parse(binding.path("boundAt").asString()), Instant.parse(bound.path("boundAt").asString()));
-        assertEquals(5, bound.size());
+        assertTrue(bound.path("applicationNo").asString().matches("MKT-FAP-[0-9]{6}-[0-9]{10}"));
+        assertEquals(6, bound.size());
         jdbc.update("UPDATE mk_trade_receipt_inbox SET source_tenant_id = ? WHERE event_id = ?", 8, originalReceipt);
         JsonNode missing = expect(get(path + order, auditor), 200, null).path("items").get(0);
         assertEquals("EVIDENCE_MISSING", missing.path("status").asString());

@@ -48,9 +48,11 @@ public class MybatisControlRepository implements ControlRepository {
         return Optional.ofNullable(mapper.selectReleaseBundleOwner(tenantId, manifestId, lock));
     }
 
+    @Override public boolean campaignNumberTaken(String number) { return mapper.lockCampaignNumber(number) != null; }
+    @Override public boolean approvalNumberTaken(String number) { return mapper.lockApprovalNumber(number) != null; }
     @Override public void saveCampaign(CampaignWrite write) { one(mapper.insertCampaign(write), "保存活动"); }
     @Override public List<CampaignRow> findCampaigns(String tenantId, Set<String> organizations,
-            Set<String> shops, String campaignType) { return mapper.selectCampaigns(tenantId, organizations, shops, campaignType); }
+            Set<String> shops, String campaignType, String businessNo, String originalId) { return mapper.selectCampaigns(tenantId, organizations, shops, campaignType, businessNo, originalId); }
     @Override public Optional<CampaignOwnershipRow> findCampaignOwnership(String tenantId, String campaignId,
             boolean lock) { return Optional.ofNullable(mapper.selectCampaignOwnership(tenantId, campaignId, lock)); }
     @Override public Optional<DmnDraftRow> findLatestDmnDraft(String tenantId, String campaignId, boolean lock) {

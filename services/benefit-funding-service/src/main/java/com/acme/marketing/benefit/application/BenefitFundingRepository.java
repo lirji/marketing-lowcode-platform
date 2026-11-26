@@ -42,6 +42,10 @@ public interface BenefitFundingRepository {
 
     void saveJourneyGrant(JourneyGrantWrite write);
     boolean trySaveApplication(ApplicationWrite write);
+    /** 只补新申请的展示号，不改变签名或幂等约束。 */
+    int assignApplicationNumber(String tenantId, String applicationId, String businessNo);
+    /** 用当前读确认新流水编号是否发生碰撞。 */
+    boolean ledgerNumberTaken(String businessNo);
     void saveReservationItem(ReservationItemWrite write);
     void saveEscrowAllocation(EscrowAllocationWrite write);
     List<ExpiredApplicationRow> findExpiredApplications(String tenantId, String now, int limit);
@@ -150,7 +154,7 @@ public interface BenefitFundingRepository {
             long consumedAmount, long refundedAmount, long releasedAmount, long reservationEpoch) { }
     record ApplicationRow(String quoteId, String orderId, String cartDigest, long generation,
             String state, long totalDiscount, String currency, String expiresAt, String createdAt,
-            String updatedAt) { }
+            String updatedAt, String businessNo) { }
     record ItemRow(String resourceKey, String type, String currency, long originalAmount, long reservedAmount,
             long consumedAmount, long refundedAmount, long releasedAmount, long reservationEpoch) { }
     record EscrowAllocationRow(int bucketId, long original, long reserved, long consumed,
@@ -173,19 +177,19 @@ public interface BenefitFundingRepository {
     record CommandRow(String payloadHash, String state, String responseJson) { }
     record LedgerWrite(String tenantId, String ledgerId, String applicationId, String orderId,
             String resourceKey, int escrowBucketId, String operation, String debitBucket,
-            String creditBucket, long amount, long accountVersion, String correctionOf, String occurredAt) { }
+            String creditBucket, long amount, long accountVersion, String correctionOf, String occurredAt, String businessNo) { }
     /** 查询条件由服务端根据当前身份构造。空值才代表该维度具有全域权限。 */
     record SubsidyPostingFilter(String tenantId, String from, String to, String campaignId, String orderId, boolean unassigned,
             Set<String> organizations, String allowedShopsJson) { }
     record SubsidyPostingCursor(String ledgerId, String postingTime) { }
     record SubsidyPostingRow(String ledgerId, String postingTime, String applicationId, String campaignId,
-            String resourceKey, String currency, String operation, long amount) { }
+            String resourceKey, String currency, String operation, long amount, String applicationNo, String ledgerNo) { }
     /** 查询范围来自已验证的资金对账身份，空组织或门店参数表示相应维度具有全域授权。 */
     record OrderBindingFilter(String tenantId, String orderId, String campaignId, boolean unassigned,
             Set<String> organizations, String allowedShopsJson) { }
     /** 付款前绑定来自资金申请，首次回执绑定须另外核对原始事件。 */
     record OrderBindingRow(String applicationId, String campaignId, Long evidenceVersion, String boundAt,
-            String checkoutBoundAt, boolean evidencePresent, String orderNo) { }
+            String checkoutBoundAt, boolean evidencePresent, String orderNo, String applicationNo) { }
     /** 跨流水汇总使用数据库精确十进制，允许结果超过单笔 long 金额范围。 */
     record SubsidySummaryRow(String currency, boolean unassigned, long postingCount,
             BigDecimal confirmedAmountMinor, BigDecimal reversedAmountMinor) { }

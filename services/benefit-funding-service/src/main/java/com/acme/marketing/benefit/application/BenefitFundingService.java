@@ -1,5 +1,6 @@
 package com.acme.marketing.benefit.application;
 
+import com.acme.marketing.platform.identity.BusinessNumber;
 import static com.acme.marketing.platform.time.SqlTime.format;
 
 import com.acme.marketing.benefit.application.BenefitSkuCatalog.BenefitSkuView;
@@ -365,6 +366,7 @@ public class BenefitFundingService {
         if (!created) {
             throw new ConflictException("OFFER_TOKEN_REPLAYED", "offer token quote was already reserved");
         }
+        assignApplicationNumber(tenantId, applicationId, now);
         for (ResourceDemand demand : demands.values()) {
             List<BalanceMutation> resourceMutations = mutations.get(demand.resourceKey());
             BalanceMutation firstMutation = resourceMutations.getFirst();
@@ -739,14 +741,14 @@ public class BenefitFundingService {
         if (row.evidenceVersion() == null) {
             if (includeCheckoutBinding && row.checkoutBoundAt() != null) {
                 return new OrderBindingEvidence(row.applicationId(), row.campaignId(), BindingEvidenceStatus.CHECKOUT_BOUND.code,
-                        Instant.parse(row.checkoutBoundAt()), null, row.orderNo());
+                        Instant.parse(row.checkoutBoundAt()), null, row.orderNo(), row.applicationNo());
             }
-            return new OrderBindingEvidence(row.applicationId(), row.campaignId(), BindingEvidenceStatus.UNBOUND.code, null, null, row.orderNo());
+            return new OrderBindingEvidence(row.applicationId(), row.campaignId(), BindingEvidenceStatus.UNBOUND.code, null, null, row.orderNo(), row.applicationNo());
         }
         // 绑定记录保留首次版本；对应回执已丢失或不匹配时仍可凭该版本继续核查。
         var status = row.evidencePresent() ? BindingEvidenceStatus.BOUND : BindingEvidenceStatus.EVIDENCE_MISSING;
         return new OrderBindingEvidence(row.applicationId(), row.campaignId(), status.code,
-                Instant.parse(row.boundAt()), row.evidenceVersion().toString(), row.orderNo());
+                Instant.parse(row.boundAt()), row.evidenceVersion().toString(), row.orderNo(), row.applicationNo());
     }
 
     private SubsidyPostingPage subsidyPostingPage(TenantScope scope, Instant from, Instant to,
@@ -770,7 +772,7 @@ public class BenefitFundingService {
             // 退款与已确认申请的冲正共用 REFUND 流水，金额在各自入账日为负。
             long signedAmount = Operation.REFUND.name().equals(row.operation()) ? -row.amount() : row.amount();
             return new SubsidyPosting(row.ledgerId(), Instant.parse(row.postingTime()), row.applicationId(),
-                    row.campaignId(), row.resourceKey(), row.currency(), row.operation(), Long.toString(signedAmount));
+                    row.campaignId(), row.resourceKey(), row.currency(), row.operation(), Long.toString(signedAmount), row.applicationNo(), row.ledgerNo());
         }).toList();
         return new SubsidyPostingPage(from, to, filter.campaignId(), filter.unassigned(), items,
                 hasMore ? items.getLast().ledgerId() : null, hasMore);
@@ -1227,7 +1229,7 @@ public class BenefitFundingService {
         return new ApplicationView(applicationId, row.quoteId(), row.orderId(), row.cartDigest(), row.generation(),
                 ApplicationState.valueOf(row.state()), row.totalDiscount(), row.currency(),
                 items(tenantId, applicationId), Instant.parse(row.expiresAt()), Instant.parse(row.createdAt()),
-                Instant.parse(row.updatedAt()));
+                Instant.parse(row.updatedAt()), row.businessNo());
     }
 
     private List<ItemView> items(String tenantId, String applicationId) {
@@ -1263,12 +1265,40 @@ public class BenefitFundingService {
         return response;
     }
 
+    /** 预算申请和展示号同事务，只修改编号列，因此唯一冲突可安全重试。 */
+    private void assignApplicationNumber(String tenantId, String applicationId, Instant createdAt) {
+        for (int attempt = 0; attempt < BusinessNumber.MAX_ISSUE_ATTEMPTS; attempt++) {
+            String number = BusinessNumber.next(BusinessNumber.Type.FUNDING_APPLICATION, createdAt);
+            try {
+                if (repository.assignApplicationNumber(tenantId, applicationId, number) != 1) {
+                    throw new IllegalStateException("funding application number was not assigned");
+                }
+                return;
+            } catch (org.springframework.dao.DuplicateKeyException duplicate) {
+                if (attempt == BusinessNumber.MAX_ISSUE_ATTEMPTS - 1) throw duplicate;
+            }
+        }
+        throw new IllegalStateException("funding application number allocation exhausted");
+    }
+
     private void ledger(String tenantId, String applicationId, String orderId, String resourceKey,
             String operation, String debitBucket, String creditBucket, long amount, long accountVersion,
             int escrowBucketId, String correctionOf, Instant now) {
-        repository.saveLedger(new BenefitFundingRepository.LedgerWrite(tenantId, UUID.randomUUID().toString(),
-                applicationId, orderId, resourceKey, escrowBucketId, operation, debitBucket, creditBucket,
-                amount, accountVersion, correctionOf, format(now)));
+        String ledgerId = UUID.randomUUID().toString();
+        for (int attempt = 0; attempt < BusinessNumber.MAX_ISSUE_ATTEMPTS; attempt++) {
+            String number = BusinessNumber.next(BusinessNumber.Type.LEDGER, now);
+            try {
+                repository.saveLedger(new BenefitFundingRepository.LedgerWrite(tenantId, ledgerId,
+                        applicationId, orderId, resourceKey, escrowBucketId, operation, debitBucket, creditBucket,
+                        amount, accountVersion, correctionOf, format(now), number));
+                return;
+            } catch (org.springframework.dao.DuplicateKeyException duplicate) {
+                if (attempt == BusinessNumber.MAX_ISSUE_ATTEMPTS - 1 || !repository.ledgerNumberTaken(number)) {
+                    throw duplicate;
+                }
+            }
+        }
+        throw new IllegalStateException("funding ledger number allocation exhausted");
     }
 
     private void outbox(String tenantId, String applicationId, String type, Instant now) {
@@ -1518,7 +1548,7 @@ public class BenefitFundingService {
             long reservationEpoch) { }
     public record ApplicationView(String applicationId, String quoteId, String orderId, String cartDigest,
             long generation, ApplicationState state, long totalDiscount, String currency,
-            List<ItemView> items, Instant expiresAt, Instant createdAt, Instant updatedAt) {
+            List<ItemView> items, Instant expiresAt, Instant createdAt, Instant updatedAt, String businessNo) {
         public ApplicationView { items = List.copyOf(items); }
     }
     public record ReconciliationReport(boolean balanced, List<String> violations, long ledgerMovement,
@@ -1527,7 +1557,7 @@ public class BenefitFundingService {
     }
     /** 出资资源键保留账本标识。分值用十进制字符串传输，避免客户端浮点舍入。 */
     public record SubsidyPosting(String ledgerId, Instant postedAt, String applicationId, String campaignId,
-            String resourceKey, String currency, String operation, String amountMinor) { }
+            String resourceKey, String currency, String operation, String amountMinor, String applicationNo, String ledgerNo) { }
 
     /** 一页已提交流水，下一页按实际入账时点与流水ID继续。 */
     public record SubsidyPostingPage(Instant from, Instant to, String campaignId, boolean unassigned,
@@ -1540,7 +1570,7 @@ public class BenefitFundingService {
     /** 首次绑定的审计概要，证据版本通过十进制字符串保留精度。 */
     public record OrderBindingEvidence(String applicationId, String campaignId, String status, Instant boundAt,
             String evidenceVersion,
-            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) String orderNo) { }
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) String orderNo, String applicationNo) { }
 
     /** 回显订单及活动筛选，分页按资金申请 ID 继续。 */
     public record OrderBindingEvidencePage(String orderId, String campaignId, boolean unassigned,

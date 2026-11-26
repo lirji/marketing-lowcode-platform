@@ -74,7 +74,7 @@ function Workbench({ campaign, scope }: { campaign: Campaign; scope: string }) {
   return <>
     <Panel>
       <PanelHeader title="活动范围" aside={<Badge tone={definition?.status === OFFER_VERSION_STATUS.RELEASED ? 'good' : 'neutral'}>{definition ? offerStatusLabel[definition.status] ?? definition.status : '规则待确认'}</Badge>} />
-      <dl className="workbench-facts"><div><dt>活动 ID</dt><dd>{campaign.id}</dd></div><div><dt>组织</dt><dd>{campaign.organizationId || '未声明'}</dd></div><div><dt>门店</dt><dd>{campaign.shopId || '全部门店'}</dd></div></dl>
+      <dl className="workbench-facts"><div><dt>活动编号</dt><dd>{campaign.businessNo ?? campaign.id}</dd></div><div><dt>组织</dt><dd>{campaign.organizationId || '未声明'}</dd></div><div><dt>门店</dt><dd>{campaign.shopId || '全部门店'}</dd></div></dl>
     </Panel>
     {!canRead ? <StateBanner tone="warn" title="无规则读取权限" detail="查看 Offer 规则及其版本需要 definition:read 权限。" />
       : offer.isError ? <StateBanner tone="error" title="Offer 读取失败" detail={problemDetail(offer.error)} action={<Button onClick={() => void offer.refetch()}>重试</Button>} />

@@ -65,8 +65,9 @@ public class ControlController {
 
     @GetMapping("/campaigns")
     public List<ControlApplicationService.CampaignView> campaigns(
-            @RequestParam(required=false) com.acme.marketing.control.domain.Campaign.Type campaignType) {
-        return service.campaigns(campaignType);
+            @RequestParam(required=false) com.acme.marketing.control.domain.Campaign.Type campaignType,
+            @RequestParam(required=false) @Size(max=64) String number) {
+        return service.campaigns(campaignType, number);
     }
 
     @PostMapping("/definitions")
@@ -186,8 +187,9 @@ public class ControlController {
     /** 新分页契约独立于旧数组接口，旧客户端可在兼容窗口内继续读取最近记录。 */
     @GetMapping("/approvals/page")
     public ControlApplicationService.ApprovalPage approvalPage(@RequestParam(required = false) Integer limit,
-            @RequestParam(required = false) String status, @RequestParam(required = false) String cursor) {
-        return service.approvalPage(limit, status, cursor);
+            @RequestParam(required = false) String status, @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) String number) {
+        return service.approvalPage(limit, status, cursor, number);
     }
 
     @PostMapping("/approvals/{caseId}/decisions")
