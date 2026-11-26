@@ -21,9 +21,9 @@
     FOR UPDATE
   </select>
   <insert id="insertRelation">INSERT INTO mk_referral_relation(tenant_id,relation_id,campaign_id,organization_id,shop_id,participant_id,token_id,invitee_key,subject_key_version,invitee_cipher,encryption_key_id,
-      definition_id,definition_version,generation,artifact_id,policy_hash,bound_at,deadline_at,consent_version,consent_hash,state,created_at,updated_at)
+      definition_id,definition_version,generation,artifact_id,policy_hash,bound_at,deadline_at,consent_version,consent_hash,state,created_at,updated_at,business_no)
     VALUES(#{r.tenantId},#{r.relationId},#{r.campaignId},#{r.organizationId},#{r.shopId},#{r.participantId},#{r.tokenId},#{subject},#{keyVersion},#{cipher},#{encryptionKeyId},
-      #{r.definitionId},#{r.definitionVersion},#{r.generation},#{r.artifactId},#{r.policyHash},#{now},#{deadline},#{r.consentVersion},#{r.consentHash},#{r.state},#{now},#{now})</insert>
+      #{r.definitionId},#{r.definitionVersion},#{r.generation},#{r.artifactId},#{r.policyHash},#{now},#{deadline},#{r.consentVersion},#{r.consentHash},#{r.state},#{now},#{now},#{businessNo})</insert>
   <update id="attachInvitee">UPDATE mk_referral_subject_role SET relation_id=#{r.relationId},updated_at=#{now},row_version=row_version+1
     WHERE tenant_id=#{r.tenantId} AND campaign_id=#{r.campaignId} AND subject_key=#{subject} AND role='INVITEE' AND relation_id IS NULL AND participant_id IS NULL</update>
   <insert id="audit">INSERT INTO mk_referral_audit(tenant_id,audit_id,actor_id,action,resource_ref,reason,after_hash,trace_id,occurred_at,created_at,updated_at)

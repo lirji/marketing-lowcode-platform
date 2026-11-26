@@ -18,9 +18,9 @@
       route_epoch AS routeEpoch,state,created_at AS createdAt
     FROM mk_referral_participant WHERE tenant_id=#{tenant} AND participant_id=#{participantId} FOR UPDATE</select>
   <insert id="insertParticipant">INSERT INTO mk_referral_participant(tenant_id,participant_id,campaign_id,organization_id,shop_id,subject_key,subject_key_version,subject_cipher,encryption_key_id,
-    definition_id,definition_version,generation,artifact_id,policy_hash,route_epoch,state,created_at,updated_at)
+    definition_id,definition_version,generation,artifact_id,policy_hash,route_epoch,state,created_at,updated_at,business_no)
     VALUES(#{p.tenantId},#{p.participantId},#{p.campaignId},#{p.organizationId},#{p.shopId},#{subjectKey},#{keyVersion},#{cipher},#{encryptionKeyId},
-      #{p.definitionId},#{p.definitionVersion},#{p.generation},#{p.artifactId},#{p.policyHash},#{p.routeEpoch},#{p.state},#{now},#{now})</insert>
+      #{p.definitionId},#{p.definitionVersion},#{p.generation},#{p.artifactId},#{p.policyHash},#{p.routeEpoch},#{p.state},#{now},#{now},#{businessNo})</insert>
   <update id="attachRole">UPDATE mk_referral_subject_role SET participant_id=#{p.participantId},row_version=row_version+1,updated_at=#{now}
     WHERE tenant_id=#{p.tenantId} AND campaign_id=#{p.campaignId} AND subject_key=#{subjectKey} AND role='INVITER' AND participant_id IS NULL</update>
   <update id="complete">UPDATE mk_referral_join_command SET participant_id=#{participantId},row_version=row_version+1,updated_at=#{now}

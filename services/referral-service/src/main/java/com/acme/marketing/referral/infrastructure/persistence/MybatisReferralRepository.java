@@ -1,4 +1,6 @@
 package com.acme.marketing.referral.infrastructure.persistence;
+
+import com.acme.marketing.platform.identity.BusinessNumber;
 import com.acme.marketing.referral.application.ReferralRepository;
 import com.acme.marketing.referral.application.TrustedReferralSubjectPort.Subject;
 import com.acme.marketing.referral.domain.ReferralParticipant;
@@ -33,7 +35,9 @@ public class MybatisReferralRepository implements ReferralRepository {
         var values=new HashMap<String,Object>(); values.put("p",participant); values.put("subjectKey",subject.subjectKey());
         values.put("keyVersion",subject.keyVersion()); values.put("cipher",subject.cipher()); values.put("encryptionKeyId",subject.encryptionKeyId());
         values.put("now",SQL_TIME.format(participant.createdAt()));
-        one(mapper.insertParticipant(values)); one(mapper.attachRole(values));
+        ReferralBusinessNumbers.issue(BusinessNumber.Type.REFERRAL_PARTICIPANT,participant.createdAt(),
+                "uk_referral_participant_business_no",values,mapper::insertParticipant);
+        one(mapper.attachRole(values));
     }
     /** 只从首次未完成回执推进到固定参与者引用。 */
     @Override public void complete(String tenant,String subjectKey,String key,String participantId,Instant now) {

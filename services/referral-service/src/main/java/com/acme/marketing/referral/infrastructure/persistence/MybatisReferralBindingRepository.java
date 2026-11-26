@@ -1,4 +1,6 @@
 package com.acme.marketing.referral.infrastructure.persistence;
+
+import com.acme.marketing.platform.identity.BusinessNumber;
 import com.acme.marketing.referral.application.ReferralBindingRepository;
 import com.acme.marketing.referral.application.TrustedReferralSubjectPort.Subject;
 import com.acme.marketing.referral.domain.ReferralRelation;
@@ -37,7 +39,9 @@ public class MybatisReferralBindingRepository implements ReferralBindingReposito
         values.put("cipher",invitee.cipher());values.put("encryptionKeyId",invitee.encryptionKeyId());values.put("actorId",actorId);values.put("traceId",traceId);
         values.put("payload",payload);values.put("payloadHash",payloadHash);values.put("auditId",UUID.randomUUID().toString());values.put("eventId",UUID.randomUUID().toString());
         values.put("now",SQL_TIME.format(relation.boundAt()));values.put("deadline",SQL_TIME.format(relation.qualifyDeadline()));
-        one(mapper.insertRelation(values));one(mapper.attachInvitee(values));one(mapper.audit(values));one(mapper.outbox(values));
+        ReferralBusinessNumbers.issue(BusinessNumber.Type.REFERRAL_RELATION,relation.boundAt(),
+                "uk_referral_relation_business_no",values,mapper::insertRelation);
+        one(mapper.attachInvitee(values));one(mapper.audit(values));one(mapper.outbox(values));
         // 新BOUND与待评估任务同事务；不改变历史原成功命令的永久回放路径。
         projections.enqueue(new com.acme.marketing.referral.application.qualification.ReferralProjectionEnqueuePort.Signal(relation.tenantId(),relation.participantId(),relation.relationId(),null,0,"BOUND"));
     }

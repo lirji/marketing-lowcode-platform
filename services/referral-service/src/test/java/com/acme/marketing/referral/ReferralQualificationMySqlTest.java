@@ -340,6 +340,10 @@ class ReferralQualificationMySqlTest {
         assertNull(operations.relations(readScope(),"campaign",null,20).items().getFirst().qualificationState());
         bilateralRules();run();var page=operations.rewards(readScope(),"campaign",null,2);assertEquals(2,page.items().size());assertNotNull(page.nextCursor());
         var next=operations.rewards(readScope(),"campaign",page.nextCursor(),2);assertEquals(1,next.items().size());assertNull(next.nextCursor());
+        var reward = page.items().getFirst();
+        assertTrue(reward.businessNo().matches("MKT-RWD-[0-9]{6}-[0-9]{10}"));
+        assertEquals(List.of(reward), operations.rewards(readScope(),"campaign",null,20,reward.businessNo()).items());
+        assertEquals(List.of(reward), operations.rewards(readScope(),"campaign",null,20,reward.rewardId()).items());
         assertEquals(3,java.util.stream.Stream.concat(page.items().stream(),next.items().stream()).map(com.acme.marketing.referral.application.query.ReferralOperationsService.Reward::rewardId).distinct().count());
         assertTrue(page.items().stream().allMatch(r->r.deliveryState().equals("NOT_SUBMITTED") && r.quotaState().equals("WAIT_QUOTA")));
         String payload=facts.json.writeValueAsString(page);assertFalse(payload.contains("beneficiaryKey"));assertFalse(payload.contains("cipher"));assertFalse(payload.contains("subject-B"));

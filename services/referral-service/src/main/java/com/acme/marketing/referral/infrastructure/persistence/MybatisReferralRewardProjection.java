@@ -1,5 +1,7 @@
 package com.acme.marketing.referral.infrastructure.persistence;
 
+import com.acme.marketing.platform.identity.BusinessNumber;
+
 import com.acme.marketing.contracts.referral.ReferralAwardIdentity;
 import com.acme.marketing.platform.crypto.*;
 import com.acme.marketing.referral.*;
@@ -67,7 +69,10 @@ public class MybatisReferralRewardProjection implements ReferralRewardProjection
             // 密文保留原参与者/关系的AAD语义；外部签发必须通过可信保护适配器解密，不重新伪装为其他身份。
             values.put("cipherSource",inviter?"PARTICIPANT":"RELATION");values.put("cipherResource",inviter?p.participantId():relation.relationId());
             values.put("cipher",inviter?subject.cipher():readInviteeCipher(values));values.put("encryptionKey",inviter?subject.encryptionKeyId():values.get("inviteeEncryptionKey"));
-            values.put("revision",1L);one(mapper.insert(values));event(values,"REWARD_ENTITLED","WAIT_QUOTA");
+            values.put("revision",1L);
+            ReferralBusinessNumbers.issue(BusinessNumber.Type.REFERRAL_REWARD,now,
+                    "uk_referral_reward_business_no",values,mapper::insert);
+            event(values,"REWARD_ENTITLED","WAIT_QUOTA");
         }
     }
     private byte[] readInviteeCipher(Map<String,Object> values){

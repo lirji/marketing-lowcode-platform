@@ -102,3 +102,5 @@ AwardIntent 的 `Idempotency-Key` 必须等于 `sourceRequestId`。首次请求�
 Replay 需要审批号、tenant、topic、event range、目的、速率和 dry-run 结果；默认写到 shadow topic，验证后再进入主处理器。Replay 保留原 eventId，不伪造新业务事实。DLQ payload 的 PII 遵从原数据等级，加密且有 TTL；操作员 UI 默认只显示 tokenized subject 与脱敏摘要。
 
 营销活动和审批返回 `businessNo`，新单使用 `MKT-CMP` 和 `MKT-APR`。活动列表和审批分页接受 `number` 精确查询，组织与门店过滤沿用原规则。审批写入仍使用审批资源原 ID。营销资金记录同时返回可读的 `applicationNo` 和 `ledgerNo`，资金入账查询支持交易订单号、原订单 ID 或资金申请号。签名回执和资金事件的 `applicationId` 保持原格式。
+
+发布组合、发布操作、排期、人群快照、旅程参与以及裂变的参与、归因关系和奖励使用独立展示号。组合版本、运行签名、旅程流事件、裂变资格和奖励发放仍以原资源标识进行关联。支持按两种编号读的接口继续校验原组织与门店范围。

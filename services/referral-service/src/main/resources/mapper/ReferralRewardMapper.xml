@@ -22,11 +22,11 @@
   </select>
   <insert id="insert">INSERT INTO mk_referral_reward(tenant_id,reward_id,campaign_id,organization_id,shop_id,participant_id,relation_id,
     beneficiary_key,subject_key_version,beneficiary_cipher,encryption_key_id,cipher_source,cipher_resource_id,role,mode,threshold_count,rule_id,milestone_key,
-    definition_id,definition_version,generation,artifact_id,policy_hash,rule_json,source_request_id,qualification_revision,progress_revision,created_at,updated_at)
+    definition_id,definition_version,generation,artifact_id,policy_hash,rule_json,source_request_id,qualification_revision,progress_revision,created_at,updated_at,business_no)
     VALUES(#{tenant},#{reward},#{p.campaignId},#{p.organizationId},#{p.shopId},#{participant},
       <choose><when test="rule.mode.name() == 'PER_RELATION'">#{relation}</when><otherwise>NULL</otherwise></choose>,
       #{beneficiary},#{keyVersion},#{cipher},#{encryptionKey},#{cipherSource},#{cipherResource},#{rule.role},#{rule.mode},#{rule.threshold},#{rule.ruleId},#{milestone},
-      #{p.definitionId},#{p.definitionVersion},#{p.generation},#{p.artifactId},#{p.policyHash},#{ruleJson},#{source},#{q.revision},#{progress.revision},#{now},#{now})
+      #{p.definitionId},#{p.definitionVersion},#{p.generation},#{p.artifactId},#{p.policyHash},#{ruleJson},#{source},#{q.revision},#{progress.revision},#{now},#{now},#{businessNo})
   </insert>
   <update id="refresh">UPDATE mk_referral_reward SET qualification_revision=#{q.revision},progress_revision=#{progress.revision},row_version=row_version+1,updated_at=#{now}
     WHERE tenant_id=#{tenant} AND reward_id=#{reward} AND row_version=#{previous} AND entitlement_state='ELIGIBLE'</update>

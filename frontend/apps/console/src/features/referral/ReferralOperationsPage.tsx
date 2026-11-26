@@ -120,19 +120,19 @@ export function ReferralOperationsPage() {
         ) : tab === 'participants' ? (
           <RecordTable label="参与人" columns={['参与人 ID', '活动 ID', '状态', '组织 ID', '店铺 ID', '定义 ID', '定义版本', '发布代际', '当前有效人数', '历史曾合格人数', '进度修订', '创建时间（北京时间）']}>
             {participants.data?.items.map((row) => <tr key={row.participantId}>
-              <td>{row.participantId}</td><td>{row.campaignId}</td><td><Badge>{row.state}</Badge></td><td>{row.organizationId}</td><td>{row.shopId || '全部店铺'}</td><td>{row.definitionId}</td><td>{row.definitionVersion}</td><td>{row.generation}</td><td>{formatNullableCount(row.validCount)}</td><td>{formatNullableCount(row.everQualifiedCount)}</td><td>{formatNullableCount(row.progressRevision)}</td><td><RecordTime value={row.createdAt} /></td>
+              <td>{row.businessNo ?? row.participantId}</td><td>{row.campaignId}</td><td><Badge>{row.state}</Badge></td><td>{row.organizationId}</td><td>{row.shopId || '全部店铺'}</td><td>{row.definitionId}</td><td>{row.definitionVersion}</td><td>{row.generation}</td><td>{formatNullableCount(row.validCount)}</td><td>{formatNullableCount(row.everQualifiedCount)}</td><td>{formatNullableCount(row.progressRevision)}</td><td><RecordTime value={row.createdAt} /></td>
             </tr>)}
           </RecordTable>
         ) : tab === 'relations' ? (
           <RecordTable label="邀请关系" columns={['关系 ID', '参与人 ID', '绑定状态', '资格状态', '是否计入人数', '资格原因', '曾经合格', '资格修订', '证据版本', '绑定时间（北京时间）', '观察截止（北京时间）']}>
             {relations.data?.items.map((row) => <tr key={row.relationId}>
-              <td>{row.relationId}</td><td>{row.participantId}</td><td><Badge>{row.state}</Badge></td><td>{qualificationLabel(row.qualificationState, undefined)}</td><td>{row.counted === true ? '是' : row.counted === false ? '否' : '未知'}</td><td>{row.reason ?? '无原因'}</td><td>{row.everQualified === true ? '曾合格' : row.everQualified === false ? '未曾合格' : '未知'}</td><td>{formatNullableCount(row.qualificationRevision)}</td><td>{formatNullableCount(row.evidenceVersion)}</td><td><RecordTime value={row.boundAt} /></td><td><RecordTime value={row.deadlineAt} /></td>
+              <td>{row.businessNo ?? row.relationId}</td><td>{row.participantId}</td><td><Badge>{row.state}</Badge></td><td>{qualificationLabel(row.qualificationState, undefined)}</td><td>{row.counted === true ? '是' : row.counted === false ? '否' : '未知'}</td><td>{row.reason ?? '无原因'}</td><td>{row.everQualified === true ? '曾合格' : row.everQualified === false ? '未曾合格' : '未知'}</td><td>{formatNullableCount(row.qualificationRevision)}</td><td>{formatNullableCount(row.evidenceVersion)}</td><td><RecordTime value={row.boundAt} /></td><td><RecordTime value={row.deadlineAt} /></td>
             </tr>)}
           </RecordTable>
         ) : (
           <RecordTable label="裂变奖励" columns={['奖励 ID', '参与人 ID', '关系 ID', '奖励角色', '奖励模式', '规则 ID', '门槛', '资格状态', '授权状态', '风控状态', '履约状态', '配额状态', '补偿状态', '修订版本', '创建时间（北京时间）']}>
             {rewards.data?.items.map((row) => <tr key={row.rewardId}>
-              <td>{row.rewardId}</td><td>{row.participantId}</td><td>{row.relationId ?? '—'}</td><td>{row.role}</td><td>{row.mode}</td><td>{row.ruleId}</td><td>{row.threshold}</td><td><Badge>{row.entitlementState}</Badge></td><td><Badge>{row.authorizationState}</Badge></td><td><Badge>{row.riskState}</Badge></td><td>{deliveryLabel(row.deliveryState)}</td><td>{row.quotaState}</td><td>{row.compensationState}</td><td>{row.revision}</td><td><RecordTime value={row.createdAt} /></td>
+              <td>{row.businessNo ?? row.rewardId}</td><td>{row.participantId}</td><td>{row.relationId ?? '—'}</td><td>{row.role}</td><td>{row.mode}</td><td>{row.ruleId}</td><td>{row.threshold}</td><td><Badge>{row.entitlementState}</Badge></td><td><Badge>{row.authorizationState}</Badge></td><td><Badge>{row.riskState}</Badge></td><td>{deliveryLabel(row.deliveryState)}</td><td>{row.quotaState}</td><td>{row.compensationState}</td><td>{row.revision}</td><td><RecordTime value={row.createdAt} /></td>
             </tr>)}
           </RecordTable>
         )}

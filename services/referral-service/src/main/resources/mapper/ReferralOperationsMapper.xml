@@ -6,23 +6,38 @@
   <if test="!shops.contains(&quot;*&quot;)">AND p.shop_id IN <foreach collection="shops" item="shop" open="(" separator="," close=")">#{shop}</foreach></if></sql>
  <select id="participants" resultType="com.acme.marketing.referral.application.query.ReferralOperationsService$Participant">
   SELECT p.participant_id AS participantId,p.campaign_id AS campaignId,p.organization_id AS organizationId,p.shop_id AS shopId,p.definition_id AS definitionId,
-   p.definition_version AS definitionVersion,p.generation,p.state,p.created_at AS createdAt,g.valid_count AS validCount,g.ever_qualified_count AS everQualifiedCount,g.progress_revision AS progressRevision
+   p.definition_version AS definitionVersion,p.generation,p.state,p.created_at AS createdAt,g.valid_count AS validCount,g.ever_qualified_count AS everQualifiedCount,g.progress_revision AS progressRevision,p.business_no AS businessNo
   FROM mk_referral_participant p LEFT JOIN mk_referral_progress g ON g.tenant_id=p.tenant_id AND g.participant_id=p.participant_id
-  WHERE <include refid="scope"/> <if test="after != null">AND p.participant_id&gt;#{after}</if> ORDER BY p.participant_id LIMIT #{limit}
+  WHERE <include refid="scope"/> <if test="number != null">AND
+      <choose>
+        <when test='number.startsWith("MKT-RFP-")'>p.business_no=CAST(#{number} AS CHAR CHARACTER SET ascii) COLLATE ascii_bin</when>
+        <otherwise>p.participant_id=#{number}</otherwise>
+      </choose>
+    </if> <if test="after != null">AND p.participant_id&gt;#{after}</if> ORDER BY p.participant_id LIMIT #{limit}
  </select>
  <select id="relations" resultType="com.acme.marketing.referral.application.query.ReferralOperationsService$Relation">
   SELECT r.relation_id AS relationId,r.participant_id AS participantId,r.bound_at AS boundAt,r.deadline_at AS deadlineAt,r.state,q.state AS qualificationState,q.reason,
-   q.counted,q.ever_qualified AS everQualified,q.qualification_revision AS qualificationRevision,q.evidence_state_version AS evidenceVersion
+   q.counted,q.ever_qualified AS everQualified,q.qualification_revision AS qualificationRevision,q.evidence_state_version AS evidenceVersion,r.business_no AS businessNo
   FROM mk_referral_relation r JOIN mk_referral_participant p ON p.tenant_id=r.tenant_id AND p.participant_id=r.participant_id
   LEFT JOIN mk_referral_qualification q ON q.tenant_id=r.tenant_id AND q.relation_id=r.relation_id
-  WHERE <include refid="scope"/> AND r.tenant_id=#{tenant} AND r.campaign_id=#{campaign} <if test="after != null">AND r.relation_id&gt;#{after}</if> ORDER BY r.relation_id LIMIT #{limit}
+  WHERE <include refid="scope"/> AND r.tenant_id=#{tenant} AND r.campaign_id=#{campaign} <if test="number != null">AND
+      <choose>
+        <when test='number.startsWith("MKT-RLN-")'>r.business_no=CAST(#{number} AS CHAR CHARACTER SET ascii) COLLATE ascii_bin</when>
+        <otherwise>r.relation_id=#{number}</otherwise>
+      </choose>
+    </if> <if test="after != null">AND r.relation_id&gt;#{after}</if> ORDER BY r.relation_id LIMIT #{limit}
  </select>
  <select id="rewards" resultType="com.acme.marketing.referral.application.query.ReferralOperationsService$Reward">
   SELECT r.reward_id AS rewardId,r.participant_id AS participantId,r.relation_id AS relationId,r.role,r.mode,r.rule_id AS ruleId,r.threshold_count AS threshold,
    r.entitlement_state AS entitlementState,r.authorization_state AS authorizationState,r.risk_state AS riskState,r.delivery_state AS deliveryState,r.compensation_state AS compensationState,
-   r.quota_state AS quotaState,r.row_version AS revision,r.created_at AS createdAt
+   r.quota_state AS quotaState,r.row_version AS revision,r.created_at AS createdAt,r.business_no AS businessNo
   FROM mk_referral_reward r JOIN mk_referral_participant p ON p.tenant_id=r.tenant_id AND p.participant_id=r.participant_id
-  WHERE <include refid="scope"/> AND r.tenant_id=#{tenant} AND r.campaign_id=#{campaign} <if test="after != null">AND r.reward_id&gt;#{after}</if> ORDER BY r.reward_id LIMIT #{limit}
+  WHERE <include refid="scope"/> AND r.tenant_id=#{tenant} AND r.campaign_id=#{campaign} <if test="number != null">AND
+      <choose>
+        <when test='number.startsWith("MKT-RWD-")'>r.business_no=CAST(#{number} AS CHAR CHARACTER SET ascii) COLLATE ascii_bin</when>
+        <otherwise>r.reward_id=#{number}</otherwise>
+      </choose>
+    </if> <if test="after != null">AND r.reward_id&gt;#{after}</if> ORDER BY r.reward_id LIMIT #{limit}
  </select>
  <select id="summary" timeout="5" resultType="com.acme.marketing.referral.application.query.ReferralOperationsService$Counts">
   SELECT a.participants,b.relations,b.projectedValidRelations,b.everQualifiedRelations,b.awaitingEvaluation,

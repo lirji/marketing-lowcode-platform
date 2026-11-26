@@ -667,6 +667,7 @@ export const recomputeSchema = z.object({
 })
 
 export const referralParticipantSchema = z.object({
+  businessNo: z.string().nullish(),
   participantId: z.string(),
   campaignId: z.string(),
   organizationId: z.string(),
@@ -683,6 +684,7 @@ export const referralParticipantSchema = z.object({
 export type ReferralParticipant = z.infer<typeof referralParticipantSchema>
 
 export const referralRelationSchema = z.object({
+  businessNo: z.string().nullish(),
   relationId: z.string(),
   participantId: z.string(),
   boundAt: z.string(),
@@ -698,6 +700,7 @@ export const referralRelationSchema = z.object({
 export type ReferralRelation = z.infer<typeof referralRelationSchema>
 
 export const referralRewardSchema = z.object({
+  businessNo: z.string().nullish(),
   rewardId: z.string(),
   participantId: z.string(),
   relationId: z.string().nullish(),

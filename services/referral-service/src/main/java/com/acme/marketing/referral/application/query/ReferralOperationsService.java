@@ -14,11 +14,23 @@ public class ReferralOperationsService {
     /** 使用主库当前事实，尚未接measurement时不虚构统计事件水位。 */
     public ReferralOperationsService(ReferralOperationsMapper mapper,Clock clock){this.mapper=mapper;this.clock=clock;}
     /** 参与者及人数分页；未计算的进度为null，不伪装成已验证的零人数。 */
-    public Page<Participant> participants(TenantScope scope,String campaign,String after,int limit){return page(scope,campaign,after,limit,mapper::participants,Participant::participantId);}
+    public Page<Participant> participants(TenantScope scope,String campaign,String after,int limit,String number){return page(scope,campaign,after,limit,number,mapper::participants,Participant::participantId);}
     /** 关系及当前资格分页；BOUND不等于资格已通过。 */
-    public Page<Relation> relations(TenantScope scope,String campaign,String after,int limit){return page(scope,campaign,after,limit,mapper::relations,Relation::relationId);}
+    public Page<Relation> relations(TenantScope scope,String campaign,String after,int limit,String number){return page(scope,campaign,after,limit,number,mapper::relations,Relation::relationId);}
     /** 奖励五维状态保持独立，202受理不能呈现为到账。 */
-    public Page<Reward> rewards(TenantScope scope,String campaign,String after,int limit){return page(scope,campaign,after,limit,mapper::rewards,Reward::rewardId);}
+    public Page<Reward> rewards(TenantScope scope,String campaign,String after,int limit,String number){return page(scope,campaign,after,limit,number,mapper::rewards,Reward::rewardId);}
+    /** 保留内部运营列表的缺省查询方式。 */
+    public Page<Participant> participants(TenantScope scope,String campaign,String after,int limit) {
+        return participants(scope,campaign,after,limit,null);
+    }
+    /** 缺省分页继续使用原关系 ID 游标。 */
+    public Page<Relation> relations(TenantScope scope,String campaign,String after,int limit) {
+        return relations(scope,campaign,after,limit,null);
+    }
+    /** 缺省分页继续使用原奖励摘要游标。 */
+    public Page<Reward> rewards(TenantScope scope,String campaign,String after,int limit) {
+        return rewards(scope,campaign,after,limit,null);
+    }
     /** 单条SQL的主库投影统计，不代表外部事实已全部消费，成功及追回可同时计数。 */
     public Summary summary(TenantScope scope,String campaign){
         Objects.requireNonNull(scope);scope.requirePermission("referral:read");identifier(campaign);
@@ -33,10 +45,10 @@ public class ReferralOperationsService {
             long rewards,long succeededRewards,long invalidatedRewards,long pendingCompensation,long reversedRewards,long manualReviewRewards) {}
     /** eventWatermark尚无全链路消费证明而返回null，asOf只表示本次查询结束。 */
     public record Summary(Counts counts,Instant asOf,String consistency,Long eventWatermark) {}
-    private <T>Page<T> page(TenantScope scope,String campaign,String after,int limit,Function<Map<String,Object>,List<T>> query,Function<T,String> id){
-        Objects.requireNonNull(scope);scope.requirePermission("referral:read");identifier(campaign);if(after!=null)identifier(after);if(limit<1 || limit>100)throw new IllegalArgumentException("limit must be 1..100");
+    private <T>Page<T> page(TenantScope scope,String campaign,String after,int limit,String number,Function<Map<String,Object>,List<T>> query,Function<T,String> id){
+        Objects.requireNonNull(scope);scope.requirePermission("referral:read");identifier(campaign);if(after!=null)identifier(after);if(number!=null)identifier(number);if(limit<1 || limit>100)throw new IllegalArgumentException("limit must be 1..100");
         if(scope.organizations().isEmpty() || scope.shops().isEmpty())return new Page<>(List.of(),null,clock.instant(),"LIVE_DATABASE");
-        var values=new HashMap<String,Object>();values.put("tenant",scope.tenantId().value());values.put("campaign",campaign);values.put("organizations",scope.organizations());values.put("shops",scope.shops());values.put("after",after);values.put("limit",limit+1);
+        var values=new HashMap<String,Object>();values.put("tenant",scope.tenantId().value());values.put("campaign",campaign);values.put("organizations",scope.organizations());values.put("shops",scope.shops());values.put("after",after);values.put("limit",limit+1);values.put("number",number);
         List<T> rows=query.apply(values);boolean more=rows.size()>limit;List<T> items=List.copyOf(rows.subList(0,Math.min(rows.size(),limit)));
         return new Page<>(items,more?id.apply(items.getLast()):null,clock.instant(),"LIVE_DATABASE");
     }
@@ -48,11 +60,11 @@ public class ReferralOperationsService {
     }
     /** 固定参与版本和真实进度，不显示原主体HMAC。 */
     public record Participant(String participantId,String campaignId,String organizationId,String shopId,String definitionId,long definitionVersion,long generation,
-            String state,Instant createdAt,Long validCount,Long everQualifiedCount,Long progressRevision) {}
+            String state,Instant createdAt,Long validCount,Long everQualifiedCount,Long progressRevision,String businessNo) {}
     /** 资格尚未投影时qualificationState/reason/revision为null。 */
     public record Relation(String relationId,String participantId,Instant boundAt,Instant deadlineAt,String state,String qualificationState,String reason,
-            Boolean counted,Boolean everQualified,Long qualificationRevision,Long evidenceVersion) {}
+            Boolean counted,Boolean everQualified,Long qualificationRevision,Long evidenceVersion,String businessNo) {}
     /** 当前正交业务状态；永远不提供管理员直接改到账的入口。 */
     public record Reward(String rewardId,String participantId,String relationId,String role,String mode,String ruleId,long threshold,
-            String entitlementState,String authorizationState,String riskState,String deliveryState,String compensationState,String quotaState,long revision,Instant createdAt) {}
+            String entitlementState,String authorizationState,String riskState,String deliveryState,String compensationState,String quotaState,long revision,Instant createdAt,String businessNo) {}
 }
