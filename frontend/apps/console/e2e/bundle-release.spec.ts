@@ -16,6 +16,7 @@ test('campaign bundle creation, scheduling, uncertain activation and whole rollb
   let head = 1, appliedVersion = 1, appliedSequence = 7, ready = false
   let pending: { operationId: string; campaignId: string; version: number; action: string; activationSequence: number; state: string; reasonCode: string | null; createdAt: string; updatedAt: string } | null = null
   let scheduled: { scheduleId: string; campaignId: string; version: number; expectedAppliedSequence: number; revision: number; dueAt: string; applyBefore: string; state: string; reasonCode: null; operationId: null; createdAt: string; updatedAt: string } | null = null
+  const manifestNumbers = { decision: 'MKT-MNF-261019-0000000001', journey: 'MKT-MNF-261019-0000000002' }
   let failPrepare = true
   const keys: string[] = [], input: unknown[] = []
   const base = `/api/v1/campaigns/${campaignId}/release-bundles`
@@ -28,8 +29,8 @@ test('campaign bundle creation, scheduling, uncertain activation and whole rollb
     if (path === '/api/v1/campaigns') return json(campaignFixtures.map(item => ({ ...item, campaignType: 'STANDARD' })))
     if (path === '/api/v1/approvals/page') return json({ items: [], nextCursor: null, hasMore: false, status: url.searchParams.get('status') })
     if (path.startsWith('/api/v1/releases/')) {
-      const member = names.find(name => path.endsWith(`/${name}-2`))
-      if (member) return json({ state: 'STAGED', manifest: manifest(member, 2) })
+      const member = names.find(name => path.endsWith(`/${manifestNumbers[name as keyof typeof manifestNumbers]}`))
+      if (member) return json({ state: 'STAGED', manifest: manifest(member, 2), businessNo: manifestNumbers[member as keyof typeof manifestNumbers] })
     }
     if (!path.startsWith(base)) return json([])
     const part = path.slice(base.length)
@@ -86,12 +87,12 @@ test('campaign bundle creation, scheduling, uncertain activation and whole rollb
   await page.getByRole('button', { name: '组合发布', exact: true }).first().click()
   await expect(page.getByText('当前生效版本 v1', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '创建组合版本' }).click()
-  await page.getByLabel('成员清单 ID').fill('decision-2\njourney-2')
+  await page.getByLabel('成员清单 ID').fill(Object.values(manifestNumbers).join('\n'))
   await page.getByRole('button', { name: '核对清单' }).click()
   const create = page.getByRole('button', { name: '确认创建 v2' })
   await create.click()
   await expect(page.getByText('审批回执待核对')).toBeVisible()
-  await expect(page.getByLabel('成员清单 ID')).toHaveValue('decision-2\njourney-2')
+  await expect(page.getByLabel('成员清单 ID')).toHaveValue(Object.values(manifestNumbers).join('\n'))
   await create.click()
   await expect(page).toHaveURL(/version=2/)
   const activate = page.getByRole('button', { name: '整体生效 v2' })

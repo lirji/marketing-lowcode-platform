@@ -41,21 +41,24 @@ export function BundleCreate({ campaignId, head, canSubmit, reload, onCancel, on
   const uncertain = create.isError && uncertainWrite(create.error)
   const locked = preview.isPending || create.isPending || uncertain
   const problem = preview.data && selectionProblem(preview.data)
+  const verifiedIds = preview.data?.map(({ manifest }) => manifest.manifestId)
   return <Panel><PanelHeader title="创建不可变组合" />
     <label className="field"><span>成员清单 ID</span><textarea aria-label="成员清单 ID" aria-describedby="bundle-members-hint" value={rawIds} disabled={locked} onChange={event => { setRawIds(event.target.value); preview.reset(); create.reset() }} />
-      <FieldHint id="bundle-members-hint">从编译暂存结果复制本活动的 2–8 个清单 ID，每行一个。控制服务在创建时复核归属和审批。</FieldHint></label>
+      <FieldHint id="bundle-members-hint">从编译暂存结果复制本活动的 2–8 个清单编号，每行一个。控制服务在创建时复核归属和审批。</FieldHint></label>
     {rawIds && !valid && <p>请填写 2–8 个不同的有效清单 ID。</p>}
     <div className="action-bar bundle-actions"><Button disabled={!valid || locked} onClick={() => preview.mutate(ids)}>核对清单</Button></div>
     {preview.isError && <StateBanner tone="error" title="清单核对失败" detail={problemDetail(preview.error)} />}
-    {preview.data && <RecordTable label="待组合清单" columns={['清单 ID', '环境', '部署单元', '运行类型', '命名空间', '代际', '定义 ID', '定义版本']}>
-      {preview.data.flatMap(({ manifest }) => manifest.artifacts.map(artifact => <tr key={JSON.stringify([manifest.manifestId, artifact.artifactId])}><td>{manifest.manifestId}</td>
+    {preview.data && <RecordTable label="待组合清单" columns={['清单编号', '环境', '部署单元', '运行类型', '命名空间', '代际', '定义 ID', '定义版本']}>
+      {preview.data.flatMap(({ manifest, businessNo }) => manifest.artifacts.map(artifact => <tr key={JSON.stringify([manifest.manifestId, artifact.artifactId])}><td title={manifest.manifestId}>{businessNo ?? manifest.manifestId}</td>
         <td>{manifest.environment}</td><td>{manifest.cell}</td><td>{manifest.runtime}</td><td>{manifest.namespace}</td><td>{manifest.generation}</td>
         <td>{artifact.definitionId}</td><td>{artifact.definitionVersion}</td></tr>))}</RecordTable>}
     {problem && <StateBanner tone="warn" title="成员条件未满足" detail={problem} />}
     {create.isError && <StateBanner tone={uncertain ? 'warn' : 'error'} title={uncertain ? '创建结果待确认' : '创建组合失败'} detail={problemDetail(create.error)} />}
     <footer className="action-bar bundle-actions">
       {uncertain && create.variables ? <Button tone="primary" onClick={() => create.mutate(create.variables!)}>用原请求确认创建结果</Button> :
-        <Button tone="primary" disabled={!canSubmit || !valid || !preview.isSuccess || !!problem || locked} onClick={() => create.mutate({ expectedVersion: head, manifestIds: ids, key: crypto.randomUUID() })}>确认创建 v{head + 1}</Button>}
+        <Button tone="primary" disabled={!canSubmit || !valid || !verifiedIds || !!problem || locked} onClick={() => {
+          if (verifiedIds) create.mutate({ expectedVersion: head, manifestIds: verifiedIds, key: crypto.randomUUID() })
+        }}>确认创建 v{head + 1}</Button>}
       <Button disabled={create.isPending || preview.isPending} onClick={onCancel}>关闭创建表单</Button>
     </footer>
   </Panel>

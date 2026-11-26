@@ -35,7 +35,7 @@ test('isolated Control applies the bundle from the console', async ({ page }, in
     await page.getByLabel('成员清单 ID').fill(manifestIds.join('\n'))
     await page.getByRole('button', { name: '核对清单' }).click()
     const members = page.getByRole('table', { name: '待组合清单', exact: true })
-    for (const id of manifestIds) await expect(members.getByText(id, { exact: true }).first()).toBeVisible()
+    for (const id of manifestIds) await expect(members.getByText(id, { exact: true }).or(members.getByTitle(id, { exact: true })).first()).toBeVisible()
     await page.getByRole('button', { name: `确认创建 v${version}`, exact: true }).click()
     await expect(page.getByText(`组合 v${version} 已创建`, { exact: true })).toBeVisible({ timeout: 30_000 })
     await page.screenshot({ path: info.outputPath('real-bundle-created.png'), fullPage: true })
