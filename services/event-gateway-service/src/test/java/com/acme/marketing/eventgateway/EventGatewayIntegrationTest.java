@@ -60,8 +60,15 @@ class EventGatewayIntegrationTest extends MySqlIntegrationTest {
                 Integer.class, "tenant-a", "orders"));
         Instant now = Instant.now();
         Map<String, Object> first = event("event-1", 1, now);
-        assertEquals("ACCEPTED", post("/api/v1/events", first).get("status").asString());
-        assertEquals("DUPLICATE", post("/api/v1/events", first).get("status").asString());
+        JsonNode receipt = post("/api/v1/events", first);
+        String receiptNo = receipt.get("businessNo").asString();
+        assertTrue(receiptNo.matches("MKT-EVT-[0-9]{6}-[0-9]{10}"));
+        assertEquals("ACCEPTED", receipt.get("status").asString());
+        JsonNode duplicate = post("/api/v1/events", first);
+        assertEquals("DUPLICATE", duplicate.get("status").asString());
+        assertEquals(receiptNo, duplicate.get("businessNo").asString());
+        assertEquals(receipt, get("/api/v1/events/receipts/" + receiptNo));
+        assertEquals(receipt, get("/api/v1/events/receipts/" + receipt.get("receiptId").asString()));
         EventOutboxBackpressure strictBackpressure = new EventOutboxBackpressure(
                 outbox, outboxDepth, Clock.systemUTC(), meters, 1, 100, 300, 0, 100);
         DependencyUnavailableException overloaded = assertThrows(DependencyUnavailableException.class,
@@ -71,6 +78,8 @@ class EventGatewayIntegrationTest extends MySqlIntegrationTest {
         JsonNode quarantine = get("/api/v1/quarantine");
         assertEquals(1, quarantine.size());
         assertEquals("AGGREGATE_VERSION_GAP", quarantine.get(0).get("reasonCode").asString());
+        assertTrue(quarantine.get(0).get("businessNo").asString().matches("MKT-QTN-[0-9]{6}-[0-9]{10}"));
+        assertEquals(quarantine, get("/api/v1/quarantine?number=" + quarantine.get(0).get("receiptBusinessNo").asString()));
     }
 
     @Test

@@ -21,41 +21,50 @@
             status_name AS statusName,
             reason_code AS reasonCode,
             ingested_at AS ingestedAt,
-            payload_hash AS payloadHash
+            payload_hash AS payloadHash, business_no AS businessNo, event_id AS eventId
         FROM mk_event_receipt
         WHERE tenant_id = #{tenantId}
           AND source_id = #{sourceId}
           AND event_id = #{eventId}
     </select>
 
+    <select id="selectReceiptByNumber" resultType="com.acme.marketing.eventgateway.infrastructure.persistence.mapper.EventGatewayMapper$ReceiptRow">
+        SELECT receipt_id AS receiptId, status_name AS statusName, reason_code AS reasonCode,
+               ingested_at AS ingestedAt, payload_hash AS payloadHash, business_no AS businessNo, event_id AS eventId
+        FROM mk_event_receipt WHERE tenant_id=#{tenantId}
+          AND <choose><when test='number.startsWith("MKT-EVT-")'>business_no=#{number}</when>
+            <otherwise>receipt_id=#{number}</otherwise></choose>
+    </select>
+
     <insert id="insertReceipt">
         INSERT INTO mk_event_receipt (
             tenant_id, receipt_id, source_id, event_id, event_type, business_key, aggregate_version,
-            status_name, reason_code, payload_hash, event_json, occurred_at, ingested_at
+            status_name, reason_code, payload_hash, event_json, occurred_at, ingested_at, business_no
         ) VALUES (
             #{tenantId}, #{receiptId}, #{sourceId}, #{eventId}, #{eventType}, #{businessKey},
             #{aggregateVersion}, #{statusName}, #{reasonCode}, #{payloadHash}, #{eventJson},
-            #{occurredAt}, #{ingestedAt}
+            #{occurredAt}, #{ingestedAt}, #{businessNo}
         )
     </insert>
 
     <insert id="insertQuarantine">
         INSERT INTO mk_quarantine (
-            tenant_id, quarantine_id, receipt_id, reason_code, event_json, state_name, created_at
+            tenant_id, quarantine_id, receipt_id, reason_code, event_json, state_name, created_at, business_no
         ) VALUES (
-            #{tenantId}, #{quarantineId}, #{receiptId}, #{reasonCode}, #{eventJson}, #{stateName}, #{createdAt}
+            #{tenantId}, #{quarantineId}, #{receiptId}, #{reasonCode}, #{eventJson}, #{stateName}, #{createdAt}, #{businessNo}
         )
     </insert>
 
     <select id="selectQuarantineForUpdate"
             resultType="com.acme.marketing.eventgateway.infrastructure.persistence.mapper.EventGatewayMapper$QuarantineRow">
         SELECT
-            receipt_id AS receiptId,
-            event_json AS eventJson,
-            state_name AS stateName
-        FROM mk_quarantine
-        WHERE tenant_id = #{tenantId}
-          AND quarantine_id = #{quarantineId}
+            q.receipt_id AS receiptId, q.event_json AS eventJson, q.state_name AS stateName,
+            q.quarantine_id AS quarantineId, r.business_no AS receiptBusinessNo
+        FROM mk_quarantine q
+        JOIN mk_event_receipt r ON r.tenant_id=q.tenant_id AND r.receipt_id=q.receipt_id
+        WHERE q.tenant_id = #{tenantId}
+          AND <choose><when test='quarantineId.startsWith("MKT-QTN-")'>q.business_no=#{quarantineId}</when>
+            <otherwise>q.quarantine_id=#{quarantineId}</otherwise></choose>
         FOR UPDATE
     </select>
 
@@ -78,15 +87,18 @@
     <select id="selectQuarantine"
             resultType="com.acme.marketing.eventgateway.infrastructure.persistence.mapper.EventGatewayMapper$QuarantineItemRow">
         SELECT
-            quarantine_id AS quarantineId,
-            receipt_id AS receiptId,
-            reason_code AS reasonCode,
-            state_name AS stateName,
-            created_at AS createdAt,
-            replayed_at AS replayedAt
-        FROM mk_quarantine
-        WHERE tenant_id = #{tenantId}
-        ORDER BY created_at DESC
+            q.quarantine_id AS quarantineId, q.receipt_id AS receiptId, q.reason_code AS reasonCode,
+            q.state_name AS stateName, q.created_at AS createdAt, q.replayed_at AS replayedAt,
+            q.business_no AS businessNo, r.business_no AS receiptBusinessNo
+        FROM mk_quarantine q
+        JOIN mk_event_receipt r ON r.tenant_id=q.tenant_id AND r.receipt_id=q.receipt_id
+        WHERE q.tenant_id = #{tenantId}
+        <if test="number != null">AND <choose>
+            <when test='number.startsWith("MKT-QTN-")'>q.business_no=#{number}</when>
+            <when test='number.startsWith("MKT-EVT-")'>r.business_no=#{number}</when>
+            <otherwise>(q.quarantine_id=#{number} OR r.receipt_id=#{number})</otherwise>
+        </choose></if>
+        ORDER BY q.created_at DESC, q.quarantine_id
     </select>
 
     <select id="selectSource"

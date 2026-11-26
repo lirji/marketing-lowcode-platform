@@ -127,11 +127,11 @@ public class MybatisEngagementRepository implements EngagementRepository {
 
     @Override
     public void insertContact(String tenantId, String contactId, SendRequest request,
-            String variablesJson, String requestFingerprint, Instant updatedAt) {
+            String variablesJson, String requestFingerprint, Instant updatedAt, String businessNo) {
         requireOne(mapper.insertContact(new EngagementMapper.ContactWrite(tenantId, contactId,
                 request.contactKey(), request.subjectToken(), request.campaignId(), request.channel(),
                 request.templateId(), request.templateVersion(), ContactState.PENDING.name(), variablesJson, requestFingerprint,
-                format(request.requestedAt()), format(updatedAt))), "新增触达尝试");
+                format(request.requestedAt()), format(updatedAt), businessNo)), "新增触达尝试");
     }
 
     @Override
@@ -306,7 +306,7 @@ public class MybatisEngagementRepository implements EngagementRepository {
 
     private static ContactView contact(EngagementMapper.ContactRow row) {
         return new ContactView(row.contactId(), row.contactKey(), ContactState.valueOf(row.stateName()),
-                value(row.providerRequestId()), value(row.providerCode()), Instant.parse(row.updatedAt()));
+                value(row.providerRequestId()), value(row.providerCode()), Instant.parse(row.updatedAt()), row.businessNo());
     }
 
     /** 保留持久化CSV顺序，让界面变量展示和服务端搜索保持同一文本顺序。 */

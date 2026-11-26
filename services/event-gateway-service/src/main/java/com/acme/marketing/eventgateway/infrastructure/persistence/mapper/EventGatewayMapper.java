@@ -19,6 +19,9 @@ public interface EventGatewayMapper {
     ReceiptRow selectReceipt(@Param("tenantId") String tenantId, @Param("sourceId") String sourceId,
             @Param("eventId") String eventId);
 
+    /** 仅在原租户的回执索引中查业务号或原键。 */
+    ReceiptRow selectReceiptByNumber(@Param("tenantId") String tenantId, @Param("number") String number);
+
     /** 插入事件回执。 */
     int insertReceipt(ReceiptWrite receipt);
 
@@ -37,7 +40,7 @@ public interface EventGatewayMapper {
     int markReceiptReplayed(@Param("tenantId") String tenantId, @Param("receiptId") String receiptId);
 
     /** 查询隔离事件列表。 */
-    List<QuarantineItemRow> selectQuarantine(@Param("tenantId") String tenantId);
+    List<QuarantineItemRow> selectQuarantine(@Param("tenantId") String tenantId, @Param("number") String number);
 
     /** 查询事件源。 */
     SourceRow selectSource(@Param("tenantId") String tenantId, @Param("sourceId") String sourceId);
@@ -105,22 +108,22 @@ public interface EventGatewayMapper {
     /** 回执写模型。 */
     record ReceiptWrite(String tenantId, String receiptId, String sourceId, String eventId,
             String eventType, String businessKey, Long aggregateVersion, String statusName, String reasonCode,
-            String payloadHash, String eventJson, String occurredAt, String ingestedAt) { }
+            String payloadHash, String eventJson, String occurredAt, String ingestedAt, String businessNo) { }
 
     /** 回执读模型。 */
     record ReceiptRow(String receiptId, String statusName, String reasonCode, String ingestedAt,
-            String payloadHash) { }
+            String payloadHash, String businessNo, String eventId) { }
 
     /** 隔离事件写模型。 */
     record QuarantineWrite(String tenantId, String quarantineId, String receiptId, String reasonCode,
-            String eventJson, String stateName, String createdAt) { }
+            String eventJson, String stateName, String createdAt, String businessNo) { }
 
     /** 隔离事件锁定读模型。 */
-    record QuarantineRow(String receiptId, String eventJson, String stateName) { }
+    record QuarantineRow(String receiptId, String eventJson, String stateName, String quarantineId, String receiptBusinessNo) { }
 
     /** 隔离事件列表读模型。 */
     record QuarantineItemRow(String quarantineId, String receiptId, String reasonCode, String stateName,
-            String createdAt, String replayedAt) { }
+            String createdAt, String replayedAt, String businessNo, String receiptBusinessNo) { }
 
     /** 聚合版本写模型。 */
     record AggregateVersionWrite(String tenantId, String sourceId, String businessKey,

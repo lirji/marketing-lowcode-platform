@@ -82,7 +82,7 @@ public class MybatisAudienceRepository implements AudienceRepository {
     public void saveSegment(String tenantId, String actorId, SegmentView segment) {
         requireOne(mapper.insertSegment(new SegmentWrite(tenantId, segment.segmentId(), segment.version(),
                 segment.name(), json(segment.rule()), segment.ruleHash(), segment.status(), actorId,
-                format(segment.createdAt()))), "保存人群定义");
+                format(segment.createdAt()), segment.version() == 1 ? segment.businessNo() : null)), "保存人群定义");
     }
 
     @Override
@@ -151,7 +151,7 @@ public class MybatisAudienceRepository implements AudienceRepository {
 
     private SegmentView toSegment(SegmentRow row) {
         return new SegmentView(row.segmentId(), row.versionNo(), row.name(), row.stateName(),
-                read(row.ruleJson(), SegmentRule.class), row.ruleHash(), Instant.parse(row.createdAt()));
+                read(row.ruleJson(), SegmentRule.class), row.ruleHash(), Instant.parse(row.createdAt()), row.businessNo());
     }
 
     private static FieldDefinition toField(FieldRow row) {

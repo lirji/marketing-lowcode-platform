@@ -381,7 +381,7 @@ class ReleaseBundleReadinessIntegrationTest {
         var artifact = new ArtifactReference("artifact-" + id, "JOURNEY_PLAN", "memory:test", "sha256:" + "a".repeat(64), digest, "key", "fixture", "marketing-journey-plan/1", definition, 1);
         var signed = new ReleaseManifestSigner().sign(new ReleaseManifest(id, new TenantId(tenant), "local", "cell-a", "journey", namespace + "-" + campaign,
                 1, 0, List.of(), List.of(), List.of(artifact), Map.of(), 0, NOW.minusSeconds(10), NOW.plusSeconds(3600), "author", List.of(approval), NOW.minusSeconds(10), ""), releaseKeys.activePrivateKey());
-        repository.saveManifest(new ControlRepository.ManifestWrite(tenant, id, "local", "cell-a", "journey", signed.namespace(), 1, "STAGED", mapper.writeValueAsString(signed), NOW.toString()));
+        repository.saveManifest(new ControlRepository.ManifestWrite(tenant, id, "local", "cell-a", "journey", signed.namespace(), 1, "STAGED", mapper.writeValueAsString(signed), NOW.toString(), null));
         repository.tryCreateReleaseSlot(new ControlRepository.ReleaseSlotWrite(tenant, "local", "cell-a", "journey", signed.namespace(), 0, 0, 1, 0, NOW.toString()));
         return id;
     }

@@ -100,6 +100,11 @@ class EngagementIntegrationTest extends MySqlIntegrationTest {
                 "canonical-provider", "HTTP_202", 1, clock.instant(), Map.of())).when(provider).send(any(), any());
         JsonNode accepted = post("/api/v1/contacts", send);
         assertEquals(first.get("contactId"), accepted.get("contactId"));
+        String contactNo = accepted.path("businessNo").asString();
+        assertTrue(contactNo.matches("MKT-CNT-[0-9]{6}-[0-9]{10}"));
+        assertEquals(first.path("businessNo").asString(), contactNo);
+        assertEquals(accepted, get("/api/v1/contacts/" + contactNo));
+        assertEquals(accepted, get("/api/v1/contacts/" + accepted.path("contactId").asString()));
         assertEquals("ACCEPTED", accepted.get("state").asString());
         assertEquals(accepted, post("/api/v1/contacts", send));
         send.put("recipientToken", "changed-recipient");

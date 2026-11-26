@@ -239,10 +239,10 @@
     <insert id="insertManifest">
         INSERT INTO mk_release_manifest
             (tenant_id, manifest_id, environment_name, cell_id, runtime_name, namespace_name,
-             generation_no, state_name, manifest_json, created_at)
+             generation_no, state_name, manifest_json, created_at, business_no)
         VALUES
             (#{tenantId}, #{manifestId}, #{environmentName}, #{cellId}, #{runtimeName}, #{namespaceName},
-             #{generationNo}, #{stateName}, #{manifestJson}, #{createdAt})
+             #{generationNo}, #{stateName}, #{manifestJson}, #{createdAt}, #{businessNo})
     </insert>
     <update id="updateSlotLatestGeneration">
         UPDATE mk_release_slot SET latest_generation = #{latestGeneration}, updated_at = #{updatedAt}
@@ -323,7 +323,7 @@
         )
     </sql>
     <select id="selectManifests" resultType="com.acme.marketing.control.application.ControlRepository$ManifestRow">
-        SELECT m.manifest_json AS manifestJson, m.state_name AS stateName FROM mk_release_manifest m
+        SELECT m.manifest_json AS manifestJson, m.state_name AS stateName, m.business_no AS businessNo FROM mk_release_manifest m
         WHERE <include refid="manifestVisibleScope"/>
         <if test="state != null">AND m.state_name = #{state}</if>
         <if test="cursorCreatedAt != null">
@@ -398,13 +398,15 @@
     </select>
     <select id="selectManifest"
             resultType="com.acme.marketing.control.application.ControlRepository$ManifestRow">
-        SELECT manifest_json AS manifestJson, state_name AS stateName
-        FROM mk_release_manifest WHERE tenant_id = #{tenantId} AND manifest_id = #{manifestId}
+        SELECT manifest_json AS manifestJson, state_name AS stateName, business_no AS businessNo
+        FROM mk_release_manifest WHERE tenant_id = #{tenantId}
+          AND <choose><when test='!lock and manifestId.startsWith("MKT-MNF-")'>business_no=#{manifestId}</when>
+            <otherwise>manifest_id=#{manifestId}</otherwise></choose>
         <if test="lock">FOR UPDATE</if>
     </select>
     <select id="selectManifestByGeneration"
             resultType="com.acme.marketing.control.application.ControlRepository$ManifestRow">
-        SELECT manifest_json AS manifestJson, state_name AS stateName
+        SELECT manifest_json AS manifestJson, state_name AS stateName, business_no AS businessNo
         FROM mk_release_manifest
         WHERE tenant_id = #{tenantId} AND environment_name = #{environment} AND cell_id = #{cell}
           AND runtime_name = #{runtime} AND namespace_name = #{namespace} AND generation_no = #{generation}

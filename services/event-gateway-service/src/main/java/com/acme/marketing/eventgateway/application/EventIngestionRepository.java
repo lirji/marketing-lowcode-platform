@@ -17,6 +17,9 @@ public interface EventIngestionRepository {
     /** 按来源与事件号查询幂等回执。 */
     Optional<StoredReceipt> findReceipt(String tenantId, String sourceId, String eventId);
 
+    /** 运营查询可用新号或原持久回执键。 */
+    Optional<StoredReceipt> findReceiptByNumber(String tenantId, String number);
+
     /** 尝试保存事件回执；并发幂等键已存在时返回 false。 */
     boolean insertReceipt(ReceiptWrite receipt);
 
@@ -33,7 +36,7 @@ public interface EventIngestionRepository {
     void markReceiptReplayed(String tenantId, String receiptId);
 
     /** 查询租户的隔离事件列表。 */
-    List<QuarantineItem> findQuarantine(String tenantId);
+    List<QuarantineItem> findQuarantine(String tenantId, String number);
 
     /** 查询事件源配置。 */
     Optional<SourceRecord> findSource(String tenantId, String sourceId);
@@ -73,22 +76,22 @@ public interface EventIngestionRepository {
     /** 回执写模型。 */
     record ReceiptWrite(String tenantId, String receiptId, String sourceId, String eventId,
             String eventType, String businessKey, Long aggregateVersion, String status, String reasonCode,
-            String payloadHash, String eventJson, Instant occurredAt, Instant ingestedAt) { }
+            String payloadHash, String eventJson, Instant occurredAt, Instant ingestedAt, String businessNo) { }
 
     /** 已存储的幂等回执。 */
     record StoredReceipt(String receiptId, String status, String reasonCode, Instant ingestedAt,
-            String payloadHash) { }
+            String payloadHash, String businessNo, String eventId) { }
 
     /** 隔离事件写模型。 */
     record QuarantineWrite(String tenantId, String quarantineId, String receiptId, String reasonCode,
-            String eventJson, String state, Instant createdAt) { }
+            String eventJson, String state, Instant createdAt, String businessNo) { }
 
     /** 加锁读取的隔离事件。 */
-    record QuarantineRecord(String receiptId, String eventJson, String state) { }
+    record QuarantineRecord(String receiptId, String eventJson, String state, String quarantineId, String receiptBusinessNo) { }
 
     /** 隔离列表项。 */
     record QuarantineItem(String quarantineId, String receiptId, String reasonCode, String state,
-            Instant createdAt, Instant replayedAt) { }
+            Instant createdAt, Instant replayedAt, String businessNo, String receiptBusinessNo) { }
 
     /** outbox 写模型。 */
     record OutboxWrite(String tenantId, String outboxId, String receiptId, String eventType,

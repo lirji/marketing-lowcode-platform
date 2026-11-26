@@ -6,6 +6,8 @@ import com.acme.marketing.platform.error.ConflictException;
 import com.acme.marketing.platform.error.NotFoundException;
 import static com.acme.marketing.platform.time.SqlTime.format;
 import com.acme.marketing.platform.identity.TenantScope;
+import com.acme.marketing.platform.identity.BusinessNumber;
+import java.time.Duration;
 import java.time.Clock;
 import java.util.List;
 import java.util.Locale;
@@ -23,6 +25,7 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class DecisionRequestExecutor {
     private static final long RETENTION_SECONDS = 86_400;
+    private static final Duration QUOTE_NUMBER_LEASE = Duration.ofSeconds(RETENTION_SECONDS + 60);
     private static final DefaultRedisScript<Long> CLAIM = new DefaultRedisScript<>("""
             if redis.call('EXISTS', KEYS[1]) == 1 then
               if redis.call('HGET', KEYS[1], 'payloadHash') ~= ARGV[1] then return -1 end
@@ -37,7 +40,7 @@ public class DecisionRequestExecutor {
             if redis.call('HGET', KEYS[1], 'payloadHash') ~= ARGV[1] then return 0 end
             if redis.call('HGET', KEYS[1], 'state') ~= 'PROCESSING' then return 0 end
             -- Lua不回滚已执行写入，先校验所有索引类型再修改完成状态。
-            for i=2,3 do
+            for i=2,5 do
               local kind = redis.call('TYPE', KEYS[i]).ok
               if kind ~= 'none' and kind ~= 'hash' then return -2 end
             end
@@ -50,6 +53,10 @@ public class DecisionRequestExecutor {
                   redis.call('EXPIRE', KEYS[i], ARGV[3])
                 end
               end
+            end
+            for i=4,5 do
+              redis.call('HSET', KEYS[i], 'traceJson', ARGV[4])
+              redis.call('EXPIRE', KEYS[i], ARGV[3])
             end
             redis.call('EXPIRE', KEYS[1], ARGV[3])
             return 1
@@ -127,12 +134,23 @@ public class DecisionRequestExecutor {
             decisions.validateBundleReplay(scope, request);
             return read(stored.responseJson());
         }
-        DecisionApplicationService.DecisionResponse response = decisions.evaluate(scope, request);
-        commandRepository.complete(tenantId, request.idempotencyKey(), json(response));
-        AutomaticDecisionTrace trace = AutomaticDecisionTrace.from(scope, request, response, RETENTION_SECONDS);
-        commandRepository.saveTrace(tenantId, request.idempotencyKey(), json(trace), Digests.sha256Hex(request.requestId()),
-                request.orderId().isBlank() ? null : Digests.sha256Hex(request.orderId()), traceSort(trace));
-        return response;
+        var decision = decisions.evaluate(scope, request);
+        // 编号、原签名报价、幂等响应及查询索引共享提交边界。
+        for (int attempt = 0; attempt < BusinessNumber.MAX_ISSUE_ATTEMPTS; attempt++) {
+            var response = decision.numbered(BusinessNumber.next(BusinessNumber.Type.OFFER_QUOTE, decision.decidedAt()));
+            var trace = AutomaticDecisionTrace.from(scope, request, response, RETENTION_SECONDS);
+            try {
+                commandRepository.saveTrace(tenantId, request.idempotencyKey(), json(trace),
+                        Digests.sha256Hex(request.requestId()), request.orderId().isBlank() ? null : Digests.sha256Hex(request.orderId()),
+                        traceSort(trace), response.businessNo());
+                commandRepository.complete(tenantId, request.idempotencyKey(), json(response));
+                return response;
+            } catch (org.springframework.dao.DuplicateKeyException duplicate) {
+                if (attempt == BusinessNumber.MAX_ISSUE_ATTEMPTS - 1
+                        || !BusinessNumber.isCollision(duplicate, "uk_decision_quote_business_no")) throw duplicate;
+            }
+        }
+        throw new IllegalStateException("quote number allocation exhausted");
     }
 
     private DecisionApplicationService.DecisionResponse executeRedis(
@@ -155,11 +173,13 @@ public class DecisionRequestExecutor {
             return read(responseJson);
         }
         try {
-            DecisionApplicationService.DecisionResponse response = decisions.evaluate(scope, request);
+            var decision = decisions.evaluate(scope, request);
+            var response = reserveRedisQuoteNumber(decision);
             String responseJson = json(response);
             AutomaticDecisionTrace trace = AutomaticDecisionTrace.from(scope, request, response, RETENTION_SECONDS);
             Long completed = redis.execute(COMPLETE, List.of(key,
-                            traceKey(scope, false, request.requestId()), traceKey(scope, true, request.orderId())),
+                            traceKey(scope, false, request.requestId()), traceKey(scope, true, request.orderId()),
+                            quoteTraceKey(scope, response.quoteId()), quoteTraceKey(scope, response.businessNo())),
                     payloadHash, responseJson, Long.toString(RETENTION_SECONDS), json(trace), traceSort(trace),
                     request.orderId().isBlank() ? "0" : "1");
             if (completed == null || completed != 1) {
@@ -170,6 +190,38 @@ public class DecisionRequestExecutor {
             redis.execute(RELEASE, List.of(key), payloadHash);
             throw failure;
         }
+    }
+
+    /** 全局占位防止不同租户分到相同报价号，未完成命令的占位由保留期自动清理。 */
+    private DecisionApplicationService.DecisionResponse reserveRedisQuoteNumber(
+            DecisionApplicationService.DecisionResponse decision) {
+        for (int attempt = 0; attempt < BusinessNumber.MAX_ISSUE_ATTEMPTS; attempt++) {
+            String number = BusinessNumber.next(BusinessNumber.Type.OFFER_QUOTE, decision.decidedAt());
+            if (Boolean.TRUE.equals(redis.opsForValue().setIfAbsent("mk:decision:quote-number:" + number, "1", QUOTE_NUMBER_LEASE)))
+                return decision.numbered(number);
+        }
+        throw new IllegalStateException("quote number allocation exhausted");
+    }
+
+    /** 查报价使用同租户、同保留期的原脱敏轨迹。 */
+    public AutomaticDecisionTrace quoteTrace(TenantScope scope, String number) {
+        scope.requirePermission("trace:read");
+        String encoded;
+        if (store == Store.REDIS) {
+            Object value = redis.opsForHash().get(quoteTraceKey(scope, number), "traceJson");
+            encoded = value instanceof String text ? text : null;
+        } else {
+            encoded = commandRepository.findQuoteTrace(scope.tenantId().value(), number, clock.instant()).orElse(null);
+        }
+        if (encoded == null) throw traceNotFound();
+        var trace = objectMapper.readValue(encoded, AutomaticDecisionTrace.class);
+        if (!clock.instant().isBefore(trace.expiresAt())
+                || !(number.equals(trace.traceId()) || number.equals(trace.businessNo()))) throw traceNotFound();
+        return trace;
+    }
+
+    private static String quoteTraceKey(TenantScope scope, String number) {
+        return "mk:decision:trace:{" + scope.tenantId().value() + "}:quote:" + Digests.sha256Hex(number);
     }
 
     /** 当前租户的自动决策摘要；订单查询返回最近完成的决策，而非订单履约结果。 */

@@ -9,7 +9,7 @@ import java.util.Map;
 /** 由真实决策响应生成的脱敏摘要，不把报价计算伪装成预占、支付或权益到账。 */
 public record AutomaticDecisionTrace(String traceId, String requestId, String orderId, String maskedSubject,
         long generation, long durationMicros, Map<String, Object> candidates, Map<String, Object> pricing,
-        String termsVersion, Instant expiresAt, boolean legalHold, Instant createdAt, List<Event> events) {
+        String termsVersion, Instant expiresAt, boolean legalHold, Instant createdAt, List<Event> events, String businessNo) {
     private static final int MAX_CANDIDATES = 200;
     private static final int MAX_LABEL_LENGTH = 256;
     private static final String DECISION_EVENT = "DECISION_EVALUATED";
@@ -31,7 +31,7 @@ public record AutomaticDecisionTrace(String traceId, String requestId, String or
         return new AutomaticDecisionTrace(response.quoteId(), request.requestId(), request.orderId(), masked,
                 response.generation(), response.durationMicros(), candidates, pricing, "",
                 response.decidedAt().plusSeconds(retentionSeconds), false, response.decidedAt(),
-                List.of(new Event(response.decidedAt(), DECISION_EVENT, EVENT_TITLE, EVENT_DETAIL)));
+                List.of(new Event(response.decidedAt(), DECISION_EVENT, EVENT_TITLE, EVENT_DETAIL)), response.businessNo());
     }
 
     /** 只读结果容器不允许后续修改集合。 */

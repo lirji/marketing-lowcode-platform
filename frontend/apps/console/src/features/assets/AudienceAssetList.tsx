@@ -31,7 +31,7 @@ export function AudienceAssetList() {
   })
   if (!live) return <Panel><EmptyState title={api.demoMode ? '人群列表需要连接服务' : '没有查看人群的权限'} detail={api.demoMode ? '静态预览不查询、刷新或展示业务记录；连接营销服务后读取已保存的版本。' : '请使用具备相应读取权限的身份。'} /></Panel>
   const items = searchPending ? [] : page.data?.pages.flatMap(item => item.items) ?? []
-  const rows = items.map(item => [item.name, item.segmentId, String(item.version), item.ruleHash ?? '—', item.createdAt ?? '', item.status])
+  const rows = items.map(item => [item.name, item.businessNo ?? item.segmentId, String(item.version), item.ruleHash ?? '—', item.createdAt ?? '', item.status])
   const initialError = !searchPending && page.isError && items.length === 0
   const bodyState = (page.isPending || searchPending) && live ? <div className="skeleton-list" aria-label="正在加载人群"><i /><i /></div>
     : initialError ? <><StateBanner tone="error" title="人群加载失败" detail={problemDetail(page.error)} /><Button onClick={() => void page.refetch()}>重试人群查询</Button></>

@@ -20,10 +20,13 @@ public interface DecisionCommandRepository {
     void complete(String tenantId, String idempotencyKey, String responseJson);
 
     /** 在当前完成事务中保存脱敏摘要，不能在回放时重新生成另一份事实。 */
-    void saveTrace(String tenantId, String idempotencyKey, String traceJson, String requestHash, String orderHash, String sort);
+    void saveTrace(String tenantId, String idempotencyKey, String traceJson, String requestHash, String orderHash, String sort, String businessNo);
 
     /** 按受租户隔离的请求或订单索引读取未过期的最新完成结果。 */
     Optional<String> findTrace(String tenantId, String requestHash, String orderHash, Instant now);
+
+    /** 通过运营编号或原报价引用查询保留期内的同一脱敏轨迹。 */
+    Optional<String> findQuoteTrace(String tenantId, String number, Instant now);
 
     /** 数据库存储的幂等请求状态。 */
     record StoredCommand(String payloadHash, String state, String responseJson) { }

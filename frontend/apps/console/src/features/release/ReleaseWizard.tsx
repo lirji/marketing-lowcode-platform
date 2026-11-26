@@ -228,7 +228,7 @@ function ScopedReleaseWizard({ open, onClose, onRequestActivate }: ReleaseWizard
         {stageBlocker && <small className="release-blocker">{stageBlocker}</small>}
         <Button tone="primary" onClick={() => stage.mutate()} disabled={Boolean(stageBlocker) || !environment.trim() || !cell.trim() || !namespace.trim() || stage.isPending} title={stageBlocker || '暂存已批准制品'}>暂存</Button>
         {stage.isError && <StateBanner tone="error" title="暂存失败" detail={problemHint(stage.error)} />}
-        {stage.data && <StateBanner tone="success" title="已暂存" detail={`${stage.data.manifest.manifestId} · ${stage.data.state}`} />}
+        {stage.data && <StateBanner tone="success" title="已暂存" detail={`${stage.data.businessNo ?? stage.data.manifest.manifestId} · ${stage.data.state}`} />}
       </section>
 
       <section>

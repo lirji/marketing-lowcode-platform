@@ -130,7 +130,7 @@ class ReferralControlPreviewTest {
                 "sha256:" + "b".repeat(64), "key", "signature", "marketing-referral-plan/1", "fixture", 1);
         var manifest = new ReleaseManifest("manifest", new TenantId("tenant-a"), "test", "cell", "referral", "fixture", 1, 0,
                 List.of(), List.of(), List.of(artifact), Map.of(), 0, now, now.plusSeconds(1000), "operator", List.of(), now, "fixture-signature");
-        when(repository.findManifest("tenant-a", "manifest", true)).thenReturn(Optional.of(new ControlRepository.ManifestRow(mapper.writeValueAsString(manifest), "STAGED")));
+        when(repository.findManifest("tenant-a", "manifest", true)).thenReturn(Optional.of(new ControlRepository.ManifestRow(mapper.writeValueAsString(manifest), "STAGED", null)));
         when(repository.findDefinitionScopes("tenant-a", "fixture", 1, false)).thenReturn(List.of(new ControlRepository.ResourceScopeRow("org", "shop")));
         var releases = new ReleaseApplicationService(repository, mapper, Clock.fixed(now, ZoneOffset.UTC),
                 new SigningKeyRing("fixture", Ed25519.generateKeyPair()), null, null, null, 1, 1, 100, "", "activation", "switch");

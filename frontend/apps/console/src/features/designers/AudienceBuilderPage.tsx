@@ -117,7 +117,7 @@ function AudienceEditor({ selectedId }: { selectedId: string }) {
       return
     }
     if (audiences.isPending || audiences.isError) return
-    const selected = selectedId ? audiences.data?.find((item) => item.segmentId === selectedId) : audiences.data?.[0]
+    const selected = selectedId ? audiences.data?.find((item) => item.segmentId === selectedId || item.businessNo === selectedId) : audiences.data?.[0]
     if (selected) applySegment(selected)
     else if (selectedId) setSelectionError('所选人群不存在或当前身份无权访问，请从已保存版本中重新选择。')
     setHydrated(true)
@@ -135,7 +135,7 @@ function AudienceEditor({ selectedId }: { selectedId: string }) {
       setSegmentId(value.segmentId)
       setVersion(value.version)
       setSavedRule(JSON.stringify(input.rule))
-      setNotice(`已写入 ${value.segmentId} v${value.version}`)
+      setNotice(`已写入 ${value.businessNo ?? value.segmentId} v${value.version}`)
       void queryClient.invalidateQueries({ queryKey: ['audiences'] })
     },
   })
@@ -175,7 +175,7 @@ function AudienceEditor({ selectedId }: { selectedId: string }) {
         snapshot.mutate({ target, key })
       }}><ShieldCheck size={15} />保存快照</Button>
       {!api.demoMode && canWrite && <Button tone="primary" disabled={busy || !name.trim() || Boolean(selectionError)} onClick={() => save.mutate({
-        segmentId: segmentId || `seg-${crypto.randomUUID().slice(0, 8)}`, name, rule: currentRule,
+        segmentId: segmentId || undefined, name, rule: currentRule,
       })}><Save size={15} />保存规则</Button>}
     </>}
     notices={<>
@@ -199,7 +199,7 @@ function AudienceEditor({ selectedId }: { selectedId: string }) {
           else resetDraft()
         }}>
           <option value="">新人群（保存后分配）</option>
-          {(audiences.data ?? []).map((item) => <option key={item.segmentId} value={item.segmentId}>{item.name} · {item.segmentId} v{item.version}</option>)}
+          {(audiences.data ?? []).map((item) => <option key={item.segmentId} value={item.segmentId}>{item.name} · {item.businessNo ?? item.segmentId} v{item.version}</option>)}
         </Select>
       </label>
     </Panel>}

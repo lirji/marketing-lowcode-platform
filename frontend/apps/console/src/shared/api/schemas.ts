@@ -202,6 +202,7 @@ export type ArtifactView = z.infer<typeof artifactViewSchema>
 export const ReleaseState = { STAGED: 'STAGED', ACTIVE: 'ACTIVE', ROLLED_BACK: 'ROLLED_BACK', REVOKED: 'REVOKED' } as const
 
 export const releaseViewSchema = z.object({
+  businessNo: z.string().nullish(),
   manifest: z.object({
     manifestId: z.string(),
     environment: z.string().optional(),
@@ -234,7 +235,7 @@ export const releasePageSchema = z.object({
 })
 export type ReleasePage = z.infer<typeof releasePageSchema>
 
-export const rollbackCandidateSchema = z.object({ manifestId: z.string(), generation: z.number().int().positive().safe(),
+export const rollbackCandidateSchema = z.object({ manifestId: z.string(), businessNo: z.string().nullish(), generation: z.number().int().positive().safe(),
   expiresAt: z.string(), artifacts: z.array(artifactReferenceSchema) })
 export type RollbackCandidate = z.infer<typeof rollbackCandidateSchema>
 
@@ -358,6 +359,7 @@ export const traceEventSchema = z.object({
   detail: z.string().optional(),
 })
 export const traceViewSchema = z.object({
+  businessNo: z.string().nullish(),
   traceId: z.string().optional(),
   requestId: z.string().optional(),
   orderId: z.string().nullable().optional(),
@@ -388,6 +390,7 @@ export type EnrollmentView = z.infer<typeof enrollmentViewSchema>
 
 export const contactViewSchema = z.object({
   contactId: z.string(),
+  businessNo: z.string().nullish(),
   contactKey: z.string(),
   state: z.string(),
   providerRequestId: z.string().optional(),
@@ -396,8 +399,17 @@ export const contactViewSchema = z.object({
 })
 export type ContactView = z.infer<typeof contactViewSchema>
 
+export const eventReceiptSchema = z.object({
+  receiptId: z.string(),
+  businessNo: z.string().nullish(),
+  status: z.string(),
+  reasonCode: z.string(),
+  ingestedAt: z.string(),
+})
 export const quarantineViewSchema = z.object({
   quarantineId: z.string(),
+  businessNo: z.string().nullish(),
+  receiptBusinessNo: z.string().nullish(),
   receiptId: z.string().optional(),
   reasonCode: z.string(),
   state: z.string(),
@@ -469,6 +481,7 @@ export const audienceConditionSchema = z.object({
 })
 export const audienceViewSchema = z.object({
   segmentId: z.string(),
+  businessNo: z.string().nullish(),
   version: z.number(),
   name: z.string(),
   status: z.string(),

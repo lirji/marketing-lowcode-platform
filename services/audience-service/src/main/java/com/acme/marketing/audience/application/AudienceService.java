@@ -59,13 +59,36 @@ public class AudienceService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("audience:write");
         validateRule(scope.tenantId().value(), request.rule());
-        long version = repository.findLatestSegmentVersion(scope.tenantId().value(), request.segmentId())
-                .map(latest -> Math.addExact(latest, 1L)).orElse(1L);
+        String tenant = scope.tenantId().value();
+        String suppliedId = request.segmentId();
+        String segmentId = suppliedId == null || suppliedId.isBlank() ? UUID.randomUUID().toString() : suppliedId;
+        var first = repository.findSegment(tenant, segmentId, 1);
+        if (first.isPresent()) {
+            // 新旧编号先解析为原人群键，已有快照和定义版本持续关联同一人群。
+            var root = first.get();
+            long version = Math.addExact(repository.findLatestSegmentVersion(tenant, root.segmentId()).orElseThrow(), 1L);
+            return saveDefinition(scope, request, root.segmentId(), version, clock.instant(), root.businessNo());
+        }
+        if (BusinessNumber.matches(BusinessNumber.Type.AUDIENCE_SEGMENT, segmentId))
+            throw new NotFoundException("SEGMENT_NOT_FOUND", "segment version not found");
         Instant now = clock.instant();
-        String ruleJson = json(request.rule());
-        String digest = "sha256:" + Digests.sha256Hex(ruleJson);
-        SegmentView segment = new SegmentView(request.segmentId(), version, request.name(), "ACTIVE",
-                request.rule(), digest, now);
+        for (int attempt = 0; attempt < BusinessNumber.MAX_ISSUE_ATTEMPTS; attempt++) {
+            String number = BusinessNumber.next(BusinessNumber.Type.AUDIENCE_SEGMENT, now);
+            try {
+                return saveDefinition(scope, request, segmentId, 1, now, number);
+            } catch (org.springframework.dao.DuplicateKeyException duplicate) {
+                if (attempt == BusinessNumber.MAX_ISSUE_ATTEMPTS - 1
+                        || !BusinessNumber.isCollision(duplicate, "uk_segment_business_no")) throw duplicate;
+            }
+        }
+        throw new IllegalStateException("segment number allocation exhausted");
+    }
+
+    /** 人群号与首版同事务写入，后续版本从首版读取同一个运营编号。 */
+    private SegmentView saveDefinition(com.acme.marketing.platform.identity.TenantScope scope,
+            CreateSegmentRequest request, String segmentId, long version, Instant now, String businessNo) {
+        String digest = "sha256:" + Digests.sha256Hex(json(request.rule()));
+        SegmentView segment = new SegmentView(segmentId, version, request.name(), "ACTIVE", request.rule(), digest, now, businessNo);
         repository.saveSegment(scope.tenantId().value(), scope.actorId(), segment);
         return segment;
     }
@@ -121,8 +144,8 @@ public class AudienceService {
     public SnapshotView createSnapshot(String segmentId, long version, SnapshotRequest request) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("audience:snapshot");
-        segment(scope.tenantId().value(), segmentId, version);
-        return persistSnapshot(scope.tenantId().value(), segmentId, version, UUID.randomUUID().toString(), request);
+        String originalId = segment(scope.tenantId().value(), segmentId, version).segmentId();
+        return persistSnapshot(scope.tenantId().value(), originalId, version, UUID.randomUUID().toString(), request);
     }
 
     /** 仅可信来源计算可写入该类快照，过期后重新从商城计算。 */
@@ -130,7 +153,8 @@ public class AudienceService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("audience:snapshot");
         var request = new SnapshotRequest(subjects, asOf, asOf, asOf.plus(COMMERCE_SNAPSHOT_TTL));
-        return persistSnapshot(scope.tenantId().value(), segmentId, version, COMMERCE_SNAPSHOT_PREFIX + UUID.randomUUID(), request);
+        String originalId = segment(scope.tenantId().value(), segmentId, version).segmentId();
+        return persistSnapshot(scope.tenantId().value(), originalId, version, COMMERCE_SNAPSHOT_PREFIX + UUID.randomUUID(), request);
     }
 
     private SnapshotView persistSnapshot(String tenant, String segmentId, long version, String snapshotId, SnapshotRequest request) {
@@ -269,7 +293,7 @@ public class AudienceService {
     }
     public record CreateSegmentRequest(String segmentId, String name, SegmentRule rule) { }
     public record SegmentView(String segmentId, long version, String name, String status, SegmentRule rule,
-            String ruleHash, Instant createdAt) { }
+            String ruleHash, Instant createdAt, String businessNo) { }
     public record SubjectProfile(String subjectToken, Map<String, String> attributes) {
         public SubjectProfile { attributes = Map.copyOf(attributes); }
     }

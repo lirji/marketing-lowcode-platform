@@ -1,5 +1,7 @@
 package com.acme.marketing.eventgateway.application;
 
+import com.acme.marketing.platform.identity.BusinessNumber;
+
 import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.error.ConflictException;
 import com.acme.marketing.platform.error.NotFoundException;
@@ -75,7 +77,7 @@ public class EventIngestionService {
             }
             Receipt original = stored.receipt();
             return new Receipt(original.receiptId(), event.eventId(), Status.DUPLICATE,
-                    "DUPLICATE_EVENT", original.ingestedAt());
+                    "DUPLICATE_EVENT", original.ingestedAt(), original.businessNo());
         }
         Source source = source(tenantId, event.sourceId());
         Instant now = clock.instant();
@@ -90,26 +92,31 @@ public class EventIngestionService {
         Status status = reason == null ? Status.ACCEPTED : Status.QUARANTINED;
         String receiptId = UUID.randomUUID().toString();
         String eventJson = json(event);
-        boolean inserted = repository.insertReceipt(new EventIngestionRepository.ReceiptWrite(tenantId,
-                receiptId, event.sourceId(), event.eventId(), event.eventType(), event.businessKey(),
-                event.aggregateVersion(), status.name(), reason == null ? "" : reason, payloadHash,
-                eventJson, event.occurredAt(), now));
-        if (!inserted) {
+        String reasonCode = reason == null ? "" : reason;
+        String receiptNo = issue(BusinessNumber.Type.EVENT_RECEIPT, now, "uk_event_receipt_business_no",
+                number -> repository.insertReceipt(new EventIngestionRepository.ReceiptWrite(tenantId,
+                        receiptId, event.sourceId(), event.eventId(), event.eventType(), event.businessKey(),
+                        event.aggregateVersion(), status.name(), reasonCode, payloadHash, eventJson,
+                        event.occurredAt(), now, number)) ? number : null);
+        if (receiptNo == null) {
             StoredReceipt winner = storedReceipt(tenantId, event.sourceId(), event.eventId());
             if (winner == null) throw new IllegalStateException("concurrent event receipt cannot be loaded");
             if (!winner.payloadHash().equals(payloadHash)) {
                 throw new ConflictException("EVENT_ID_COLLISION", "event id was used with another payload");
             }
             return new Receipt(winner.receipt().receiptId(), event.eventId(), Status.DUPLICATE,
-                    "DUPLICATE_EVENT", winner.receipt().ingestedAt());
+                    "DUPLICATE_EVENT", winner.receipt().ingestedAt(), winner.receipt().businessNo());
         }
         if (status == Status.QUARANTINED) {
-            repository.insertQuarantine(new EventIngestionRepository.QuarantineWrite(tenantId,
-                    UUID.randomUUID().toString(), receiptId, reason, eventJson, "OPEN", now));
+            issue(BusinessNumber.Type.EVENT_QUARANTINE, now, "uk_quarantine_business_no", number -> {
+                repository.insertQuarantine(new EventIngestionRepository.QuarantineWrite(tenantId,
+                        UUID.randomUUID().toString(), receiptId, reasonCode, eventJson, "OPEN", now, number));
+                return number;
+            });
         } else {
             accept(tenantId, event, receiptId, now);
         }
-        return new Receipt(receiptId, event.eventId(), status, reason == null ? "" : reason, now);
+        return new Receipt(receiptId, event.eventId(), status, reasonCode, now, receiptNo);
     }
 
     @Transactional
@@ -133,18 +140,42 @@ public class EventIngestionService {
         Instant now = clock.instant();
         admissionControl.assertWritable(tenantId);
         accept(tenantId, event, row.receiptId(), now);
-        repository.markQuarantineReplayed(tenantId, quarantineId, now);
+        repository.markQuarantineReplayed(tenantId, row.quarantineId(), now);
         repository.markReceiptReplayed(tenantId, row.receiptId());
-        return new Receipt(row.receiptId(), event.eventId(), Status.REPLAYED, "", now);
+        return new Receipt(row.receiptId(), event.eventId(), Status.REPLAYED, "", now, row.receiptBusinessNo());
     }
 
-    public List<QuarantineView> quarantine() {
+    /** 回执查询仅返回最小运营字段，保留原来的事件去重标识。 */
+    public Receipt receipt(String number) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("event:read");
-        return repository.findQuarantine(scope.tenantId().value()).stream()
+        return repository.findReceiptByNumber(scope.tenantId().value(), number)
+                .map(row -> new Receipt(row.receiptId(), row.eventId(), Status.valueOf(row.status()),
+                        row.reasonCode(), row.ingestedAt(), row.businessNo()))
+                .orElseThrow(() -> new NotFoundException("EVENT_RECEIPT_NOT_FOUND", "event receipt not found"));
+    }
+
+    /** 两种运营编号均可精确筛选，不需要读取事件报文。 */
+    public List<QuarantineView> quarantine(String number) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("event:read");
+        return repository.findQuarantine(scope.tenantId().value(), number).stream()
                 .map(row -> new QuarantineView(row.quarantineId(), row.receiptId(), row.reasonCode(),
-                        row.state(), row.createdAt(), row.replayedAt()))
+                        row.state(), row.createdAt(), row.replayedAt(), row.businessNo(), row.receiptBusinessNo()))
                 .toList();
+    }
+
+    /** 两类记录都在受理事务内发号，只有业务号碰撞才重新分配。 */
+    private static <T> T issue(BusinessNumber.Type type, Instant at, String index, java.util.function.Function<String, T> save) {
+        for (int attempt = 0; attempt < BusinessNumber.MAX_ISSUE_ATTEMPTS; attempt++) {
+            try {
+                return save.apply(BusinessNumber.next(type, at));
+            } catch (org.springframework.dao.DuplicateKeyException duplicate) {
+                if (attempt == BusinessNumber.MAX_ISSUE_ATTEMPTS - 1 || !BusinessNumber.isCollision(duplicate, index))
+                    throw duplicate;
+            }
+        }
+        throw new IllegalStateException("event business number allocation exhausted");
     }
 
     private void accept(String tenantId, InboundEvent event, String receiptId, Instant now) {
@@ -194,7 +225,7 @@ public class EventIngestionService {
     private StoredReceipt storedReceipt(String tenantId, String sourceId, String eventId) {
         return repository.findReceipt(tenantId, sourceId, eventId)
                 .map(row -> new StoredReceipt(new Receipt(row.receiptId(), eventId,
-                        Status.valueOf(row.status()), row.reasonCode(), row.ingestedAt()), row.payloadHash()))
+                        Status.valueOf(row.status()), row.reasonCode(), row.ingestedAt(), row.businessNo()), row.payloadHash()))
                 .orElse(null);
     }
 
@@ -276,7 +307,7 @@ public class EventIngestionService {
     }
     public record SourceView(String sourceId, String sourceUri, Set<String> allowedTypes,
             Set<String> schemaVersions, long maxLatenessSeconds, boolean enabled) { }
-    public record Receipt(String receiptId, String eventId, Status status, String reasonCode, Instant ingestedAt) { }
+    public record Receipt(String receiptId, String eventId, Status status, String reasonCode, Instant ingestedAt, String businessNo) { }
     public record QuarantineView(String quarantineId, String receiptId, String reasonCode, String state,
-            Instant createdAt, Instant replayedAt) { }
+            Instant createdAt, Instant replayedAt, String businessNo, String receiptBusinessNo) { }
 }

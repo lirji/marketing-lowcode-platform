@@ -87,6 +87,12 @@ public class DecisionController {
         return idempotency.trace(TenantContextHolder.requireCurrent(), requestId, false);
     }
 
+    /** 按可读报价号或旧签名引用读取同一保留期内的轨迹。 */
+    @GetMapping("/decisions/traces/quotes/{number}")
+    public AutomaticDecisionTrace traceByQuote(@PathVariable String number) {
+        return idempotency.quoteTrace(TenantContextHolder.requireCurrent(), number);
+    }
+
     /** 按订单定位最近一次决策计算，不表示订单已经确认。 */
     @GetMapping("/decisions/traces/orders/{orderId}")
     public AutomaticDecisionTrace traceByOrder(@PathVariable String orderId) {

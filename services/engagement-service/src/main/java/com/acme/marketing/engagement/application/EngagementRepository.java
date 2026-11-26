@@ -67,7 +67,7 @@ public interface EngagementRepository {
 
     /** 新增触达尝试。 */
     void insertContact(String tenantId, String contactId, SendRequest request,
-            String variablesJson, String requestFingerprint, Instant updatedAt);
+            String variablesJson, String requestFingerprint, Instant updatedAt, String businessNo);
 
     /** 只回写仍待投递的记录；终态或更高状态已经到达时返回false，不能回退。 */
     boolean completeContact(String tenantId, String contactId, String state, String providerRequestId,

@@ -186,7 +186,7 @@ public interface ControlRepository {
             long expectedChainIndex, String expectedEntryHash) { }
     record ManifestWrite(String tenantId, String manifestId, String environmentName, String cellId,
             String runtimeName, String namespaceName, long generationNo, String stateName, String manifestJson,
-            String createdAt) { }
+            String createdAt, String businessNo) { }
     record SlotLatestWrite(String tenantId, String environmentName, String cellId, String runtimeName,
             String namespaceName, long latestGeneration, String updatedAt) { }
     record RuntimeAckWrite(String tenantId, String manifestId, String runtimeId, String statusName,
@@ -197,7 +197,7 @@ public interface ControlRepository {
             String updatedAt, long expectedDesiredGeneration, long expectedActivationSequence) { }
     record KillSwitchWrite(String tenantId, String namespaceName, long switchSequence, boolean enabledValue,
             String reasonText, String updatedBy, String updatedAt, String directiveJson) { }
-    record ManifestRow(String manifestJson, String stateName) { }
+    record ManifestRow(String manifestJson, String stateName, String businessNo) { }
     /** 发布范围与状态必须在数据库LIMIT之前过滤，JSON中的首个制品沿用现有单定义发布范围。 */
     record ManifestListQuery(String tenantId, Set<String> organizations, Set<String> shops, String state,
             String cursorCreatedAt, String cursorManifestId, int limit) { }

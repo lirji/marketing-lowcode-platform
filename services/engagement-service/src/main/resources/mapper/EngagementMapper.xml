@@ -155,7 +155,7 @@
             state_name AS stateName,
             provider_request_id AS providerRequestId,
             provider_code AS providerCode,
-            updated_at AS updatedAt
+            updated_at AS updatedAt, business_no AS businessNo
         FROM mk_contact_attempt
         WHERE tenant_id = #{tenantId}
         <if test="stateName != null">
@@ -213,10 +213,10 @@
     <insert id="insertContact">
         INSERT INTO mk_contact_attempt (
             tenant_id, contact_id, contact_key, subject_token, campaign_id, channel_name,
-            template_id, template_version, state_name, variables_json, request_fingerprint, requested_at, updated_at
+            template_id, template_version, state_name, variables_json, request_fingerprint, requested_at, updated_at, created_at, business_no
         ) VALUES (
             #{tenantId}, #{contactId}, #{contactKey}, #{subjectToken}, #{campaignId}, #{channelName},
-            #{templateId}, #{templateVersion}, #{stateName}, #{variablesJson}, #{requestFingerprint}, #{requestedAt}, #{updatedAt}
+            #{templateId}, #{templateVersion}, #{stateName}, #{variablesJson}, #{requestFingerprint}, #{requestedAt}, #{updatedAt}, #{updatedAt}, #{businessNo}
         )
     </insert>
 
@@ -353,7 +353,7 @@
             state_name AS stateName,
             provider_request_id AS providerRequestId,
             provider_code AS providerCode,
-            updated_at AS updatedAt
+            updated_at AS updatedAt, business_no AS businessNo
         FROM mk_contact_attempt
         WHERE tenant_id = #{tenantId}
           AND contact_key = #{contactKey}
@@ -374,10 +374,13 @@
             state_name AS stateName,
             provider_request_id AS providerRequestId,
             provider_code AS providerCode,
-            updated_at AS updatedAt
+            updated_at AS updatedAt, business_no AS businessNo
         FROM mk_contact_attempt
         WHERE tenant_id = #{tenantId}
-          AND contact_id = #{contactId}
+          AND <choose>
+              <when test='contactId.startsWith("MKT-CNT-")'>business_no=#{contactId}</when>
+              <otherwise>contact_id=#{contactId}</otherwise>
+          </choose>
     </select>
 
     <select id="selectContactByProviderRequestForUpdate"
@@ -388,7 +391,7 @@
             state_name AS stateName,
             provider_request_id AS providerRequestId,
             provider_code AS providerCode,
-            updated_at AS updatedAt
+            updated_at AS updatedAt, business_no AS businessNo
         FROM mk_contact_attempt
         WHERE tenant_id = #{tenantId}
           AND provider_request_id = #{providerRequestId}

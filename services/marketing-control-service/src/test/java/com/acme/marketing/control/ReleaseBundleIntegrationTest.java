@@ -407,7 +407,7 @@ class ReleaseBundleIntegrationTest {
                 "author", List.of(approval), now.minusSeconds(120), "");
         var signed = new ReleaseManifestSigner().sign(unsigned, keys.activePrivateKey());
         repository.saveManifest(new ControlRepository.ManifestWrite(tenant, id, environment, "cell-a", "journey",
-                namespace, generation, "STAGED", mapper.writeValueAsString(signed), now.toString()));
+                namespace, generation, "STAGED", mapper.writeValueAsString(signed), now.toString(), null));
         repository.tryCreateReleaseSlot(new ControlRepository.ReleaseSlotWrite(tenant, environment, "cell-a", "journey",
                 namespace, 0, 0, generation, 0, now.toString()));
         repository.updateSlotLatestGeneration(new ControlRepository.SlotLatestWrite(tenant, environment, "cell-a", "journey", namespace, generation, now.toString()));

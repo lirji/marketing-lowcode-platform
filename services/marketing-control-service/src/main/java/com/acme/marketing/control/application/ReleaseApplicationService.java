@@ -1,5 +1,7 @@
 package com.acme.marketing.control.application;
 
+import com.acme.marketing.platform.identity.BusinessNumber;
+
 import static com.acme.marketing.platform.time.SqlTime.format;
 
 import com.acme.marketing.contracts.release.ArtifactReference;
@@ -114,13 +116,16 @@ public class ReleaseApplicationService {
                 request.canaryBasisPoints(), request.activationAt() == null ? now : request.activationAt(),
                 now.plus(30, ChronoUnit.DAYS), scope.actorId(), request.approvalCaseIds(), now, "");
         ReleaseManifest manifest = signer.sign(unsigned, keys.activePrivateKey());
-        repository.saveManifest(new ControlRepository.ManifestWrite(scope.tenantId().value(), manifest.manifestId(),
-                manifest.environment(), manifest.cell(), manifest.runtime(), manifest.namespace(),
-                manifest.generation(), State.STAGED.name(), json(manifest), format(now)));
+        // 运营编号不进入已签名清单，用原清单键关联ACK、状态和激活记录。
+        String number = ReleaseBusinessNumbers.issue(BusinessNumber.Type.RELEASE_MANIFEST, now,
+                "uk_release_manifest_business_no", candidate -> repository.saveManifest(
+                        new ControlRepository.ManifestWrite(scope.tenantId().value(), manifest.manifestId(),
+                                manifest.environment(), manifest.cell(), manifest.runtime(), manifest.namespace(),
+                                manifest.generation(), State.STAGED.name(), json(manifest), format(now), candidate)));
         repository.updateSlotLatestGeneration(new ControlRepository.SlotLatestWrite(scope.tenantId().value(),
                 request.environment(), request.cell(), request.runtime(), request.namespace(), generation,
                 format(now)));
-        return new ReleaseView(manifest, State.STAGED, 0, 0, null);
+        return new ReleaseView(manifest, State.STAGED, 0, 0, null, number);
     }
 
     @Transactional
@@ -224,7 +229,7 @@ public class ReleaseApplicationService {
         }
         repository.updateManifestState(scope.tenantId().value(), manifestId, State.ACTIVE.name());
         enqueueActivation(directive);
-        return new ReleaseView(stored.manifest(), State.ACTIVE, readiness.readyReplicas(), readiness.capacity(), directive);
+        return new ReleaseView(stored.manifest(), State.ACTIVE, readiness.readyReplicas(), readiness.capacity(), directive, stored.businessNo());
     }
 
     /** 幂等重放之前复核当前权限，已完成命令不能继续授予已撤销的访问权。 */
@@ -283,7 +288,7 @@ public class ReleaseApplicationService {
                 continue;
             }
             result.add(new RollbackCandidate(target.manifest().manifestId(), target.manifest().generation(),
-                    target.manifest().expiresAt(), target.manifest().artifacts()));
+                    target.manifest().expiresAt(), target.manifest().artifacts(), target.businessNo()));
         }
         return List.copyOf(result);
     }
@@ -345,7 +350,7 @@ public class ReleaseApplicationService {
         enqueueActivation(directive);
         repository.updateManifestState(scope.tenantId().value(), manifestId, State.ROLLED_BACK.name());
         Readiness readiness = readiness(scope.tenantId().value(), target.manifest().manifestId());
-        return new ReleaseView(target.manifest(), State.ACTIVE, readiness.readyReplicas(), readiness.capacity(), directive);
+        return new ReleaseView(target.manifest(), State.ACTIVE, readiness.readyReplicas(), readiness.capacity(), directive, target.businessNo());
     }
 
     @Transactional
@@ -426,7 +431,7 @@ public class ReleaseApplicationService {
     private ReleaseView view(String tenantId, StoredManifest stored) {
         Readiness readiness = readiness(tenantId, stored.manifest().manifestId());
         return new ReleaseView(stored.manifest(), stored.state(), readiness.readyReplicas(), readiness.capacity(),
-                latestDirective(tenantId, stored.manifest()));
+                latestDirective(tenantId, stored.manifest()), stored.businessNo());
     }
 
     private Readiness readiness(String tenantId, String manifestId) {
@@ -597,7 +602,7 @@ public class ReleaseApplicationService {
     }
 
     private StoredManifest storedManifest(ControlRepository.ManifestRow row) {
-        return new StoredManifest(read(row.manifestJson()), State.valueOf(row.stateName()));
+        return new StoredManifest(read(row.manifestJson()), State.valueOf(row.stateName()), row.businessNo());
     }
 
     private String json(ReleaseManifest manifest) {
@@ -711,13 +716,13 @@ public class ReleaseApplicationService {
     }
     private record Slot(long stableGeneration, long desiredGeneration, long latestGeneration,
             long activationSequence, boolean bundleManaged) { }
-    private record StoredManifest(ReleaseManifest manifest, State state) { }
+    private record StoredManifest(ReleaseManifest manifest, State state, String businessNo) { }
     private record Readiness(int readyReplicas, long capacity) { }
     private record ResourceScope(String organizationId, String shopId) { }
     public record ReleaseView(ReleaseManifest manifest, State state, int readyReplicas, long readyCapacity,
-            ActivationDirective activationDirective) { }
+            ActivationDirective activationDirective, String businessNo) { }
     /** 明确具体清单和制品，供操作者核对实际回滚目标。 */
-    public record RollbackCandidate(String manifestId, long generation, Instant expiresAt, List<ArtifactReference> artifacts) { }
+    public record RollbackCandidate(String manifestId, long generation, Instant expiresAt, List<ArtifactReference> artifacts, String businessNo) { }
     public record StageReleaseRequest(String definitionId, long definitionVersion, String environment, String cell,
             String runtime, String namespace, List<ArtifactReference> artifacts, Map<String, String> schemaVersions,
             int canaryBasisPoints, Instant activationAt, List<String> approvalCaseIds) {

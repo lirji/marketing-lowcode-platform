@@ -45,7 +45,7 @@ class OfferReleaseGateTest {
             var manifest = new ReleaseManifest("manifest", new TenantId("t"), "test", "cell", "decision", "main", 1, 0,
                     List.of(), List.of(), List.of(artifact), Map.of(), 0, now, now.plusSeconds(3600), "actor", List.of("approval"), now, "sig");
             when(repository.findManifest("t", "manifest", true))
-                    .thenReturn(Optional.of(new ControlRepository.ManifestRow(mapper.writeValueAsString(manifest), "STAGED")));
+                    .thenReturn(Optional.of(new ControlRepository.ManifestRow(mapper.writeValueAsString(manifest), "STAGED", null)));
             var service = new ReleaseApplicationService(repository, mapper, Clock.fixed(now, java.time.ZoneOffset.UTC),
                     new SigningKeyRing("test", Ed25519.generateKeyPair()), null, null, null, 1, 1, 100, "", "activation", "kill");
             var request = new ReleaseApplicationService.StageReleaseRequest("offer", 1, "test", "cell", "decision", "main",

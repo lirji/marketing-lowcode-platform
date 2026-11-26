@@ -1,5 +1,7 @@
 package com.acme.marketing.engagement.application;
 
+import com.acme.marketing.platform.identity.BusinessNumber;
+
 import static com.acme.marketing.platform.time.SqlTime.format;
 
 import com.acme.marketing.contracts.event.JourneyEffectCommand;
@@ -151,14 +153,18 @@ public final class EngagementService {
         return sendForTenant(scope.tenantId().value(), request);
     }
 
+    /** 同租户运营查询支持业务号、原触达标识和渠道请求的原关联键。 */
     public ContactView contact(String contactKey) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("contact:read");
         if (contactKey == null || contactKey.isBlank()) {
             throw new IllegalArgumentException("contact key is required");
         }
-        return contactByKey(scope.tenantId().value(), contactKey)
-                .orElseThrow(() -> new NotFoundException("CONTACT_NOT_FOUND", "contact not found"));
+        String tenant = scope.tenantId().value();
+        var contact = BusinessNumber.matches(BusinessNumber.Type.ENGAGEMENT_CONTACT, contactKey)
+                ? repository.findContactById(tenant, contactKey).or(() -> contactByKey(tenant, contactKey))
+                : contactByKey(tenant, contactKey).or(() -> repository.findContactById(tenant, contactKey));
+        return contact.orElseThrow(() -> new NotFoundException("CONTACT_NOT_FOUND", "contact not found"));
     }
 
     public List<ContactView> contacts(String state, int limit) {
@@ -237,7 +243,7 @@ public final class EngagementService {
         String contactId = current == null ? UUID.randomUUID().toString() : current.contactId();
         if (current == null) {
             // 先争取请求键再锁频控，防止并发异载荷先被误判为频控超限；后续许可失败会整体回滚。
-            repository.insertContact(tenantId, contactId, request, json(request.variables()), fingerprint, now);
+            insertContact(tenantId, contactId, request, fingerprint, now);
         }
         // 重试可能跨越撤回同意、抑制生效或静默时段，不能复用首次发送时的许可。
         ConsentView consent = consent(tenantId, request.subjectToken(), request.channel());
@@ -266,7 +272,22 @@ public final class EngagementService {
         if (current != null) return new Pending(true, current);
         consumeFrequency(tenantId, request, policy, now);
         outbox(tenantId, contactId, "ContactRequested", now);
-        return new Pending(true, new ContactView(contactId, request.contactKey(), ContactState.PENDING, "", "", now));
+        return new Pending(true, contactById(tenantId, contactId));
+    }
+
+    /** 只有运营号索引冲突才重新发号，原渠道幂等和频控事务保持原语义。 */
+    private void insertContact(String tenant, String contactId, SendRequest request, String fingerprint, Instant now) {
+        String variables = json(request.variables());
+        for (int attempt = 0; attempt < BusinessNumber.MAX_ISSUE_ATTEMPTS; attempt++) {
+            String number = BusinessNumber.next(BusinessNumber.Type.ENGAGEMENT_CONTACT, now);
+            try {
+                repository.insertContact(tenant, contactId, request, variables, fingerprint, now, number);
+                return;
+            } catch (org.springframework.dao.DuplicateKeyException duplicate) {
+                if (attempt == BusinessNumber.MAX_ISSUE_ATTEMPTS - 1
+                        || !BusinessNumber.isCollision(duplicate, "uk_contact_business_no")) throw duplicate;
+            }
+        }
     }
 
     /** 请求键绑定不可变身份，不能使用新请求补猜历史收件人。 */
@@ -297,8 +318,7 @@ public final class EngagementService {
             repository.insertContactDlq(tenantId, UUID.randomUUID().toString(), contactId, result.code(), now);
         }
         outbox(tenantId, contactId, "Contact" + state.name(), now);
-        return new ContactView(contactId, contactById(tenantId, contactId).contactKey(), state,
-                result.providerRequestId(), result.code(), now);
+        return contactById(tenantId, contactId);
     }
 
     private CommandResult executeJourneySend(JourneyEffectCommand command) {
@@ -401,7 +421,7 @@ public final class EngagementService {
                 repository.updateContactState(tenantId, contact.contactId(), target.name(), now);
                 outbox(tenantId, contact.contactId(), "Contact" + target.name(), now);
                 return new ContactView(contact.contactId(), contact.contactKey(), target, contact.providerRequestId(),
-                        contact.providerCode(), now);
+                        contact.providerCode(), now, contact.businessNo());
             }
             return contact;
         });
@@ -552,5 +572,5 @@ public final class EngagementService {
         public SendRequest { variables = Map.copyOf(variables == null ? Map.of() : variables); }
     }
     public record ContactView(String contactId, String contactKey, ContactState state,
-            String providerRequestId, String providerCode, Instant updatedAt) { }
+            String providerRequestId, String providerCode, Instant updatedAt, String businessNo) { }
 }

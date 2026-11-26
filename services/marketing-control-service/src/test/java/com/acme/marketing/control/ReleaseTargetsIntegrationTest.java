@@ -99,7 +99,7 @@ class ReleaseTargetsIntegrationTest extends MySqlIntegrationTest {
             repository.saveCampaign(new ControlRepository.CampaignWrite(tenant, "cmp-" + generation, "test", "release scope", "DRAFT", generation == 70 ? "org-b" : "org-a", "shop-a", now.toString(), now.toString(), "STANDARD"));
             repository.saveDefinition(new ControlRepository.DefinitionWrite(tenant, "def-" + generation, "cmp-" + generation, 1, "JOURNEY_DAG", "{}", "hash-" + generation, "APPROVED", "author", now.toString(), now.toString()));
             var item = manifest(generation, generation == 100 ? List.of(90L, 70L, 60L, 50L, 20L) : List.of(), generation == 50 ? now.minusSeconds(1) : now.plusSeconds(3600));
-            repository.saveManifest(new ControlRepository.ManifestWrite(tenant, item.manifestId(), "test", "cell-a", "journey", "main", generation, generation == 60 ? "STAGED" : "ACTIVE", mapper.writeValueAsString(item), now.toString()));
+            repository.saveManifest(new ControlRepository.ManifestWrite(tenant, item.manifestId(), "test", "cell-a", "journey", "main", generation, generation == 60 ? "STAGED" : "ACTIVE", mapper.writeValueAsString(item), now.toString(), null));
         }
         repository.tryCreateReleaseSlot(new ControlRepository.ReleaseSlotWrite(tenant, "test", "cell-a", "journey", "main", 100, 100, 100, 1, now.toString()));
         return "manifest-100";

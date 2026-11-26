@@ -39,6 +39,9 @@ class AudienceIntegrationTest extends MySqlIntegrationTest {
                         "match", "ALL", "conditions", List.of(Map.of(
                                 "fieldId", "age", "operator", "GTE", "value", "18")))));
         assertEquals(1, segment.get("version").asLong());
+        String segmentNo = segment.path("businessNo").asString();
+        assertTrue(segmentNo.matches("MKT-SEG-[0-9]{6}-[0-9]{10}"));
+        assertEquals(segment, get("/api/v1/audiences/page?q=" + segmentNo).path("items").get(0));
         JsonNode fields = get("/api/v1/fields");
         assertEquals("age", fields.get(0).get("fieldId").asString());
         JsonNode audiences = get("/api/v1/audiences");

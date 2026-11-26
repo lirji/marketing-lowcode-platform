@@ -26,11 +26,14 @@ public interface DecisionMapper {
     /** 同一完成事务中保存脱敏轨迹和固定长度索引。 */
     int saveTrace(@Param("tenantId") String tenantId, @Param("idempotencyKey") String idempotencyKey,
             @Param("traceJson") String traceJson, @Param("requestHash") String requestHash,
-            @Param("orderHash") String orderHash, @Param("sort") String sort);
+            @Param("orderHash") String orderHash, @Param("sort") String sort, @Param("businessNo") String businessNo);
 
     /** 只读取本租户已完成且仍在保留窗口内的最新轨迹。 */
     String findTrace(@Param("tenantId") String tenantId, @Param("requestHash") String requestHash,
             @Param("orderHash") String orderHash, @Param("now") String now);
+
+    /** 按服务端分配的新号或保留的签名引用精确查询。 */
+    String findQuoteTrace(@Param("tenantId") String tenantId, @Param("number") String number, @Param("now") String now);
 
     /** 插入运行时 generation。 */
     int insertRuntimeGeneration(RuntimeGenerationWrite generation);

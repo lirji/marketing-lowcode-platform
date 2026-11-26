@@ -56,6 +56,10 @@ class AutomaticDecisionTraceIntegrationTest extends MySqlIntegrationTest {
             var request = request("request-" + UUID.randomUUID(), "order", f.time.now);
             var first = f.executor.execute(f.scope, request);
             var trace = f.executor.trace(f.scope, request.requestId(), false);
+            assertTrue(first.businessNo().matches("MKT-QTE-[0-9]{6}-[0-9]{10}"));
+            assertEquals(trace, f.executor.quoteTrace(f.scope, first.businessNo()));
+            assertEquals(trace, f.executor.quoteTrace(f.scope, first.quoteId()));
+            assertThrows(NotFoundException.class, () -> f.executor.quoteTrace(scope("other-tenant", "trace:read"), first.businessNo()));
             f.time.now = f.time.now.plusSeconds(1);
             assertEquals(first, f.executor.execute(f.scope, request));
             assertEquals(trace, f.executor.trace(f.scope, request.requestId(), false));
@@ -140,7 +144,7 @@ class AutomaticDecisionTraceIntegrationTest extends MySqlIntegrationTest {
     @Test void jdbcTraceFailureRollsBackTheCompletedDecision() {
         var f = fixture("JDBC"); var request = request("request-"+UUID.randomUUID(), "order", f.time.now);
         var failing = mock(DecisionCommandRepository.class, org.mockito.AdditionalAnswers.delegatesTo(commands));
-        doThrow(new IllegalStateException("injected trace write failure")).when(failing).saveTrace(anyString(), anyString(), anyString(), anyString(), any(), anyString());
+        doThrow(new IllegalStateException("injected trace write failure")).when(failing).saveTrace(anyString(), anyString(), anyString(), anyString(), any(), anyString(), anyString());
         var executor = executor(failing, f.time, f.decisions, "JDBC");
         assertThrows(IllegalStateException.class, () -> executor.execute(f.scope, request));
         assertTrue(commands.lock(f.scope.tenantId().value(), request.idempotencyKey()).isEmpty());

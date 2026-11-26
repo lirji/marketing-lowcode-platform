@@ -82,7 +82,7 @@
             rule_hash,
             state_name,
             created_by,
-            created_at
+            created_at, business_no
         ) VALUES (
             #{tenantId},
             #{segmentId},
@@ -92,7 +92,7 @@
             #{ruleHash},
             #{stateName},
             #{createdBy},
-            #{createdAt}
+            #{createdAt}, #{businessNo}
         )
     </insert>
 
@@ -105,8 +105,10 @@
             current.state_name AS stateName,
             current.rule_json AS ruleJson,
             current.rule_hash AS ruleHash,
-            current.created_at AS createdAt
+            current.created_at AS createdAt, base.business_no AS businessNo
         FROM mk_segment_definition current
+        LEFT JOIN mk_segment_definition base ON base.tenant_id=current.tenant_id
+            AND base.segment_id=current.segment_id AND base.version_no=1
         WHERE current.tenant_id = #{tenantId}
           AND current.version_no = (
               SELECT MAX(latest.version_no)
@@ -122,8 +124,10 @@
             resultType="com.acme.marketing.audience.infrastructure.persistence.mapper.AudienceMapper$SegmentRow">
         SELECT current.segment_id AS segmentId, current.version_no AS versionNo, current.name,
                current.state_name AS stateName, current.rule_json AS ruleJson,
-               current.rule_hash AS ruleHash, current.created_at AS createdAt
+               current.rule_hash AS ruleHash, current.created_at AS createdAt, base.business_no AS businessNo
         FROM mk_segment_definition current
+        LEFT JOIN mk_segment_definition base ON base.tenant_id=current.tenant_id
+            AND base.segment_id=current.segment_id AND base.version_no=1
         WHERE current.tenant_id = #{tenantId}
           AND current.version_no = (
               SELECT MAX(latest.version_no) FROM mk_segment_definition latest
@@ -131,7 +135,9 @@
           )
         <if test="cursor != null">AND current.segment_id &gt; #{cursor}</if>
         <if test="query.length() > 0">
-          AND (
+          AND <choose>
+            <when test='query.startsWith("MKT-SEG-")'>base.business_no=#{query}</when>
+            <otherwise>(
 LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(current.name) AS BINARY)) &gt; 0
             OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(current.segment_id) AS BINARY)) &gt; 0
             OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(CAST(current.version_no AS CHAR)) AS BINARY)) &gt; 0
@@ -139,7 +145,7 @@ LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(current.name) AS BINARY)) &gt
             OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(current.state_name) AS BINARY)) &gt; 0
             OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(CASE current.state_name WHEN 'ACTIVE' THEN '已生效' WHEN 'READY' THEN '已就绪' WHEN 'DRAFT' THEN '草稿' WHEN 'STALE' THEN '已过期' ELSE current.state_name END) AS BINARY)) &gt; 0
             OR LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(DATE_FORMAT(DATE_ADD(STR_TO_DATE(SUBSTRING(current.created_at, 1, 19), '%Y-%m-%dT%H:%i:%s'), INTERVAL 8 HOUR), '%Y/%m/%d %H:%i:%s')) AS BINARY)) &gt; 0
-          )
+          )</otherwise></choose>
         </if>
         ORDER BY current.segment_id
         LIMIT #{fetchSize}
@@ -147,18 +153,17 @@ LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(current.name) AS BINARY)) &gt
 
     <select id="selectSegment"
             resultType="com.acme.marketing.audience.infrastructure.persistence.mapper.AudienceMapper$SegmentRow">
-        SELECT
-            segment_id AS segmentId,
-            version_no AS versionNo,
-            name,
-            state_name AS stateName,
-            rule_json AS ruleJson,
-            rule_hash AS ruleHash,
-            created_at AS createdAt
-        FROM mk_segment_definition
-        WHERE tenant_id = #{tenantId}
-          AND segment_id = #{segmentId}
-          AND version_no = #{version}
+        SELECT current.segment_id AS segmentId, current.version_no AS versionNo, current.name,
+               current.state_name AS stateName, current.rule_json AS ruleJson,
+               current.rule_hash AS ruleHash, current.created_at AS createdAt, base.business_no AS businessNo
+        FROM mk_segment_definition current
+        LEFT JOIN mk_segment_definition base ON base.tenant_id=current.tenant_id
+            AND base.segment_id=current.segment_id AND base.version_no=1
+        WHERE current.tenant_id = #{tenantId} AND current.version_no = #{version}
+          AND <choose>
+              <when test='segmentId.startsWith("MKT-SEG-")'>base.business_no=#{segmentId}</when>
+              <otherwise>current.segment_id=#{segmentId}</otherwise>
+          </choose>
     </select>
 
     <insert id="insertSnapshot">

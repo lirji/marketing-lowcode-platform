@@ -103,6 +103,10 @@ class ReleasePaginationIntegrationTest extends MySqlIntegrationTest {
         seed("hidden", "org-b", "shop-b", "STAGED", 1, EARLY);
         assertFalse(body(send(request("/api/v1/releases"))).toString().contains("older-000"));
         String path = "/api/v1/releases/older-000";
+        String number = "MKT-MNF-261126-0000000001";
+        jdbc.update("UPDATE mk_release_manifest SET business_no=? WHERE tenant_id=? AND manifest_id='older-000'", number, tenant);
+        assertEquals(body(send(request(path))), body(send(request("/api/v1/releases/" + number))));
+        assertCode(send(request("/api/v1/releases/" + number).setHeader("X-Dev-Tenant-Id", "other-tenant")), 404, "MANIFEST_NOT_FOUND");
         assertEquals("older-000", body(send(request(path))).path("manifest").path("manifestId").asString());
         assertEquals(0, body(send(request(path))).path("readyReplicas").asInt());
         jdbc.update("INSERT INTO mk_runtime_ack (tenant_id,manifest_id,runtime_id,status_name,build_digest,supported_abis,warmed_artifact_ids,capacity_value,acknowledged_at,signature_key_id,signature_value) VALUES (?,?,?,'READY','test','[]','[]',7,?,'test','test')",
@@ -127,7 +131,7 @@ class ReleasePaginationIntegrationTest extends MySqlIntegrationTest {
             var artifact = new ArtifactReference("artifact-"+id,"JOURNEY_PLAN","memory:test","sha256:"+"a".repeat(64),"sha256:"+"b".repeat(64),"key","signature","marketing-journey-plan/1",prefix,1);
             var at = Instant.parse(time);
             var manifest = new ReleaseManifest(id,new TenantId(tenant),"test","cell-a","journey",prefix,i+1,i+1,List.of(),List.of(),List.of(artifact),Map.of(),0,at,at.plusSeconds(3600),"author",List.of(),at,"fixture-signature");
-            repository.saveManifest(new ControlRepository.ManifestWrite(tenant,id,"test","cell-a","journey",prefix,i+1,state,mapper.writeValueAsString(manifest),time));
+            repository.saveManifest(new ControlRepository.ManifestWrite(tenant,id,"test","cell-a","journey",prefix,i+1,state,mapper.writeValueAsString(manifest),time, null));
         }
     }
     private HttpRequest.Builder request(String path) {

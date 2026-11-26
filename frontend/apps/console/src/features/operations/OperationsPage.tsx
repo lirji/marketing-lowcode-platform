@@ -65,6 +65,7 @@ export function OperationsPage() {
 
 const traceQueries = {
   request: { label: '请求 ID（Request ID）', placeholder: '填写完整请求 ID', hint: '请求 ID 标识一次营销处理请求，可在业务调用回执中获取。', lookup: api.traceByRequest },
+  quote: { label: '报价单号', placeholder: '填写完整报价单号', hint: '可使用报价单号或历史报价引用。', lookup: api.traceByQuote },
   order: { label: '订单 ID（Order ID）', placeholder: '填写完整订单 ID', hint: '订单 ID 是订单系统中的唯一编号。', lookup: api.traceByOrder },
 }
 type TraceQueryKind = keyof typeof traceQueries
@@ -84,7 +85,7 @@ export function TraceSearch({ initialKind = 'request', postingScope }: {
   }
   if (api.demoMode) return <PreviewPanel title="营销轨迹" />
   return <div id="tab-全链路查询" role="tabpanel">
-    <StateBanner tone="info" title="营销业务轨迹查询" detail="按完整请求或订单 ID 查询营销处理记录；跨服务链路追踪请使用已部署的观测平台。" />
+    <StateBanner tone="info" title="营销业务轨迹查询" detail="按报价单号、完整请求或订单 ID 查询营销处理记录；跨服务链路追踪请使用已部署的观测平台。" />
     <Panel className="ops-search"><div className="lookup">
       <label><span className="sr-only">查询类型</span><Select value={kind} onChange={(event) => {
         setKind(event.target.value as TraceQueryKind)
@@ -111,7 +112,7 @@ function TraceResult({ requestId, live, posting }: {
   return <div className="trace-layout"><Panel><PanelHeader eyebrow="TRACE" title="营销轨迹" aside={posting
     ? <Link className="button secondary" to="/operations?tab=funding" state={posting}>查看该订单补贴流水</Link>
     : <Badge tone="good">API</Badge>} /><div className="trace-id"><span>Request</span><code>{live.requestId ?? requestId}</code><button type="button" aria-label="复制 Request ID" onClick={() => void navigator.clipboard.writeText(live.requestId ?? requestId)}><Copy size={13} /></button><span>Subject</span><code>{live.maskedSubject ?? '—'}</code></div>
-    <dl className="trace-summary"><div><dt>Trace</dt><dd>{live.traceId ?? '—'}</dd></div><div><dt>Generation</dt><dd>{live.generation ?? '—'}</dd></div><div><dt>耗时</dt><dd>{live.durationMicros != null ? `${(live.durationMicros / 1000).toFixed(1)}ms` : '—'}</dd></div><div><dt>Terms</dt><dd>{live.termsVersion || '未提供'}</dd></div></dl>
+    <dl className="trace-summary"><div><dt>{live.businessNo ? '报价单号' : '轨迹编号'}</dt><dd>{live.businessNo ?? live.traceId ?? '—'}{live.businessNo && <button type="button" aria-label="复制报价单号" onClick={() => void navigator.clipboard.writeText(live.businessNo!)}><Copy size={13} /></button>}</dd></div><div><dt>Generation</dt><dd>{live.generation ?? '—'}</dd></div><div><dt>耗时</dt><dd>{live.durationMicros != null ? `${(live.durationMicros / 1000).toFixed(1)}ms` : '—'}</dd></div><div><dt>Terms</dt><dd>{live.termsVersion || '未提供'}</dd></div></dl>
     {events.length === 0 ? <EmptyState title="没有逐步事件" detail="当前轨迹只有摘要字段，events 为空。" /> : <RecordTable label="轨迹事件" columns={['事件时间（北京时间）', '事件类型', '事件标题', '事件详情']}>{events.map(([time, type, title, detail], index) => <tr key={`${index}-${type}`}><td><RecordTime value={time} /></td><td>{type}</td><td>{title}</td><td>{detail || '—'}</td></tr>)}</RecordTable>}
   </Panel><aside><Panel><PanelHeader eyebrow="DECISION EXPLAIN" title="候选与裁决" /><pre className="trace-json">{displayDiagnosticJson({ candidates: live.candidates ?? {}, pricing: live.pricing ?? {} })}</pre></Panel></aside></div>
 }
@@ -139,11 +140,11 @@ function ContactAttempts() {
   if (api.demoMode) return <PreviewPanel title="触达记录" />
   const items = lookup.data ? [lookup.data] : (list.data ?? [])
   return <Panel><PanelHeader eyebrow="CONTACT ATTEMPTS" title="触达投递记录" aside={<Button onClick={() => void list.refetch()} disabled={list.isFetching}><RefreshCw size={14} />刷新</Button>} />
-    <div className="lookup"><label><Search size={16} /><span className="sr-only">触达标识（Contact key）</span><input value={contactKey} onChange={(event) => setContactKey(event.target.value)} aria-describedby="contact-search-hint" placeholder="填写完整触达标识" /></label><Button tone="primary" onClick={() => lookup.mutate(contactKey.trim())} disabled={!contactKey.trim() || lookup.isPending}>查询</Button></div><FieldHint id="contact-search-hint">对应下方列表的触达标识，填写完整值可精确查询该条记录。</FieldHint>
+    <div className="lookup"><label><Search size={16} /><span className="sr-only">触达编号</span><input value={contactKey} onChange={(event) => setContactKey(event.target.value)} aria-describedby="contact-search-hint" placeholder="填写完整触达编号" /></label><Button tone="primary" onClick={() => lookup.mutate(contactKey.trim())} disabled={!contactKey.trim() || lookup.isPending}>查询</Button></div><FieldHint id="contact-search-hint">可使用触达编号、原触达编号或渠道请求键精确查询。</FieldHint>
     {list.isError && <StateBanner tone="error" title="触达列表加载失败" detail={problemDetail(list.error)} />}
     {lookup.isError && <StateBanner tone="error" title="触达查询失败" detail={problemDetail(lookup.error)} />}
-    {items.length === 0 ? <EmptyState title="没有触达记录" detail="列表来自 GET /api/v1/contacts；也可按 contactKey 点查。" /> : <RecordTable label="触达记录" columns={['触达标识', '触达 ID', '状态', '服务商响应码', '服务商请求 ID', '更新时间（北京时间）']}>
-      {items.map((item) => <tr key={item.contactId}><td>{item.contactKey}</td><td>{item.contactId}</td><td><Badge tone={item.state === 'DELIVERED' ? 'good' : item.state === 'FAILED' ? 'danger' : 'warn'}>{item.state}</Badge></td><td>{item.providerCode ?? '—'}</td><td>{item.providerRequestId ?? '—'}</td><td><RecordTime value={item.updatedAt} /></td></tr>)}
+    {items.length === 0 ? <EmptyState title="没有触达记录" detail="可按完整编号查询历史触达。" /> : <RecordTable label="触达记录" columns={['触达编号', '状态', '服务商响应码', '服务商请求 ID', '更新时间（北京时间）']}>
+      {items.map((item) => <tr key={item.contactId}><td>{item.businessNo ?? item.contactId}</td><td><Badge tone={item.state === 'DELIVERED' ? 'good' : item.state === 'FAILED' ? 'danger' : 'warn'}>{item.state}</Badge></td><td>{item.providerCode ?? '—'}</td><td>{item.providerRequestId ?? '—'}</td><td><RecordTime value={item.updatedAt} /></td></tr>)}
     </RecordTable>}
   </Panel>
 }
@@ -152,7 +153,10 @@ function DeadLetters() {
   const auth = useAuth()
   const queryClient = useQueryClient()
   const [confirmId, setConfirmId] = useState<string>()
-  const items = useQuery({ queryKey: ['quarantine'], queryFn: api.quarantine, enabled: !api.demoMode && auth.hasPermission('event:read') })
+  const [number, setNumber] = useState('')
+  const [filter, setFilter] = useState('')
+  const receipt = useMutation({ mutationFn: api.eventReceipt })
+  const items = useQuery({ queryKey: ['quarantine', filter], queryFn: () => api.quarantine(filter), enabled: !api.demoMode && auth.hasPermission('event:read') })
   const replay = useMutation({
     mutationFn: api.replayQuarantine,
     onSuccess: () => { setConfirmId(undefined); void queryClient.invalidateQueries({ queryKey: ['quarantine'] }) },
@@ -161,8 +165,18 @@ function DeadLetters() {
   return <>
     {items.isError && <StateBanner tone="error" title="隔离区加载失败" detail={problemDetail(items.error)} />}
     <Panel><PanelHeader eyebrow="DLQ & QUARANTINE" title="隔离消息" aside={<Button onClick={() => void items.refetch()} disabled={items.isFetching}><RefreshCw size={14} />刷新</Button>} />
-      {(items.data ?? []).length === 0 ? <EmptyState title="没有隔离消息" detail="隔离区为空，或当前身份缺少 event:read。" /> : <RecordTable label="隔离消息" columns={['隔离消息 ID', '回执 ID', '原因码', '状态', '创建时间（北京时间）', '重放时间（北京时间）', '操作']} actions>
-        {(items.data ?? []).map((item) => <tr key={item.quarantineId}><td>{item.quarantineId}</td><td>{item.receiptId ?? '—'}</td><td>{item.reasonCode}</td><td><Badge tone={item.state === 'REPLAYED' ? 'good' : 'warn'}>{item.state}</Badge></td><td><RecordTime value={item.createdAt} /></td><td><RecordTime value={item.replayedAt} /></td><td><Button disabled={!auth.hasPermission('event:replay')} title={auth.hasPermission('event:replay') ? '重放此消息' : '缺少 event:replay 权限'} onClick={() => setConfirmId(item.quarantineId)}>重放</Button></td></tr>)}
+      <form className="lookup" onSubmit={(event) => { event.preventDefault(); setFilter(number.trim()); receipt.reset() }}>
+        <input aria-label="隔离编号或回执号" placeholder="输入完整隔离编号或回执号" value={number} onChange={(event) => setNumber(event.target.value)} />
+        <Button tone="primary" type="submit">筛选隔离消息</Button>
+        <Button type="button" disabled={!number.trim() || receipt.isPending || !auth.hasPermission('event:read')}
+          onClick={() => receipt.mutate(number.trim())}>查回执</Button>
+      </form>
+      {receipt.data && <dl className="trace-summary"><div><dt>回执号</dt><dd>{receipt.data.businessNo ?? receipt.data.receiptId}</dd></div>
+        <div><dt>状态</dt><dd>{receipt.data.status}</dd></div><div><dt>原因</dt><dd>{receipt.data.reasonCode || '—'}</dd></div>
+        <div><dt>接收时间</dt><dd><RecordTime value={receipt.data.ingestedAt} /></dd></div></dl>}
+      {receipt.isError && <StateBanner tone="error" title="回执查询失败" detail={problemDetail(receipt.error)} />}
+      {(items.data ?? []).length === 0 ? <EmptyState title="没有隔离消息" detail="隔离区为空，或当前身份缺少 event:read。" /> : <RecordTable label="隔离消息" columns={['隔离编号', '回执号', '原因码', '状态', '创建时间（北京时间）', '重放时间（北京时间）', '操作']} actions>
+        {(items.data ?? []).map((item) => <tr key={item.quarantineId}><td>{item.businessNo ?? item.quarantineId}</td><td>{item.receiptBusinessNo ?? item.receiptId ?? '—'}</td><td>{item.reasonCode}</td><td><Badge tone={item.state === 'REPLAYED' ? 'good' : 'warn'}>{item.state}</Badge></td><td><RecordTime value={item.createdAt} /></td><td><RecordTime value={item.replayedAt} /></td><td><Button disabled={!auth.hasPermission('event:replay')} title={auth.hasPermission('event:replay') ? '重放此消息' : '缺少 event:replay 权限'} onClick={() => setConfirmId(item.businessNo ?? item.quarantineId)}>重放</Button></td></tr>)}
       </RecordTable>}
     </Panel>
     {confirmId && <Modal title="重放隔离消息" description={confirmId} onClose={() => setConfirmId(undefined)}>

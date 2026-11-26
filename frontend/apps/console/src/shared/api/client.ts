@@ -47,6 +47,7 @@ import {
   subsidyPostingSummarySchema,
   recomputeSchema,
   releaseViewSchema,
+  eventReceiptSchema,
   releasePageSchema,
   type ReleaseStatus,
   rollbackCandidateSchema,
@@ -282,7 +283,7 @@ export const api = {
   releases: () => request('/api/v1/releases', undefined, (value) => zArray(releaseViewSchema, value)),
   getRelease: (manifestId: string) => request(`/api/v1/releases/${encodeURIComponent(manifestId)}`, undefined, (value) => {
     const release = parseWith(releaseViewSchema, value)
-    if (release.manifest.manifestId !== manifestId) throw new Error('发布服务返回了不同的清单，请刷新后重试。')
+    if (release.manifest.manifestId !== manifestId && release.businessNo !== manifestId) throw new Error('发布服务返回了不同的清单，请刷新后重试。')
     return release
   }),
   releasePage: (query: { state?: ReleaseStatus; limit?: number; cursor?: string } = {}) => {
@@ -348,7 +349,7 @@ export const api = {
       return page
     })
   },
-  createAudience: (payload: { segmentId: string; name: string; rule: { match: string; conditions: { fieldId: string; operator: string; value: string }[] } }) =>
+  createAudience: (payload: { segmentId?: string; name: string; rule: { match: string; conditions: { fieldId: string; operator: string; value: string }[] } }) =>
     request('/api/v1/audiences', { method: 'POST', headers: commandHeaders(), body: JSON.stringify(payload) }, (value) => parseWith(audienceViewSchema, value)),
   previewAudience: (segmentId: string, version: number, profiles: { subjectToken: string; attributes: Record<string, string> }[]) =>
     request(`/api/v1/audiences/${encodeURIComponent(segmentId)}/versions/${version}:preview`, { method: 'POST', headers: commandHeaders(), body: JSON.stringify(profiles) }, (value) => parseWith(audiencePreviewSchema, value)),
@@ -407,6 +408,8 @@ export const api = {
     request(`/api/v1/award-intents/${encodeURIComponent(intentId)}/fulfillment:refresh`, { method: 'POST' }, (value) => parseWith(awardFulfillmentSchema, value)),
   traceByRequest: (requestId: string) => decisionTrace('requests', requestId),
   traceByOrder: (orderId: string) => decisionTrace('orders', orderId),
+  traceByQuote: (number: string) => request(`/api/v1/decisions/traces/quotes/${encodeURIComponent(number)}`,
+    undefined, (value) => parseWith(traceViewSchema, value)),
   enrollment: (enrollmentId: string) =>
     request(`/api/v1/enrollments/${encodeURIComponent(enrollmentId)}`, undefined, (value) => parseWith(enrollmentViewSchema, value)),
   enrollments: (query?: { status?: string; journeyId?: string; limit?: number }) => {
@@ -430,7 +433,10 @@ export const api = {
     request(referralOpsPath(campaignId, 'relations', after, limit), undefined, (value) => parseWith(referralRelationPageSchema, value)),
   referralRewards: (campaignId: string, after?: string, limit = 20) =>
     request(referralOpsPath(campaignId, 'rewards', after, limit), undefined, (value) => parseWith(referralRewardPageSchema, value)),
-  quarantine: () => request('/api/v1/quarantine', undefined, (value) => zArray(quarantineViewSchema, value)),
+  eventReceipt: (number: string) => request(`/api/v1/events/receipts/${encodeURIComponent(number)}`,
+    undefined, (value) => parseWith(eventReceiptSchema, value)),
+  quarantine: (number?: string) => request(number ? `/api/v1/quarantine?number=${encodeURIComponent(number)}` : '/api/v1/quarantine',
+    undefined, (value) => zArray(quarantineViewSchema, value)),
   replayQuarantine: (quarantineId: string) =>
     request(`/api/v1/quarantine/${encodeURIComponent(quarantineId)}:replay`, { method: 'POST', headers: commandHeaders() }, (value) => value),
   reconciliation: () => request('/api/v1/funding/reconciliation', undefined, (value) => parseWith(reconciliationSchema, value)),

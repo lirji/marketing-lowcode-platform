@@ -19,7 +19,9 @@ public final class BusinessNumber {
 
     /** 只注册已实现且具有明确发号 owner 的业务编号。 */
     public enum Type {
-        CAMPAIGN("CMP"), APPROVAL("APR"), FUNDING_APPLICATION("FAP"), LEDGER("LED"), RELEASE_BUNDLE("BND"), RELEASE_OPERATION("RLS"), RELEASE_SCHEDULE("SCH"), AUDIENCE_SNAPSHOT("SNP"), JOURNEY_ENROLLMENT("JIN"), REFERRAL_PARTICIPANT("RFP"), REFERRAL_RELATION("RLN"), REFERRAL_REWARD("RWD"), DEFINITION_VERSION("DEF");
+        CAMPAIGN("CMP"), APPROVAL("APR"), FUNDING_APPLICATION("FAP"), LEDGER("LED"), RELEASE_BUNDLE("BND"), RELEASE_OPERATION("RLS"), RELEASE_SCHEDULE("SCH"), AUDIENCE_SNAPSHOT("SNP"), JOURNEY_ENROLLMENT("JIN"), REFERRAL_PARTICIPANT("RFP"), REFERRAL_RELATION("RLN"), REFERRAL_REWARD("RWD"), DEFINITION_VERSION("DEF"),
+        AUDIENCE_SEGMENT("SEG"), ENGAGEMENT_CONTACT("CNT"), EVENT_RECEIPT("EVT"), EVENT_QUARANTINE("QTN"),
+        OFFER_QUOTE("QTE"), RELEASE_MANIFEST("MNF");
 
         private final String prefix;
         private final Pattern pattern;
@@ -34,6 +36,14 @@ public final class BusinessNumber {
     public static String next(Type type, Instant createdAt) {
         return type.prefix + BUSINESS_DATE.format(createdAt) + "-"
             + String.format(Locale.ROOT, "%010d", RANDOM.nextLong(SUFFIX_SPACE));
+    }
+
+    /** 只在写入碰撞明确来自编号索引时重试，业务去重约束交还给所属用例。 */
+    public static boolean isCollision(Throwable failure, String index) {
+        Throwable cause = failure;
+        while (cause.getCause() != null && cause.getCause() != cause) cause = cause.getCause();
+        String message = cause.getMessage();
+        return message != null && (message.endsWith("." + index + "'") || message.endsWith("'" + index + "'"));
     }
 
     /** 按编号族选择查询列，避免切换时对两套索引做模糊检索。 */

@@ -76,11 +76,11 @@ public interface AudienceMapper {
 
     /** 人群定义写模型。 */
     record SegmentWrite(String tenantId, String segmentId, long versionNo, String name, String ruleJson,
-            String ruleHash, String stateName, String createdBy, String createdAt) { }
+            String ruleHash, String stateName, String createdBy, String createdAt, String businessNo) { }
 
     /** 人群定义读模型。 */
     record SegmentRow(String segmentId, long versionNo, String name, String stateName, String ruleJson,
-            String ruleHash, String createdAt) { }
+            String ruleHash, String createdAt, String businessNo) { }
 
     /** 从写库确认本次重复键是否由展示号码引起。 */
     String lockSnapshotBusinessNumber(@Param("number") String number);

@@ -93,7 +93,7 @@ public final class DecisionApplicationService {
                 ? CheckoutQuoteProof.sign(offerKeys, scope, request, result, quoteId, snapshot.generation(), now) : null;
         long durationMicros = (System.nanoTime() - started) / 1_000;
         return new DecisionResponse(request.requestId(), quoteId, snapshot.generation(), result, token,
-                trace, durationMicros, now, checkoutProof);
+                trace, durationMicros, now, checkoutProof, null);
     }
 
     /** 对真实精确成员执行同一报价路径；探针输入仅在进程内使用，不签 OfferToken 或写业务报价。 */
@@ -205,12 +205,20 @@ public final class DecisionApplicationService {
     public record DecisionResponse(String requestId, String quoteId, long generation, PricingResult pricing,
             String offerToken, List<CandidateTrace> candidates, long durationMicros, Instant decidedAt,
             @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
-            String checkoutQuoteToken) {
+            String checkoutQuoteToken,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            String businessNo) {
         public DecisionResponse(String requestId, String quoteId, long generation, PricingResult pricing,
                 String offerToken, List<CandidateTrace> candidates, long durationMicros, Instant decidedAt) {
-            this(requestId, quoteId, generation, pricing, offerToken, candidates, durationMicros, decidedAt, null);
+            this(requestId, quoteId, generation, pricing, offerToken, candidates, durationMicros, decidedAt, null, null);
         }
         public DecisionResponse { candidates = List.copyOf(candidates); }
+
+        /** 运营号只进入响应投影，签名报价与关联UUID由运行时原样传递。 */
+        DecisionResponse numbered(String number) {
+            return new DecisionResponse(requestId, quoteId, generation, pricing, offerToken, candidates,
+                    durationMicros, decidedAt, checkoutQuoteToken, number);
+        }
     }
     @FunctionalInterface
     public interface KillSwitchGuard { void check(String tenantId); }

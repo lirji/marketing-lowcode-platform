@@ -34,7 +34,16 @@ function ReleaseCenter() {
   const [targetGeneration, setTargetGeneration] = useState('')
   const [releaseStatus, setReleaseStatus] = useState<ReleaseStatus>()
   const releases = useReleasePages(releaseStatus)
-  const latest = releases.items[0]
+  const [manifestNo, setManifestNo] = useState('')
+  const [searchedNumber, setSearchedNumber] = useState('')
+  const lookup = useQuery({
+    queryKey: ['releases', 'number', releaseScopeKey(auth), searchedNumber],
+    queryFn: () => api.getRelease(searchedNumber),
+    enabled: !!searchedNumber && releases.canRead && !api.demoMode,
+    retry: false,
+  })
+  const visible = searchedNumber ? lookup.data ? [lookup.data] : [] : releases.items
+  const latest = visible[0]
   const candidates = useQuery({ queryKey: ['rollback-candidates', releaseScopeKey(auth), actionTarget?.manifest.manifestId],
     queryFn: () => api.rollbackCandidates(actionTarget!.manifest.manifestId),
     enabled: confirm === 'rollback' && !!actionTarget && auth.hasPermission('release:read') && !api.demoMode,
@@ -42,11 +51,11 @@ function ReleaseCenter() {
   })
   const activate = useMutation({
     mutationFn: ({ manifestId, idempotencyKey }: { manifestId: string; idempotencyKey: string }) => api.activateRelease(manifestId, idempotencyKey),
-    onSuccess: (value) => { setResult(`灰度/激活已提交 ${value.manifest.manifestId} · ${value.state}`); closeConfirm() },
+    onSuccess: (value) => { setResult(`灰度/激活已提交 ${value.businessNo ?? value.manifest.manifestId} · ${value.state}`); closeConfirm() },
   })
   const rollback = useMutation({
     mutationFn: ({ manifestId, generation, idempotencyKey }: { manifestId: string; generation: number; idempotencyKey: string }) => api.rollbackRelease(manifestId, generation, idempotencyKey),
-    onSuccess: (value) => { setResult(`回滚已提交 ${value.manifest.manifestId}`); closeConfirm() },
+    onSuccess: (value) => { setResult(`回滚已提交 ${value.businessNo ?? value.manifest.manifestId}`); closeConfirm() },
   })
   const kill = useMutation({
     mutationFn: ({ namespace, reason, idempotencyKey }: { namespace: string; reason: string; idempotencyKey: string }) => api.setKillSwitch(namespace, true, reason, idempotencyKey),
@@ -89,13 +98,25 @@ function ReleaseCenter() {
     {!api.demoMode && releases.canRead && releases.isLoading && <StateBanner tone="info" title="正在加载发布清单" detail="正在读取当前权限范围内的记录。" />}
 
     {result && <StateBanner tone="success" title="发布操作已登记" detail={result} />}
+    {!api.demoMode && auth.hasPermission('release:read') && <form className="lookup" onSubmit={(event) => {
+      event.preventDefault()
+      const number = manifestNo.trim()
+      if (!number) return
+      if (number === searchedNumber) void lookup.refetch()
+      else setSearchedNumber(number)
+    }}>
+      <input aria-label="发布清单号" placeholder="输入完整发布清单号" value={manifestNo} onChange={(event) => setManifestNo(event.target.value)} />
+      <Button tone="primary" type="submit" disabled={!manifestNo.trim() || lookup.isFetching}>查清单</Button>
+      <Button type="button" onClick={() => { setManifestNo(''); setSearchedNumber('') }}>清除</Button>
+    </form>}
+    {lookup.isError && <StateBanner tone="error" title="清单查询失败" detail={problemDetail(lookup.error)} />}
     {releases.isError && !releases.isFetchNextPageError && <StateBanner tone="error" title="发布列表加载失败" detail={problemDetail(releases.error)} />}
     {actionError && !confirm && <StateBanner tone="error" title="发布操作失败" detail={problemDetail(actionError)} />}
     {!api.demoMode && releases.canRead && releases.items.length === 0 && !releases.isLoading && !releases.isError ? <EmptyState title="当前筛选没有发布清单" detail="可切换发布状态或刷新列表；新清单通过已批准定义编译并暂存后可见。" action={<Button tone="primary" onClick={() => setWizardOpen(true)} disabled={!canOpenWizard} title={canOpenWizard ? '选择批准版本并编译暂存' : `缺少 ${wizardMissingPermissions.join('、')}`}><PackageCheck size={15} />编译并暂存</Button>} /> : null}
-    {latest && <div className="release-summary"><Panel><p>当前筛选首项</p><strong>{latest.manifest.manifestId.slice(0, 12)}</strong><small>{latest.state}</small></Panel><Panel><p>规则制品</p><strong>{latest.manifest.artifacts.length}</strong><small>当前筛选首项的制品数量</small></Panel><Panel><p>就绪副本</p><strong>{latest.readyReplicas}</strong><small>容量 {latest.readyCapacity}</small></Panel><Panel><p>清单流量配置</p><strong>{((latest.manifest.canaryBasisPoints ?? 0) / 100).toFixed(0)}%</strong><small>canary basis points</small></Panel></div>}
+    {latest && <div className="release-summary"><Panel><p>当前筛选首项</p><strong>{latest.businessNo ?? latest.manifest.manifestId}</strong><small>{latest.state}</small></Panel><Panel><p>规则制品</p><strong>{latest.manifest.artifacts.length}</strong><small>当前筛选首项的制品数量</small></Panel><Panel><p>就绪副本</p><strong>{latest.readyReplicas}</strong><small>容量 {latest.readyCapacity}</small></Panel><Panel><p>清单流量配置</p><strong>{((latest.manifest.canaryBasisPoints ?? 0) / 100).toFixed(0)}%</strong><small>canary basis points</small></Panel></div>}
     <Panel>
       <PanelHeader eyebrow="CELL READINESS" title="运行时就绪矩阵" />
-      {api.demoMode ? <EmptyState title="演示模式不展示真实发布槽" detail="关闭 DEMO_MODE 后读取 /api/v1/releases。" /> : <RecordTable label="运行时就绪矩阵" columns={['发布清单 ID', '环境', '部署单元', '运行类型', '命名空间', '状态', '发布代际', '就绪副本', '声明容量', '签名', '流量比例', '操作']} actions>{releases.items.map((item) => <tr key={item.manifest.manifestId}><td>{item.manifest.manifestId}</td><td>{item.manifest.environment ?? '—'}</td><td>{item.manifest.cell}</td><td>{item.manifest.runtime}</td><td>{item.manifest.namespace ?? '—'}</td><td><Badge tone={item.state === ReleaseState.ACTIVE ? 'good' : 'warn'}>{item.state}</Badge></td><td>{item.manifest.generation}</td><td>{item.readyReplicas}</td><td>{item.readyCapacity}</td><td>{item.manifest.signature ? '已签名' : '未签名'}</td><td>{((item.manifest.canaryBasisPoints ?? 0) / 100).toFixed(2)}%</td><td><div className="row-actions row-actions--stack"><Button aria-label={`激活 ${item.manifest.manifestId}`} disabled={pending || api.demoMode || item.state !== ReleaseState.STAGED || !auth.hasPermission('release:activate')} onClick={() => openConfirm('activate', item)}><Rocket size={14} />激活</Button><Button aria-label={`回滚 ${item.manifest.manifestId}`} disabled={pending || api.demoMode || item.state !== ReleaseState.ACTIVE || !auth.hasPermission('release:rollback') || !auth.hasPermission('release:read')} onClick={() => openConfirm('rollback', item)}><RotateCcw size={14} />回滚</Button><Button tone="danger" aria-label={`熔断 ${item.manifest.manifestId} 的命名空间`} disabled={pending || api.demoMode || !auth.hasPermission('release:kill-switch')} onClick={() => openConfirm('kill', item)}><Ban size={14} />熔断</Button></div></td></tr>)}</RecordTable>}
+      {api.demoMode ? <EmptyState title="演示模式不展示真实发布槽" detail="关闭 DEMO_MODE 后读取 /api/v1/releases。" /> : <RecordTable label="运行时就绪矩阵" columns={['发布清单号', '环境', '部署单元', '运行类型', '命名空间', '状态', '发布代际', '就绪副本', '声明容量', '签名', '流量比例', '操作']} actions>{visible.map((item) => <tr key={item.manifest.manifestId}><td>{item.businessNo ?? item.manifest.manifestId}</td><td>{item.manifest.environment ?? '—'}</td><td>{item.manifest.cell}</td><td>{item.manifest.runtime}</td><td>{item.manifest.namespace ?? '—'}</td><td><Badge tone={item.state === ReleaseState.ACTIVE ? 'good' : 'warn'}>{item.state}</Badge></td><td>{item.manifest.generation}</td><td>{item.readyReplicas}</td><td>{item.readyCapacity}</td><td>{item.manifest.signature ? '已签名' : '未签名'}</td><td>{((item.manifest.canaryBasisPoints ?? 0) / 100).toFixed(2)}%</td><td><div className="row-actions row-actions--stack"><Button aria-label={`激活 ${item.businessNo ?? item.manifest.manifestId}`} disabled={pending || api.demoMode || item.state !== ReleaseState.STAGED || !auth.hasPermission('release:activate')} onClick={() => openConfirm('activate', item)}><Rocket size={14} />激活</Button><Button aria-label={`回滚 ${item.businessNo ?? item.manifest.manifestId}`} disabled={pending || api.demoMode || item.state !== ReleaseState.ACTIVE || !auth.hasPermission('release:rollback') || !auth.hasPermission('release:read')} onClick={() => openConfirm('rollback', item)}><RotateCcw size={14} />回滚</Button><Button tone="danger" aria-label={`熔断 ${item.businessNo ?? item.manifest.manifestId} 的命名空间`} disabled={pending || api.demoMode || !auth.hasPermission('release:kill-switch')} onClick={() => openConfirm('kill', item)}><Ban size={14} />熔断</Button></div></td></tr>)}</RecordTable>}
     </Panel>
     {releases.isFetchNextPageError && <StateBanner tone="error" title="后续发布清单加载失败" detail={problemDetail(releases.error)} />}
     {releases.hasNextPage && <Button disabled={pending || releases.isFetching} onClick={() => void releases.fetchNextPage()}>{releases.isFetchNextPageError ? '重试加载更多发布清单' : releases.isFetchingNextPage ? '正在加载更多发布清单' : '加载更多发布清单'}</Button>}
@@ -104,7 +125,7 @@ function ReleaseCenter() {
     </div>
     {wizardOpen && <ReleaseWizard open onClose={() => setWizardOpen(false)} onRequestActivate={(release) => { setWizardOpen(false); openConfirm('activate', release) }} />}
     {confirm && actionTarget && (
-      <Modal title={confirm === 'kill' ? '启用命名空间 Kill switch' : confirm === 'rollback' ? `回滚 ${actionTarget.manifest.manifestId}` : `激活 ${actionTarget.manifest.manifestId}`} description="签名发布指令记录当前操作人，并经现有发布通道执行。请核对本次具体作用范围。" onClose={dismissConfirm}>
+      <Modal title={confirm === 'kill' ? '启用命名空间 Kill switch' : confirm === 'rollback' ? `回滚 ${actionTarget.businessNo ?? actionTarget.manifest.manifestId}` : `激活 ${actionTarget.businessNo ?? actionTarget.manifest.manifestId}`} description="签名发布指令记录当前操作人，并经现有发布通道执行。请核对本次具体作用范围。" onClose={dismissConfirm}>
         <div className="danger-confirm">
           {actionError && <StateBanner tone="error" title="发布操作失败" detail={problemDetail(actionError)} />}
           <StateBanner tone={confirm === 'kill' ? 'error' : 'warn'} title="确认作用范围" detail={`${actionTarget.manifest.environment ?? ''} · ${actionTarget.manifest.cell} · ${actionTarget.manifest.runtime} · ${actionTarget.manifest.namespace}`} />
@@ -114,8 +135,8 @@ function ReleaseCenter() {
             {candidates.isFetching && <StateBanner tone="info" title="正在查询可回滚版本" detail="仅展示服务端当前保留、曾激活且未过期的目标。" />}
             {candidates.isError && <><StateBanner tone="error" title="未能查询回滚目标" detail={problemDetail(candidates.error)} /><Button disabled={pending || candidates.isFetching} onClick={() => void candidates.refetch()}>重试回滚候选</Button></>}
             {!candidates.isFetching && !candidates.isError && candidates.data?.length === 0 && <StateBanner tone="warn" title="没有可回滚版本" detail="当前没有保留且有效、可访问的历史目标，请确认发布清单与权限范围。" />}
-            <label className="field"><span>回滚目标版本</span><Select aria-label="回滚目标版本" value={targetGeneration} disabled={pending || rollbackUncertain || candidates.isFetching || candidates.isError || !candidates.data?.length} onChange={(event) => { setTargetGeneration(event.target.value); setActivationKey(crypto.randomUUID()); rollback.reset() }}><option value="" disabled>请选择服务端返回的版本</option>{(candidates.data ?? []).map((item) => <option key={item.manifestId} value={String(item.generation)}>第 {item.generation} 代 · {item.manifestId}</option>)}</Select></label>
-            {chosen && <RecordTable label="回滚目标详情" columns={['清单 ID', '代际', '有效期至（北京时间）', '定义 ID', '定义版本']}>{chosen.artifacts.map((artifact) => <tr key={artifact.artifactId}><td>{chosen.manifestId}</td><td>{chosen.generation}</td><td><RecordTime value={chosen.expiresAt} /></td><td>{artifact.definitionId}</td><td>{artifact.definitionVersion}</td></tr>)}</RecordTable>}
+            <label className="field"><span>回滚目标版本</span><Select aria-label="回滚目标版本" value={targetGeneration} disabled={pending || rollbackUncertain || candidates.isFetching || candidates.isError || !candidates.data?.length} onChange={(event) => { setTargetGeneration(event.target.value); setActivationKey(crypto.randomUUID()); rollback.reset() }}><option value="" disabled>请选择服务端返回的版本</option>{(candidates.data ?? []).map((item) => <option key={item.manifestId} value={String(item.generation)}>第 {item.generation} 代 · {item.businessNo ?? item.manifestId}</option>)}</Select></label>
+            {chosen && <RecordTable label="回滚目标详情" columns={['清单号', '代际', '有效期至（北京时间）', '定义 ID', '定义版本']}>{chosen.artifacts.map((artifact) => <tr key={artifact.artifactId}><td>{chosen.businessNo ?? chosen.manifestId}</td><td>{chosen.generation}</td><td><RecordTime value={chosen.expiresAt} /></td><td>{artifact.definitionId}</td><td>{artifact.definitionVersion}</td></tr>)}</RecordTable>}
           </>}
           <label className="confirm-check"><input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} />我已核对作用范围、流量和回滚目标</label>
           <footer className="action-bar action-bar--end modal-actions">

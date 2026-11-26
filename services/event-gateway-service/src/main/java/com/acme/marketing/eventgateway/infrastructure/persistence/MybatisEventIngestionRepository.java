@@ -1,5 +1,7 @@
 package com.acme.marketing.eventgateway.infrastructure.persistence;
 
+import com.acme.marketing.platform.identity.BusinessNumber;
+
 import static com.acme.marketing.platform.time.SqlTime.format;
 
 import com.acme.marketing.eventgateway.application.EventIngestionRepository;
@@ -34,9 +36,17 @@ public class MybatisEventIngestionRepository implements EventIngestionRepository
 
     @Override
     public Optional<StoredReceipt> findReceipt(String tenantId, String sourceId, String eventId) {
-        EventGatewayMapper.ReceiptRow row = mapper.selectReceipt(tenantId, sourceId, eventId);
+        return toReceipt(mapper.selectReceipt(tenantId, sourceId, eventId));
+    }
+
+    @Override
+    public Optional<StoredReceipt> findReceiptByNumber(String tenantId, String number) {
+        return toReceipt(mapper.selectReceiptByNumber(tenantId, number));
+    }
+
+    private static Optional<StoredReceipt> toReceipt(EventGatewayMapper.ReceiptRow row) {
         return row == null ? Optional.empty() : Optional.of(new StoredReceipt(row.receiptId(), row.statusName(),
-                row.reasonCode(), Instant.parse(row.ingestedAt()), row.payloadHash()));
+                row.reasonCode(), Instant.parse(row.ingestedAt()), row.payloadHash(), row.businessNo(), row.eventId()));
     }
 
     @Override
@@ -46,9 +56,10 @@ public class MybatisEventIngestionRepository implements EventIngestionRepository
                     receipt.receiptId(), receipt.sourceId(), receipt.eventId(), receipt.eventType(),
                     receipt.businessKey(), receipt.aggregateVersion(), receipt.status(), receipt.reasonCode(),
                     receipt.payloadHash(), receipt.eventJson(), format(receipt.occurredAt()),
-                    format(receipt.ingestedAt()))), "保存事件回执");
+                    format(receipt.ingestedAt()), receipt.businessNo())), "保存事件回执");
             return true;
         } catch (DuplicateKeyException race) {
+            if (!BusinessNumber.isCollision(race, "uq_event_dedup")) throw race;
             return false;
         }
     }
@@ -57,14 +68,14 @@ public class MybatisEventIngestionRepository implements EventIngestionRepository
     public void insertQuarantine(QuarantineWrite quarantine) {
         requireOne(mapper.insertQuarantine(new EventGatewayMapper.QuarantineWrite(quarantine.tenantId(),
                 quarantine.quarantineId(), quarantine.receiptId(), quarantine.reasonCode(),
-                quarantine.eventJson(), quarantine.state(), format(quarantine.createdAt()))), "保存隔离事件");
+                quarantine.eventJson(), quarantine.state(), format(quarantine.createdAt()), quarantine.businessNo())), "保存隔离事件");
     }
 
     @Override
     public Optional<QuarantineRecord> lockQuarantine(String tenantId, String quarantineId) {
         EventGatewayMapper.QuarantineRow row = mapper.selectQuarantineForUpdate(tenantId, quarantineId);
         return row == null ? Optional.empty()
-                : Optional.of(new QuarantineRecord(row.receiptId(), row.eventJson(), row.stateName()));
+                : Optional.of(new QuarantineRecord(row.receiptId(), row.eventJson(), row.stateName(), row.quarantineId(), row.receiptBusinessNo()));
     }
 
     @Override
@@ -78,11 +89,11 @@ public class MybatisEventIngestionRepository implements EventIngestionRepository
     }
 
     @Override
-    public List<QuarantineItem> findQuarantine(String tenantId) {
-        return mapper.selectQuarantine(tenantId).stream()
+    public List<QuarantineItem> findQuarantine(String tenantId, String number) {
+        return mapper.selectQuarantine(tenantId, number).stream()
                 .map(row -> new QuarantineItem(row.quarantineId(), row.receiptId(), row.reasonCode(),
                         row.stateName(), Instant.parse(row.createdAt()),
-                        row.replayedAt() == null ? null : Instant.parse(row.replayedAt())))
+                        row.replayedAt() == null ? null : Instant.parse(row.replayedAt()), row.businessNo(), row.receiptBusinessNo()))
                 .toList();
     }
 

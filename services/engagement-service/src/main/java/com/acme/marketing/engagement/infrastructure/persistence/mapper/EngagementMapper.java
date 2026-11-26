@@ -165,7 +165,7 @@ public interface EngagementMapper {
     record CommandRetryWrite(String tenantId, String commandId, String lastError, String updatedAt) { }
     record ContactWrite(String tenantId, String contactId, String contactKey, String subjectToken,
             String campaignId, String channelName, String templateId, long templateVersion, String stateName,
-            String variablesJson, String requestFingerprint, String requestedAt, String updatedAt) { }
+            String variablesJson, String requestFingerprint, String requestedAt, String updatedAt, String businessNo) { }
     record ContactCompleteWrite(String tenantId, String contactId, String stateName, String providerRequestId,
             String providerCode, String updatedAt) { }
     record ContactDlqWrite(String tenantId, String dlqId, String contactId, String reasonCode,
@@ -185,7 +185,7 @@ public interface EngagementMapper {
     record TemplateRow(String templateId, long versionNo, String channelName, String contentText,
             String requiredVariables, String stateName, String createdAt) { }
     record ContactRow(String contactId, String contactKey, String stateName, String providerRequestId,
-            String providerCode, String updatedAt) { }
+            String providerCode, String updatedAt, String businessNo) { }
     record CommandRow(String effectType, String enrollmentId, String payloadHash, String stateName,
             String contactId, String providerCode) { }
     record ConsentRow(boolean allowedValue, boolean minorValue, boolean personalizationAllowed,
