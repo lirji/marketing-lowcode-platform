@@ -17,9 +17,12 @@ test.beforeEach(async ({ page }) => {
 
 test('operations keep identifiers, nullable metadata and guarded replay distinct', async ({ page }, testInfo) => {
   const enrollmentId = 'enrollment-very-long-stable-reference-123456789'
+  const contactNo = 'MKT-CNT-261019-0000000001'
+  const quarantineNo = 'MKT-QTN-261019-0000000002'
+  const receiptNo = 'MKT-EVT-261019-0000000003'
   await page.route('**/api/v1/enrollments?*', (route) => route.fulfill({ json: [{ enrollmentId, journeyId: 'journey-one', journeyVersion: 7, subjectToken: 'private-subject-never-show-complete', currentNodeId: 'node-wait', status: 'WAITING', duplicate: false }] }))
-  await page.route('**/api/v1/contacts?*', (route) => route.fulfill({ json: [{ contactId: 'contact-1', contactKey: 'key-1', providerCode: 'OK', providerRequestId: 'provider-request-1', state: 'DELIVERED', updatedAt: '2026-10-19T00:00:00Z' }] }))
-  await page.route('**/api/v1/quarantine', (route) => route.fulfill({ json: [{ quarantineId: 'quarantine-1', receiptId: 'receipt-1', reasonCode: 'VERSION_GAP', state: 'QUARANTINED', createdAt: '2026-10-19T00:00:00Z', replayedAt: null }] }))
+  await page.route('**/api/v1/contacts?*', (route) => route.fulfill({ json: [{ contactId: 'contact-1', businessNo: contactNo, contactKey: 'key-1', providerCode: 'OK', providerRequestId: 'provider-request-1', state: 'DELIVERED', updatedAt: '2026-10-19T00:00:00Z' }] }))
+  await page.route('**/api/v1/quarantine', (route) => route.fulfill({ json: [{ quarantineId: 'quarantine-1', businessNo: quarantineNo, receiptId: 'receipt-1', receiptBusinessNo: receiptNo, reasonCode: 'VERSION_GAP', state: 'QUARANTINED', createdAt: '2026-10-19T00:00:00Z', replayedAt: null }] }))
   const writes: string[] = []
   page.on('request', (request) => { if (request.method() !== 'GET' && request.url().includes('/api/v1/')) writes.push(request.url()) })
   await page.goto('/operations')
@@ -35,17 +38,17 @@ test('operations keep identifiers, nullable metadata and guarded replay distinct
   await page.screenshot({ path: testInfo.outputPath('journey-fields.png') })
   await page.getByRole('tab', { name: '触达记录' }).click()
   const contacts = page.getByRole('table', { name: '触达记录' })
-  await expect(contacts.getByRole('cell', { name: 'contact-1', exact: true })).toBeVisible()
-  await expect(await field(contacts, 'contact-1', '服务商响应码')).toHaveText('OK')
-  await expect(await field(contacts, 'contact-1', '服务商请求 ID')).toHaveText('provider-request-1')
-  await expect(await field(contacts, 'contact-1', '更新时间（北京时间）')).toHaveText('2026/10/19 08:00:00')
+  await expect(contacts.getByRole('cell', { name: contactNo, exact: true })).toBeVisible()
+  await expect(await field(contacts, contactNo, '服务商响应码')).toHaveText('OK')
+  await expect(await field(contacts, contactNo, '服务商请求 ID')).toHaveText('provider-request-1')
+  await expect(await field(contacts, contactNo, '更新时间（北京时间）')).toHaveText('2026/10/19 08:00:00')
   await page.getByRole('tab', { name: 'DLQ / 隔离区' }).click()
   const quarantine = page.getByRole('table', { name: '隔离消息' })
-  await expect(quarantine.getByRole('cell', { name: 'quarantine-1', exact: true })).toBeVisible()
-  await expect(await field(quarantine, 'quarantine-1', '回执 ID')).toHaveText('receipt-1')
-  await expect(await field(quarantine, 'quarantine-1', '重放时间（北京时间）')).toHaveText('—')
+  await expect(quarantine.getByRole('cell', { name: quarantineNo, exact: true })).toBeVisible()
+  await expect(await field(quarantine, quarantineNo, '回执号')).toHaveText(receiptNo)
+  await expect(await field(quarantine, quarantineNo, '重放时间（北京时间）')).toHaveText('—')
   await quarantine.getByRole('button', { name: '重放', exact: true }).click()
-  await expect(page.getByRole('dialog')).toContainText('quarantine-1')
+  await expect(page.getByRole('dialog')).toContainText(quarantineNo)
   await page.getByRole('button', { name: '取消', exact: true }).click()
   expect(writes).toEqual([])
 })
