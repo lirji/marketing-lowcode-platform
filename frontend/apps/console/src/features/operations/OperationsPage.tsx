@@ -127,7 +127,7 @@ function JourneyInstances() {
     {list.isError && <StateBanner tone="error" title="实例列表加载失败" detail={problemDetail(list.error)} />}
     {lookup.isError && <StateBanner tone="error" title="实例查询失败" detail={problemDetail(lookup.error)} />}
     {items.length === 0 ? <EmptyState title="没有 Journey 实例" detail="列表来自 GET /api/v1/enrollments；也可按 enrollmentId 点查。" /> : <RecordTable label="Journey 实例" columns={['旅程 ID', '旅程实例 ID', '当前节点 ID', '状态', '旅程版本', '主体标识（脱敏）', '是否重复', '投影时间（北京时间）']}>
-      {items.map((item) => <tr key={item.enrollmentId}><td>{item.journeyId}</td><td>{item.enrollmentId}</td><td>{item.currentNodeId ?? '—'}</td><td><Badge tone={item.status === 'FAILED' ? 'danger' : item.status === 'COMPLETED' ? 'good' : 'info'}>{item.status}</Badge></td><td>{item.journeyVersion}</td><td>{mask(item.subjectToken)}</td><td>{item.duplicate === undefined ? '未知' : item.duplicate ? '是' : '否'}</td><td><RecordTime value={item.projectedAt} /></td></tr>)}
+      {items.map((item) => <tr key={item.enrollmentId}><td>{item.journeyId}</td><td>{item.businessNo ?? item.enrollmentId}</td><td>{item.currentNodeId ?? '—'}</td><td><Badge tone={item.status === 'FAILED' ? 'danger' : item.status === 'COMPLETED' ? 'good' : 'info'}>{item.status}</Badge></td><td>{item.journeyVersion}</td><td>{mask(item.subjectToken)}</td><td>{item.duplicate === undefined ? '未知' : item.duplicate ? '是' : '否'}</td><td><RecordTime value={item.projectedAt} /></td></tr>)}
     </RecordTable>}
   </Panel>
 }

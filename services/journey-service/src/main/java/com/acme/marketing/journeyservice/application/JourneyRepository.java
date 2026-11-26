@@ -22,6 +22,9 @@ public interface JourneyRepository {
             String subjectToken, String triggerEventId);
     boolean trySaveEnrollment(EnrollmentWrite write);
     void updateEnrollmentState(EnrollmentStateWrite write);
+    /** 展示号与原参与记录同事务持久化，恢复旧记录时可能为空。 */
+    String findEnrollmentNumber(String tenantId, String enrollmentId);
+
     Optional<String> findEnrollmentSnapshot(String tenantId, String enrollmentId, boolean lock);
     List<EnrollmentListRow> findEnrollments(String tenantId, String statusName, String journeyId, int limit);
     List<String> findMigrationSnapshots(String tenantId, String journeyId, long fromVersion,
@@ -65,14 +68,14 @@ public interface JourneyRepository {
 
     record DefinitionWrite(String tenantId, String journeyId, long versionNo, String planJson, String stateName,
             String createdBy, String createdAt) { }
-    record EnrollmentSummaryRow(String enrollmentId, String snapshotJson, String createdAt) { }
+    record EnrollmentSummaryRow(String enrollmentId, String snapshotJson, String createdAt, String businessNo) { }
     record EnrollmentWrite(String tenantId, String enrollmentId, String journeyId, long journeyVersion,
             String subjectToken, String triggerEventId, String statusName, String currentNodeId, String snapshotJson,
             String projectionTopic, Integer projectionPartition, Long projectionOffset, String createdAt,
             String updatedAt) { }
     record EnrollmentStateWrite(String tenantId, String enrollmentId, String statusName, String currentNodeId,
             String snapshotJson, String updatedAt) { }
-    record EnrollmentListRow(String snapshotJson, String updatedAt) { }
+    record EnrollmentListRow(String snapshotJson, String updatedAt, String businessNo) { }
     record MigrationWrite(String tenantId, String migrationId, String enrollmentId, long fromVersion,
             long toVersion, String previousSnapshotJson, String stateName, String createdBy, String createdAt) { }
     record EnrollmentMigrationWrite(String tenantId, String enrollmentId, long journeyVersion,

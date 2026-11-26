@@ -102,6 +102,12 @@ public class AudienceController {
                 () -> service.createSnapshot(segmentId, version, request));
     }
 
+    /** 快照元数据不展开成员列表，仍复用原查人群权限。 */
+    @GetMapping("/audiences/snapshots/{snapshotId}")
+    public AudienceService.SnapshotView snapshot(@PathVariable String snapshotId) {
+        return service.snapshot(snapshotId);
+    }
+
     @PutMapping("/audiences/snapshots/{snapshotId}/memberships")
     public AudienceService.MembershipView update(@PathVariable String snapshotId,
             @RequestBody AudienceService.MembershipUpdate request) {

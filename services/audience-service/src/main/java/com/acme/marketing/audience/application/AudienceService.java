@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import com.acme.marketing.platform.identity.BusinessNumber;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
@@ -136,10 +137,19 @@ public class AudienceService {
         if (!request.expiresAt().isAfter(clock.instant())) throw new IllegalArgumentException(SNAPSHOT_EXPIRED_MESSAGE);
         List<String> hashes = request.subjectTokens().stream().map(AudienceService::subjectHash).sorted().distinct().toList();
         String checksum = "sha256:" + Digests.sha256Hex(String.join("\n", hashes));
-        SnapshotView snapshot = new SnapshotView(snapshotId, segmentId, version, request.asOf(), request.watermark(),
-                request.expiresAt(), hashes.size(), checksum, "READY");
-        repository.saveSnapshot(tenant, snapshot, hashes, clock.instant());
-        return snapshot;
+        Instant createdAt = clock.instant();
+        for (int attempt = 0; attempt < BusinessNumber.MAX_ISSUE_ATTEMPTS; attempt++) {
+            String number = BusinessNumber.next(BusinessNumber.Type.AUDIENCE_SNAPSHOT, createdAt);
+            var snapshot = new SnapshotView(snapshotId, segmentId, version, request.asOf(), request.watermark(),
+                    request.expiresAt(), hashes.size(), checksum, "READY", number);
+            try {
+                repository.saveSnapshot(tenant, snapshot, hashes, createdAt);
+                return snapshot;
+            } catch (org.springframework.dao.DuplicateKeyException duplicate) {
+                if (attempt == BusinessNumber.MAX_ISSUE_ATTEMPTS - 1 || !repository.businessNumberTaken(number)) throw duplicate;
+            }
+        }
+        throw new IllegalStateException("snapshot number allocation exhausted");
     }
 
     /** 按单调递增版本更新快照成员，过期事件不会覆盖新状态。 */
@@ -147,7 +157,8 @@ public class AudienceService {
     public MembershipView updateMembership(String snapshotId, MembershipUpdate update) {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("audience:stream-update");
-        snapshot(scope.tenantId().value(), snapshotId);
+        // 可读查询号先解析回原快照键，商城快照的写入限制仍按可信来源生效。
+        snapshotId = snapshot(scope.tenantId().value(), snapshotId).snapshotId();
         if (snapshotId.startsWith(COMMERCE_SNAPSHOT_PREFIX)) {
             throw CommerceProfileError.SNAPSHOT_IMMUTABLE.conflict();
         }
@@ -167,6 +178,7 @@ public class AudienceService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("audience:lookup");
         SnapshotView snapshot = snapshot(scope.tenantId().value(), snapshotId);
+        snapshotId = snapshot.snapshotId();
         boolean stale = !usedAt.isBefore(snapshot.expiresAt());
         if (snapshotId.startsWith(COMMERCE_SNAPSHOT_PREFIX)
                 && (stale || usedAt.isBefore(snapshot.asOf()) || !clock.instant().isBefore(snapshot.expiresAt()))) {
@@ -191,6 +203,13 @@ public class AudienceService {
     SegmentView segment(String tenantId, String segmentId, long version) {
         return repository.findSegment(tenantId, segmentId, version)
                 .orElseThrow(() -> new NotFoundException("SEGMENT_NOT_FOUND", "segment version not found"));
+    }
+
+    /** 按新旧号码读取同一快照，成员标识继续用原数据外键。 */
+    public SnapshotView snapshot(String number) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("audience:lookup");
+        return snapshot(scope.tenantId().value(), number);
     }
 
     private SnapshotView snapshot(String tenantId, String snapshotId) {
@@ -270,7 +289,7 @@ public class AudienceService {
         }
     }
     public record SnapshotView(String snapshotId, String segmentId, long segmentVersion, Instant asOf,
-            Instant watermark, Instant expiresAt, long memberCount, String checksum, String state) { }
+            Instant watermark, Instant expiresAt, long memberCount, String checksum, String state, String businessNo) { }
     public record MembershipUpdate(String subjectToken, long version, Boolean member) {
         public MembershipUpdate {
             if (subjectToken == null || subjectToken.isBlank() || version < 1 || member == null) {

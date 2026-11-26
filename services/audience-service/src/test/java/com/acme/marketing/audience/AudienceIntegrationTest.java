@@ -54,6 +54,9 @@ class AudienceIntegrationTest extends MySqlIntegrationTest {
                 "subjectTokens", Set.of("s1"), "asOf", now, "watermark", now,
                 "expiresAt", now.plusSeconds(3600)));
         String snapshotId = snapshot.get("snapshotId").asString();
+        String number = snapshot.path("businessNo").asString();
+        assertTrue(number.matches("MKT-SNP-[0-9]{6}-[0-9]{10}"));
+        assertEquals(snapshot, get("/api/v1/audiences/snapshots/" + number));
         JsonNode member = get("/api/v1/audiences/snapshots/" + snapshotId
                 + "/memberships/s1?usedAt=" + now.plusSeconds(10) + "&stalePolicy=REJECT_CANDIDATE");
         assertTrue(member.get("member").asBoolean());

@@ -37,7 +37,7 @@
 
     <select id="selectDuplicateEnrollment"
             resultType="com.acme.marketing.journeyservice.application.JourneyRepository$EnrollmentSummaryRow">
-        SELECT enrollment_id AS enrollmentId, snapshot_json AS snapshotJson, created_at AS createdAt
+        SELECT enrollment_id AS enrollmentId, snapshot_json AS snapshotJson, created_at AS createdAt, business_no AS businessNo
         FROM mk_enrollment
         WHERE tenant_id = #{tenantId} AND journey_id = #{journeyId} AND journey_version = #{version}
           AND subject_token = #{subjectToken} AND trigger_event_id = #{triggerEventId}
@@ -46,11 +46,11 @@
         INSERT INTO mk_enrollment
             (tenant_id, enrollment_id, journey_id, journey_version, subject_token, trigger_event_id,
              status_name, current_node_id, snapshot_json, projection_topic, projection_partition,
-             projection_offset, created_at, updated_at)
+             projection_offset, created_at, updated_at, business_no)
         VALUES
-            (#{tenantId}, #{enrollmentId}, #{journeyId}, #{journeyVersion}, #{subjectToken}, #{triggerEventId},
-             #{statusName}, #{currentNodeId}, #{snapshotJson}, #{projectionTopic}, #{projectionPartition},
-             #{projectionOffset}, #{createdAt}, #{updatedAt})
+            (#{write.tenantId}, #{write.enrollmentId}, #{write.journeyId}, #{write.journeyVersion}, #{write.subjectToken}, #{write.triggerEventId},
+             #{write.statusName}, #{write.currentNodeId}, #{write.snapshotJson}, #{write.projectionTopic}, #{write.projectionPartition},
+             #{write.projectionOffset}, #{write.createdAt}, #{write.updatedAt}, #{number})
     </insert>
     <update id="updateEnrollmentState">
         UPDATE mk_enrollment
@@ -58,14 +58,23 @@
             updated_at = #{updatedAt}
         WHERE tenant_id = #{tenantId} AND enrollment_id = #{enrollmentId}
     </update>
+    <select id="selectEnrollmentNumber" resultType="java.lang.String">
+        SELECT business_no FROM mk_enrollment WHERE tenant_id=#{tenantId} AND enrollment_id=#{enrollmentId}
+    </select>
+    <select id="lockEnrollmentNumber" resultType="java.lang.String" useCache="false">
+        SELECT business_no FROM mk_enrollment WHERE business_no=#{number} FOR UPDATE
+    </select>
     <select id="selectEnrollmentSnapshot" resultType="java.lang.String">
         SELECT snapshot_json FROM mk_enrollment
-        WHERE tenant_id = #{tenantId} AND enrollment_id = #{enrollmentId}
+        WHERE tenant_id = #{tenantId} AND <choose>
+            <when test='enrollmentId.startsWith("MKT-JIN-")'>business_no=CAST(#{enrollmentId} AS CHAR CHARACTER SET ascii) COLLATE ascii_bin</when>
+            <otherwise>enrollment_id=#{enrollmentId}</otherwise>
+        </choose>
         <if test="lock">FOR UPDATE</if>
     </select>
     <select id="selectEnrollments"
             resultType="com.acme.marketing.journeyservice.application.JourneyRepository$EnrollmentListRow">
-        SELECT snapshot_json AS snapshotJson, updated_at AS updatedAt
+        SELECT snapshot_json AS snapshotJson, updated_at AS updatedAt, business_no AS businessNo
         FROM mk_enrollment
         WHERE tenant_id = #{tenantId}
         <if test="statusName != null and statusName != ''">AND status_name = #{statusName}</if>
@@ -243,11 +252,11 @@
         INSERT INTO mk_enrollment
             (tenant_id, enrollment_id, journey_id, journey_version, subject_token, trigger_event_id,
              status_name, current_node_id, snapshot_json, projection_topic, projection_partition,
-             projection_offset, created_at, updated_at)
+             projection_offset, created_at, updated_at, business_no)
         VALUES
-            (#{tenantId}, #{enrollmentId}, #{journeyId}, #{journeyVersion}, #{subjectToken}, #{triggerEventId},
-             #{statusName}, #{currentNodeId}, #{snapshotJson}, #{projectionTopic}, #{projectionPartition},
-             #{projectionOffset}, #{createdAt}, #{updatedAt})
+            (#{write.tenantId}, #{write.enrollmentId}, #{write.journeyId}, #{write.journeyVersion}, #{write.subjectToken}, #{write.triggerEventId},
+             #{write.statusName}, #{write.currentNodeId}, #{write.snapshotJson}, #{write.projectionTopic}, #{write.projectionPartition},
+             #{write.projectionOffset}, #{write.createdAt}, #{write.updatedAt}, #{number})
     </insert>
     <update id="updateProjectedEnrollment">
         UPDATE mk_enrollment

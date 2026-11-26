@@ -1,5 +1,9 @@
 package com.acme.marketing.journeyservice.infrastructure.persistence;
 
+import com.acme.marketing.platform.identity.BusinessNumber;
+import java.time.Instant;
+import java.util.function.ToIntFunction;
+
 import com.acme.marketing.journeyservice.application.JourneyRepository;
 import com.acme.marketing.journeyservice.infrastructure.persistence.mapper.JourneyMapper;
 import java.util.List;
@@ -35,9 +39,12 @@ public class MybatisJourneyRepository implements JourneyRepository {
         return Optional.ofNullable(mapper.selectDuplicateEnrollment(
                 tenantId, journeyId, version, subjectToken, triggerEventId));
     }
-    @Override public boolean trySaveEnrollment(EnrollmentWrite write) { return attempt(() -> mapper.insertEnrollment(write)); }
+    @Override public boolean trySaveEnrollment(EnrollmentWrite write) { return attempt(() -> issueEnrollmentNumber(write.createdAt(), number -> mapper.insertEnrollment(write, number))); }
     @Override public void updateEnrollmentState(EnrollmentStateWrite write) {
         one(mapper.updateEnrollmentState(write), "更新旅程实例");
+    }
+    @Override public String findEnrollmentNumber(String tenantId, String enrollmentId) {
+        return mapper.selectEnrollmentNumber(tenantId, enrollmentId);
     }
     @Override public Optional<String> findEnrollmentSnapshot(String tenantId, String enrollmentId, boolean lock) {
         return Optional.ofNullable(mapper.selectEnrollmentSnapshot(tenantId, enrollmentId, lock));
@@ -105,8 +112,23 @@ public class MybatisJourneyRepository implements JourneyRepository {
         return mapper.countDefinition(tenantId, journeyId, version);
     }
     @Override public void saveProjectedEnrollment(ProjectedEnrollmentWrite write) {
-        one(mapper.insertProjectedEnrollment(write), "保存投影旅程实例");
+        one(issueEnrollmentNumber(write.createdAt(), number -> mapper.insertProjectedEnrollment(write, number)), "保存投影旅程实例");
     }
+    /** 两种执行模式共用发号约束，只有展示号冲突才重试。 */
+    private int issueEnrollmentNumber(String createdAt, ToIntFunction<String> insert) {
+        Instant at = Instant.parse(createdAt);
+        for (int attempt = 0; attempt < BusinessNumber.MAX_ISSUE_ATTEMPTS; attempt++) {
+            String number = BusinessNumber.next(BusinessNumber.Type.JOURNEY_ENROLLMENT, at);
+            try {
+                return insert.applyAsInt(number);
+            } catch (org.springframework.dao.DuplicateKeyException duplicate) {
+                if (attempt == BusinessNumber.MAX_ISSUE_ATTEMPTS - 1 || mapper.lockEnrollmentNumber(number) == null)
+                    throw duplicate;
+            }
+        }
+        throw new IllegalStateException("journey enrollment number allocation exhausted");
+    }
+
     @Override public void updateProjectedEnrollment(ProjectedEnrollmentUpdate write) {
         one(mapper.updateProjectedEnrollment(write), "更新投影旅程实例");
     }

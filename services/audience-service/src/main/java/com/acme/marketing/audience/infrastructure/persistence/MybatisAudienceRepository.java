@@ -105,7 +105,7 @@ public class MybatisAudienceRepository implements AudienceRepository {
         requireOne(mapper.insertSnapshot(new SnapshotWrite(tenantId, snapshot.snapshotId(), snapshot.segmentId(),
                 snapshot.segmentVersion(), format(snapshot.asOf()), format(snapshot.watermark()),
                 format(snapshot.expiresAt()), snapshot.memberCount(), snapshot.checksum(), snapshot.state(),
-                format(createdAt))), "保存人群快照");
+                format(createdAt), snapshot.businessNo())), "保存人群快照");
         String updatedAt = format(createdAt);
         List<MemberWrite> members = subjectHashes.stream()
                 .map(hash -> new MemberWrite(tenantId, snapshot.snapshotId(), hash, 1, true, updatedAt))
@@ -118,6 +118,11 @@ public class MybatisAudienceRepository implements AudienceRepository {
                 throw new IllegalStateException("批量保存人群成员的受影响行数不正确");
             }
         }
+    }
+
+    @Override
+    public boolean businessNumberTaken(String number) {
+        return mapper.lockSnapshotBusinessNumber(number) != null;
     }
 
     @Override
@@ -159,7 +164,7 @@ public class MybatisAudienceRepository implements AudienceRepository {
     private static SnapshotView toSnapshot(SnapshotRow row) {
         return new SnapshotView(row.snapshotId(), row.segmentId(), row.segmentVersion(),
                 Instant.parse(row.asOfTime()), Instant.parse(row.watermarkTime()), Instant.parse(row.expiresAt()),
-                row.memberCount(), row.checksum(), row.stateName());
+                row.memberCount(), row.checksum(), row.stateName(), row.businessNo());
     }
 
     private static MemberWrite memberWrite(String tenantId, String snapshotId, String subjectHash, long version,

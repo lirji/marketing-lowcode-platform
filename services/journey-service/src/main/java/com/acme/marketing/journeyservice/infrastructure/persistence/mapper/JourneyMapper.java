@@ -23,7 +23,9 @@ public interface JourneyMapper {
     JourneyRepository.EnrollmentSummaryRow selectDuplicateEnrollment(@Param("tenantId") String tenantId,
             @Param("journeyId") String journeyId, @Param("version") long version,
             @Param("subjectToken") String subjectToken, @Param("triggerEventId") String triggerEventId);
-    int insertEnrollment(JourneyRepository.EnrollmentWrite write);
+    int insertEnrollment(@Param("write") JourneyRepository.EnrollmentWrite write, @Param("number") String number);
+    String selectEnrollmentNumber(@Param("tenantId") String tenantId, @Param("enrollmentId") String enrollmentId);
+    String lockEnrollmentNumber(@Param("number") String number);
     int updateEnrollmentState(JourneyRepository.EnrollmentStateWrite write);
     String selectEnrollmentSnapshot(@Param("tenantId") String tenantId,
             @Param("enrollmentId") String enrollmentId, @Param("lock") boolean lock);
@@ -69,7 +71,7 @@ public interface JourneyMapper {
             @Param("tenantId") String tenantId, @Param("enrollmentId") String enrollmentId);
     int countDefinition(@Param("tenantId") String tenantId, @Param("journeyId") String journeyId,
             @Param("version") long version);
-    int insertProjectedEnrollment(JourneyRepository.ProjectedEnrollmentWrite write);
+    int insertProjectedEnrollment(@Param("write") JourneyRepository.ProjectedEnrollmentWrite write, @Param("number") String number);
     int updateProjectedEnrollment(JourneyRepository.ProjectedEnrollmentUpdate write);
     JourneyRepository.EnrollmentIdentityRow selectEnrollmentIdentity(@Param("tenantId") String tenantId,
             @Param("enrollmentId") String enrollmentId);

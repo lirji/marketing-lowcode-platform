@@ -82,14 +82,17 @@ public interface AudienceMapper {
     record SegmentRow(String segmentId, long versionNo, String name, String stateName, String ruleJson,
             String ruleHash, String createdAt) { }
 
+    /** 从写库确认本次重复键是否由展示号码引起。 */
+    String lockSnapshotBusinessNumber(@Param("number") String number);
+
     /** 快照写模型。 */
     record SnapshotWrite(String tenantId, String snapshotId, String segmentId, long segmentVersion,
             String asOfTime, String watermarkTime, String expiresAt, long memberCount, String checksum,
-            String stateName, String createdAt) { }
+            String stateName, String createdAt, String businessNo) { }
 
     /** 快照读模型。 */
     record SnapshotRow(String snapshotId, String segmentId, long segmentVersion, String asOfTime,
-            String watermarkTime, String expiresAt, long memberCount, String checksum, String stateName) { }
+            String watermarkTime, String expiresAt, long memberCount, String checksum, String stateName, String businessNo) { }
 
     /** 成员写模型。 */
     record MemberWrite(String tenantId, String snapshotId, String subjectHash, long membershipVersion,

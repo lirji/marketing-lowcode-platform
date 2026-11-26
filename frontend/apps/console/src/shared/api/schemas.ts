@@ -374,6 +374,7 @@ export type TraceView = z.infer<typeof traceViewSchema>
 
 export const enrollmentViewSchema = z.object({
   enrollmentId: z.string(),
+  businessNo: z.string().nullish(),
   journeyId: z.string(),
   journeyVersion: z.number(),
   subjectToken: z.string().optional(),
@@ -510,6 +511,7 @@ export const audienceProfileEstimateSchema = z.object({
 
 export const audienceSnapshotSchema = z.object({
   snapshotId: z.string(),
+  businessNo: z.string().nullish(),
   segmentId: z.string(),
   segmentVersion: z.number().optional(),
   memberCount: z.number().optional(),
@@ -518,6 +520,7 @@ export const audienceSnapshotSchema = z.object({
 })
 
 export const audienceProfileSnapshotSchema = audienceProfileEstimateSchema.extend({
+  businessNo: z.string().nullish(),
   memberCount: z.number().int().nonnegative().max(MAX_COMMERCE_SNAPSHOT_MEMBERS),
   snapshotId: z.string(),
   expiresAt: z.iso.datetime({ offset: true }),

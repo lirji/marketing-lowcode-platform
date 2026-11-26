@@ -173,7 +173,8 @@ LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(current.name) AS BINARY)) &gt
             member_count,
             checksum,
             state_name,
-            created_at
+            created_at,
+            business_no
         ) VALUES (
             #{tenantId},
             #{snapshotId},
@@ -185,7 +186,8 @@ LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(current.name) AS BINARY)) &gt
             #{memberCount},
             #{checksum},
             #{stateName},
-            #{createdAt}
+            #{createdAt},
+            #{businessNo}
         )
     </insert>
 
@@ -210,6 +212,10 @@ LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(current.name) AS BINARY)) &gt
         </foreach>
     </insert>
 
+    <select id="lockSnapshotBusinessNumber" resultType="string" useCache="false">
+        SELECT business_no FROM mk_audience_snapshot WHERE business_no=#{number} FOR UPDATE
+    </select>
+
     <select id="selectSnapshot"
             resultType="com.acme.marketing.audience.infrastructure.persistence.mapper.AudienceMapper$SnapshotRow">
         SELECT
@@ -221,10 +227,13 @@ LOCATE(CAST(LOWER(#{query}) AS BINARY), CAST(LOWER(current.name) AS BINARY)) &gt
             expires_at AS expiresAt,
             member_count AS memberCount,
             checksum,
-            state_name AS stateName
+            state_name AS stateName, business_no AS businessNo
         FROM mk_audience_snapshot
         WHERE tenant_id = #{tenantId}
-          AND snapshot_id = #{snapshotId}
+          AND <choose>
+              <when test='snapshotId.startsWith("MKT-SNP-")'>business_no = CAST(#{snapshotId} AS CHAR CHARACTER SET ascii) COLLATE ascii_bin</when>
+              <otherwise>snapshot_id = #{snapshotId}</otherwise>
+          </choose>
     </select>
 
     <!-- 所有赋值先比较旧版本，最后推进版本号；避免后续表达式读到已更新版本。 -->

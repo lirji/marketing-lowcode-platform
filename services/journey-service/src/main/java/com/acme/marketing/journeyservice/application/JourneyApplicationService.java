@@ -75,7 +75,7 @@ public class JourneyApplicationService {
         if (duplicate.isPresent()) {
             var row = duplicate.orElseThrow();
             return view(read(row.snapshotJson(), EnrollmentSnapshot.class), List.of(), Map.of(), true,
-                    Instant.parse(row.createdAt()));
+                    Instant.parse(row.createdAt()), row.businessNo());
         }
         // 已存在的参与可恢复；同位置的组合上线后，开发模式的直接入口也不能创建无绑定参与。
         if (repository.findRuntimeSlot(scope.tenantId().value(),slot.environment(),slot.cell(),slot.namespace(),true)
@@ -95,7 +95,8 @@ public class JourneyApplicationService {
             throw new ConflictException("ENROLLMENT_CONCURRENT_DUPLICATE", "trigger is already enrolling");
         }
         persistEffects(scope.tenantId().value(), enrollmentId, transition, now);
-        return view(transition.snapshot(), transition.commands(), transition.timers(), false, now);
+        return view(transition.snapshot(), transition.commands(), transition.timers(), false, now,
+                repository.findEnrollmentNumber(scope.tenantId().value(), enrollmentId));
     }
 
     @Transactional
@@ -105,6 +106,8 @@ public class JourneyApplicationService {
         requireDirectStateWriter();
         killSwitch.requireEnabled(scope.tenantId().value());
         EnrollmentSnapshot snapshot = lockEnrollment(scope.tenantId().value(), enrollmentId);
+        // 节点作用和持久计时器始终引用原参与 ID，接口允许按展示号定位。
+        enrollmentId = snapshot.enrollmentId();
         JourneyPlan plan = plan(scope.tenantId().value(), snapshot.journeyId(), snapshot.journeyVersion());
         JourneyTransition transition = runtime.advance(plan, snapshot, signal);
         if (!transition.duplicate()) {
@@ -113,7 +116,8 @@ public class JourneyApplicationService {
                     transition.snapshot().currentNodeId(), json(transition.snapshot()), format(clock.instant())));
             persistEffects(scope.tenantId().value(), enrollmentId, transition, clock.instant());
         }
-        return view(transition.snapshot(), transition.commands(), transition.timers(), transition.duplicate(), clock.instant());
+        return view(transition.snapshot(), transition.commands(), transition.timers(), transition.duplicate(), clock.instant(),
+                repository.findEnrollmentNumber(scope.tenantId().value(), enrollmentId));
     }
 
     @Transactional
@@ -165,7 +169,8 @@ public class JourneyApplicationService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("journey:read");
         EnrollmentSnapshot snapshot = enrollment(scope.tenantId().value(), enrollmentId, false);
-        return view(snapshot, List.of(), Map.of(), false, snapshot.updatedAt());
+        return view(snapshot, List.of(), Map.of(), false, snapshot.updatedAt(),
+                repository.findEnrollmentNumber(scope.tenantId().value(), snapshot.enrollmentId()));
     }
 
     public List<EnrollmentView> enrollments(String status, String journeyId, int limit) {
@@ -184,7 +189,7 @@ public class JourneyApplicationService {
         }
         return repository.findEnrollments(scope.tenantId().value(), statusName, journeyId, limit).stream()
                 .map(row -> view(read(row.snapshotJson(), EnrollmentSnapshot.class), List.of(), Map.of(), false,
-                        Instant.parse(row.updatedAt())))
+                        Instant.parse(row.updatedAt()), row.businessNo()))
                 .toList();
     }
 
@@ -244,10 +249,10 @@ public class JourneyApplicationService {
     }
 
     private EnrollmentView view(EnrollmentSnapshot snapshot, List<JourneyCommand> commands,
-            Map<String, Instant> timers, boolean duplicate, Instant projectedAt) {
+            Map<String, Instant> timers, boolean duplicate, Instant projectedAt, String businessNo) {
         return new EnrollmentView(snapshot.enrollmentId(), snapshot.journeyId(), snapshot.journeyVersion(),
                 snapshot.subjectToken(), snapshot.currentNodeId(), snapshot.status(), commands, timers,
-                duplicate, projectedAt);
+                duplicate, projectedAt, businessNo);
     }
 
     private String json(Object value) {
@@ -263,7 +268,7 @@ public class JourneyApplicationService {
             String triggerEventId, Instant occurredAt) { }
     public record EnrollmentView(String enrollmentId, String journeyId, long journeyVersion, String subjectToken,
             String currentNodeId, EnrollmentSnapshot.Status status, List<JourneyCommand> commands,
-            Map<String, Instant> timers, boolean duplicate, Instant projectedAt) {
+            Map<String, Instant> timers, boolean duplicate, Instant projectedAt, String businessNo) {
         public EnrollmentView { commands = List.copyOf(commands); timers = Map.copyOf(timers); }
     }
     public record MigrationRequest(long fromVersion, long toVersion, boolean dryRun, Map<String, String> nodeMapping,

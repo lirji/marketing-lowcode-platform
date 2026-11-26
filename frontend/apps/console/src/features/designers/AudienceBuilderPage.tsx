@@ -248,7 +248,7 @@ function AudienceEditor({ selectedId }: { selectedId: string }) {
           {shownEstimate && shownEstimate.memberCount > MAX_COMMERCE_SNAPSHOT_MEMBERS && <p className="field-hint">本次预估人数已超过同步快照的 {MAX_COMMERCE_SNAPSHOT_MEMBERS.toLocaleString('zh-CN')} 人上限。</p>}
           {configured && !clean && <p>保存当前规则后可预估人数和生成快照。</p>}
           {configured && clean && !supported && <p>商城画像当前支持会员等级字段，调整圈选规则后重试。</p>}
-          {shownSnapshot && <p role="status">已保存快照 {shownSnapshot.snapshotId}，共 {shownSnapshot.memberCount.toLocaleString('zh-CN')} 人，有效至 {profileTime.format(new Date(shownSnapshot.expiresAt))}。</p>}
+          {shownSnapshot && <p role="status">已保存快照 {shownSnapshot.businessNo ?? shownSnapshot.snapshotId}，共 {shownSnapshot.memberCount.toLocaleString('zh-CN')} 人，有效至 {profileTime.format(new Date(shownSnapshot.expiresAt))}。</p>}
         </Panel>
         <Panel><PanelHeader eyebrow="DATA GOVERNANCE" title="字段来源与用途" /><LiveProvenance fields={fields.data ?? []} used={conditions.map((item) => item.field)} /></Panel>
       </aside>

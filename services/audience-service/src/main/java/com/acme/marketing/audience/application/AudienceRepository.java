@@ -49,6 +49,9 @@ public interface AudienceRepository {
     void saveSnapshot(String tenantId, SnapshotView snapshot, List<String> subjectHashes, Instant createdAt);
 
     /** 按租户和快照标识查询快照。 */
+    /** 写入冲突后用当前读检查全局编号占用。 */
+    boolean businessNumberTaken(String number);
+
     Optional<SnapshotView> findSnapshot(String tenantId, String snapshotId);
 
     /** 插入新成员或仅应用更高版本；唯一约束仲裁并发首次写入。 */
