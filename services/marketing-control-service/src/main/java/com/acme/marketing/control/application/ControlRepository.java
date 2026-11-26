@@ -33,7 +33,14 @@ public interface ControlRepository {
     Optional<String> findReleaseBundleOwner(String tenantId, String manifestId, boolean lock);
     record ReleaseBundleRow(String tenantId, String bundleId, String campaignId, long versionNo,
             String environmentName, String cellId, String stateName, String contentJson, String contentHash,
-            String commandId, String createdBy, String createdAt) { }
+            String commandId, String createdBy, String createdAt, String businessNo) {
+        public ReleaseBundleRow(String tenantId, String bundleId, String campaignId, long versionNo,
+                String environmentName, String cellId, String stateName, String contentJson, String contentHash,
+                String commandId, String createdBy, String createdAt) {
+            this(tenantId, bundleId, campaignId, versionNo, environmentName, cellId, stateName, contentJson,
+                    contentHash, commandId, createdBy, createdAt, null);
+        }
+    }
     record ReleaseBundleMemberWrite(String tenantId, String manifestId, String bundleId) { }
     record ReleaseBundleAckRow(String tenantId, String bundleId, String manifestId, String runtimeId,
             String ackJson, String acknowledgedAt, String signatureValue) { }

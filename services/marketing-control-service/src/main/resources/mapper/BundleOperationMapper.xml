@@ -5,10 +5,14 @@
     cell_id cell, bundle_id bundleId, version_no version, action_name action, expected_sequence expectedSequence,
     activation_sequence activationSequence, command_key commandKey, requested_deadline requestedDeadline,
     apply_before applyBefore, created_by createdBy, state_name state, reason_code reasonCode, directive_json directiveJson,
-    created_at createdAt, updated_at updatedAt</sql>
+    created_at createdAt, updated_at updatedAt, business_no businessNo</sql>
   <sql id="position">tenant_id=#{tenantId} and campaign_id=#{campaignId} and environment_name=#{environment} and cell_id=#{cell}</sql>
   <select id="operation" resultType="com.acme.marketing.control.application.BundleOperationStore$Row">
-    select <include refid="fields"/> from mk_bundle_release_operation where tenant_id=#{tenantId} and operation_id=#{value}
+    select <include refid="fields"/> from mk_bundle_release_operation where tenant_id=#{tenantId} and
+    <choose>
+      <when test='value.startsWith("MKT-RLS-")'>business_no=CAST(#{value} AS CHAR CHARACTER SET ascii) COLLATE ascii_bin</when>
+      <otherwise>operation_id=#{value}</otherwise>
+    </choose>
   </select>
   <select id="byKey" resultType="com.acme.marketing.control.application.BundleOperationStore$Row">
     select <include refid="fields"/> from mk_bundle_release_operation where tenant_id=#{tenantId} and command_key=#{value}
@@ -27,9 +31,9 @@
   </select>
   <insert id="insert">
     insert into mk_bundle_release_operation (tenant_id,operation_id,campaign_id,environment_name,cell_id,bundle_id,version_no,
-      action_name,expected_sequence,activation_sequence,command_key,requested_deadline,apply_before,created_by,state_name,created_at,updated_at)
+      action_name,expected_sequence,activation_sequence,command_key,requested_deadline,apply_before,created_by,state_name,created_at,updated_at,business_no)
     values (#{tenantId},#{operationId},#{campaignId},#{environment},#{cell},#{bundleId},#{version},#{action},#{expectedSequence},
-      #{activationSequence},#{commandKey},#{requestedDeadline},#{applyBefore},#{createdBy},#{state},#{createdAt},#{updatedAt})
+      #{activationSequence},#{commandKey},#{requestedDeadline},#{applyBefore},#{createdBy},#{state},#{createdAt},#{updatedAt},#{businessNo})
   </insert>
   <update id="sign">
     update mk_bundle_release_operation set directive_json=#{directiveJson},updated_at=#{updatedAt}

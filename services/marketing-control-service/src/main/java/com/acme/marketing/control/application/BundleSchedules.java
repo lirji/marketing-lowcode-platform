@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import com.acme.marketing.platform.identity.BusinessNumber;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -64,10 +65,12 @@ public class BundleSchedules {
         if (!request.dueAt().isAfter(now) || !request.dueAt().isBefore(expiresAt)) throw invalid();
         Instant cutoff = request.dueAt().plus(lateness);
         String due = format(request.dueAt());
-        Row row = new Row(tenant, campaignId, UUID.randomUUID().toString(), key, request.version(),
-                request.expectedAppliedSequence(), due, format(cutoff.isBefore(expiresAt) ? cutoff : expiresAt),
-                State.SCHEDULED.code, 1, due, null, null, scope.actorId(), format(now), format(now));
-        store.insert(row);
+        String originalId = UUID.randomUUID().toString();
+        ReleaseBusinessNumbers.issue(BusinessNumber.Type.RELEASE_SCHEDULE, now, "uk_bundle_schedule_business_no",
+                number -> store.insert(new Row(tenant, campaignId, originalId, key, request.version(),
+                    request.expectedAppliedSequence(), due, format(cutoff.isBefore(expiresAt) ? cutoff : expiresAt),
+                    State.SCHEDULED.code, 1, due, null, null, scope.actorId(), format(now), format(now), number)));
+        Row row = store.byId(tenant, campaignId, originalId);
         audit(row, State.SCHEDULED);
         return view(row);
     }
@@ -140,7 +143,7 @@ public class BundleSchedules {
     private static View view(Row row) {
         return new View(row.scheduleId(), row.campaignId(), row.version(), row.expectedAppliedSequence(),
                 Instant.parse(row.dueAt()), Instant.parse(row.applyBefore()), row.state(), row.revision(), row.operationId(),
-                row.reasonCode(), Instant.parse(row.createdAt()), Instant.parse(row.updatedAt()));
+                row.reasonCode(), Instant.parse(row.createdAt()), Instant.parse(row.updatedAt()), row.businessNo());
     }
     private static ConflictException stale() {
         return ReleaseBundleError.SCHEDULE_CHANGED.conflict();
@@ -154,7 +157,7 @@ public class BundleSchedules {
                           @com.fasterxml.jackson.annotation.JsonProperty(required = true) Instant dueAt) { }
     public record View(String scheduleId, String campaignId, long version, long expectedAppliedSequence, Instant dueAt,
                        Instant applyBefore, String state, long revision, String operationId, String reasonCode,
-                       Instant createdAt, Instant updatedAt) { }
+                       Instant createdAt, Instant updatedAt, String businessNo) { }
     public enum State {
         SCHEDULED("SCHEDULED"), PAUSED("PAUSED"), RUNNING("RUNNING"), APPLIED("APPLIED"),
         EXPIRED("EXPIRED"), REJECTED("REJECTED");

@@ -88,7 +88,7 @@ function CampaignBundles({ campaignId, scope, selected, onSelect }: { campaignId
         {history.isLoading && <p role="status">正在读取历史组合…</p>}
       </>}
       {bundle && !readError && <dl className="bundle-facts">
-        <div><dt>当前查看</dt><dd>v{bundle.version}</dd></div><div><dt>组合 ID</dt><dd>{bundle.bundleId}</dd></div>
+        <div><dt>当前查看</dt><dd>v{bundle.version}</dd></div><div><dt>组合 ID</dt><dd>{bundle.businessNo ?? bundle.bundleId}</dd></div>
         <div><dt>环境</dt><dd>{bundle.environment}</dd></div><div><dt>部署单元</dt><dd>{bundle.cell}</dd></div>
         <div><dt>创建人</dt><dd>{bundle.createdBy}</dd></div><div><dt>创建时间（北京）</dt><dd><RecordTime value={bundle.createdAt} /></dd></div>
       </dl>}

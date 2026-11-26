@@ -6,7 +6,7 @@
         s.version_no AS version,s.expected_sequence AS expectedAppliedSequence,s.due_at AS dueAt,
         s.apply_before AS applyBefore,s.state_name AS state,s.revision,s.next_attempt_at AS nextAttemptAt,
         s.operation_id AS operationId,s.reason_code AS reasonCode,s.created_by AS createdBy,
-        s.created_at AS createdAt,s.updated_at AS updatedAt
+        s.created_at AS createdAt,s.updated_at AS updatedAt,s.business_no AS businessNo
     </sql>
     <select id="byCommand" resultType="com.acme.marketing.control.application.BundleScheduleStore$Row">
         SELECT <include refid="columns"/> FROM mk_bundle_activation_schedule s
@@ -14,7 +14,11 @@
     </select>
     <select id="byId" resultType="com.acme.marketing.control.application.BundleScheduleStore$Row">
         SELECT <include refid="columns"/> FROM mk_bundle_activation_schedule s
-        WHERE tenant_id=#{tenant} AND BINARY tenant_id=BINARY #{tenant} AND campaign_id=#{campaignId} AND BINARY campaign_id=BINARY #{campaignId} AND schedule_id=#{scheduleId}
+        WHERE tenant_id=#{tenant} AND BINARY tenant_id=BINARY #{tenant} AND campaign_id=#{campaignId} AND BINARY campaign_id=BINARY #{campaignId} AND
+        <choose>
+            <when test='scheduleId.startsWith("MKT-SCH-")'>business_no=CAST(#{scheduleId} AS CHAR CHARACTER SET ascii) COLLATE ascii_bin</when>
+            <otherwise>schedule_id=#{scheduleId}</otherwise>
+        </choose>
     </select>
     <select id="recent" resultType="com.acme.marketing.control.application.BundleScheduleStore$Row">
         SELECT <include refid="columns"/> FROM mk_bundle_activation_schedule s
@@ -37,9 +41,9 @@
     <insert id="insert">
         INSERT INTO mk_bundle_activation_schedule
         (tenant_id,campaign_id,schedule_id,command_key,version_no,expected_sequence,due_at,apply_before,state_name,
-         revision,next_attempt_at,operation_id,reason_code,created_by,created_at,updated_at)
+         revision,next_attempt_at,operation_id,reason_code,created_by,created_at,updated_at,business_no)
         VALUES (#{tenant},#{campaignId},#{scheduleId},#{commandKey},#{version},#{expectedAppliedSequence},
-        #{dueAt},#{applyBefore},#{state},#{revision},#{nextAttemptAt},#{operationId},#{reasonCode},#{createdBy},#{createdAt},#{updatedAt})
+        #{dueAt},#{applyBefore},#{state},#{revision},#{nextAttemptAt},#{operationId},#{reasonCode},#{createdBy},#{createdAt},#{updatedAt},#{businessNo})
     </insert>
     <update id="advance">
         UPDATE mk_bundle_activation_schedule SET state_name=#{state}, revision=revision+1,next_attempt_at=#{nextAttemptAt},

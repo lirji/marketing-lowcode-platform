@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
+import com.acme.marketing.platform.identity.BusinessNumber;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
@@ -91,14 +92,16 @@ public class ReleaseBundleService {
             throw ReleaseBundleError.REQUEST_TOO_LARGE.invalid();
         if (repository.advanceReleaseBundleVersion(scope.tenantId().value(), campaignId, previous) != 1)
             throw ReleaseBundleError.VERSION_CONFLICT.conflict();
-        repository.saveReleaseBundle(new ControlRepository.ReleaseBundleRow(scope.tenantId().value(),
-                view.bundleId(), campaignId, view.version(), view.environment(), view.cell(), view.state().code(),
-                content, view.contentHash(), commandId, scope.actorId(), format(now)));
+        String number = ReleaseBusinessNumbers.issue(BusinessNumber.Type.RELEASE_BUNDLE, now,
+                "uk_release_bundle_business_no", candidate -> repository.saveReleaseBundle(
+                    new ControlRepository.ReleaseBundleRow(scope.tenantId().value(), view.bundleId(), campaignId,
+                        view.version(), view.environment(), view.cell(), view.state().code(), content,
+                        view.contentHash(), commandId, scope.actorId(), format(now), candidate)));
         members.forEach(member -> repository.saveReleaseBundleMember(new ControlRepository.ReleaseBundleMemberWrite(
                 scope.tenantId().value(), member.manifestId(), view.bundleId())));
         ControlAuditChain.append(repository, scope.tenantId().value(), scope.actorId(), PREPARED_ACTION,
                 view.bundleId(), now);
-        return view;
+        return view.withNumber(number);
     }
 
     /** 返回最新已持久化的准备版本，不将其展示为已激活组合。 */
@@ -146,7 +149,7 @@ public class ReleaseBundleService {
     }
 
     private BundleView read(ControlRepository.ReleaseBundleRow row) {
-        return mapper.readValue(row.contentJson(), BundleView.class);
+        return mapper.readValue(row.contentJson(), BundleView.class).withNumber(row.businessNo());
     }
 
     private void campaign(TenantScope scope, String campaignId, boolean lock) {
@@ -206,7 +209,17 @@ public class ReleaseBundleService {
 
     /** 原始签名清单随组合冻结，读取不拼接后来变化的最新定义。 */
     public record BundleView(String bundleId, String campaignId, long version, String environment, String cell,
-            State state, String contentHash, List<ReleaseManifest> members, String createdBy, Instant createdAt) {
+            State state, String contentHash, List<ReleaseManifest> members, String createdBy, Instant createdAt,
+            String businessNo) {
+        public BundleView(String bundleId, String campaignId, long version, String environment, String cell,
+                State state, String contentHash, List<ReleaseManifest> members, String createdBy, Instant createdAt) {
+            this(bundleId, campaignId, version, environment, cell, state, contentHash, members, createdBy, createdAt, null);
+        }
+        /** 已签制品继续读取冻结的 bundleId，运营展示使用旁路的业务号。 */
+        private BundleView withNumber(String number) {
+            return new BundleView(bundleId, campaignId, version, environment, cell, state, contentHash, members,
+                    createdBy, createdAt, number);
+        }
         public BundleView { members = List.copyOf(members); }
     }
 }

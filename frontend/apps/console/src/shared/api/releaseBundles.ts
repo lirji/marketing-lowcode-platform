@@ -10,7 +10,7 @@ const version = z.number().int().positive().safe()
 const instant = z.iso.datetime({ offset: true })
 const memberSchema = releaseViewSchema.shape.manifest.extend({ environment: id, cell: id, runtime: id, namespace: id, expiresAt: instant })
 const bundleSchema = z.object({
-  bundleId: id, campaignId: id, version, state: z.literal('PREPARING'), environment: id, cell: id,
+  bundleId: id, businessNo: id.nullish(), campaignId: id, version, state: z.literal('PREPARING'), environment: id, cell: id,
   contentHash: id, members: z.array(memberSchema).min(BundleMemberLimit.MIN).max(BundleMemberLimit.MAX), createdBy: id, createdAt: instant,
 })
 const readinessSchema = z.object({
@@ -20,13 +20,13 @@ const readinessSchema = z.object({
 })
 const action = z.enum(['ACTIVATE', 'ROLLBACK'])
 const operationSchema = z.object({
-  operationId: id, campaignId: id, version, action, activationSequence: version,
+  operationId: id, businessNo: id.nullish(), campaignId: id, version, action, activationSequence: version,
   state: z.enum(OperationState), reasonCode: id.nullish(),
   createdAt: instant, updatedAt: instant,
 })
 const summarySchema = z.object({ appliedSequence: count, appliedVersion: version.nullable(), latestOperation: operationSchema.nullable(), rollbackEligible: z.boolean() })
 const scheduleSchema = z.object({
-  scheduleId: id, campaignId: id, version, expectedAppliedSequence: count, revision: version, dueAt: instant, applyBefore: instant,
+  scheduleId: id, businessNo: id.nullish(), campaignId: id, version, expectedAppliedSequence: count, revision: version, dueAt: instant, applyBefore: instant,
   state: z.enum(ScheduleState),
   operationId: id.nullish(), reasonCode: id.nullish(), createdAt: instant, updatedAt: instant,
 })
@@ -93,7 +93,7 @@ export function releaseBundleClient(request: Request, headers: (key: string) => 
     bundleOperation: (campaignId: string, operationId: string, retry = false) =>
       request(`${base(campaignId)}/operations/${encodeURIComponent(operationId)}${retry ? ':retry' : ''}`, retry ? { method: 'POST' } : undefined, data => {
         const operation = scoped(checked(operationSchema, data), campaignId)
-        if (operation.operationId !== operationId) throw mismatch()
+        if (operation.operationId !== operationId && operation.businessNo !== operationId) throw mismatch()
         return operation
       }),
     bundleSchedules: (campaignId: string, target: number) =>
@@ -107,7 +107,7 @@ export function releaseBundleClient(request: Request, headers: (key: string) => 
     changeBundleSchedule: (campaignId: string, scheduleId: string, change: 'pause' | 'resume', expectedRevision: number) =>
       request(`${base(campaignId)}/schedules/${encodeURIComponent(scheduleId)}:${change}?expectedRevision=${expectedRevision}`, { method: 'POST' }, data => {
         const schedule = scoped(checked(scheduleSchema, data), campaignId)
-        if (schedule.scheduleId !== scheduleId) throw mismatch()
+        if (schedule.scheduleId !== scheduleId && schedule.businessNo !== scheduleId) throw mismatch()
         return schedule
       }),
   }

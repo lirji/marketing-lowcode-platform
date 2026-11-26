@@ -116,7 +116,7 @@ export function BundleControls({ bundle, scope, ready }: { bundle: ReleaseBundle
 function OperationDetails({ operation }: { operation: BundleOperation }) {
   return <dl className="bundle-facts">
     <div><dt>操作状态</dt><dd><Badge tone={operation.state === OperationState.APPLIED ? 'good' : operation.state === OperationState.PENDING ? 'warn' : 'danger'}>{statuses[operation.state]}</Badge></dd></div>
-    <div><dt>操作 ID</dt><dd>{operation.operationId}</dd></div><div><dt>操作</dt><dd>{actions[operation.action]} v{operation.version}</dd></div>
+    <div><dt>操作 ID</dt><dd>{operation.businessNo ?? operation.operationId}</dd></div><div><dt>操作</dt><dd>{actions[operation.action]} v{operation.version}</dd></div>
     <div><dt>激活序号</dt><dd>{operation.activationSequence}</dd></div><div><dt>更新时间（北京）</dt><dd><RecordTime value={operation.updatedAt} /></dd></div>
     {operation.reasonCode && <div><dt>处理情况</dt><dd>{reasonLabels[operation.reasonCode] ?? operation.reasonCode}</dd></div>}
   </dl>

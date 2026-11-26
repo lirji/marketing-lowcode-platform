@@ -8,7 +8,7 @@ public interface BundleScheduleStore {
     record Row(String tenant, String campaignId, String scheduleId, String commandKey, long version,
                long expectedAppliedSequence, String dueAt, String applyBefore, String state, long revision,
                String nextAttemptAt, String operationId, String reasonCode, String createdBy,
-               String createdAt, String updatedAt) { }
+               String createdAt, String updatedAt, String businessNo) { }
     record Change(String tenant, String campaignId, String scheduleId, long revision, String state,
                   String nextAttemptAt, String operationId, String reasonCode, String updatedAt) { }
 

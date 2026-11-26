@@ -71,7 +71,7 @@ export function BundleSchedules({ bundle, scope, appliedSequence, canAdvance, on
     {schedules.isError && <StateBanner tone="error" title="调度记录读取失败" detail={problemDetail(schedules.error)} />}
     {schedules.isSuccess && <><p className="bundle-note">{schedules.data.length ? '本版本最近 20 条调度记录' : '此版本暂无调度记录'}</p>
       {schedules.data.length > 0 && <RecordTable actions label="定时发布记录" columns={['调度 ID', '状态', '计划时间（北京时间）', '最迟生效时间（北京时间）', '预期生效序号', '修订', '原因代码', '操作']}>
-        {schedules.data.map(item => <tr key={item.scheduleId}><td>{item.scheduleId}</td><td><Badge tone={item.state === ScheduleState.APPLIED ? 'good' : item.state === ScheduleState.REJECTED || item.state === ScheduleState.EXPIRED ? 'danger' : 'info'}>{states[item.state]}</Badge></td>
+        {schedules.data.map(item => <tr key={item.scheduleId}><td>{item.businessNo ?? item.scheduleId}</td><td><Badge tone={item.state === ScheduleState.APPLIED ? 'good' : item.state === ScheduleState.REJECTED || item.state === ScheduleState.EXPIRED ? 'danger' : 'info'}>{states[item.state]}</Badge></td>
           <td><RecordTime value={item.dueAt} /></td><td><RecordTime value={item.applyBefore} /></td><td>{item.expectedAppliedSequence}</td><td>{item.revision}</td><td>{item.reasonCode ?? '—'}</td>
           <td><div className="row-actions">
             {canManage && item.state === ScheduleState.SCHEDULED && <Button disabled={busy || schedules.isFetching} onClick={() => change.mutate({ item, action: 'pause' })}>暂停预约</Button>}

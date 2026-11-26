@@ -21,6 +21,7 @@ import java.time.Duration;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import com.acme.marketing.platform.identity.BusinessNumber;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -170,11 +171,13 @@ public class BundleReleaseOperations {
         Instant cutoff = deadline == null ? now.plus(manualWindow) : deadline;
         Instant end = cutoff.isAfter(bundle.expiresAt()) ? bundle.expiresAt() : cutoff;
         if (!now.isBefore(end)) throw ReleaseBundleError.OPERATION_EXPIRED.conflict();
-        Row row = new Row(tenant, UUID.randomUUID().toString(), campaign, bundle.environment(), bundle.cell(),
-                bundle.bundleId(), bundle.version(), request.action(), request.expectedAppliedSequence(),
-                latest == null ? 1 : Math.incrementExact(latest.activationSequence()), key, requested, format(end), scope.actorId(),
-                State.PENDING.code, null, null, format(now), format(now));
-        store.insert(row);
+        String originalId = UUID.randomUUID().toString();
+        ReleaseBusinessNumbers.issue(BusinessNumber.Type.RELEASE_OPERATION, now, "uk_bundle_operation_business_no",
+                number -> store.insert(new Row(tenant, originalId, campaign, bundle.environment(), bundle.cell(),
+                    bundle.bundleId(), bundle.version(), request.action(), request.expectedAppliedSequence(),
+                    latest == null ? 1 : Math.incrementExact(latest.activationSequence()), key, requested, format(end),
+                    scope.actorId(), State.PENDING.code, null, null, format(now), format(now), number)));
+        Row row = store.operation(new Id(tenant, originalId));
         ControlAuditChain.append(control, tenant, scope.actorId(), REQUEST_AUDIT, row.operationId(), now);
         return row;
     }
@@ -317,7 +320,7 @@ public class BundleReleaseOperations {
     private static boolean pending(Row row) { return State.PENDING.code.equals(row.state()); }
     private static View view(Row row) {
         return new View(row.operationId(), row.campaignId(), row.version(), row.action(), row.activationSequence(),
-                row.state(), row.reasonCode(), Instant.parse(row.createdAt()), Instant.parse(row.updatedAt()));
+                row.state(), row.reasonCode(), Instant.parse(row.createdAt()), Instant.parse(row.updatedAt()), row.businessNo());
     }
     private enum State {
         PENDING("PENDING"), APPLIED("APPLIED"), EXPIRED("EXPIRED"), REJECTED("REJECTED");
@@ -333,6 +336,6 @@ public class BundleReleaseOperations {
     }
     /** 控制台只把来自运行端已持久提交的结果展示为 APPLIED。 */
     public record View(String operationId, String campaignId, long version, String action, long activationSequence,
-            String state, String reasonCode, Instant createdAt, Instant updatedAt) {}
+            String state, String reasonCode, Instant createdAt, Instant updatedAt, String businessNo) {}
     public record Summary(long appliedSequence, Long appliedVersion, View latestOperation, boolean rollbackEligible) {}
 }

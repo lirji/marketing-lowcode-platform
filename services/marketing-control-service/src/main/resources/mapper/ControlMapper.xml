@@ -506,7 +506,7 @@
     <!-- 活动组合的所有读写均绑定可信租户；只插入历史，不覆盖冻结内容。 -->
     <sql id="releaseBundleColumns">
         tenant_id, bundle_id, campaign_id, version_no, environment_name, cell_id, state_name,
-        content_json, content_hash, command_id, created_by, created_at
+        content_json, content_hash, command_id, created_by, created_at, business_no
     </sql>
     <select id="selectReleaseBundleVersion" resultType="long">
         SELECT release_bundle_version FROM mk_campaign
@@ -521,7 +521,7 @@
         SELECT tenant_id AS tenantId, bundle_id AS bundleId, campaign_id AS campaignId, version_no AS versionNo,
             environment_name AS environmentName, cell_id AS cellId, state_name AS stateName,
             content_json AS contentJson, content_hash AS contentHash, command_id AS commandId,
-            created_by AS createdBy, created_at AS createdAt FROM mk_release_bundle
+            created_by AS createdBy, created_at AS createdAt, business_no AS businessNo FROM mk_release_bundle
         WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId}
         ORDER BY version_no DESC LIMIT 1
         <if test="lock">FOR UPDATE</if>
@@ -530,13 +530,13 @@
         SELECT tenant_id AS tenantId, bundle_id AS bundleId, campaign_id AS campaignId, version_no AS versionNo,
             environment_name AS environmentName, cell_id AS cellId, state_name AS stateName,
             content_json AS contentJson, content_hash AS contentHash, command_id AS commandId,
-            created_by AS createdBy, created_at AS createdAt FROM mk_release_bundle
+            created_by AS createdBy, created_at AS createdAt, business_no AS businessNo FROM mk_release_bundle
         WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId} AND version_no = #{version}
     </select>
     <insert id="insertReleaseBundle">
         INSERT INTO mk_release_bundle (<include refid="releaseBundleColumns"/>)
         VALUES (#{tenantId}, #{bundleId}, #{campaignId}, #{versionNo}, #{environmentName}, #{cellId},
-            #{stateName}, #{contentJson}, #{contentHash}, #{commandId}, #{createdBy}, #{createdAt})
+            #{stateName}, #{contentJson}, #{contentHash}, #{commandId}, #{createdBy}, #{createdAt}, #{businessNo})
     </insert>
     <update id="insertReleaseBundleMember">
         UPDATE mk_release_manifest SET bundle_id = #{bundleId}
@@ -551,7 +551,7 @@
         SELECT tenant_id AS tenantId, bundle_id AS bundleId, campaign_id AS campaignId, version_no AS versionNo,
             environment_name AS environmentName, cell_id AS cellId, state_name AS stateName,
             content_json AS contentJson, content_hash AS contentHash, command_id AS commandId,
-            created_by AS createdBy, created_at AS createdAt FROM mk_release_bundle
+            created_by AS createdBy, created_at AS createdAt, business_no AS businessNo FROM mk_release_bundle
         WHERE tenant_id = #{tenantId} AND campaign_id = #{campaignId} AND version_no = #{version} FOR UPDATE
     </select>
     <select id="selectReleaseBundleAcks" resultType="com.acme.marketing.control.application.ControlRepository$ReleaseBundleAckRow">

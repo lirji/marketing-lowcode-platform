@@ -17,7 +17,7 @@ public interface BundleOperationStore {
     record Row(String tenantId, String operationId, String campaignId, String environment, String cell,
             String bundleId, long version, String action, long expectedSequence, long activationSequence,
             String commandKey, String requestedDeadline, String applyBefore, String createdBy,
-            String state, String reasonCode, String directiveJson, String createdAt, String updatedAt) {}
+            String state, String reasonCode, String directiveJson, String createdAt, String updatedAt, String businessNo) {}
     record Sign(String tenantId, String operationId, String directiveJson, String updatedAt) {}
     record Change(String tenantId, String operationId, String state, String reasonCode, String updatedAt) {}
 }
