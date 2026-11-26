@@ -1,7 +1,6 @@
 package com.acme.marketing.referral.application.query;
 
 import com.acme.marketing.platform.identity.TenantScope;
-import com.acme.marketing.referral.infrastructure.persistence.mapper.ReferralOperationsMapper;
 import java.time.*;
 import java.util.*;
 import java.util.function.Function;
@@ -10,15 +9,15 @@ import org.springframework.stereotype.Service;
 /** 管理端只读视图；主体/token/密文/内部证明不会进入DTO，所有SQL同时过滤租户组织门店。 */
 @Service
 public class ReferralOperationsService {
-    private final ReferralOperationsMapper mapper;private final Clock clock;
+    private final ReferralOperationsRepository repository;private final Clock clock;
     /** 使用主库当前事实，尚未接measurement时不虚构统计事件水位。 */
-    public ReferralOperationsService(ReferralOperationsMapper mapper,Clock clock){this.mapper=mapper;this.clock=clock;}
+    public ReferralOperationsService(ReferralOperationsRepository repository,Clock clock){this.repository=repository;this.clock=clock;}
     /** 参与者及人数分页；未计算的进度为null，不伪装成已验证的零人数。 */
-    public Page<Participant> participants(TenantScope scope,String campaign,String after,int limit,String number){return page(scope,campaign,after,limit,number,mapper::participants,Participant::participantId);}
+    public Page<Participant> participants(TenantScope scope,String campaign,String after,int limit,String number){return page(scope,campaign,after,limit,number,repository::participants,Participant::participantId);}
     /** 关系及当前资格分页；BOUND不等于资格已通过。 */
-    public Page<Relation> relations(TenantScope scope,String campaign,String after,int limit,String number){return page(scope,campaign,after,limit,number,mapper::relations,Relation::relationId);}
+    public Page<Relation> relations(TenantScope scope,String campaign,String after,int limit,String number){return page(scope,campaign,after,limit,number,repository::relations,Relation::relationId);}
     /** 奖励五维状态保持独立，202受理不能呈现为到账。 */
-    public Page<Reward> rewards(TenantScope scope,String campaign,String after,int limit,String number){return page(scope,campaign,after,limit,number,mapper::rewards,Reward::rewardId);}
+    public Page<Reward> rewards(TenantScope scope,String campaign,String after,int limit,String number){return page(scope,campaign,after,limit,number,repository::rewards,Reward::rewardId);}
     /** 保留内部运营列表的缺省查询方式。 */
     public Page<Participant> participants(TenantScope scope,String campaign,String after,int limit) {
         return participants(scope,campaign,after,limit,null);
@@ -36,7 +35,7 @@ public class ReferralOperationsService {
         Objects.requireNonNull(scope);scope.requirePermission("referral:read");identifier(campaign);
         Counts counts=new Counts(0,0,0,0,0,0,0,0,0,0,0);
         if(!scope.organizations().isEmpty() && !scope.shops().isEmpty()){
-            var values=new HashMap<String,Object>();values.put("tenant",scope.tenantId().value());values.put("campaign",campaign);values.put("organizations",scope.organizations());values.put("shops",scope.shops());counts=mapper.summary(values);
+            var values=new HashMap<String,Object>();values.put("tenant",scope.tenantId().value());values.put("campaign",campaign);values.put("organizations",scope.organizations());values.put("shops",scope.shops());counts=repository.summary(values);
         }
         return new Summary(counts,clock.instant(),"DATABASE_PROJECTION",null);
     }
