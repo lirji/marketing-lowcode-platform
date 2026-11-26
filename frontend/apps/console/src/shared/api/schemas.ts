@@ -89,6 +89,7 @@ export function isReferralSimulation(value: SimulationResult): value is Referral
 }
 
 export const definitionViewSchema = z.object({
+  businessNo: z.string().nullish(),
   definitionId: z.string(),
   campaignId: z.string(),
   version: z.number(),

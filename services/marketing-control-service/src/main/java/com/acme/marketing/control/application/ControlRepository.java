@@ -59,6 +59,10 @@ public interface ControlRepository {
     Optional<DefinitionRow> findDefinitionBySemanticHash(String tenantId, String definitionId, String semanticHash);
     Optional<Long> findLatestDefinitionVersion(String tenantId, String definitionId);
     void saveDefinition(DefinitionWrite write);
+    /** 唯一号当前读，只用于裁决重试。 */
+    boolean definitionNumberTaken(String number);
+    /** 精确读版本记录，业务服务继续校验活动范围。 */
+    Optional<DefinitionRow> findDefinitionByNumber(String tenantId, String number);
     Optional<DefinitionRow> findLatestDefinition(String tenantId, String campaignId, String dialect);
     Optional<DefinitionRow> findDefinition(String tenantId, String definitionId, long version);
     /** 只查询同活动的 Offer 版本元数据，避免历史页读取整份图。 */
@@ -131,9 +135,20 @@ public interface ControlRepository {
     record CampaignOwnershipRow(String organizationId, String shopId, String campaignType) { }
     record DefinitionWrite(String tenantId, String definitionId, String campaignId, long versionNo, String dialect,
             String graphJson, String semanticHash, String status, String createdBy, String createdAt,
-            String updatedAt) { }
+            String updatedAt, String businessNo) {
+        public DefinitionWrite(String tenantId, String definitionId, String campaignId, long versionNo, String dialect,
+                String graphJson, String semanticHash, String status, String createdBy, String createdAt, String updatedAt) {
+            this(tenantId, definitionId, campaignId, versionNo, dialect, graphJson, semanticHash, status, createdBy,
+                    createdAt, updatedAt, null);
+        }
+    }
     record DefinitionRow(String campaignId, String definitionId, long versionNo, String dialect, String graphJson,
-            String semanticHash, String status, String createdBy, String createdAt, String updatedAt) { }
+            String semanticHash, String status, String createdBy, String createdAt, String updatedAt, String businessNo) {
+        public DefinitionRow(String campaignId, String definitionId, long versionNo, String dialect, String graphJson,
+                String semanticHash, String status, String createdBy, String createdAt, String updatedAt) {
+            this(campaignId, definitionId, versionNo, dialect, graphJson, semanticHash, status, createdBy, createdAt, updatedAt, null);
+        }
+    }
     record OfferVersionRow(long versionNo, String status, String createdAt) { }
     record ApprovalCaseWrite(String tenantId, String caseId, String definitionId, long definitionVersion,
             String submittedBy, String requiredRoles, String status, String createdAt, String updatedAt, String businessNo) {

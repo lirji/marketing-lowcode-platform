@@ -112,7 +112,11 @@ class ControlFlowIntegrationTest extends MySqlIntegrationTest {
         assertEquals(List.of(201, 409), results.stream().map(HttpResponse::statusCode).sorted().toList());
         int winner = results.getFirst().statusCode() == 201 ? 0 : 1;
         String key = winner == 0 ? "template-initial-left" : "template-initial-right";
-        assertEquals("DRAFT", post(path, "actor-author", key, payload).get("status").asString());
+        var saved = post(path, "actor-author", key, payload);
+        assertEquals("DRAFT", saved.get("status").asString());
+        String businessNo = saved.path("businessNo").asString();
+        assertTrue(businessNo.matches("MKT-DEF-[0-9]{6}-[0-9]{10}"));
+        assertEquals(saved, get("/api/v1/definitions/by-number/" + businessNo, "actor-reader"));
         var forbidden = client.send(request(path, "actor-author").setHeader("X-Dev-Shop-Ids", "shop-b")
                 .header("Idempotency-Key", key).header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());

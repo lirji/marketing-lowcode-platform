@@ -147,6 +147,12 @@ public class ControlController {
         return service.definition(definitionId, version);
     }
 
+    /** 在原定义版本合同之外提供可读号点查入口。 */
+    @GetMapping("/definitions/by-number/{businessNo}")
+    public ControlApplicationService.DefinitionView definitionByNumber(@PathVariable String businessNo) {
+        return service.definitionByNumber(businessNo);
+    }
+
     @PostMapping("/definitions/{definitionId}/versions/{version}:validate")
     public ControlApplicationService.ValidationResult validate(
             @RequestHeader("Idempotency-Key") String idempotencyKey,

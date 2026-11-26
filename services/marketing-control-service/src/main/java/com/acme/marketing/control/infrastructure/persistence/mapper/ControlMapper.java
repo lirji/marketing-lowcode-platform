@@ -48,6 +48,8 @@ public interface ControlMapper {
     Long selectLatestDefinitionVersion(@Param("tenantId") String tenantId,
             @Param("definitionId") String definitionId);
     int insertDefinition(ControlRepository.DefinitionWrite write);
+    String lockDefinitionNumber(@Param("number") String number);
+    ControlRepository.DefinitionRow selectDefinitionByNumber(@Param("tenantId") String tenantId, @Param("number") String number);
     ControlRepository.DefinitionRow selectLatestDefinition(@Param("tenantId") String tenantId,
             @Param("campaignId") String campaignId, @Param("dialect") String dialect);
     ControlRepository.DefinitionRow selectDefinition(@Param("tenantId") String tenantId,

@@ -61,7 +61,7 @@
     <sql id="definitionColumns">
         campaign_id AS campaignId, definition_id AS definitionId, version_no AS versionNo, dialect,
         graph_json AS graphJson, semantic_hash AS semanticHash, status, created_by AS createdBy,
-        created_at AS createdAt, updated_at AS updatedAt
+        created_at AS createdAt, updated_at AS updatedAt, business_no AS businessNo
     </sql>
     <select id="selectDefinitionBySemanticHash"
             resultType="com.acme.marketing.control.application.ControlRepository$DefinitionRow">
@@ -76,11 +76,18 @@
     <insert id="insertDefinition">
         INSERT INTO mk_definition_version
             (tenant_id, definition_id, campaign_id, version_no, dialect, graph_json, semantic_hash,
-             status, created_by, created_at, updated_at)
+             status, created_by, created_at, updated_at, business_no)
         VALUES
             (#{tenantId}, #{definitionId}, #{campaignId}, #{versionNo}, #{dialect}, #{graphJson},
-             #{semanticHash}, #{status}, #{createdBy}, #{createdAt}, #{updatedAt})
+             #{semanticHash}, #{status}, #{createdBy}, #{createdAt}, #{updatedAt}, #{businessNo})
     </insert>
+    <select id="lockDefinitionNumber" resultType="string" useCache="false">
+        SELECT business_no FROM mk_definition_version WHERE business_no=#{number} FOR UPDATE
+    </select>
+    <select id="selectDefinitionByNumber" resultType="com.acme.marketing.control.application.ControlRepository$DefinitionRow">
+        SELECT <include refid="definitionColumns"/> FROM mk_definition_version
+        WHERE tenant_id=#{tenantId} AND business_no=CAST(#{number} AS CHAR CHARACTER SET ascii) COLLATE ascii_bin
+    </select>
     <select id="selectLatestDefinition"
             resultType="com.acme.marketing.control.application.ControlRepository$DefinitionRow">
         SELECT <include refid="definitionColumns"/> FROM mk_definition_version

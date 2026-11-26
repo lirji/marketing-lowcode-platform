@@ -214,12 +214,16 @@ public class ControlApplicationService {
         long version = current == null ? 1 : current + 1;
         Instant now = clock.instant();
         String hash = hasher.semanticHash(graph);
-        repository.saveDefinition(new ControlRepository.DefinitionWrite(scope.tenantId().value(),
-                graph.definitionId(), campaignId, version, graph.dialect().name(), json(graph), hash,
-                DefinitionVersion.Status.DRAFT.name(), scope.actorId(), format(now), format(now)));
+        String graphJson = json(graph);
+        String businessNo = issueNumber(BusinessNumber.Type.DEFINITION_VERSION, now, number -> {
+            repository.saveDefinition(new ControlRepository.DefinitionWrite(scope.tenantId().value(),
+                    graph.definitionId(), campaignId, version, graph.dialect().name(), graphJson, hash,
+                    DefinitionVersion.Status.DRAFT.name(), scope.actorId(), format(now), format(now), number));
+            return number;
+        }, repository::definitionNumberTaken);
         audit(scope.tenantId().value(), scope.actorId(), "DEFINITION_SAVED", graph.definitionId() + ':' + version, now);
         return new DefinitionView(graph.definitionId(), campaignId, version, graph.dialect(), hash,
-                DefinitionVersion.Status.DRAFT, scope.actorId(), now, now, graph);
+                DefinitionVersion.Status.DRAFT, scope.actorId(), now, now, graph, businessNo);
     }
 
     public DefinitionView latestDefinition(String campaignId, Dialect dialect) {
@@ -237,6 +241,18 @@ public class ControlApplicationService {
         var scope = TenantContextHolder.requireCurrent();
         scope.requirePermission("definition:read");
         return definition(scope, definitionId, version).view();
+    }
+
+    /** 通过运营号查看精确版本，继续校验该版本所属活动的可见范围。 */
+    public DefinitionView definitionByNumber(String businessNo) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission("definition:read");
+        if (!BusinessNumber.matches(BusinessNumber.Type.DEFINITION_VERSION, businessNo))
+            throw new NotFoundException("DEFINITION_NOT_FOUND", "definition version not found");
+        var row = repository.findDefinitionByNumber(scope.tenantId().value(), businessNo)
+                .orElseThrow(() -> new NotFoundException("DEFINITION_NOT_FOUND", "definition version not found"));
+        requireCampaignScope(scope, row.campaignId(), false);
+        return definitionView(row);
     }
 
     /** 当前活动的历史版本按不可变版本号翻页，状态和创建时间均来自定义记录。 */
@@ -518,14 +534,14 @@ public class ControlApplicationService {
         return new DefinitionView(row.definitionId(), row.campaignId(), row.versionNo(),
                 Dialect.valueOf(row.dialect()), row.semanticHash(), DefinitionVersion.Status.valueOf(row.status()),
                 row.createdBy(), Instant.parse(row.createdAt()), Instant.parse(row.updatedAt()),
-                readGraph(row.graphJson()));
+                readGraph(row.graphJson()), row.businessNo());
     }
 
     private StoredDefinition storedDefinition(ControlRepository.DefinitionRow row) {
         GraphDefinition graph = readGraph(row.graphJson());
         return new StoredDefinition(new DefinitionView(row.definitionId(), row.campaignId(), row.versionNo(),
                 Dialect.valueOf(row.dialect()), row.semanticHash(), DefinitionVersion.Status.valueOf(row.status()),
-                row.createdBy(), Instant.parse(row.createdAt()), Instant.parse(row.updatedAt()), graph), graph);
+                row.createdBy(), Instant.parse(row.createdAt()), Instant.parse(row.updatedAt()), graph, row.businessNo()), graph);
     }
 
     private static Set<ApprovalCase.Role> requiredRoles(GraphDefinition graph) {
@@ -612,7 +628,7 @@ public class ControlApplicationService {
 
     public record DefinitionView(String definitionId, String campaignId, long version, Dialect dialect,
             String semanticHash, DefinitionVersion.Status status, String createdBy, Instant createdAt, Instant updatedAt,
-            GraphDefinition graph) { }
+            GraphDefinition graph, String businessNo) { }
     public record StoredDefinition(DefinitionView view, GraphDefinition graph) { }
     public record ValidationResult(boolean valid, String semanticHash, List<ValidationIssue> issues) {
         public ValidationResult { issues = List.copyOf(issues); }

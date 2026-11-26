@@ -73,6 +73,14 @@ public class MybatisControlRepository implements ControlRepository {
         return Optional.ofNullable(mapper.selectLatestDefinitionVersion(tenantId, definitionId));
     }
     @Override public void saveDefinition(DefinitionWrite write) { one(mapper.insertDefinition(write), "保存定义"); }
+    @Override public boolean definitionNumberTaken(String number) {
+        return mapper.lockDefinitionNumber(number) != null;
+    }
+
+    @Override public Optional<DefinitionRow> findDefinitionByNumber(String tenantId, String number) {
+        return Optional.ofNullable(mapper.selectDefinitionByNumber(tenantId, number));
+    }
+
     @Override public Optional<DefinitionRow> findLatestDefinition(String tenantId, String campaignId,
             String dialect) { return Optional.ofNullable(mapper.selectLatestDefinition(tenantId, campaignId, dialect)); }
     @Override public Optional<DefinitionRow> findDefinition(String tenantId, String definitionId, long version) {

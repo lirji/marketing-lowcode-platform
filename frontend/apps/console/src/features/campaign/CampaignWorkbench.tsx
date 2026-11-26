@@ -81,6 +81,7 @@ function Workbench({ campaign, scope }: { campaign: Campaign; scope: string }) {
       : offer.isPending ? <StateBanner tone="loading" title="正在读取规则" detail="获得服务端版本后可以继续操作。" />
       : definition ? <Panel>
         <PanelHeader title={`Offer 规则 v${definition.version}`} aside={<Link className="button secondary" to={`/designers/offer?${campaignQuery}`}>打开 Offer 设计器</Link>} />
+        {definition.businessNo && <p className="field-hint">规则编号 {definition.businessNo}</p>}
         {config && <dl className="workbench-facts">
           <div><dt>商品 SKU ID</dt><dd>{config.skuIds}</dd></div>
           <div><dt>参与商品金额门槛</dt><dd>{yuan.format(Number(config.thresholdMinor) / 100)}</dd></div>
