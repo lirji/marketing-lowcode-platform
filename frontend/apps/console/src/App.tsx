@@ -11,6 +11,12 @@ const AuthCallbackPage = lazy(() => import('./features/auth/AuthCallbackPage').t
 const DashboardPage = lazy(() => import('./features/dashboard/DashboardPage').then((module) => ({ default: module.DashboardPage })))
 const CampaignsPage = lazy(() => import('./features/campaign/CampaignsPage').then((module) => ({ default: module.CampaignsPage })))
 const CampaignWorkbench = lazy(() => import('./features/campaign/CampaignWorkbench').then((module) => ({ default: module.CampaignWorkbench })))
+const CampaignPreviewList = import.meta.env.DEV
+  ? lazy(() => import('./features/campaign/CampaignDesignPreview').then((module) => ({ default: module.CampaignPreviewList })))
+  : undefined
+const CampaignPreviewDetail = import.meta.env.DEV
+  ? lazy(() => import('./features/campaign/CampaignDesignPreview').then((module) => ({ default: module.CampaignPreviewDetail })))
+  : undefined
 const OfferDesignerPage = lazy(() => import('./features/designers/OfferDesignerPage').then((module) => ({ default: module.OfferDesignerPage })))
 const AudienceBuilderPage = lazy(() => import('./features/designers/AudienceBuilderPage').then((module) => ({ default: module.AudienceBuilderPage })))
 const JourneyDesignerPage = lazy(() => import('./features/designers/JourneyDesignerPage').then((module) => ({ default: module.JourneyDesignerPage })))
@@ -54,6 +60,10 @@ export default function App() {
           <Route index element={<RequirePermission anyOf={['campaign:read', 'measurement:read']}><DashboardPage /></RequirePermission>} />
           <Route path="campaigns" element={<RequirePermission anyOf={['campaign:read']}><CampaignsPage /></RequirePermission>} />
           <Route path="campaigns/:campaignId/workbench" element={<RequirePermission anyOf={['campaign:read']}><CampaignWorkbench /></RequirePermission>} />
+          {CampaignPreviewList && <Route path="design-preview/campaigns"
+            element={<RequirePermission anyOf={['campaign:read']}><CampaignPreviewList /></RequirePermission>} />}
+          {CampaignPreviewDetail && <Route path="design-preview/campaigns/:campaignId"
+            element={<RequirePermission anyOf={['campaign:read']}><CampaignPreviewDetail /></RequirePermission>} />}
           <Route element={<DesignerRoutes />}>
             <Route path="designers/offer" element={<RequirePermission anyOf={['definition:read', 'definition:write']}><OfferDesignerPage /></RequirePermission>} />
             <Route path="designers/audience" element={<RequirePermission anyOf={['audience:read', 'audience:preview', 'audience:write']}><AudienceBuilderPage /></RequirePermission>} />

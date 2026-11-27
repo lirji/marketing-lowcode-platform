@@ -17,10 +17,28 @@ import {
   activeCampaignBudget, minorFromYuan, offerOutcomeLabel, offerStatusLabel, thresholdGraph, yuan,
 } from './thresholdOffer'
 import { OfferVersionComparison } from './OfferVersionComparison'
+import { NODE_FIELD_KIND, NODE_LABELS, nodeFields } from '../designers/nodeConfig'
 
 const ACTIVE_BENEFIT_STATUS = 'ACTIVE'
 const dateNow = () => new Date().toISOString()
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1_000
+const previewFields = new Set([
+  'amountMinor', 'discountBasisPoints', 'thresholdMinor', 'capMinor', 'benefitDefinitionVersion',
+  'validFrom', 'validTo', 'skuIds', 'shopIds', 'channels',
+])
+
+function PreviewOfferTerms({ graph }: { graph: GraphDefinition }) {
+  const terms = graph.nodes.flatMap((node) => {
+    const values = nodeFields(node.stableTypeId).filter((field) => previewFields.has(field.key) && node.config[field.key] !== undefined)
+    return values.length ? [{ node, values }] : []
+  })
+  if (!terms.length) return <p className="field-hint">当前版本未保存可在此查看的优惠条件。可在 Offer 设计器核对完整规则。</p>
+  return <div className="cdp-terms">{terms.map(({ node, values }) => <section key={node.id}>
+    <h3>{NODE_LABELS[node.stableTypeId]}</h3>
+    <dl className="workbench-facts">{values.map((field) => <div key={field.key}><dt>{field.label}</dt>
+      <dd>{field.kind === NODE_FIELD_KIND.TIME ? displayTimestamp(node.config[field.key]) : node.config[field.key] || '—'}</dd></div>)}</dl>
+  </section>)}</div>
+}
 
 async function latestOffer(campaignId: string) {
   try {
@@ -33,23 +51,25 @@ async function latestOffer(campaignId: string) {
   }
 }
 
-export function CampaignWorkbench() {
+export function CampaignWorkbench({ designPreview = false }: { designPreview?: boolean } = {}) {
   const { campaignId = '' } = useParams()
   const auth = useAuth()
   const scope = releaseScopeKey(auth)
   const campaigns = useQuery({ queryKey: ['campaigns', scope], queryFn: api.campaigns, enabled: !api.demoMode })
   const campaign = campaigns.data?.find(item => item.id === campaignId)
-  return <div className="workspace campaign-workbench">
-    <PageHeader title={campaign?.name ?? '活动工作台'} description={campaign?.objective ?? '配置满减，试跑订单并跟踪当前版本。'} actions={<Link className="button secondary" to="/campaigns">返回计划与活动</Link>} />
+  return <div className={designPreview ? 'workspace campaign-workbench campaign-design-preview' : 'workspace campaign-workbench'}>
+    <PageHeader eyebrow={designPreview ? '营销活动配置' : undefined} title={campaign?.name ?? '活动工作台'}
+      description={campaign?.objective ?? '配置满减，试跑订单并跟踪当前版本。'}
+      actions={<Link className="button secondary" to={designPreview ? '/design-preview/campaigns' : '/campaigns'}>返回计划与活动</Link>} />
     {api.demoMode ? <StateBanner tone="info" title="活动工作台需要连接服务" detail="连接营销服务后读取已保存的活动和规则。" />
       : campaigns.isPending ? <StateBanner tone="loading" title="正在读取活动" detail="正在核对当前身份可见的活动范围。" />
       : campaigns.isError ? <StateBanner tone="error" title="活动加载失败" detail={problemDetail(campaigns.error)} action={<Button onClick={() => void campaigns.refetch()}>重试</Button>} />
       : !campaign || campaign.campaignType !== CAMPAIGN_TYPE.STANDARD ? <EmptyState title="当前活动不可用" detail="此入口用于当前身份可见的标准营销活动。" />
-      : <Workbench key={`${scope}:${campaign.id}`} campaign={campaign} scope={scope} />}
+      : <Workbench key={`${scope}:${campaign.id}`} campaign={campaign} scope={scope} designPreview={designPreview} />}
   </div>
 }
 
-function Workbench({ campaign, scope }: { campaign: Campaign; scope: string }) {
+function Workbench({ campaign, scope, designPreview }: { campaign: Campaign; scope: string; designPreview: boolean }) {
   const auth = useAuth()
   const canRead = auth.hasPermission('definition:read')
   const canWrite = canRead && auth.hasPermission('definition:write')
@@ -72,14 +92,19 @@ function Workbench({ campaign, scope }: { campaign: Campaign; scope: string }) {
     ? definition.graph.nodes.filter(node => node.stableTypeId === 'offer.fixed' || node.stableTypeId === 'offer.percentage') : []
   const config = templateNodes.length === 1 && templateNodes[0].stableTypeId === 'offer.fixed' ? templateNodes[0].config : undefined
   return <>
-    <Panel>
+    {designPreview && <nav className="cdp-sections" aria-label="活动配置分区">
+      <a href="#activity-scope">活动范围</a><a href="#activity-rule">优惠规则与验证</a><a href="#activity-release">审核与发布</a>
+    </nav>}
+    {designPreview && <div className="cdp-anchor" id="activity-scope" />}
+    <Panel className={designPreview ? 'cdp-scope' : ''}>
       <PanelHeader title="活动范围" aside={<Badge tone={definition?.status === OFFER_VERSION_STATUS.RELEASED ? 'good' : 'neutral'}>{definition ? offerStatusLabel[definition.status] ?? definition.status : '规则待确认'}</Badge>} />
       <dl className="workbench-facts"><div><dt>活动编号</dt><dd>{campaign.businessNo ?? campaign.id}</dd></div><div><dt>组织</dt><dd>{campaign.organizationId || '未声明'}</dd></div><div><dt>门店</dt><dd>{campaign.shopId || '全部门店'}</dd></div></dl>
     </Panel>
+    {designPreview && <div className="cdp-anchor" id="activity-rule" />}
     {!canRead ? <StateBanner tone="warn" title="无规则读取权限" detail="查看 Offer 规则及其版本需要 definition:read 权限。" />
       : offer.isError ? <StateBanner tone="error" title="Offer 读取失败" detail={problemDetail(offer.error)} action={<Button onClick={() => void offer.refetch()}>重试</Button>} />
       : offer.isPending ? <StateBanner tone="loading" title="正在读取规则" detail="获得服务端版本后可以继续操作。" />
-      : definition ? <Panel>
+      : definition ? <Panel className={designPreview ? 'cdp-rule' : ''}>
         <PanelHeader title={`Offer 规则 v${definition.version}`} aside={<Link className="button secondary" to={`/designers/offer?${campaignQuery}`}>打开 Offer 设计器</Link>} />
         {definition.businessNo && <p className="field-hint">规则编号 {definition.businessNo}</p>}
         {config && <dl className="workbench-facts">
@@ -90,6 +115,7 @@ function Workbench({ campaign, scope }: { campaign: Campaign; scope: string }) {
           <div><dt>生效时间</dt><dd>{displayTimestamp(config.validFrom)}</dd></div>
           <div><dt>失效时间</dt><dd>{displayTimestamp(config.validTo)}</dd></div>
         </dl>}
+        {designPreview && !config && definition.graph && <PreviewOfferTerms graph={definition.graph} />}
         {currentValidation && <StateBanner tone={currentValidation.valid ? 'success' : 'warn'} title={currentValidation.valid ? '当前版本校验通过' : '当前版本校验未通过'} detail={currentValidation.issues.map(issue => issue.message).join('。') || `v${definition.version}`} />}
         {currentApproval && <StateBanner tone="success" title="已提交规则审核" detail={`审核单 ${currentApproval.caseId}`} />}
         {(validate.isError || submit.isError) && <StateBanner tone="error" title="操作失败" detail={problemDetail(validate.error ?? submit.error)} />}
@@ -103,7 +129,8 @@ function Workbench({ campaign, scope }: { campaign: Campaign; scope: string }) {
     {definition && config && auth.hasPermission('definition:simulate') && <OfferVersionComparison
       key={`compare:${definition.definitionId}:${definition.version}`} definition={definition} config={config} scope={scope} />}
     {definition && config && auth.hasPermission('definition:simulate') && <OfferTrial key={`${definition.definitionId}:${definition.version}`} definition={definition} config={config} />}
-    <Panel>
+    {designPreview && <div className="cdp-anchor" id="activity-release" />}
+    <Panel className={designPreview ? 'cdp-release' : ''}>
       <PanelHeader title="审核与发布" />
       <p className="field-hint">规则批准后，在发布中心编译和暂存指定版本。活动工作台保存规则后可在这里继续跟踪。</p>
       <div className="action-bar workbench-actions">

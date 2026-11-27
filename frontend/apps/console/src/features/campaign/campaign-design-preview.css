@@ -1,0 +1,42 @@
+.campaign-design-preview {
+  --cdp-canvas: #f3f5f9;
+  --cdp-surface: #fff;
+  --cdp-ink: #182337;
+  --cdp-muted: #526079;
+  --cdp-line: #dce3ed;
+  --cdp-accent: #3748c9;
+  --cdp-soft: #eef0ff;
+  --cdp-focus: #6877ef;
+  max-width: 1480px;
+  color: var(--cdp-ink);
+}
+.campaign-design-preview .page-heading { align-items: center; }
+.campaign-design-preview .page-heading h1 { font-size: clamp(24px, 2.12vw, 28px); }
+.campaign-design-preview .page-heading .eyebrow { color: var(--cdp-accent); }
+.campaign-design-preview .panel { min-width: 0; border-color: var(--cdp-line); border-radius: 12px; background: var(--cdp-surface); }
+.campaign-design-preview .panel-head h2, .campaign-design-preview .cdp-index h2 { font-size: 16px; }
+.cdp-index-heading { display: flex; gap: 9px; align-items: center; margin-bottom: 12px; }
+.cdp-index-heading svg { color: var(--cdp-accent); }
+.cdp-index-heading h2 { margin: 0; }
+.cdp-index-scroll { overflow-x: auto; }
+.cdp-index table { width: 100%; min-width: 720px; border-collapse: collapse; text-align: left; }
+.cdp-index :is(th,td) { padding: 10px 12px; border-block-end: 1px solid var(--cdp-line); overflow-wrap: anywhere; }
+.cdp-index th { color: var(--cdp-muted); background: var(--cdp-canvas); font-size: 12px; }
+.cdp-index td { font-size: 13px; }
+.cdp-index td:first-child { font-weight: 680; }
+.cdp-index td:last-child { white-space: nowrap; }
+.cdp-sections { display: flex; flex-wrap: wrap; gap: 3px 14px; padding: 6px 12px; border: 1px solid var(--cdp-line); border-radius: 9px; background: var(--cdp-surface); }
+.cdp-sections a { padding: 5px 7px; border-radius: 5px; color: var(--cdp-accent); text-decoration: none; font-weight: 650; }
+.cdp-sections a:is(:hover,:focus-visible) { background: var(--cdp-soft); }
+.cdp-sections a:focus-visible { outline: 2px solid var(--cdp-focus); }
+.cdp-anchor { scroll-margin-top: 85px; height: 0; margin-bottom: -16px; }
+.campaign-design-preview:has(.cdp-anchor) { row-gap: 16px; }
+.campaign-design-preview .cdp-scope { border-top: 3px solid var(--cdp-accent); }
+.cdp-scope .workbench-facts > div, .cdp-rule .workbench-facts > div { padding: 10px; border-radius: 7px; background: var(--cdp-canvas); }
+.cdp-rule .workbench-facts { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.cdp-terms { display: grid; gap: 12px; }
+.cdp-terms h3 { margin: 4px 0 8px; font-size: 14px; }
+.cdp-release .field-hint { max-width: 64ch; }
+@media (max-width: 800px) {
+  .campaign-design-preview .page-heading { align-items: flex-start; }
+}
