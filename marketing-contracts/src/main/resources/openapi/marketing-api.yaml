@@ -1052,6 +1052,84 @@ paths:
         '200': {description: Checkout reference, order and application numbers, campaign, decision generation and paged funding history.}
         '403': {description: Missing funding reconciliation permission.}
         '404': {description: Unknown trusted order binding in this tenant.}
+  /api/v1/funding/audit-archives/{ticket}:
+    get:
+      tags: [Benefit]
+      operationId: readRestoredFundingAuditArchive
+      description: Reads the temporary archive projection for a current ticket. Tenant, actor and current resource scope are rechecked.
+      x-required-permission: funding:audit-archive-read
+      parameters:
+        - {$ref: '#/components/parameters/AuditArchiveTicket'}
+      responses:
+        '200':
+          description: The authorized audit projection for one verified archive.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GovernedAuditArchive'}
+        '403': {description: Missing archive read or current resource permission.}
+        '404': {description: Archive access is disabled or the ticket and projection are unavailable.}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/funding/audit-archives/{ticket}/restore:
+    post:
+      tags: [Benefit]
+      operationId: restoreFundingAuditArchive
+      description: Verifies an exact object version and publishes a short-lived projection. This command returns the confirmed fact count.
+      x-required-permission: funding:audit-archive-restore
+      parameters:
+        - {$ref: '#/components/parameters/AuditArchiveTicket'}
+      responses:
+        '200':
+          description: The archive was verified for the current ticket.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [factCount]
+                properties:
+                  factCount: {type: integer, minimum: 1, maximum: 200}
+        '403': {description: Missing restoration or current resource permission.}
+        '404': {description: Restoration is disabled or the ticket is unavailable.}
+        '503': {description: Archive storage or verification is temporarily unavailable.}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/releases/audit-archives/{ticket}:
+    get:
+      tags: [Release]
+      operationId: readRestoredReleaseAuditArchive
+      description: Reads the temporary archive projection for a current ticket. Tenant, actor and current resource scope are rechecked.
+      x-required-permission: release:audit-archive-read
+      parameters:
+        - {$ref: '#/components/parameters/AuditArchiveTicket'}
+      responses:
+        '200':
+          description: The authorized audit projection for one verified archive.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GovernedAuditArchive'}
+        '403': {description: Missing archive read or current resource permission.}
+        '404': {description: Archive access is disabled or the ticket and projection are unavailable.}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/releases/audit-archives/{ticket}/restore:
+    post:
+      tags: [Release]
+      operationId: restoreReleaseAuditArchive
+      description: Verifies an exact object version and publishes a short-lived projection. This command returns the confirmed fact count.
+      x-required-permission: release:audit-archive-restore
+      parameters:
+        - {$ref: '#/components/parameters/AuditArchiveTicket'}
+      responses:
+        '200':
+          description: The archive was verified for the current ticket.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [factCount]
+                properties:
+                  factCount: {type: integer, minimum: 1, maximum: 200}
+        '403': {description: Missing restoration or current resource permission.}
+        '404': {description: Restoration is disabled or the ticket is unavailable.}
+        '503': {description: Archive storage or verification is temporarily unavailable.}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/promotion-applications/checkout-pilot/{reference}:reconcile:
     post:
       tags: [Benefit]
@@ -1580,6 +1658,11 @@ components:
   securitySchemes:
     oidc: {type: openIdConnect, openIdConnectUrl: https://identity.example.invalid/.well-known/openid-configuration}
   parameters:
+    AuditArchiveTicket:
+      in: path
+      name: ticket
+      required: true
+      schema: {type: string, pattern: '^[A-Za-z0-9_-]{1,64}$'}
     MeasurementCampaignFilter:
       in: query
       name: campaignId
@@ -1622,6 +1705,29 @@ components:
     JsonArray: {description: Successful collection, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/JsonObject'}}}}}
     Problem: {description: RFC 9457 problem response, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
   schemas:
+    GovernedAuditArchive:
+      type: object
+      required: [header, events]
+      properties:
+        header:
+          type: object
+          required: [schemaVersion, source, tenantId, resourceId]
+          properties:
+            schemaVersion: {type: integer, const: 1}
+            source: {type: string, enum: [funding, release]}
+            tenantId: {type: string}
+            resourceId: {type: string}
+        events:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: object
+            required: [id, recordedAt, fact]
+            properties:
+              id: {type: string, pattern: '^[1-9][0-9]*$'}
+              recordedAt: {type: string, format: date-time}
+              fact: {type: object, description: Source-specific safe audit evidence.}
     OfferVersionPage:
       type: object
       required: [campaignId, definitionId, items, nextBeforeVersion]
