@@ -524,12 +524,12 @@ public class BenefitFundingService {
         var binding = repository.tradeAuditBinding(scope.tenantId().value(), tradeTenant, nativeOrderId)
                 .orElseThrow(() -> new NotFoundException("APPLICATION_NOT_FOUND", "promotion application not found"));
         var target = authorizedAuditTarget(scope, binding.applicationId());
-        return new TradeOrderAudit(binding.checkoutRef(), target.orderNo(), target.applicationNo(),
+        return new TradeOrderAudit(binding.checkoutRef(), target.orderNo(), target.applicationId(), target.applicationNo(),
                 target.campaignId(), binding.generation(), fundingAudit.history(scope, target, cursor));
     }
 
     /** 运行代次直接来自申请；服务端不把它当成发布组合版本。 */
-    public record TradeOrderAudit(String checkoutReference, String orderNo, String applicationNo,
+    public record TradeOrderAudit(String checkoutReference, String orderNo, String applicationId, String applicationNo,
                                   String campaignId, long generation, FundingOperationAudit.History history) { }
 
     private ApplicationView auditedFunding(TenantScope scope, Action action, String applicationId, String commandId,

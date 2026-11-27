@@ -239,6 +239,7 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         String tradeAudit = "/api/v1/funding/trade-orders/906021/101/operation-audits";
         var linked = getTenant(tradeAudit, CHECKOUT_TENANT);
         assertEquals(one, linked.path("checkoutReference").asString());
+        assertEquals(first.path("applicationId"), linked.path("applicationId"));
         assertEquals("lc02-campaign", linked.path("campaignId").asString());
         assertEquals(effects, linked.path("history").path("items"));
         assertEquals(404, client.send(base(tradeAudit.replace("906021", "906022"), CHECKOUT_TENANT).GET().build(),
