@@ -577,4 +577,29 @@
         ON DUPLICATE KEY UPDATE ack_json = VALUES(ack_json), acknowledged_at = VALUES(acknowledged_at),
             signature_value = VALUES(signature_value)
     </insert>
+    <insert id="insertReleaseAudit">
+        INSERT INTO mk_release_operation_audit
+        (tenant_id, attempt_id, actor_id, trace_id, action_code, stage_code, campaign_id,
+         organization_id, shop_id, resource_id, business_no, version_no, activation_sequence,
+         before_state, after_state, reason_code, chain_audit_id, original_event_id, observed_at)
+        VALUES (#{tenant}, #{attemptId}, #{actorId}, #{traceId}, #{action}, #{stage}, #{target.campaignId},
+                #{target.organizationId}, #{target.shopId}, #{target.resourceId}, #{target.businessNo},
+                #{target.version}, #{target.sequence}, #{before}, #{after}, #{reason}, #{chainId},
+                #{originalEventId}, #{observedAt})
+    </insert>
+    <select id="selectOriginalReleaseAudit" resultType="java.lang.Long">
+        SELECT event_id FROM mk_release_operation_audit
+        WHERE tenant_id = #{tenant} AND resource_id = #{resourceId} AND stage_code IN ('ACCEPTED', 'CONFIRMED', 'EXPIRED', 'REJECTED')
+        ORDER BY event_id DESC LIMIT 1
+    </select>
+    <select id="selectReleaseAuditHistory" resultType="com.acme.marketing.control.application.ReleaseOperationAudit$Entry">
+        SELECT event_id, attempt_id, actor_id, trace_id, action_code, stage_code, resource_id, business_no,
+               version_no, activation_sequence, before_state, after_state, reason_code, chain_audit_id,
+               original_event_id, observed_at, recorded_at
+        FROM mk_release_operation_audit
+        WHERE tenant_id = #{tenant} AND campaign_id = #{campaignId} AND organization_id = #{organizationId}
+          AND shop_id &lt;=&gt; #{shopId} AND action_code != 'release.audit.read'
+        <if test="before != null"> AND event_id &lt; #{before} </if>
+        ORDER BY event_id DESC LIMIT #{limit}
+    </select>
 </mapper>

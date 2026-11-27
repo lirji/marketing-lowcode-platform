@@ -86,6 +86,12 @@ public interface ControlRepository {
     void saveAudit(AuditWrite write);
     int compareAndSetAuditHead(AuditHeadWrite write);
 
+    /** 发布留痕沿用控制面仓储，业务用例无需接触持久化适配器。 */
+    int appendReleaseAudit(ReleaseOperationAudit.Write write);
+    Long originalReleaseAudit(String tenant, String resourceId);
+    List<ReleaseOperationAudit.Entry> releaseAuditHistory(String tenant, String campaignId,
+            String organizationId, String shopId, Long before, int limit);
+
     void saveManifest(ManifestWrite write);
     void updateSlotLatestGeneration(SlotLatestWrite write);
     int updateRuntimeAck(RuntimeAckWrite write);

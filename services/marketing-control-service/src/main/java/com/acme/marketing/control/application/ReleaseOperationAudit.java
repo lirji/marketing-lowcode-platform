@@ -1,6 +1,5 @@
 package com.acme.marketing.control.application;
 
-import com.acme.marketing.control.infrastructure.persistence.mapper.ReleaseOperationAuditMapper;
 import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.error.DomainException;
 import com.acme.marketing.platform.error.ForbiddenException;
@@ -24,13 +23,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class ReleaseOperationAudit {
     private static final Logger LOG = LoggerFactory.getLogger(ReleaseOperationAudit.class);
     private static final int PAGE_SIZE = 50;
-    private final ReleaseOperationAuditMapper mapper;
     private final ControlRepository control;
     private final TransactionTemplate independent;
 
-    public ReleaseOperationAudit(ReleaseOperationAuditMapper mapper, ControlRepository control,
+    public ReleaseOperationAudit(ControlRepository control,
             PlatformTransactionManager manager) {
-        this.mapper = mapper;
         this.control = control;
         this.independent = new TransactionTemplate(manager);
         independent.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -90,7 +87,7 @@ public class ReleaseOperationAudit {
     /** 重复请求引用原活动操作，历史命令允许缺少新版审计事件。 */
     void replayed(Attempt attempt, Target target, String after) {
         append(attempt, attempt.action, "REPLAYED", target, null, after, null, null,
-                mapper.original(attempt.scope.tenantId().value(), target.resourceId()), null);
+                control.originalReleaseAudit(attempt.scope.tenantId().value(), target.resourceId()), null);
     }
 
     /** 前置权限和 SQL 同时限制当前租户、组织及门店。 */
@@ -100,7 +97,7 @@ public class ReleaseOperationAudit {
             verify(attempt, campaign, ControlCampaignScope.require(control, attempt.scope, campaign, false));
             if (before != null && before < 1) throw ReleaseBundleError.OPERATION_INVALID.invalid();
             var verified = attempt.verified;
-            var rows = mapper.history(attempt.scope.tenantId().value(), campaign, verified.organizationId(),
+            var rows = control.releaseAuditHistory(attempt.scope.tenantId().value(), campaign, verified.organizationId(),
                     verified.shopId(), before, PAGE_SIZE + 1);
             var items = rows.stream().limit(PAGE_SIZE).toList();
             independent.executeWithoutResult(tx -> append(attempt, Action.READ, "SUCCEEDED", verified,
@@ -116,7 +113,7 @@ public class ReleaseOperationAudit {
         String trace = MDC.get("traceId");
         String safeTrace = trace != null && trace.matches("[a-fA-F0-9-]{16,64}") ? trace : null;
         String safeReason = reason != null && reason.matches("[A-Z][A-Z0-9_]{1,95}") ? reason : null;
-        int written = mapper.append(new Write(scope.tenantId().value(), attempt == null ? null : attempt.id, actor,
+        int written = control.appendReleaseAudit(new Write(scope.tenantId().value(), attempt == null ? null : attempt.id, actor,
                 safeTrace, action.code, stage, target, before, after, safeReason, chainId, original,
                 observedAt == null ? null : SqlTime.format(observedAt)));
         if (written != 1) throw new IllegalStateException("营销发布审计写入结果无效");

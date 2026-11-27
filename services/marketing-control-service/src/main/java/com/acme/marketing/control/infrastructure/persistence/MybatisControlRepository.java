@@ -1,6 +1,7 @@
 package com.acme.marketing.control.infrastructure.persistence;
 
 import com.acme.marketing.control.application.ControlRepository;
+import com.acme.marketing.control.application.ReleaseOperationAudit;
 import com.acme.marketing.control.infrastructure.persistence.mapper.ControlMapper;
 import java.util.List;
 import java.util.Optional;
@@ -128,6 +129,14 @@ public class MybatisControlRepository implements ControlRepository {
     }
     @Override public void saveAudit(AuditWrite write) { one(mapper.insertAudit(write), "保存审计记录"); }
     @Override public int compareAndSetAuditHead(AuditHeadWrite write) { return mapper.updateAuditHead(write); }
+    @Override public int appendReleaseAudit(ReleaseOperationAudit.Write write) { return mapper.insertReleaseAudit(write); }
+    @Override public Long originalReleaseAudit(String tenant, String resourceId) {
+        return mapper.selectOriginalReleaseAudit(tenant, resourceId);
+    }
+    @Override public List<ReleaseOperationAudit.Entry> releaseAuditHistory(String tenant, String campaignId,
+            String organizationId, String shopId, Long before, int limit) {
+        return mapper.selectReleaseAuditHistory(tenant, campaignId, organizationId, shopId, before, limit);
+    }
     @Override public void saveManifest(ManifestWrite write) { one(mapper.insertManifest(write), "保存发布清单"); }
     @Override public void updateSlotLatestGeneration(SlotLatestWrite write) {
         one(mapper.updateSlotLatestGeneration(write), "更新最新发布代次");

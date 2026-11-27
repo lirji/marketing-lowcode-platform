@@ -1,6 +1,7 @@
 package com.acme.marketing.control.infrastructure.persistence.mapper;
 
 import com.acme.marketing.control.application.ControlRepository;
+import com.acme.marketing.control.application.ReleaseOperationAudit;
 import com.acme.marketing.control.application.ReleaseOutboxRepository;
 import java.util.List;
 import java.util.Set;
@@ -139,4 +140,10 @@ public interface ControlMapper {
     int updateOutboxRetry(@Param("tenantId") String tenantId, @Param("eventId") String eventId,
             @Param("nextAttemptAt") String nextAttemptAt, @Param("attempts") int attempts,
             @Param("error") String error);
+
+    int insertReleaseAudit(ReleaseOperationAudit.Write write);
+    Long selectOriginalReleaseAudit(@Param("tenant") String tenant, @Param("resourceId") String resourceId);
+    List<ReleaseOperationAudit.Entry> selectReleaseAuditHistory(@Param("tenant") String tenant, @Param("campaignId") String campaignId,
+            @Param("organizationId") String organizationId, @Param("shopId") String shopId,
+            @Param("before") Long before, @Param("limit") int limit);
 }
