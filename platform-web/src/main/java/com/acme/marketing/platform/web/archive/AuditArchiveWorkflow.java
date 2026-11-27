@@ -110,7 +110,11 @@ public final class AuditArchiveWorkflow {
         authorize.check(batch.resourceId());
         String payload = repository.restored(tenant, ticket, actor, batch.batchId());
         if (payload == null || !grant.equals(requireGrant(authorizedTenant, ticket, actor, false))) throw missing();
-        return json.readValue(payload, Snapshot.class);
+        authorize.check(batch.resourceId());
+        var snapshot = json.readValue(payload, Snapshot.class);
+        if (snapshot == null || !header(batch.resourceId()).equals(snapshot.header()) || snapshot.events() == null
+                || snapshot.events().size() != batch.rowCount()) throw unavailable();
+        return snapshot;
     }
 
     /** 已核验快照供来源做冻结、保留周期和在线证据逐条比对。 */
@@ -136,7 +140,7 @@ public final class AuditArchiveWorkflow {
         if (resourceId.length() > 128) throw unavailable();
         var rows = reader.eligible(tenant, resourceId, clock.instant().minus(minimumAge), AuditArchiveDocument.MAX_ROWS + 1);
         if (rows.isEmpty()) return null;
-        var header = new Header(AuditArchiveDocument.FORMAT, source.id, tenant, resourceId);
+        var header = header(resourceId);
         byte[] payload = AuditArchiveDocument.pack(json.writeValueAsString(header),
                 rows.stream().map(json::writeValueAsString).toList());
         String batchId = UUID.randomUUID().toString();
@@ -155,13 +159,17 @@ public final class AuditArchiveWorkflow {
         try {
             var document = AuditArchiveDocument.unpack(bytes, batch.sha256(), batch.payloadBytes(), batch.rowCount());
             Header header = json.readValue(document.header(), Header.class);
-            if (!new Header(AuditArchiveDocument.FORMAT, source.id, tenant, batch.resourceId()).equals(header)) throw unavailable();
+            if (!header(batch.resourceId()).equals(header)) throw unavailable();
             var events = document.rows().stream().map(row -> json.readValue(row, Event.class)).toList();
             if (events.stream().map(Event::id).distinct().count() != events.size()) throw unavailable();
             return new Snapshot(header, events);
         } catch (IllegalArgumentException | JacksonException failure) {
             throw unavailable();
         }
+    }
+
+    private Header header(String resourceId) {
+        return new Header(AuditArchiveDocument.FORMAT, source.id, tenant, resourceId);
     }
 
     private Batch requireBatch(String id) {
