@@ -97,6 +97,8 @@ class ContractSpecificationsTest {
             "/api/v1/promotion-applications:expire", "/api/v1/funding/reconciliation", "/api/v1/funding/subsidy-postings",
             "/api/v1/funding/subsidy-postings/summary", "/api/v1/funding/subsidy-postings/by-order",
             "/api/v1/funding/subsidy-postings/by-order/bindings",
+            "/api/v1/promotion-applications/{applicationId}/operation-audits",
+            "/api/v1/funding/trade-orders/{tradeTenant}/{nativeOrderId}/operation-audits",
             "/api/v1/events/sources", "/api/v1/events", "/api/v1/quarantine",
             "/api/v1/quarantine/{quarantineId}:replay", "/api/v1/journey-runtime/manifest", "/api/v1/journey-runtime/release-bundles:prepare",
             "/api/v1/journey-runtime/activation", "/api/v1/journeys/{journeyId}/versions/{version}",
