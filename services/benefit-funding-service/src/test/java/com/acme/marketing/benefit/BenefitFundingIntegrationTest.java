@@ -227,6 +227,23 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         assertEquals(0L, checkoutBucketTotal("reserved_amount"));
         assertEquals(1000L, checkoutBucketTotal("consumed_amount"));
         assertEquals(1000L, checkoutBucketTotal("available_amount"));
+        String auditPath = "/api/v1/promotion-applications/" + first.path("applicationId").asString() + "/operation-audits";
+        var effects = getTenant(auditPath, CHECKOUT_TENANT).path("items");
+        assertEquals(3, effects.size());
+        assertEquals("REPLAYED", effects.get(0).path("result").asString());
+        assertEquals("CONFIRMED", effects.get(1).path("afterState").asString());
+        assertEquals("1000", effects.get(1).path("amountMinor").asString());
+        assertEquals(readableOrder, effects.get(1).path("orderNo").asString());
+        assertEquals(effects.get(1).path("effectId"), effects.get(0).path("originalEffectId"));
+        assertEquals("CONFLICT", effects.get(2).path("result").asString());
+        assertEquals(effects, getTenant(auditPath.replace(first.path("applicationId").asString(), applicationNo),
+                CHECKOUT_TENANT).path("items"));
+        assertEquals(404, client.send(base(auditPath, "external-tenant").GET().build(),
+                HttpResponse.BodyHandlers.ofString()).statusCode());
+        var releaseEffects = getTenant("/api/v1/promotion-applications/" + second.path("applicationId").asString()
+                + "/operation-audits", CHECKOUT_TENANT).path("items");
+        assertEquals("funding.release", releaseEffects.get(0).path("action").asString());
+        assertEquals("1000", releaseEffects.get(0).path("amountMinor").asString());
     }
 
     private long checkoutBucketTotal(String column) {
@@ -903,6 +920,17 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
         JsonNode reversed = post(operations + ":reverse",
                 Map.of("expectedFencingEpochs", writerEpochs(2)), "reverse-command-001");
         assertEquals("REVERSED", reversed.get("state").asString());
+        var audit = get(operations + "/operation-audits").path("items");
+        assertEquals(5, audit.size());
+        assertEquals("funding.reverse", audit.get(0).path("action").asString());
+        assertEquals("800", audit.get(0).path("amountMinor").asString());
+        assertEquals("CNY", audit.get(0).path("currency").asString());
+        assertEquals("order-1", audit.get(0).path("orderId").asString());
+        assertEquals("campaign-ledger", audit.get(0).path("campaignId").asString());
+        assertEquals("REPLAYED", audit.get(1).path("result").asString());
+        assertEquals(audit.get(2).path("effectId"), audit.get(1).path("originalEffectId"));
+        assertEquals("200", audit.get(2).path("amountMinor").asString());
+        assertEquals("1000", audit.get(4).path("amountMinor").asString());
         assertEquals(-800, totalPostings(postings(BEIJING_MIDNIGHT.plusSeconds(3), BEIJING_MIDNIGHT.plusSeconds(4))
                 + "&campaignId=campaign-ledger"));
         var fullWindow = get(postings(BEIJING_MIDNIGHT.minusSeconds(20), BEIJING_MIDNIGHT.plusSeconds(4))

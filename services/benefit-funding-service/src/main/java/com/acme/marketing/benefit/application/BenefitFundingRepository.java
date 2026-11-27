@@ -196,4 +196,24 @@ public interface BenefitFundingRepository {
     record OutboxWrite(String tenantId, String eventId, String aggregateId, String eventType,
             String destinationTopic, String partitionKey, long streamSequence, String payloadJson,
             String nextAttemptAt, String createdAt) { }
+
+    /** 请求事实与已提交资金业务分开保存。 */
+    int beginAudit(AuditAttempt attempt);
+    long auditAttemptId(String tenantId, String requestId);
+    int appendAudit(AuditResult result);
+    Long auditResultId(String tenantId, long attemptId);
+    Long originalAuditEffect(String tenantId, String applicationId, String actionCode, String commandHash);
+    Optional<AuditTarget> auditTarget(String tenantId, String applicationId);
+    List<AuditEntry> auditHistory(String tenantId, String applicationId, Long beforeId, int limit);
+
+    record AuditAttempt(String tenantId, String requestId, String actorId, String actionCode, String traceId) { }
+    record AuditTarget(String applicationId, String applicationNo, String orderId, String orderNo,
+                       String organizationId, String shopIdsJson, String campaignId, String currency) { }
+    record AuditResult(String tenantId, long attemptId, AuditTarget target, String commandHash, String actionCode,
+                       String resultCode, String errorCode, Long originalEffectId, String beforeState,
+                       String afterState, Long amountMinor) { }
+    record AuditEntry(String id, String sourceSystem, String requestId, String traceId, String action, String actorId,
+                      String resourceId, java.time.Instant occurredAt, String result, String errorCode,
+                      String effectId, String originalEffectId, String orderId, String orderNo, String businessNo,
+                      String campaignId, String beforeState, String afterState, String amountMinor, String currency) { }
 }

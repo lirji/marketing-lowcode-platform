@@ -122,7 +122,10 @@ public class CheckoutFundingService {
         var current = repository.findCheckout(tenant, reference)
                 .orElseThrow(() -> new NotFoundException("CHECKOUT_FUNDING_NOT_FOUND", "试点预算预留不存在"));
         boolean reserved = "RESERVED".equals(current.state());
-        if (!reserved && (!refreshOrderNumber || current.orderNo() != null)) return response(current);
+        if (!reserved && (!refreshOrderNumber || current.orderNo() != null)) {
+            recordSettlementReplay(scope, reference, current);
+            return response(current);
+        }
         var facts = evidence(reference);
         require(current.tradeTenant().equals(facts.tradeTenantId()) && current.orderId().equals(facts.orderId())
                 && current.tokenDigest().equals(facts.priceProofHash()) && current.currency().equals(facts.currency())
@@ -132,11 +135,21 @@ public class CheckoutFundingService {
         if (current.orderNo() == null && orderNo != null) {
             repository.recordCheckoutOrderNo(tenant, reference, current.orderId(), current.tokenDigest(), orderNo);
         }
-        if (!reserved) return response(current);
+        if (!reserved) {
+            recordSettlementReplay(scope, reference, current);
+            return response(current);
+        }
         boolean paid = facts.paidAt() != null && PAID.contains(facts.financialStatus());
         boolean cancelled = facts.paidAt() == null && "CANCELLED".equals(facts.orderStatus()) && "UNPAID".equals(facts.financialStatus());
         if (paid || cancelled) funding.settleCheckout(scope, current.applicationId(), reference, paid);
         return response(repository.findCheckout(tenant, reference).orElseThrow());
+    }
+
+    private void recordSettlementReplay(TenantScope scope, String reference,
+            BenefitFundingRepository.CheckoutBindingRow current) {
+        if ("CONFIRMED".equals(current.state()) || "CANCELLED".equals(current.state())) {
+            funding.recordCheckoutReplay(scope, reference, current.applicationId(), "CONFIRMED".equals(current.state()));
+        }
     }
 
     private Map<String, String> verifyPrice(String reference, String token) {

@@ -32,6 +32,10 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.Supplier;
+import java.util.function.BiFunction;
+import com.acme.marketing.benefit.application.FundingOperationAudit.Action;
+import com.acme.marketing.benefit.application.FundingOperationAudit.Attempt;
+import com.acme.marketing.benefit.application.BenefitFundingRepository.AuditTarget;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -59,11 +63,12 @@ public class BenefitFundingService {
     private final BenefitSkuCatalog benefitSkuCatalog;
     private final TransactionTemplate isolatedTransactions;
     private final int budgetBucketCount;
+    private final FundingOperationAudit fundingAudit;
 
     /** 构造资金应用服务；数据库实现经持久化端口注入，应用层不绑定 MyBatis。 */
     public BenefitFundingService(BenefitFundingRepository repository, ObjectMapper mapper, Clock clock,
             OfferTokenTrust tokenTrust,
-            BenefitSkuCatalog benefitSkuCatalog, PlatformTransactionManager transactionManager,
+            BenefitSkuCatalog benefitSkuCatalog, PlatformTransactionManager transactionManager, FundingOperationAudit fundingAudit,
             @Value("${marketing.funding.budget-bucket-count:16}") int budgetBucketCount) {
         if (budgetBucketCount < 2 || budgetBucketCount > 64) {
             throw new IllegalArgumentException("budget bucket count must be in [2,64]");
@@ -76,6 +81,7 @@ public class BenefitFundingService {
         this.isolatedTransactions = new TransactionTemplate(transactionManager);
         this.isolatedTransactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.budgetBucketCount = budgetBucketCount;
+        this.fundingAudit = fundingAudit;
     }
 
     @Transactional
@@ -423,6 +429,13 @@ public class BenefitFundingService {
     /** 只接受调用方已从交易核实的不可逆终态，报价失效可晚于渠道受理。 */
     @Transactional
     public ApplicationView settleCheckout(TenantScope scope, String applicationId, String reference, boolean paid) {
+        Action action = paid ? Action.CONFIRM : Action.RELEASE;
+        return auditedFunding(scope, action, applicationId, reference, null, (attempt, target) ->
+                settleCheckoutAuthorized(scope, applicationId, reference, paid, attempt, target));
+    }
+
+    private ApplicationView settleCheckoutAuthorized(TenantScope scope, String applicationId, String reference,
+            boolean paid, Attempt attempt, AuditTarget auditTarget) {
         String tenantId = scope.tenantId().value();
         var application = lockApplication(tenantId, applicationId);
         requireApplicationScope(scope, application);
@@ -430,12 +443,13 @@ public class BenefitFundingService {
         var target = paid ? ApplicationState.CONFIRMED : ApplicationState.CANCELLED;
         if (application.state() != target) {
             if (application.state() != ApplicationState.RESERVED) throw checkoutEvidenceRequired();
-            apply(tenantId, application, lockItems(tenantId, applicationId),
+            long amount = apply(tenantId, application, lockItems(tenantId, applicationId),
                     paid ? Operation.CONFIRM : Operation.RELEASE, Map.of(), null);
             Instant now = clock.instant();
             if (repository.updateApplicationState(tenantId, applicationId, target.name(), format(now)) != 1) {
                 throw new IllegalStateException("试点资金终态未提交");
             }
+            fundingAudit.committed(attempt, auditTarget, application.state().name(), target.name(), amount);
             outbox(tenantId, applicationId, "Promotion" + target.name(), now);
         }
         return application(tenantId, applicationId);
@@ -450,34 +464,89 @@ public class BenefitFundingService {
             String organization, String shop, String cartDigest, String proofHash, long generation, String campaign,
             String funderId, String currency, long discountMinor, Instant quoteExpiresAt, Instant orderExpiresAt, String orderNo) { }
 
+    /** 确认预留的提交证据和账本共同提交。 */
     @Transactional
     public ApplicationView confirm(String applicationId, String commandId, SettlementRequest request) {
-        return transition(applicationId, commandId, "CONFIRM", ApplicationState.RESERVED, ApplicationState.CONFIRMED,
-                Operation.CONFIRM, Map.of(), request.expectedFencingEpochs());
+        var scope = TenantContextHolder.requireCurrent();
+        return auditedFunding(scope, Action.CONFIRM, applicationId, commandId, "promotion:confirm",
+                (attempt, target) -> transition(scope, applicationId, commandId, "CONFIRM",
+                        ApplicationState.RESERVED, ApplicationState.CONFIRMED, Operation.CONFIRM, Map.of(),
+                        request.expectedFencingEpochs(), attempt, target));
     }
 
+    /** 释放只记录实际归还的预算金额。 */
     @Transactional
     public ApplicationView cancel(String applicationId, String commandId, SettlementRequest request) {
-        return transition(applicationId, commandId, "CANCEL", ApplicationState.RESERVED, ApplicationState.CANCELLED,
-                Operation.RELEASE, Map.of(), request.expectedFencingEpochs());
+        var scope = TenantContextHolder.requireCurrent();
+        return auditedFunding(scope, Action.RELEASE, applicationId, commandId, "promotion:cancel",
+                (attempt, target) -> transition(scope, applicationId, commandId, "CANCEL",
+                        ApplicationState.RESERVED, ApplicationState.CANCELLED, Operation.RELEASE, Map.of(),
+                        request.expectedFencingEpochs(), attempt, target));
     }
 
+    /** 部分退款只记录本次账本变化，重复命令关联原提交。 */
     @Transactional
     public ApplicationView refund(String applicationId, String commandId, RefundRequest request) {
         var scope = TenantContextHolder.requireCurrent();
-        scope.requirePermission("promotion:refund");
-        String payloadHash = Digests.sha256Hex("REFUND|" + applicationId + '|' + json(request));
-        return command(scope.tenantId().value(), commandId, payloadHash, ApplicationView.class,
-                () -> refundNow(scope, applicationId, request.resourceAmounts(), request.expectedFencingEpochs(), false));
+        return auditedFunding(scope, Action.REFUND, applicationId, commandId, "promotion:refund", (attempt, target) -> {
+            String hash = Digests.sha256Hex("REFUND|" + applicationId + '|' + json(request));
+            return command(scope.tenantId().value(), commandId, hash, ApplicationView.class,
+                    () -> refundNow(scope, applicationId, request.resourceAmounts(), request.expectedFencingEpochs(),
+                            false, attempt, target));
+        });
     }
 
+    /** 冲回保留权威前后状态及币种金额。 */
     @Transactional
     public ApplicationView reverse(String applicationId, String commandId, SettlementRequest request) {
         var scope = TenantContextHolder.requireCurrent();
-        scope.requirePermission("promotion:reverse");
-        String payloadHash = Digests.sha256Hex("REVERSE|" + applicationId + '|' + request.expectedFencingEpochs());
-        return command(scope.tenantId().value(), commandId, payloadHash, ApplicationView.class,
-                () -> refundNow(scope, applicationId, Map.of(), request.expectedFencingEpochs(), true));
+        return auditedFunding(scope, Action.REVERSE, applicationId, commandId, "promotion:reverse", (attempt, target) -> {
+            String hash = Digests.sha256Hex("REVERSE|" + applicationId + '|' + request.expectedFencingEpochs());
+            return command(scope.tenantId().value(), commandId, hash, ApplicationView.class,
+                    () -> refundNow(scope, applicationId, Map.of(), request.expectedFencingEpochs(), true, attempt, target));
+        });
+    }
+
+    /** 只查询授权的具体申请，账本、用户配置和原始凭据不随审计返回。 */
+    public FundingOperationAudit.History operationAudits(String applicationId, String cursor) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission(RECONCILE_PERMISSION);
+        return fundingAudit.history(scope, authorizedAuditTarget(scope, applicationId), cursor);
+    }
+
+    private ApplicationView auditedFunding(TenantScope scope, Action action, String applicationId, String commandId,
+            String permission, BiFunction<Attempt, AuditTarget, ApplicationView> operation) {
+        AuditTarget target;
+        try {
+            if (permission != null) {
+                scope.requirePermission(permission);
+            }
+            target = authorizedAuditTarget(scope, applicationId);
+        } catch (RuntimeException rejected) {
+            return fundingAudit.capture(scope, action, commandId, null, attempt -> { throw rejected; });
+        }
+        return fundingAudit.capture(scope, action, commandId, target, attempt -> {
+            ApplicationView result = operation.apply(attempt, target);
+            fundingAudit.resolveReplay(attempt, target);
+            return result;
+        });
+    }
+
+    /** 已经确认的试点终态只追加重试证据，避免重新获取预算或渠道锁。 */
+    public void recordCheckoutReplay(TenantScope scope, String reference, String applicationId, boolean paid) {
+        AuditTarget target = authorizedAuditTarget(scope, applicationId);
+        fundingAudit.capture(scope, paid ? Action.CONFIRM : Action.RELEASE, reference, target, attempt -> {
+            fundingAudit.resolveReplay(attempt, target);
+            return null;
+        });
+    }
+
+    private AuditTarget authorizedAuditTarget(TenantScope scope, String applicationId) {
+        AuditTarget target = repository.auditTarget(scope.tenantId().value(), applicationId)
+                .orElseThrow(() -> new NotFoundException("APPLICATION_NOT_FOUND", "promotion application not found"));
+        scope.requireOrganization(target.organizationId());
+        stringSet(target.shopIdsJson()).forEach(scope::requireShop);
+        return target;
     }
 
     public ExpirationResult expireReservations(int limit) {
@@ -518,13 +587,20 @@ public class BenefitFundingService {
         if (scope != null) requireApplicationScope(scope, application);
         if (application.checkoutRef() != null || application.state() != ApplicationState.RESERVED
                 || application.expiresAt().isAfter(now)) return false;
-        List<ReservationItem> items = lockItems(candidate.tenantId(), candidate.applicationId());
-        apply(candidate.tenantId(), application, items, Operation.RELEASE, Map.of(), null);
-        int updated = repository.expireApplication(
-                candidate.tenantId(), candidate.applicationId(), format(now));
-        if (updated != 1) return false;
-        outbox(candidate.tenantId(), candidate.applicationId(), "PromotionExpired", now);
-        return true;
+        TenantScope actor = scope == null ? new TenantScope(new TenantId(candidate.tenantId()),
+                Set.of(application.organizationId()), application.shopIds(), "funding-expiry-worker") : scope;
+        AuditTarget target = authorizedAuditTarget(actor, candidate.applicationId());
+        return fundingAudit.capture(actor, Action.RELEASE, "expiry:" + candidate.applicationId(), target, attempt -> {
+            List<ReservationItem> items = lockItems(candidate.tenantId(), candidate.applicationId());
+            long amount = apply(candidate.tenantId(), application, items, Operation.RELEASE, Map.of(), null);
+            int updated = repository.expireApplication(candidate.tenantId(), candidate.applicationId(), format(now));
+            if (updated != 1) {
+                throw new IllegalStateException("过期预留释放状态未提交");
+            }
+            fundingAudit.committed(attempt, target, application.state().name(), ApplicationState.EXPIRED.name(), amount);
+            outbox(candidate.tenantId(), candidate.applicationId(), "PromotionExpired", now);
+            return true;
+        });
     }
 
     private void recordExpirationFailure(ExpiredApplication candidate, RuntimeException failure, Instant now) {
@@ -540,11 +616,9 @@ public class BenefitFundingService {
                 format(now.plusSeconds(delaySeconds)), error));
     }
 
-    private ApplicationView transition(String applicationId, String commandId, String semantic,
+    private ApplicationView transition(TenantScope scope, String applicationId, String commandId, String semantic,
             ApplicationState expected, ApplicationState target, Operation operation, Map<String, Long> amounts,
-            Map<String, Long> expectedFencingEpochs) {
-        var scope = TenantContextHolder.requireCurrent();
-        scope.requirePermission("promotion:" + semantic.toLowerCase(java.util.Locale.ROOT));
+            Map<String, Long> expectedFencingEpochs, Attempt attempt, AuditTarget auditTarget) {
         String hash = Digests.sha256Hex(semantic + '|' + applicationId + '|' + amounts + '|'
                 + expectedFencingEpochs);
         return command(scope.tenantId().value(), commandId, hash, ApplicationView.class, () -> {
@@ -556,17 +630,19 @@ public class BenefitFundingService {
                 throw new ConflictException("OFFER_RESERVATION_EXPIRED", "expired reservation cannot be confirmed");
             }
             List<ReservationItem> items = lockItems(scope.tenantId().value(), applicationId);
-            apply(scope.tenantId().value(), application, items, operation, amounts, expectedFencingEpochs);
+            long budgetAmount = apply(scope.tenantId().value(), application, items, operation, amounts, expectedFencingEpochs);
             Instant now = clock.instant();
-            repository.updateApplicationState(
-                    scope.tenantId().value(), applicationId, target.name(), format(now));
+            if (repository.updateApplicationState(scope.tenantId().value(), applicationId, target.name(), format(now)) != 1) {
+                throw new IllegalStateException("资金终态未提交");
+            }
+            fundingAudit.committed(attempt, auditTarget, application.state().name(), target.name(), budgetAmount);
             outbox(scope.tenantId().value(), applicationId, "Promotion" + target.name(), now);
             return application(scope.tenantId().value(), applicationId);
         });
     }
 
     private ApplicationView refundNow(TenantScope scope, String applicationId, Map<String, Long> requested,
-            Map<String, Long> expectedFencingEpochs, boolean reverse) {
+            Map<String, Long> expectedFencingEpochs, boolean reverse, Attempt attempt, AuditTarget auditTarget) {
         String tenantId = scope.tenantId().value();
         StoredApplication application = lockApplication(tenantId, applicationId);
         requireApplicationScope(scope, application);
@@ -589,18 +665,21 @@ public class BenefitFundingService {
             if (amount > 0) amounts.put(item.resourceKey(), amount);
         }
         if (amounts.isEmpty()) throw new ConflictException("REFUND_EMPTY", "refund has no resource amount");
-        apply(tenantId, application, items, Operation.REFUND, amounts, expectedFencingEpochs);
+        long budgetAmount = apply(tenantId, application, items, Operation.REFUND, amounts, expectedFencingEpochs);
         boolean fullyRefunded = items.stream().allMatch(item ->
                 amounts.getOrDefault(item.resourceKey(), 0L) == item.consumedAmount());
         ApplicationState next = reverse ? ApplicationState.REVERSED
                 : fullyRefunded ? ApplicationState.REFUNDED : ApplicationState.PARTIALLY_REFUNDED;
         Instant now = clock.instant();
-        repository.updateApplicationState(tenantId, applicationId, next.name(), format(now));
+        if (repository.updateApplicationState(tenantId, applicationId, next.name(), format(now)) != 1) {
+            throw new IllegalStateException("资金冲回状态未提交");
+        }
+        fundingAudit.committed(attempt, auditTarget, application.state().name(), next.name(), budgetAmount);
         outbox(tenantId, applicationId, "Promotion" + next.name(), now);
         return application(tenantId, applicationId);
     }
 
-    private void apply(String tenantId, StoredApplication application, List<ReservationItem> items,
+    private long apply(String tenantId, StoredApplication application, List<ReservationItem> items,
             Operation operation, Map<String, Long> requested, Map<String, Long> expectedFencingEpochs) {
         List<String> keys = items.stream().map(ReservationItem::resourceKey).sorted().toList();
         if (expectedFencingEpochs != null && !expectedFencingEpochs.keySet().equals(Set.copyOf(keys))) {
@@ -610,6 +689,7 @@ public class BenefitFundingService {
         Map<String, ResourceAccount> accounts = new LinkedHashMap<>();
         loadAccountsForSettlement(tenantId, keys).forEach(account -> accounts.put(account.resourceKey(), account));
         Instant now = clock.instant();
+        long budgetAmount = 0;
         for (ReservationItem item : items.stream().sorted(Comparator.comparing(ReservationItem::resourceKey)).toList()) {
             long amount = requested.isEmpty()
                     ? (operation == Operation.CONFIRM || operation == Operation.RELEASE ? item.reservedAmount() : item.consumedAmount())
@@ -621,6 +701,7 @@ public class BenefitFundingService {
                     ? account.fencingEpoch() : expectedFencingEpochs.get(item.resourceKey());
             if (account.type() == ResourceAccount.Type.BUDGET) {
                 applyBudgetBuckets(tenantId, application, item, operation, amount, writerEpoch, now);
+                budgetAmount = Math.addExact(budgetAmount, amount);
             } else {
                 ResourceAccount next = switch (operation) {
                     case CONFIRM -> account.confirm(amount, writerEpoch);
@@ -638,6 +719,7 @@ public class BenefitFundingService {
             }
             updateReservationItem(tenantId, application.applicationId(), item.resourceKey(), operation, amount);
         }
+        return budgetAmount;
     }
 
     /** 预算结算只能回写预留时记录的原分桶，防止退款或释放误入其他 escrow。 */

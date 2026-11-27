@@ -89,6 +89,13 @@ public class BenefitController {
         return service.reserve(commandId, request);
     }
 
+    /** 查看授权申请的原交易、资金终态和重试引用。 */
+    @GetMapping("/promotion-applications/{applicationId}/operation-audits")
+    public com.acme.marketing.benefit.application.FundingOperationAudit.History operationAudits(
+            @PathVariable String applicationId, @RequestParam(required = false) String cursor) {
+        return service.operationAudits(applicationId, cursor);
+    }
+
     @PostMapping("/promotion-applications/{applicationId}:confirm")
     public BenefitFundingService.ApplicationView confirm(@PathVariable String applicationId,
             @RequestHeader("Idempotency-Key") String commandId,

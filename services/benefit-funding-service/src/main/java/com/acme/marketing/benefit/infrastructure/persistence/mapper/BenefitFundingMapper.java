@@ -121,4 +121,15 @@ public interface BenefitFundingMapper {
     int insertOutboxPosition(@Param("tenantId") String tenantId,
             @Param("aggregateId") String aggregateId, @Param("updatedAt") String updatedAt);
     Long selectOutboxPosition(@Param("tenantId") String tenantId, @Param("aggregateId") String aggregateId);
+
+    /** 审计写入仅使用可信租户和本地库提供的业务引用。 */
+    int beginAudit(BenefitFundingRepository.AuditAttempt attempt);
+    long auditAttemptId(@Param("tenantId") String tenantId, @Param("requestId") String requestId);
+    int appendAudit(BenefitFundingRepository.AuditResult result);
+    Long auditResultId(@Param("tenantId") String tenantId, @Param("attemptId") long attemptId);
+    Long originalAuditEffect(@Param("tenantId") String tenantId, @Param("applicationId") String applicationId,
+            @Param("actionCode") String actionCode, @Param("commandHash") String commandHash);
+    BenefitFundingRepository.AuditTarget auditTarget(@Param("tenantId") String tenantId, @Param("applicationId") String applicationId);
+    List<BenefitFundingRepository.AuditEntry> auditHistory(@Param("tenantId") String tenantId,
+            @Param("applicationId") String applicationId, @Param("beforeId") Long beforeId, @Param("limit") int limit);
 }

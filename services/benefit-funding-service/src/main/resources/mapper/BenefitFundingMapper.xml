@@ -610,4 +610,51 @@
         SELECT last_sequence FROM mk_benefit_outbox_position
         WHERE tenant_id = #{tenantId} AND aggregate_id = #{aggregateId}
     </select>
+
+    <insert id="beginAudit">
+        INSERT INTO mk_funding_audit_attempt(tenant_id,request_id,actor_id,action_code,trace_id,policy_version)
+        VALUES(#{tenantId},#{requestId},#{actorId},#{actionCode},#{traceId},1)
+    </insert>
+    <select id="auditAttemptId" resultType="long">
+        SELECT id FROM mk_funding_audit_attempt WHERE tenant_id=#{tenantId} AND request_id=#{requestId}
+    </select>
+    <insert id="appendAudit">
+        INSERT INTO mk_funding_audit_result(tenant_id,attempt_id,application_id,application_no,order_id,order_no,
+            campaign_id,command_hash,action_code,result_code,error_code,original_effect_id,before_state,after_state,
+            amount_minor,currency)
+        VALUES(#{tenantId},#{attemptId},
+            <choose>
+                <when test="target != null">
+                    #{target.applicationId},#{target.applicationNo},#{target.orderId},#{target.orderNo},#{target.campaignId},
+                </when>
+                <otherwise>NULL,NULL,NULL,NULL,NULL,</otherwise>
+            </choose>
+            #{commandHash},#{actionCode},#{resultCode},#{errorCode},#{originalEffectId},#{beforeState},#{afterState},#{amountMinor},
+            <choose><when test="target != null">#{target.currency}</when><otherwise>NULL</otherwise></choose>)
+    </insert>
+    <select id="auditResultId" resultType="java.lang.Long">
+        SELECT id FROM mk_funding_audit_result WHERE tenant_id=#{tenantId} AND attempt_id=#{attemptId}
+    </select>
+    <select id="originalAuditEffect" resultType="java.lang.Long">
+        SELECT id FROM mk_funding_audit_result
+        WHERE tenant_id=#{tenantId} AND application_id=#{applicationId} AND action_code=#{actionCode}
+          AND command_hash=#{commandHash} AND result_code='SUCCEEDED' ORDER BY id DESC LIMIT 1 FOR SHARE
+    </select>
+    <select id="auditTarget" resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$AuditTarget">
+        SELECT application_id,business_no AS application_no,order_id,checkout_order_no AS order_no,
+               organization_id,shop_ids_json,campaign_id,currency_code AS currency
+        FROM mk_promotion_application WHERE tenant_id=#{tenantId} AND (application_id=#{applicationId} OR business_no=#{applicationId})
+    </select>
+    <select id="auditHistory" resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$AuditEntry">
+        SELECT CAST(r.id AS CHAR) AS id,'MARKETING_FUNDING' AS source_system,a.request_id,a.trace_id,
+               r.action_code AS action,a.actor_id,r.application_id AS resource_id,a.occurred_at,
+               r.result_code AS result,r.error_code,CAST(CASE WHEN r.result_code='SUCCEEDED' THEN r.id ELSE NULL END AS CHAR) AS effect_id,
+               CAST(r.original_effect_id AS CHAR) AS original_effect_id,r.order_id,r.order_no,r.application_no AS business_no,
+               r.campaign_id,r.before_state,r.after_state,CAST(r.amount_minor AS CHAR) AS amount_minor,r.currency
+        FROM mk_funding_audit_result r
+        JOIN mk_funding_audit_attempt a ON a.tenant_id=r.tenant_id AND a.id=r.attempt_id
+        WHERE r.tenant_id=#{tenantId} AND r.application_id=#{applicationId} AND r.action_code &lt;&gt; 'funding.audit.list'
+        <if test="beforeId != null">AND r.id &lt; #{beforeId}</if>
+        ORDER BY r.id DESC LIMIT #{limit}
+    </select>
 </mapper>

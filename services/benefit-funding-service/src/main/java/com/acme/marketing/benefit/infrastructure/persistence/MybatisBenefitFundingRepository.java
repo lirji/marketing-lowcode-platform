@@ -197,4 +197,18 @@ public class MybatisBenefitFundingRepository implements BenefitFundingRepository
         if (affected != 1) throw new IllegalStateException(operation + "的受影响行数不是 1");
     }
     @FunctionalInterface private interface InsertAction { int execute(); }
+
+    @Override public int beginAudit(AuditAttempt attempt) { return mapper.beginAudit(attempt); }
+    @Override public long auditAttemptId(String tenantId, String requestId) { return mapper.auditAttemptId(tenantId, requestId); }
+    @Override public int appendAudit(AuditResult result) { return mapper.appendAudit(result); }
+    @Override public Long auditResultId(String tenantId, long attemptId) { return mapper.auditResultId(tenantId, attemptId); }
+    @Override public Long originalAuditEffect(String tenantId, String applicationId, String actionCode, String commandHash) {
+        return mapper.originalAuditEffect(tenantId, applicationId, actionCode, commandHash);
+    }
+    @Override public Optional<AuditTarget> auditTarget(String tenantId, String applicationId) {
+        return Optional.ofNullable(mapper.auditTarget(tenantId, applicationId));
+    }
+    @Override public List<AuditEntry> auditHistory(String tenantId, String applicationId, Long beforeId, int limit) {
+        return mapper.auditHistory(tenantId, applicationId, beforeId, limit);
+    }
 }
