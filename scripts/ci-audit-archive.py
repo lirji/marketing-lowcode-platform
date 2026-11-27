@@ -9,7 +9,8 @@ import time
 from urllib.request import urlopen
 
 PROJECT = "marketing"
-IMAGE = "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
+# 使用本地归档演练同一多架构镜像清单的公开镜像，校验固定摘要。
+IMAGE = "docker.io/jcometki/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
 
 if os.getenv("GITHUB_ACTIONS") != "true":
     raise SystemExit("该脚本仅用于隔离的 GitHub CI 运行器。")
