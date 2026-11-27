@@ -1,6 +1,7 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
+import { ArrowDown, ArrowLeft } from 'lucide-react'
 import { DateTimePicker } from '../../components/DateTimePicker'
 import { displayTimestamp } from '../../components/dateTime'
 import { FieldHint } from '../../components/FieldHint'
@@ -16,26 +17,35 @@ import {
   CNY, OFFER_DIALECT, OFFER_VERSION_STATUS, THRESHOLD_TEMPLATE,
   activeCampaignBudget, minorFromYuan, offerOutcomeLabel, offerStatusLabel, thresholdGraph, yuan,
 } from './thresholdOffer'
+import { campaignStatusMeta } from './campaignDisplay'
 import { OfferVersionComparison } from './OfferVersionComparison'
 import { NODE_FIELD_KIND, NODE_LABELS, nodeFields } from '../designers/nodeConfig'
+import './campaign-workbench.css'
 
 const ACTIVE_BENEFIT_STATUS = 'ACTIVE'
 const dateNow = () => new Date().toISOString()
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1_000
-const previewFields = new Set([
+const configurationSections = [
+  { id: 'activity-scope', label: '活动范围' },
+  { id: 'activity-rule', label: '优惠规则' },
+  { id: 'activity-validation', label: '试跑与版本对比' },
+  { id: 'activity-release', label: '审核与发布' },
+  { id: 'activity-operations', label: '履约与对账' },
+] as const
+const offerSummaryFields = new Set([
   'amountMinor', 'discountBasisPoints', 'thresholdMinor', 'capMinor', 'benefitDefinitionVersion',
   'validFrom', 'validTo', 'skuIds', 'shopIds', 'channels',
 ])
 
-function PreviewOfferTerms({ graph }: { graph: GraphDefinition }) {
+function OfferTermsSummary({ graph }: { graph: GraphDefinition }) {
   const terms = graph.nodes.flatMap((node) => {
-    const values = nodeFields(node.stableTypeId).filter((field) => previewFields.has(field.key) && node.config[field.key] !== undefined)
+    const values = nodeFields(node.stableTypeId).filter((field) => offerSummaryFields.has(field.key) && node.config[field.key] !== undefined)
     return values.length ? [{ node, values }] : []
   })
   if (!terms.length) return <p className="field-hint">当前版本未保存可在此查看的优惠条件。可在 Offer 设计器核对完整规则。</p>
-  return <div className="cdp-terms">{terms.map(({ node, values }) => <section key={node.id}>
+  return <div className="campaign-offer-terms">{terms.map(({ node, values }) => <section key={node.id}>
     <h3>{NODE_LABELS[node.stableTypeId]}</h3>
-    <dl className="workbench-facts">{values.map((field) => <div key={field.key}><dt>{field.label}</dt>
+    <dl className="workbench-facts">{values.map((field) => <div key={field.key}><dt>{field.label}{field.kind === NODE_FIELD_KIND.TIME ? '（北京时间）' : ''}</dt>
       <dd>{field.kind === NODE_FIELD_KIND.TIME ? displayTimestamp(node.config[field.key]) : node.config[field.key] || '—'}</dd></div>)}</dl>
   </section>)}</div>
 }
@@ -51,25 +61,27 @@ async function latestOffer(campaignId: string) {
   }
 }
 
-export function CampaignWorkbench({ designPreview = false }: { designPreview?: boolean } = {}) {
+export function CampaignWorkbench() {
   const { campaignId = '' } = useParams()
+  const location = useLocation()
+  const listSearch = typeof location.state?.listSearch === 'string' ? location.state.listSearch : ''
   const auth = useAuth()
   const scope = releaseScopeKey(auth)
   const campaigns = useQuery({ queryKey: ['campaigns', scope], queryFn: api.campaigns, enabled: !api.demoMode })
   const campaign = campaigns.data?.find(item => item.id === campaignId)
-  return <div className={designPreview ? 'workspace campaign-workbench campaign-design-preview' : 'workspace campaign-workbench'}>
-    <PageHeader eyebrow={designPreview ? '营销活动配置' : undefined} title={campaign?.name ?? '活动工作台'}
+  return <div className="workspace campaign-workbench">
+    <PageHeader title={campaign?.name ?? '活动工作台'}
       description={campaign?.objective ?? '配置满减，试跑订单并跟踪当前版本。'}
-      actions={<Link className="button secondary" to={designPreview ? '/design-preview/campaigns' : '/campaigns'}>返回计划与活动</Link>} />
+      actions={<Link className="button secondary" to={{ pathname: '/campaigns', search: listSearch }}><ArrowLeft size={16} aria-hidden="true" />返回计划与活动</Link>} />
     {api.demoMode ? <StateBanner tone="info" title="活动工作台需要连接服务" detail="连接营销服务后读取已保存的活动和规则。" />
       : campaigns.isPending ? <StateBanner tone="loading" title="正在读取活动" detail="正在核对当前身份可见的活动范围。" />
       : campaigns.isError ? <StateBanner tone="error" title="活动加载失败" detail={problemDetail(campaigns.error)} action={<Button onClick={() => void campaigns.refetch()}>重试</Button>} />
       : !campaign || campaign.campaignType !== CAMPAIGN_TYPE.STANDARD ? <EmptyState title="当前活动不可用" detail="此入口用于当前身份可见的标准营销活动。" />
-      : <Workbench key={`${scope}:${campaign.id}`} campaign={campaign} scope={scope} designPreview={designPreview} />}
+      : <Workbench key={`${scope}:${campaign.id}`} campaign={campaign} scope={scope} />}
   </div>
 }
 
-function Workbench({ campaign, scope, designPreview }: { campaign: Campaign; scope: string; designPreview: boolean }) {
+function Workbench({ campaign, scope }: { campaign: Campaign; scope: string }) {
   const auth = useAuth()
   const canRead = auth.hasPermission('definition:read')
   const canWrite = canRead && auth.hasPermission('definition:write')
@@ -91,63 +103,92 @@ function Workbench({ campaign, scope, designPreview }: { campaign: Campaign; sco
   const templateNodes = definition?.graph?.annotations.template === THRESHOLD_TEMPLATE
     ? definition.graph.nodes.filter(node => node.stableTypeId === 'offer.fixed' || node.stableTypeId === 'offer.percentage') : []
   const config = templateNodes.length === 1 && templateNodes[0].stableTypeId === 'offer.fixed' ? templateNodes[0].config : undefined
+  const canSimulate = Boolean(definition && config && auth.hasPermission('definition:simulate'))
+  const canViewOperations = canTrace || canReconcile
+  const status = campaignStatusMeta[campaign.status]
+
+  useEffect(() => {
+    const section = configurationSections.find(({ id }) => window.location.hash === `#${id}`)
+    if (!section) return
+    const target = document.getElementById(section.id)
+    target?.focus({ preventScroll: true })
+    target?.scrollIntoView({ block: 'start' })
+  }, [canSimulate])
+
   return <>
-    {designPreview && <nav className="cdp-sections" aria-label="活动配置分区">
-      <a href="#activity-scope">活动范围</a><a href="#activity-rule">优惠规则与验证</a><a href="#activity-release">审核与发布</a>
-    </nav>}
-    {designPreview && <div className="cdp-anchor" id="activity-scope" />}
-    <Panel className={designPreview ? 'cdp-scope' : ''}>
-      <PanelHeader title="活动范围" aside={<Badge tone={definition?.status === OFFER_VERSION_STATUS.RELEASED ? 'good' : 'neutral'}>{definition ? offerStatusLabel[definition.status] ?? definition.status : '规则待确认'}</Badge>} />
-      <dl className="workbench-facts"><div><dt>活动编号</dt><dd>{campaign.businessNo ?? campaign.id}</dd></div><div><dt>组织</dt><dd>{campaign.organizationId || '未声明'}</dd></div><div><dt>门店</dt><dd>{campaign.shopId || '全部门店'}</dd></div></dl>
-    </Panel>
-    {designPreview && <div className="cdp-anchor" id="activity-rule" />}
-    {!canRead ? <StateBanner tone="warn" title="无规则读取权限" detail="查看 Offer 规则及其版本需要 definition:read 权限。" />
-      : offer.isError ? <StateBanner tone="error" title="Offer 读取失败" detail={problemDetail(offer.error)} action={<Button onClick={() => void offer.refetch()}>重试</Button>} />
-      : offer.isPending ? <StateBanner tone="loading" title="正在读取规则" detail="获得服务端版本后可以继续操作。" />
-      : definition ? <Panel className={designPreview ? 'cdp-rule' : ''}>
-        <PanelHeader title={`Offer 规则 v${definition.version}`} aside={<Link className="button secondary" to={`/designers/offer?${campaignQuery}`}>打开 Offer 设计器</Link>} />
-        {definition.businessNo && <p className="field-hint">规则编号 {definition.businessNo}</p>}
-        {config && <dl className="workbench-facts">
-          <div><dt>商品 SKU ID</dt><dd>{config.skuIds}</dd></div>
-          <div><dt>参与商品金额门槛</dt><dd>{yuan.format(Number(config.thresholdMinor) / 100)}</dd></div>
-          <div><dt>单次减免</dt><dd>{yuan.format(Number(config.amountMinor) / 100)}</dd></div>
-          <div><dt>权益版本</dt><dd>{config.benefitDefinitionVersion}</dd></div>
-          <div><dt>生效时间</dt><dd>{displayTimestamp(config.validFrom)}</dd></div>
-          <div><dt>失效时间</dt><dd>{displayTimestamp(config.validTo)}</dd></div>
-        </dl>}
-        {designPreview && !config && definition.graph && <PreviewOfferTerms graph={definition.graph} />}
-        {currentValidation && <StateBanner tone={currentValidation.valid ? 'success' : 'warn'} title={currentValidation.valid ? '当前版本校验通过' : '当前版本校验未通过'} detail={currentValidation.issues.map(issue => issue.message).join('。') || `v${definition.version}`} />}
-        {currentApproval && <StateBanner tone="success" title="已提交规则审核" detail={`审核单 ${currentApproval.caseId}`} />}
-        {(validate.isError || submit.isError) && <StateBanner tone="error" title="操作失败" detail={problemDetail(validate.error ?? submit.error)} />}
-        {(canWrite || canSubmit) && <div className="action-bar workbench-actions">
-          {canWrite && <Button disabled={busy || definition.status !== OFFER_VERSION_STATUS.DRAFT} onClick={() => { submit.reset(); validate.mutate(definition) }}>校验当前版本</Button>}
-          {canSubmit && <Button tone="primary" disabled={busy || definition.status !== OFFER_VERSION_STATUS.VALIDATED} onClick={() => { validate.reset(); submit.mutate(definition) }}>提交审核</Button>}
-        </div>}
-      </Panel> : definition === null && campaign.shopId && canWrite
-        ? <ThresholdTemplate campaign={campaign} scope={scope} onSaved={afterChange} />
-        : <Panel><EmptyState title="此活动尚无 Offer 规则" detail={findNext} action={canWrite && <Link className="button secondary" to={`/designers/offer?${campaignQuery}`}>打开 Offer 设计器</Link>} /></Panel>}
-    {definition && config && auth.hasPermission('definition:simulate') && <OfferVersionComparison
-      key={`compare:${definition.definitionId}:${definition.version}`} definition={definition} config={config} scope={scope} />}
-    {definition && config && auth.hasPermission('definition:simulate') && <OfferTrial key={`${definition.definitionId}:${definition.version}`} definition={definition} config={config} />}
-    {designPreview && <div className="cdp-anchor" id="activity-release" />}
-    <Panel className={designPreview ? 'cdp-release' : ''}>
-      <PanelHeader title="审核与发布" />
-      <p className="field-hint">规则批准后，在发布中心编译和暂存指定版本。活动工作台保存规则后可在这里继续跟踪。</p>
-      <div className="action-bar workbench-actions">
-        {canRead && <Link className="button secondary" to="/governance">查看审核</Link>}
-        {auth.hasPermission('release:read') && <><Link className="button secondary" to="/releases">打开发布中心</Link><Link className="button secondary" to={`/releases/bundles?${campaignQuery}`}>查看活动组合发布</Link></>}
-        {auth.hasPermission('measurement:read') && <Link className="button secondary" to={`/analytics?${campaignQuery}`}>查看活动报表</Link>}
-      </div>
-    </Panel>
-    {(canTrace || canReconcile) && <Panel>
-      <PanelHeader title="履约与对账" />
-      <p className="field-hint">按交易订单号核对营销决策。补贴流水按确认和退款的实际入账时间查询。</p>
-      <div className="action-bar workbench-actions">
-        {canTrace && <Link className="button secondary" to="/operations?traceKind=order">按订单查营销轨迹</Link>}
-        {canReconcile && <Link className="button secondary"
-          to={`/operations?tab=funding&postingCampaignId=${encodeURIComponent(campaign.id)}`}>查看本活动补贴流水</Link>}
-      </div>
-    </Panel>}
+    <nav className="campaign-section-nav" aria-label="活动配置分区">
+      {configurationSections.filter(({ id }) => (id !== 'activity-validation' || canSimulate)
+        && (id !== 'activity-operations' || canViewOperations)).map(({ id, label }) => (
+        <a key={id} href={`#${id}`}>{label}<ArrowDown size={14} aria-hidden="true" /></a>
+      ))}
+    </nav>
+    <section className="campaign-workbench-section" id="activity-scope" tabIndex={-1} aria-label="活动范围">
+      <Panel className="campaign-scope">
+        <PanelHeader title="活动范围" aside={<Badge tone={status.tone}>{status.label}</Badge>} />
+        <dl className="workbench-facts">
+          <div><dt>活动编号</dt><dd>{campaign.businessNo ?? '未提供'}</dd></div>
+          <div><dt>活动 ID</dt><dd>{campaign.id}</dd></div>
+          <div><dt>组织 ID</dt><dd>{campaign.organizationId || '未提供'}</dd></div>
+          <div><dt>店铺 ID</dt><dd>{campaign.shopId === undefined ? '未提供' : campaign.shopId || '全部店铺'}</dd></div>
+        </dl>
+      </Panel>
+    </section>
+    <section className="campaign-workbench-section" id="activity-rule" tabIndex={-1} aria-label="优惠规则">
+      {!canRead ? <StateBanner tone="warn" title="无规则读取权限" detail="查看 Offer 规则及其版本需要 definition:read 权限。" />
+        : offer.isError ? <StateBanner tone="error" title="Offer 读取失败" detail={problemDetail(offer.error)} action={<Button onClick={() => void offer.refetch()}>重试</Button>} />
+        : offer.isPending ? <StateBanner tone="loading" title="正在读取规则" detail="获得服务端版本后可以继续操作。" />
+        : definition ? <Panel className="campaign-offer">
+          <PanelHeader title={`Offer 规则 v${definition.version}`} aside={<>
+            <Badge tone={definition.status === OFFER_VERSION_STATUS.RELEASED ? 'good' : 'neutral'}>{offerStatusLabel[definition.status] ?? definition.status}</Badge>
+            <Link className="button secondary" to={`/designers/offer?${campaignQuery}`}>打开 Offer 设计器</Link>
+          </>} />
+          {definition.businessNo && <p className="field-hint">规则编号 {definition.businessNo}</p>}
+          {config && <dl className="workbench-facts">
+            <div><dt>商品 SKU ID</dt><dd>{config.skuIds}</dd></div>
+            <div><dt>参与商品金额门槛</dt><dd>{yuan.format(Number(config.thresholdMinor) / 100)}</dd></div>
+            <div><dt>单次减免</dt><dd>{yuan.format(Number(config.amountMinor) / 100)}</dd></div>
+            <div><dt>权益版本</dt><dd>{config.benefitDefinitionVersion}</dd></div>
+            <div><dt>生效时间（北京时间）</dt><dd>{displayTimestamp(config.validFrom)}</dd></div>
+            <div><dt>失效时间（北京时间）</dt><dd>{displayTimestamp(config.validTo)}</dd></div>
+          </dl>}
+          {!config && definition.graph && <OfferTermsSummary graph={definition.graph} />}
+          {currentValidation && <StateBanner tone={currentValidation.valid ? 'success' : 'warn'} title={currentValidation.valid ? '当前版本校验通过' : '当前版本校验未通过'} detail={currentValidation.issues.map(issue => issue.message).join('。') || `v${definition.version}`} />}
+          {currentApproval && <StateBanner tone="success" title="已提交规则审核" detail={`审核单 ${currentApproval.caseId}`} />}
+          {(validate.isError || submit.isError) && <StateBanner tone="error" title="操作失败" detail={problemDetail(validate.error ?? submit.error)} />}
+          {(canWrite || canSubmit) && <div className="action-bar workbench-actions">
+            {canWrite && <Button disabled={busy || definition.status !== OFFER_VERSION_STATUS.DRAFT} onClick={() => { submit.reset(); validate.mutate(definition) }}>校验当前版本</Button>}
+            {canSubmit && <Button tone="primary" disabled={busy || definition.status !== OFFER_VERSION_STATUS.VALIDATED} onClick={() => { validate.reset(); submit.mutate(definition) }}>提交审核</Button>}
+          </div>}
+        </Panel> : definition === null && campaign.shopId && canWrite
+          ? <ThresholdTemplate campaign={campaign} scope={scope} onSaved={afterChange} />
+          : <Panel><EmptyState title="此活动尚无 Offer 规则" detail={findNext} action={canWrite && <Link className="button secondary" to={`/designers/offer?${campaignQuery}`}>打开 Offer 设计器</Link>} /></Panel>}
+    </section>
+    {definition && config && canSimulate && <section className="campaign-workbench-section" id="activity-validation" tabIndex={-1} aria-label="试跑与版本对比">
+      <OfferTrial key={`${definition.definitionId}:${definition.version}`} definition={definition} config={config} />
+      <OfferVersionComparison key={`compare:${definition.definitionId}:${definition.version}`} definition={definition} config={config} scope={scope} />
+    </section>}
+    <section className="campaign-workbench-section" id="activity-release" tabIndex={-1} aria-label="审核与发布">
+      <Panel className="campaign-release">
+        <PanelHeader title="审核与发布" />
+        <p className="field-hint">规则批准后，在发布中心编译和暂存指定版本。</p>
+        <div className="action-bar workbench-actions">
+          {canRead && <Link className="button secondary" to="/governance">查看审核</Link>}
+          {auth.hasPermission('release:read') && <><Link className="button secondary" to="/releases">打开发布中心</Link><Link className="button secondary" to={`/releases/bundles?${campaignQuery}`}>查看活动组合发布</Link></>}
+          {auth.hasPermission('measurement:read') && <Link className="button secondary" to={`/analytics?${campaignQuery}`}>查看活动报表</Link>}
+        </div>
+      </Panel>
+    </section>
+    {canViewOperations && <section className="campaign-workbench-section" id="activity-operations" tabIndex={-1} aria-label="履约与对账">
+      <Panel>
+        <PanelHeader title="履约与对账" />
+        <p className="field-hint">按交易订单号核对营销决策。补贴流水按确认和退款的实际入账时间查询。</p>
+        <div className="action-bar workbench-actions">
+          {canTrace && <Link className="button secondary" to="/operations?traceKind=order">按订单查营销轨迹</Link>}
+          {canReconcile && <Link className="button secondary"
+            to={`/operations?tab=funding&postingCampaignId=${encodeURIComponent(campaign.id)}`}>查看本活动补贴流水</Link>}
+        </div>
+      </Panel>
+    </section>}
   </>
 }
 

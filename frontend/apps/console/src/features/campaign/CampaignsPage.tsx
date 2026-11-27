@@ -4,7 +4,7 @@ import { FieldHint } from '../../components/FieldHint'
 import { Select } from '../../components/Select'
 import { Fragment, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Filter, Plus } from 'lucide-react'
+import { ArrowUpRight, Filter, Plus } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { z } from 'zod'
 import { api } from '../../shared/api/client'
@@ -12,6 +12,7 @@ import type { Campaign } from '../../shared/model/types'
 import { Badge, Button, EmptyState, Modal, PageHeader, Panel, StateBanner } from '../../components/ui'
 import { ActionMenu } from '../../components/ActionMenu'
 import { ListToolbar } from '../../components/ListToolbar'
+import { campaignStatusMeta } from './campaignDisplay'
 import { campaignWorkbenchPath } from './thresholdOffer'
 import { CampaignCreateReadiness, CampaignReadiness } from './CampaignReadiness'
 import { problemDetail } from '../../shared/api/problem'
@@ -28,15 +29,9 @@ type CampaignInput = z.infer<typeof campaignSchema>
 type DesignIntent = CampaignType
 const CAMPAIGN_WRITE_UNAVAILABLE = '当前模式或权限不支持创建活动，请连接营销服务并确认创建权限。'
 
-const statusMeta: Record<Campaign['status'], { label: string; tone: 'good'|'warn'|'danger'|'neutral'|'info' }> = {
-  DRAFT: { label: '草稿', tone: 'neutral' }, IN_REVIEW: { label: '审核中', tone: 'warn' },
-  APPROVED: { label: '已批准', tone: 'info' }, ACTIVE: { label: '运行中', tone: 'good' },
-  PAUSED: { label: '已暂停', tone: 'danger' }, ENDED: { label: '已结束', tone: 'neutral' },
-}
-
 const campaignColumns = [
   { label: '活动名称', width: 154 }, { label: '状态', width: 76 }, { label: '活动类型', width: 94 },
-  { label: '目标', width: 190 }, { label: '活动 ID', width: 150 }, { label: '创建人', width: 96 },
+  { label: '目标', width: 190 }, { label: '活动编号', width: 150 }, { label: '活动 ID', width: 150 }, { label: '创建人', width: 96 },
   { label: '组织 ID', width: 110 }, { label: '店铺 ID', width: 105 },
   { label: '创建时间（北京时间）', width: 146 }, { label: '更新时间（北京时间）', width: 146 },
   { label: '操作', width: 168 },
@@ -46,7 +41,7 @@ export function CampaignsPage() {
   const [params, setParams] = useSearchParams()
   const query = params.get('q') ?? ''
   const requestedStatus = params.get('status') ?? 'ALL'
-  const status = Object.hasOwn(statusMeta, requestedStatus) ? requestedStatus : 'ALL'
+  const status = Object.hasOwn(campaignStatusMeta, requestedStatus) ? requestedStatus : 'ALL'
   // 查询保存在URL中，从设计器返回或关闭创建弹窗时保留当前列表上下文。
   const updateParams = (values: Record<string, string | null>) => setParams((current) => {
     const next = new URLSearchParams(current)
@@ -56,6 +51,9 @@ export function CampaignsPage() {
     }
     return next
   }, { replace: true })
+  const listParams = new URLSearchParams(params)
+  listParams.delete('create')
+  const listState = { listSearch: listParams.toString() }
   const [readyId, setReadyId] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -83,12 +81,16 @@ export function CampaignsPage() {
       })
       void queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       setParams({})
-      if (fromTemplate) { navigate(campaignWorkbenchPath(value.id)); return }
+      if (fromTemplate) { navigate(campaignWorkbenchPath(value.id), { state: listState }); return }
       const path = value.campaignType === CAMPAIGN_TYPE.REFERRAL ? '/designers/referral' : '/designers/offer'
       navigate(`${path}?campaignId=${encodeURIComponent(value.id)}`, { state: { campaignName: value.name } })
     },
   })
-  const filtered = useMemo(() => (campaigns.data ?? []).filter((item) => (status === 'ALL' || item.status === status) && `${item.name}${item.objective}${item.id}`.toLowerCase().includes(query.trim().toLowerCase())), [campaigns.data, query, status])
+  const filtered = useMemo(() => {
+    const keyword = query.trim().toLowerCase()
+    return (campaigns.data ?? []).filter((item) => (status === 'ALL' || item.status === status)
+      && [item.name, item.objective, item.businessNo, item.id].some(value => value?.toLowerCase().includes(keyword)))
+  }, [campaigns.data, query, status])
   const orgOptions = orgChoicesFromIdentity(auth.organizations)
   const shopOptions = shopChoicesFromIdentity(auth.shops)
 
@@ -98,21 +100,22 @@ export function CampaignsPage() {
       <Button tone="primary" disabled={!canWrite} title={canWrite ? undefined : CAMPAIGN_WRITE_UNAVAILABLE} onClick={() => updateParams({ create: 'true' })}><Plus size={16} />创建活动</Button></>} />
     <Panel className="table-panel">
       {api.demoMode ? <EmptyState title="活动列表需要连接后端" detail="当前为静态预览。连接营销服务后，可查看已保存的活动并创建新活动。" /> : !canRead ? <StateBanner tone="warn" title="没有查看活动的权限" detail="需要有效身份与 campaign:read 权限。" /> : <>
-      <ListToolbar query={query} onQueryChange={(q) => updateParams({ q })} searchLabel="搜索活动" describedBy="campaign-search-hint" placeholder="搜索名称、目标或活动 ID" count={campaigns.data ? filtered.length : undefined} unit="个活动" busy={campaigns.isFetching} onRefresh={() => void campaigns.refetch()} onReset={query || status !== 'ALL' ? () => updateParams({ q: null, status: null }) : undefined}>
-        <label className="compact-select"><Filter size={15} aria-hidden="true" /><span className="sr-only">状态筛选</span><Select value={status} onChange={(event) => updateParams({ status: event.target.value === 'ALL' ? null : event.target.value })}><option value="ALL">全部状态</option>{Object.entries(statusMeta).map(([value, meta]) => <option value={value} key={value}>{meta.label}</option>)}</Select></label>
+      <ListToolbar query={query} onQueryChange={(q) => updateParams({ q })} searchLabel="搜索活动" describedBy="campaign-search-hint" placeholder="搜索活动名称、编号、ID 或目标" count={campaigns.data ? filtered.length : undefined} unit="个活动" busy={campaigns.isFetching} onRefresh={() => void campaigns.refetch()} onReset={query || status !== 'ALL' ? () => updateParams({ q: null, status: null }) : undefined}>
+        <label className="compact-select"><Filter size={15} aria-hidden="true" /><span className="sr-only">状态筛选</span><Select value={status} onChange={(event) => updateParams({ status: event.target.value === 'ALL' ? null : event.target.value })}><option value="ALL">全部状态</option>{Object.entries(campaignStatusMeta).map(([value, meta]) => <option value={value} key={value}>{meta.label}</option>)}</Select></label>
       </ListToolbar>
       <div className="collection-search-help campaign-list-help">
-        <FieldHint id="campaign-search-hint">支持按活动名称、活动 ID 或目标搜索。</FieldHint>
+        <FieldHint id="campaign-search-hint">可搜索活动名称、活动编号、活动 ID 或目标。</FieldHint>
         {filtered.length > 0 && <span className="field-hint campaign-scroll-hint">横向滚动可查看完整字段</span>}
       </div>
       {campaigns.isError && <div className="collection-message"><StateBanner tone="error" title="活动列表加载失败" detail={problemDetail(campaigns.error)} /></div>}
       {campaigns.isLoading ? <div className="skeleton-list" aria-label="正在加载活动"><i /><i /><i /></div> : !campaigns.data && campaigns.isError ? null : filtered.length === 0 ? <EmptyState title={query || status !== 'ALL' ? '没有匹配的活动' : '还没有营销活动'} detail={query || status !== 'ALL' ? '试试其他关键词，或清除筛选查看全部活动。' : '创建一个活动，开始配置营销规则与旅程。'} action={query || status !== 'ALL' ? <Button onClick={() => updateParams({ q: null, status: null })}>清除筛选</Button> : undefined} /> : <RecordTable label="营销活动" columns={campaignColumns} actions>
           {filtered.map((item) => <Fragment key={item.id}>
             <tr className={readyId === item.id ? 'is-expanded' : ''}>
-              <td>{item.campaignType === CAMPAIGN_TYPE.STANDARD ? <Link className="record-name campaign-workbench-link" to={campaignWorkbenchPath(item.id)}>{item.name}</Link> : <strong className="record-name">{item.name}</strong>}</td>
-              <td><Badge tone={statusMeta[item.status].tone}>{statusMeta[item.status].label}</Badge></td>
+              <td>{item.campaignType === CAMPAIGN_TYPE.STANDARD ? <Link className="record-name campaign-workbench-link" to={campaignWorkbenchPath(item.id)} state={listState}>{item.name}<ArrowUpRight size={14} aria-hidden="true" /></Link> : <strong className="record-name">{item.name}</strong>}</td>
+              <td><Badge tone={campaignStatusMeta[item.status].tone}>{campaignStatusMeta[item.status].label}</Badge></td>
               <td>{item.campaignType ? campaignTypeLabel(item.campaignType) : '类型未设置'}</td>
               <td className="campaign-objective-cell">{item.objective || '未填写目标'}</td>
+              <td className="campaign-id-cell">{item.businessNo ?? '未提供'}</td>
               <td className="campaign-id-cell">{item.id}</td>
               <td>{item.createdBy ?? '未提供'}</td>
               <td>{item.organizationId ?? '未提供'}</td>
@@ -131,7 +134,7 @@ export function CampaignsPage() {
                 {auth.hasPermission('release:read') && item.campaignType === CAMPAIGN_TYPE.STANDARD && <button type="button" className="row-action" onClick={() => navigate(`/releases/bundles?campaignId=${encodeURIComponent(item.id)}`)}>组合发布</button>}
               </div></td>
             </tr>
-            {readyId === item.id && <tr className="readiness-row"><td colSpan={11}><div id={`readiness-${item.id}`}><CampaignReadiness campaignId={item.id} campaignType={item.campaignType} /></div></td></tr>}
+            {readyId === item.id && <tr className="readiness-row"><td colSpan={campaignColumns.length}><div id={`readiness-${item.id}`}><CampaignReadiness campaignId={item.id} campaignType={item.campaignType} /></div></td></tr>}
           </Fragment>)}
       </RecordTable>}
     </>}

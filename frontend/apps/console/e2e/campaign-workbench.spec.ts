@@ -10,7 +10,7 @@ test('operator creates a scoped threshold offer, tests it and submits its saved 
     const body = request.method() === 'POST' && request.postData() ? request.postDataJSON() : undefined
     if (path === '/api/v1/campaigns') {
       if (request.method() === 'POST') {
-        campaign = { ...body, id: 'threshold-test', status: 'DRAFT', createdAt: '2026-11-24T00:00:00Z' }
+        campaign = { ...body, id: 'threshold-test', businessNo: 'CMP-THRESHOLD-01', status: 'DRAFT', createdAt: '2026-11-24T00:00:00Z' }
         return route.fulfill({ status: 201, json: campaign })
       }
       return route.fulfill({ json: campaign ? [campaign] : [] })
@@ -54,6 +54,10 @@ test('operator creates a scoped threshold offer, tests it and submits its saved 
   await page.getByRole('button', { name: '创建并进入工作台' }).click()
   await expect(page).toHaveURL(/campaigns\/threshold-test\/workbench$/)
   await expect(page.getByRole('heading', { name: '指定门店 SKU 满减' })).toBeVisible()
+  const sections = page.getByRole('navigation', { name: '活动配置分区' })
+  await expect(sections.getByRole('link', { name: '试跑与版本对比' })).toHaveCount(0)
+  await sections.getByRole('link', { name: '优惠规则' }).click()
+  await expect(page.locator('#activity-rule')).toBeFocused()
   await page.getByLabel('商品 SKU ID', { exact: true }).fill('sku-tv')
   await page.getByRole('combobox', { name: '权益定义版本' }).click()
   await page.getByRole('option', { name: '满减权益 · v1' }).click()
@@ -61,6 +65,8 @@ test('operator creates a scoped threshold offer, tests it and submits its saved 
   await page.getByRole('option', { name: 'BUDGET:PLATFORM:retail:CNY' }).click()
   await page.getByRole('button', { name: '保存满减规则' }).click()
   await expect(page.getByRole('heading', { name: 'Offer 规则 v1' })).toBeVisible()
+  await sections.getByRole('link', { name: '试跑与版本对比' }).click()
+  await expect(page.locator('#activity-validation')).toBeFocused()
   await page.getByRole('button', { name: '运行商品试跑' }).click()
   await expect(page.getByText('命中满减')).toBeVisible()
   await page.getByLabel('单商品订单金额（元）').fill('499.99')
@@ -76,5 +82,12 @@ test('operator creates a scoped threshold offer, tests it and submits its saved 
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Offer 规则 v1' })).toBeVisible()
   await expect(page.getByText('审核中', { exact: true })).toBeVisible()
+  await page.goto('/campaigns?q=CMP-THRESHOLD-01&status=DRAFT')
+  await expect(page.getByRole('columnheader', { name: '活动编号', exact: true })).toBeVisible()
+  await page.getByRole('link', { name: '门店电视满减', exact: true }).click()
+  await expect(page.getByRole('region', { name: '活动范围' }).getByText('草稿', { exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: '优惠规则' }).getByText('审核中', { exact: true })).toBeVisible()
+  await page.getByRole('link', { name: '返回计划与活动' }).click()
+  await expect(page).toHaveURL(/q=CMP-THRESHOLD-01&status=DRAFT$/)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width + 1)
 })
