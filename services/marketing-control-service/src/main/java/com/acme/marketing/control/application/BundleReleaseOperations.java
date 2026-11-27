@@ -3,13 +3,15 @@ package com.acme.marketing.control.application;
 import static com.acme.marketing.platform.time.SqlTime.format;
 
 import com.acme.marketing.contracts.release.ReleaseBundleActivationDirective;
-import com.acme.marketing.contracts.release.ReleaseBundleActivationDirective.Action;
+
 import com.acme.marketing.contracts.release.ReleaseBundleActivationSigner;
 import com.acme.marketing.contracts.release.ReleaseBundleManifest;
 import com.acme.marketing.contracts.release.PinnedReleaseBundleActivationVerifier;
 import com.acme.marketing.control.application.BundleOperationStore.Id;
 import com.acme.marketing.control.application.BundleOperationStore.Position;
 import com.acme.marketing.control.application.BundleOperationStore.Row;
+import com.acme.marketing.control.application.ReleaseOperationAudit.Action;
+import com.acme.marketing.control.application.ReleaseOperationAudit.Attempt;
 import com.acme.marketing.platform.crypto.SigningKeyRing;
 import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.error.DomainException;
@@ -46,15 +48,17 @@ public class BundleReleaseOperations {
     private final Clock clock;
     private final Duration manualWindow;
     private final TransactionTemplate transaction;
+    private final ReleaseOperationAudit audit;
 
     /** 只在本库序号分配、签名落盘及结果更新时开启短事务。 */
     public BundleReleaseOperations(ControlRepository control, BundleOperationStore store, ReleaseBundleService bundles,
             ReleaseBundleReadinessService readiness, ReleaseApplicationService releases, BundleReleaseRuntime runtime,
-            SigningKeyRing keys, ObjectMapper json, Clock clock, PlatformTransactionManager manager,
+            SigningKeyRing keys, ObjectMapper json, Clock clock, PlatformTransactionManager manager, ReleaseOperationAudit audit,
             @org.springframework.beans.factory.annotation.Value("${marketing.bundle-runtime.operation-timeout:PT10M}") Duration manualWindow) {
         if (manualWindow.isZero() || manualWindow.isNegative() || manualWindow.compareTo(Duration.ofDays(1)) > 0)
             throw ReleaseBundleError.RUNTIME_CONFIG.invalid();
         this.manualWindow = manualWindow;
+        this.audit = audit;
         this.control = control; this.store = store; this.bundles = bundles; this.readiness = readiness;
         this.releases = releases; this.runtime = runtime; this.keys = keys; this.json = json; this.clock = clock;
         transaction = new TransactionTemplate(manager);
@@ -69,28 +73,37 @@ public class BundleReleaseOperations {
 
     /** 定时发布的截止时刻在首次提交后冻结，迟到请求仅允许查证原结果。 */
     public View start(String campaignId, String key, Request request, Instant applyBefore) {
-        if (request == null || key == null || !key.matches("[A-Za-z0-9_.:-]{8,128}"))
-            throw ReleaseBundleError.OPERATION_INVALID.invalid();
-        var scope = authorize(campaignId, permission(request.action()));
-        String commandKey = applyBefore == null ? key : scheduledKey(key);
-        Row row;
-        try {
-            row = transaction.execute(status -> reserve(scope, campaignId, commandKey, request, applyBefore));
-        } catch (org.springframework.dao.DuplicateKeyException raced) {
-            // 不同活动锁互不冲突；相同租户跨活动误用同一键仍由唯一索引裁决。
-            if (store.byKey(new Id(scope.tenantId().value(), commandKey)) != null) throw ReleaseBundleError.OPERATION_KEY_CONFLICT.conflict();
-            throw raced;
-        }
-        return advance(row, true);
+        Action action = Action.publishOrRollback(request == null ? null : request.action());
+        return audit.capture(action, attempt -> {
+            if (request == null || key == null || !key.matches("[A-Za-z0-9_.:-]{8,128}"))
+                throw ReleaseBundleError.OPERATION_INVALID.invalid();
+            var scope = authorize(campaignId, permission(request.action()));
+            audit.verify(attempt, campaignId, ControlCampaignScope.require(control, scope, campaignId, false));
+            String commandKey = applyBefore == null ? key : scheduledKey(key);
+            Row row;
+            try {
+                row = transaction.execute(status -> reserve(scope, campaignId, commandKey, request, applyBefore, attempt));
+            } catch (org.springframework.dao.DuplicateKeyException raced) {
+                // 同一租户跨活动误用键由唯一索引裁决；权限在查询前已校验。
+                if (store.byKey(new Id(scope.tenantId().value(), commandKey)) != null)
+                    throw ReleaseBundleError.OPERATION_KEY_CONFLICT.conflict();
+                throw raced;
+            }
+            return advance(row, true);
+        });
     }
 
-    /** 操作恢复重新检查当前调用人对该发布/回滚动作的授权。 */
+    /** 操作恢复重新检查当前调用人对原动作的权限，保留对原命令的引用。 */
     public View retry(String campaignId, String operationId) {
-        var scope = TenantContextHolder.requireCurrent();
-        if (!scope.permits(ROLLBACK)) scope.requirePermission(ACTIVATE);
-        Row row = requireOperation(campaignId, operationId);
-        authorize(campaignId, permission(row.action()));
-        return advance(row, true);
+        return audit.capture(Action.RETRY, attempt -> {
+            var scope = TenantContextHolder.requireCurrent();
+            if (!scope.permits(ROLLBACK)) scope.requirePermission(ACTIVATE);
+            Row row = requireOperation(campaignId, operationId);
+            authorize(campaignId, permission(row.action()));
+            audit.verify(attempt, campaignId, ControlCampaignScope.require(control, scope, campaignId, false));
+            audit.replayed(attempt, auditTarget(row), row.state());
+            return advance(row, true);
+        });
     }
 
     /** 纯查证可修复上次已提交但控制面未收到的运行回执，绝不重发应用。 */
@@ -141,7 +154,7 @@ public class BundleReleaseOperations {
         return readiness.evaluateOperation(bundle.campaignId(), bundle.version());
     }
 
-    private Row reserve(TenantScope scope, String campaign, String key, Request request, Instant deadline) {
+    private Row reserve(TenantScope scope, String campaign, String key, Request request, Instant deadline, Attempt attempt) {
         String tenant = scope.tenantId().value();
         ControlCampaignScope.require(control, scope, campaign, true);
         var keyId = new Id(tenant, key);
@@ -153,6 +166,7 @@ public class BundleReleaseOperations {
                     || (deadline == null && !scope.actorId().equals(duplicate.createdBy()))
                     || !Objects.equals(requested, duplicate.requestedDeadline()))
                 throw ReleaseBundleError.OPERATION_KEY_CONFLICT.conflict();
+            audit.replayed(attempt, auditTarget(duplicate), duplicate.state());
             return duplicate;
         }
         var bundle = bundles.manifestForOperation(campaign, request.version());
@@ -161,7 +175,7 @@ public class BundleReleaseOperations {
         Row applied = store.applied(position), latest = store.latest(position);
         if ((latest != null && pending(latest)) || request.expectedAppliedSequence() != (applied == null ? 0 : applied.activationSequence()))
             throw ReleaseBundleError.OPERATION_CONFLICT.conflict();
-        if (request.action().equals(Action.ROLLBACK.code())) {
+        if (request.action().equals(ReleaseBundleActivationDirective.Action.ROLLBACK.code())) {
             if (applied == null || request.version() >= applied.version() || !store.previouslyApplied(new Id(tenant, bundle.bundleId())))
                 throw ReleaseBundleError.OPERATION_TARGET_INVALID.conflict();
         } else if (applied != null && request.version() <= applied.version()) {
@@ -178,7 +192,9 @@ public class BundleReleaseOperations {
                     latest == null ? 1 : Math.incrementExact(latest.activationSequence()), key, requested, format(end),
                     scope.actorId(), State.PENDING.code, null, null, format(now), format(now), number)));
         Row row = store.operation(new Id(tenant, originalId));
-        ControlAuditChain.append(control, tenant, scope.actorId(), REQUEST_AUDIT, row.operationId(), now);
+        String chainId = ControlAuditChain.append(control, tenant, scope.actorId(), REQUEST_AUDIT, row.operationId(), now);
+        audit.committed(attempt, Action.publishOrRollback(row.action()), "ACCEPTED", auditTarget(row),
+                null, row.state(), null, chainId, null);
         return row;
     }
 
@@ -199,7 +215,7 @@ public class BundleReleaseOperations {
                     if (finalResult.isPresent()) return applied(row, directive, finalResult.get());
                 }
                 // 未签名的过期命令可能正与另一请求竞争签发；锁内重读，发现已签则由下一次精确查询裁决。
-                return transition(row, State.EXPIRED, ReleaseBundleError.OPERATION_EXPIRED.code(), directive == null);
+                return transition(row, State.EXPIRED, ReleaseBundleError.OPERATION_EXPIRED.code(), directive == null, null);
             }
             if (!execute) return view(refresh(row));
             var bundle = bundles.manifestForOperation(row.campaignId(), row.version());
@@ -219,7 +235,7 @@ public class BundleReleaseOperations {
             String code = unavailable.code().matches("[A-Z][A-Z0-9_]{1,94}") ? unavailable.code() : ReleaseBundleError.RUNTIME_UNAVAILABLE.code();
             boolean rejected = directive == null && (code.equals(ReleaseBundleError.OPERATION_KILLED.code())
                     || code.equals(ReleaseBundleError.MEMBER_UNAVAILABLE.code()));
-            return transition(row, rejected ? State.REJECTED : State.PENDING, code, rejected);
+            return transition(row, rejected ? State.REJECTED : State.PENDING, code, rejected, null);
         }
     }
 
@@ -267,10 +283,10 @@ public class BundleReleaseOperations {
                 || result.appliedAt() == null || result.appliedAt().isBefore(directive.authorizedAt())
                 || !result.appliedAt().isBefore(Instant.parse(row.applyBefore())) || result.currentSequence() < row.activationSequence())
             throw ReleaseBundleError.RUNTIME_EVIDENCE.conflict();
-        return transition(row, State.APPLIED, null, false);
+        return transition(row, State.APPLIED, null, false, result.appliedAt());
     }
 
-    private View transition(Row row, State state, String reason, boolean unsignedOnly) {
+    private View transition(Row row, State state, String reason, boolean unsignedOnly, Instant observedAt) {
         return transaction.execute(status -> {
             Row current = locked(row);
             if (!pending(current) || (unsignedOnly && current.directiveJson() != null)
@@ -278,10 +294,19 @@ public class BundleReleaseOperations {
             Instant now = clock.instant();
             if (store.update(new BundleOperationStore.Change(row.tenantId(), row.operationId(), state.code,
                     reason, format(now))) != 1) throw ReleaseBundleError.OPERATION_CONFLICT.conflict();
-            if (state != State.PENDING) ControlAuditChain.append(control, row.tenantId(),
-                    TenantContextHolder.requireCurrent().actorId(), "RELEASE_BUNDLE_" + state.code, row.operationId(), now);
+            if (state != State.PENDING) {
+                String chainId = ControlAuditChain.append(control, row.tenantId(),
+                        TenantContextHolder.requireCurrent().actorId(), "RELEASE_BUNDLE_" + state.code, row.operationId(), now);
+                audit.committed(null, Action.publishOrRollback(row.action()), state == State.APPLIED ? "CONFIRMED" : state.code,
+                        auditTarget(current), current.state(), state.code, reason, chainId, observedAt);
+            }
             return view(refresh(row));
         });
+    }
+
+    /** 只从已锁定或已鉴权的原操作读取业务号和版本。 */
+    private ReleaseOperationAudit.Target auditTarget(Row row) {
+        return audit.target(row.campaignId(), row.operationId(), row.businessNo(), row.version(), row.activationSequence());
     }
 
     private Row locked(Row row) {
@@ -316,7 +341,7 @@ public class BundleReleaseOperations {
     }
     /** 感叹号不在公开键字符集内，租户内的定时恢复永远无法匹配手工键。 */
     private static String scheduledKey(String key) { return "!" + Digests.sha256Hex(key); }
-    private static String permission(String action) { return Action.ROLLBACK.code().equals(action) ? ROLLBACK : ACTIVATE; }
+    private static String permission(String action) { return ReleaseBundleActivationDirective.Action.ROLLBACK.code().equals(action) ? ROLLBACK : ACTIVATE; }
     private static boolean pending(Row row) { return State.PENDING.code.equals(row.state()); }
     private static View view(Row row) {
         return new View(row.operationId(), row.campaignId(), row.version(), row.action(), row.activationSequence(),
@@ -330,7 +355,7 @@ public class BundleReleaseOperations {
     /** UI提交观察到的实际游标；回滚也创建新的递增授权。 */
     public record Request(long version, String action, long expectedAppliedSequence) {
         public Request {
-            if (version <= 0 || expectedAppliedSequence < 0 || (!Action.ACTIVATE.code().equals(action) && !Action.ROLLBACK.code().equals(action)))
+            if (version <= 0 || expectedAppliedSequence < 0 || (!ReleaseBundleActivationDirective.Action.ACTIVATE.code().equals(action) && !ReleaseBundleActivationDirective.Action.ROLLBACK.code().equals(action)))
                 throw ReleaseBundleError.OPERATION_INVALID.invalid();
         }
     }

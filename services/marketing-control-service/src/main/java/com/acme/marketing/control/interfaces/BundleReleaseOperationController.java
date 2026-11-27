@@ -2,6 +2,7 @@ package com.acme.marketing.control.interfaces;
 
 import com.acme.marketing.control.application.BundleReleaseOperations;
 import com.acme.marketing.control.application.ReleaseBundleError;
+import com.acme.marketing.control.application.ReleaseOperationAudit;
 import com.acme.marketing.control.application.ReleaseBundleReadinessService.BundleReadinessView;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
@@ -24,9 +25,10 @@ public final class BundleReleaseOperationController {
     private static final int MAX_REQUEST_BYTES = 4096;
     private final BundleReleaseOperations operations;
     private final ObjectMapper json;
+    private final ReleaseOperationAudit audit;
 
-    public BundleReleaseOperationController(BundleReleaseOperations operations, ObjectMapper json) {
-        this.operations = operations; this.json = json;
+    public BundleReleaseOperationController(BundleReleaseOperations operations, ObjectMapper json, ReleaseOperationAudit audit) {
+        this.operations = operations; this.json = json; this.audit = audit;
     }
 
     /** 只接受版本、动作及已观察的应用序号，不接受客户端自报的成员覆盖或签名。 */
@@ -65,6 +67,12 @@ public final class BundleReleaseOperationController {
     public BundleReleaseOperations.Summary summary(@PathVariable String campaignId, @RequestParam String environment,
             @RequestParam String cell, @RequestParam(required = false) Long version) {
         return operations.summary(campaignId, environment, cell, version);
+    }
+
+    /** 在活动范围内以固定页长读取原审计链与已核实的提交事实。 */
+    @GetMapping("/operation-audits")
+    public ReleaseOperationAudit.History audit(@PathVariable String campaignId, @RequestParam(required = false) Long cursor) {
+        return audit.history(campaignId, cursor);
     }
 
     /** 收集每个实际目标的签名准备证据，不签发激活意图。 */

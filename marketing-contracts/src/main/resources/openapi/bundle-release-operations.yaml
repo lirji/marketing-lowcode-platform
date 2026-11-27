@@ -47,6 +47,49 @@ paths:
                   appliedVersion: {type: [integer, 'null'], format: int64}
                   latestOperation: {oneOf: [{$ref: '#/components/schemas/Operation'}, {type: 'null'}]}
                   rollbackEligible: {type: boolean}
+  /api/v1/campaigns/{campaignId}/release-bundles/operation-audits:
+    parameters:
+      - {$ref: '#/components/parameters/Campaign'}
+    get:
+      operationId: getBundleOperationAudits
+      description: 按当前租户、组织和门店读取发布与排期留痕。受理返回 ACCEPTED，已核验运行端结果返回 CONFIRMED 和实际生效时刻。
+      x-required-permission: release:read
+      parameters:
+        - {name: cursor, in: query, schema: {type: integer, format: int64, minimum: 1}}
+      responses:
+        '200':
+          description: 每页最多 50 条，按事件游标倒序。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  nextCursor: {type: [string, 'null']}
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [eventId, actionCode, stageCode, recordedAt]
+                      properties:
+                        eventId: {type: integer, format: int64}
+                        attemptId: {type: [string, 'null']}
+                        actorId: {type: string}
+                        traceId: {type: [string, 'null']}
+                        actionCode: {type: string}
+                        stageCode: {type: string}
+                        resourceId: {type: [string, 'null']}
+                        businessNo: {type: [string, 'null']}
+                        versionNo: {type: [integer, 'null'], format: int64}
+                        activationSequence: {type: [integer, 'null'], format: int64}
+                        beforeState: {type: [string, 'null']}
+                        afterState: {type: [string, 'null']}
+                        reasonCode: {type: [string, 'null']}
+                        chainAuditId: {type: [string, 'null']}
+                        originalEventId: {type: [integer, 'null'], format: int64}
+                        observedAt: {type: [string, 'null'], format: date-time}
+                        recordedAt: {type: string, format: date-time}
+        '403': {description: 当前身份缺少发布读取权限}
   /api/v1/campaigns/{campaignId}/release-bundles/operations/{operationId}:
     parameters:
       - {$ref: '#/components/parameters/Campaign'}

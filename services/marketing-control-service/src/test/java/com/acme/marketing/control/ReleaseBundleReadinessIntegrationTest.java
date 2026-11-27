@@ -252,6 +252,14 @@ class ReleaseBundleReadinessIntegrationTest {
         var pending = command(endpoint, "publish-v1", request);
         assertEquals("PENDING", pending.state()); assertEquals(ReleaseBundleError.OPERATION_NOT_READY.code(), pending.reasonCode());
         verify(bundleRuntime, never()).apply(any(), anyLong(), any(), any());
+        String historyPath = endpoint.replace("/operations", "/operation-audits");
+        var beforeReceipt = mapper.readTree(send(request(historyPath).GET()).body()).path("items");
+        assertEquals(1, beforeReceipt.size());
+        assertEquals("ACCEPTED", beforeReceipt.get(0).path("stageCode").asString());
+        assertEquals(pending.businessNo(), beforeReceipt.get(0).path("businessNo").asString());
+        assertEquals("PENDING", beforeReceipt.get(0).path("afterState").asString());
+        assertEquals(403, send(request(historyPath).setHeader("X-Dev-Permissions", "release:activate").GET()).statusCode());
+        assertEquals(400, send(request(historyPath).setHeader("X-Dev-Shop-Ids", "shop-other").GET()).statusCode());
         warm(bundle);
         var uncertain = command(endpoint, "publish-v1", request);
         assertEquals("PENDING", uncertain.state()); assertEquals(pending.operationId(), uncertain.operationId());
@@ -273,6 +281,25 @@ class ReleaseBundleReadinessIntegrationTest {
         assertEquals(403, send(raw(endpoint + "/" + rolled.operationId() + ":retry", "")
                 .setHeader("X-Dev-Permissions", "release:activate")).statusCode());
         assertEquals(3, count("mk_bundle_release_operation"));
+        var receiptEvents = mapper.readTree(send(request(historyPath).GET()).body()).path("items");
+        assertEquals("release.rollback", receiptEvents.get(0).path("actionCode").asString());
+        assertEquals("CONFIRMED", receiptEvents.get(0).path("stageCode").asString());
+        assertEquals(3L, receiptEvents.get(0).path("activationSequence").asLong());
+        assertFalse(receiptEvents.get(0).path("observedAt").asString().isEmpty());
+        assertEquals(6, jdbc.queryForObject("""
+                SELECT COUNT(*) FROM mk_release_operation_audit e
+                JOIN mk_audit a ON a.tenant_id=e.tenant_id AND a.audit_id=e.chain_audit_id
+                WHERE e.tenant_id=?
+                """, Integer.class, tenant));
+        assertEquals(2, jdbc.queryForObject("""
+                SELECT COUNT(*) FROM mk_release_operation_audit e
+                JOIN mk_release_operation_audit origin ON origin.event_id=e.original_event_id AND origin.tenant_id=e.tenant_id
+                WHERE e.tenant_id=? AND e.resource_id=? AND e.stage_code='REPLAYED'
+                """, Integer.class, tenant, pending.operationId()));
+        assertEquals(2, jdbc.queryForObject("""
+                SELECT COUNT(*) FROM mk_release_operation_audit WHERE tenant_id=?
+                AND stage_code='DENIED' AND campaign_id IS NULL AND action_code IN ('release.publish','release.retry')
+                """, Integer.class, tenant));
     }
 
     /** 到期查询不会重新发送；未签发前的确定性拒绝释放位置给后续有效命令。 */

@@ -3,6 +3,8 @@ package com.acme.marketing.control.application;
 import static com.acme.marketing.platform.time.SqlTime.format;
 
 import com.acme.marketing.control.application.BundleScheduleStore.Row;
+import com.acme.marketing.control.application.ReleaseOperationAudit.Action;
+import com.acme.marketing.control.application.ReleaseOperationAudit.Attempt;
 import com.acme.marketing.platform.error.ConflictException;
 import com.acme.marketing.platform.error.DomainException;
 import com.acme.marketing.platform.error.ForbiddenException;
@@ -17,7 +19,10 @@ import java.util.UUID;
 import com.acme.marketing.platform.identity.BusinessNumber;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
@@ -33,12 +38,19 @@ public class BundleSchedules {
     private final ObjectMapper json;
     private final Clock clock;
     private final Duration lateness;
+    private final ReleaseOperationAudit audit;
+    private final TransactionTemplate changeTransaction;
 
     public BundleSchedules(BundleScheduleStore store, ControlRepository repository, ObjectMapper json, Clock clock,
+            ReleaseOperationAudit audit, PlatformTransactionManager manager,
             @Value("${marketing.release-schedule.max-lateness-seconds:300}") long seconds) {
         if (seconds < 1 || seconds > 3600) throw new IllegalArgumentException("发布调度容许延迟应为 1 至 3600 秒");
         this.store = store; this.repository = repository; this.json = json; this.clock = clock;
         this.lateness = Duration.ofSeconds(seconds);
+        this.audit = audit;
+        this.changeTransaction = new TransactionTemplate(manager);
+        changeTransaction.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
+        changeTransaction.setTimeout(TX_TIMEOUT_SECONDS);
     }
 
     /** 同一创建键可以在客户端超时甚至排期已过期后恢复原计划。 */
@@ -83,16 +95,26 @@ public class BundleSchedules {
     }
 
     /** 领取之后不能暂停。过期计划不能靠恢复获得新的生效窗口。 */
-    @Transactional(isolation = Isolation.READ_COMMITTED, timeout = TX_TIMEOUT_SECONDS)
     public View change(String campaignId, String scheduleId, long revision, boolean resume) {
+        Action action = resume ? Action.RESUME_SCHEDULE : Action.PAUSE_SCHEDULE;
+        return audit.capture(action, attempt -> changeTransaction.execute(tx ->
+                change(campaignId, scheduleId, revision, resume, action, attempt)));
+    }
+
+    /** 排期状态和原链节点共用事务，排期暂停只约束尚未被领取的未来发布。 */
+    private View change(String campaignId, String scheduleId, long revision, boolean resume, Action action, Attempt attempt) {
         var scope = authorized(campaignId, ACTIVATE, true);
+        audit.verify(attempt, campaignId, ControlCampaignScope.require(repository, scope, campaignId, false));
         Row row = store.byId(scope.tenantId().value(), campaignId, scheduleId);
         if (row == null) throw ReleaseBundleError.SCHEDULE_MISSING.notFound();
         if (row.revision() != revision || !(resume ? State.PAUSED : State.SCHEDULED).is(row.state())) throw stale();
         State next = resume ? State.SCHEDULED : State.PAUSED;
         if (!clock.instant().isBefore(Instant.parse(row.applyBefore()))) next = State.EXPIRED;
         update(row, next, row.dueAt(), null, next == State.EXPIRED ? EXPIRED_REASON : null);
-        audit(row, next);
+        String chainId = audit(row, next);
+        audit.committed(attempt, action, next == State.EXPIRED ? "EXPIRED" : "CONFIRMED",
+                audit.target(campaignId, row.scheduleId(), row.businessNo(), row.version(), null),
+                row.state(), next.code, next == State.EXPIRED ? EXPIRED_REASON : null, chainId, null);
         return view(store.byId(row.tenant(), campaignId, scheduleId));
     }
 
@@ -136,8 +158,8 @@ public class BundleSchedules {
         ControlCampaignScope.require(repository, scope, campaign, lock);
         return scope;
     }
-    private void audit(Row row, State state) {
-        ControlAuditChain.append(repository, row.tenant(), TenantContextHolder.requireCurrent().actorId(),
+    private String audit(Row row, State state) {
+        return ControlAuditChain.append(repository, row.tenant(), TenantContextHolder.requireCurrent().actorId(),
                 "BUNDLE_SCHEDULE_" + state.code, row.scheduleId(), clock.instant());
     }
     private static View view(Row row) {

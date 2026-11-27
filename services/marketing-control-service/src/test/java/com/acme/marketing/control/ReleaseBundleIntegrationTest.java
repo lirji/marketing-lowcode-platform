@@ -364,6 +364,14 @@ class ReleaseBundleIntegrationTest {
         assertEquals("PAUSED",mapper.readTree(paused.body()).path("state").asString(),paused.body());
         assertCode(409,"RELEASE_SCHEDULE_CHANGED",send(request(item + ":resume?expectedRevision=1").POST(HttpRequest.BodyPublishers.noBody())));
         assertEquals(200,send(request(item + ":resume?expectedRevision=2").POST(HttpRequest.BodyPublishers.noBody())).statusCode());
+        var scheduleAudit = mapper.readTree(send(request(path(campaign) + "/operation-audits").GET()).body()).path("items");
+        assertEquals(3, scheduleAudit.size());
+        assertEquals("release.schedule.resume", scheduleAudit.get(0).path("actionCode").asString());
+        assertEquals("FAILED", scheduleAudit.get(1).path("stageCode").asString());
+        assertEquals("release.schedule.pause", scheduleAudit.get(2).path("actionCode").asString());
+        assertEquals("SCHEDULED", scheduleAudit.get(2).path("beforeState").asString());
+        assertEquals("PAUSED", scheduleAudit.get(2).path("afterState").asString());
+        assertTrue(scheduleAudit.get(2).path("observedAt").isNull());
         String now = com.acme.marketing.platform.time.SqlTime.format(Instant.now().minusSeconds(3));
         jdbc.update("UPDATE mk_bundle_activation_schedule SET state_name='RUNNING',due_at=?,apply_before=?,next_attempt_at=? WHERE tenant_id=?",
                 com.acme.marketing.platform.time.SqlTime.format(Instant.now().minusSeconds(60)),now,now,tenant);
