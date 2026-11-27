@@ -1,8 +1,7 @@
 package com.acme.marketing.benefit.application;
 
-import com.acme.marketing.benefit.infrastructure.persistence.mapper.FundingAuditArchiveMapper;
-import com.acme.marketing.benefit.infrastructure.persistence.mapper.FundingAuditArchiveMapper.EffectLocator;
-import com.acme.marketing.benefit.infrastructure.persistence.mapper.FundingAuditArchiveMapper.Receipt;
+import com.acme.marketing.benefit.application.FundingAuditArchiveRepository.EffectLocator;
+import com.acme.marketing.benefit.application.FundingAuditArchiveRepository.Receipt;
 import com.acme.marketing.platform.crypto.Digests;
 import com.acme.marketing.platform.error.DependencyUnavailableException;
 import com.acme.marketing.platform.identity.TenantId;
@@ -10,7 +9,7 @@ import com.acme.marketing.platform.web.archive.AuditArchiveStorage;
 import com.acme.marketing.platform.web.archive.AuditArchiveWorkflow;
 import com.acme.marketing.platform.web.archive.AuditArchiveWorkflow.Batch;
 import com.acme.marketing.platform.web.archive.AuditArchiveWorkflow.Event;
-import com.acme.marketing.platform.web.archive.persistence.AuditArchiveManifestMapper;
+import com.acme.marketing.platform.web.archive.AuditArchiveWorkflow.Repository;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -31,14 +30,14 @@ public final class FundingAuditArchiveCutover {
     private final String tenant;
     private final String prefix;
     private final AuditArchiveWorkflow workflow;
-    private final AuditArchiveManifestMapper manifest;
-    private final FundingAuditArchiveMapper source;
+    private final Repository manifest;
+    private final FundingAuditArchiveRepository source;
     private final AuditArchiveStorage storage;
     private final TransactionTemplate transaction;
     private final JsonMapper json = JsonMapper.builder().build();
 
-    public FundingAuditArchiveCutover(TenantId scope, AuditArchiveWorkflow workflow, AuditArchiveManifestMapper manifest,
-            FundingAuditArchiveMapper source, AuditArchiveStorage storage, PlatformTransactionManager manager) {
+    public FundingAuditArchiveCutover(TenantId scope, AuditArchiveWorkflow workflow, Repository manifest,
+            FundingAuditArchiveRepository source, AuditArchiveStorage storage, PlatformTransactionManager manager) {
         this.tenant = scope.value();
         this.prefix = AuditArchiveWorkflow.Source.FUNDING.prefix(scope) + "recovery/";
         this.workflow = workflow;

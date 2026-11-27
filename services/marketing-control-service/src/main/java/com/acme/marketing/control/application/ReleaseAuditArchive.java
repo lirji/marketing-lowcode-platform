@@ -9,7 +9,8 @@ public final class ReleaseAuditArchive {
     private final ControlRepository control;
     private final ReleaseOperationAudit audit;
 
-    ReleaseAuditArchive(AuditArchiveWorkflow workflow, ControlRepository control, ReleaseOperationAudit audit) {
+    /** 使用本来源用例与共享归档工作流执行经过授权的工单。 */
+    public ReleaseAuditArchive(AuditArchiveWorkflow workflow, ControlRepository control, ReleaseOperationAudit audit) {
         this.workflow = workflow;
         this.control = control;
         this.audit = audit;
@@ -37,8 +38,9 @@ public final class ReleaseAuditArchive {
     }
 
     /** 调度输入为单个活动 @ 版本，对象范围与同一工单保持一致。 */
-    record Selection(String campaignId, long version) {
-        static Selection parse(String selection) {
+    public record Selection(String campaignId, long version) {
+        /** 解析调度指定的单一活动版本。 */
+        public static Selection parse(String selection) {
             if (selection != null && selection.matches("[^@\\s]{1,64}@[1-9][0-9]{0,18}")) {
                 int separator = selection.lastIndexOf('@');
                 try {

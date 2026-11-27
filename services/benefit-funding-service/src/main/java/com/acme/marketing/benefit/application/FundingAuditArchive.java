@@ -9,7 +9,8 @@ public final class FundingAuditArchive {
     private final BenefitFundingService funding;
     private final FundingOperationAudit audit;
 
-    FundingAuditArchive(AuditArchiveWorkflow workflow, BenefitFundingService funding, FundingOperationAudit audit) {
+    /** 使用本来源用例与共享归档工作流执行经过授权的工单。 */
+    public FundingAuditArchive(AuditArchiveWorkflow workflow, BenefitFundingService funding, FundingOperationAudit audit) {
         this.workflow = workflow;
         this.funding = funding;
         this.audit = audit;

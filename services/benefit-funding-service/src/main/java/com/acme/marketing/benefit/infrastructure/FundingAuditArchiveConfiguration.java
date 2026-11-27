@@ -1,6 +1,10 @@
-package com.acme.marketing.benefit.application;
+package com.acme.marketing.benefit.infrastructure;
 
 import com.acme.marketing.benefit.BenefitFundingApplication;
+import com.acme.marketing.benefit.application.BenefitFundingService;
+import com.acme.marketing.benefit.application.FundingAuditArchive;
+import com.acme.marketing.benefit.application.FundingAuditArchiveCutover;
+import com.acme.marketing.benefit.application.FundingOperationAudit;
 import com.acme.marketing.benefit.infrastructure.persistence.mapper.FundingAuditArchiveMapper;
 import com.acme.marketing.platform.identity.TenantId;
 import com.acme.marketing.platform.web.archive.AuditArchiveWorkflow;
