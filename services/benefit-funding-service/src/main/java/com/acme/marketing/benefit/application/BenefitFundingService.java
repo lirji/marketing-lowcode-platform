@@ -559,7 +559,7 @@ public class BenefitFundingService {
         });
     }
 
-    private AuditTarget authorizedAuditTarget(TenantScope scope, String applicationId) {
+    AuditTarget authorizedAuditTarget(TenantScope scope, String applicationId) {
         AuditTarget target = repository.auditTarget(scope.tenantId().value(), applicationId)
                 .orElseThrow(() -> new NotFoundException("APPLICATION_NOT_FOUND", "promotion application not found"));
         scope.requireOrganization(target.organizationId());

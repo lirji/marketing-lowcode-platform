@@ -36,7 +36,8 @@ public class FundingOperationAudit {
 
     public enum Action {
         CONFIRM("funding.confirm"), RELEASE("funding.release"), REFUND("funding.refund"),
-        REVERSE("funding.reverse"), READ("funding.audit.list");
+        REVERSE("funding.reverse"), READ("funding.audit.list"),
+        ARCHIVE_RESTORE("funding.archive.restore"), ARCHIVE_READ("funding.archive.read");
 
         private final String code;
 
@@ -106,6 +107,16 @@ public class FundingOperationAudit {
             List<AuditEntry> result = rows.stream().limit(PAGE_SIZE).toList();
             append(attempt, target, "SUCCEEDED", null, null, null, null, null);
             return new History(result, rows.size() > PAGE_SIZE ? result.getLast().id() : null);
+        });
+    }
+
+    /** 工单操作及读取单独记录，命令字段只保留工单摘要。 */
+    <T> T archiveAccess(TenantScope scope, String ticket, boolean restore, java.util.function.Supplier<T> supplier) {
+        Action action = restore ? Action.ARCHIVE_RESTORE : Action.ARCHIVE_READ;
+        return capture(scope, action, ticket, null, attempt -> {
+            T result = supplier.get();
+            append(attempt, null, "SUCCEEDED", null, null, null, null, null);
+            return result;
         });
     }
 

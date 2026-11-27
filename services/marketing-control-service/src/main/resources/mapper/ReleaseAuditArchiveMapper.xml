@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.control.infrastructure.persistence.mapper.ReleaseAuditArchiveMapper">
+    <resultMap id="event" type="com.acme.marketing.platform.web.archive.AuditArchiveWorkflow$Event">
+        <constructor>
+            <idArg column="id" javaType="java.lang.String"/>
+            <arg column="recorded_at" javaType="java.time.Instant"/>
+            <arg column="fact" javaType="tools.jackson.databind.JsonNode"
+                 typeHandler="com.acme.marketing.platform.web.archive.persistence.AuditArchiveFactJsonHandler"/>
+        </constructor>
+    </resultMap>
+    <!-- 先确定有可信目标的发布范围，再允许访问同请求的入口事实。 -->
+    <select id="eligible" resultMap="event" useCache="false">
+        WITH scoped AS (
+            SELECT event_id,attempt_id,resource_id FROM mk_release_operation_audit s
+            WHERE s.tenant_id=#{tenant} AND s.campaign_id=#{campaign} AND s.version_no=#{version}
+              AND s.recorded_at&lt;=#{cutoff}
+              AND s.action_code IN('release.publish','release.rollback','release.retry','release.schedule.pause','release.schedule.resume')
+              AND s.stage_code IN('CONFIRMED','FAILED','EXPIRED','REPLAYED','DENIED','CANCELLED','REJECTED')
+            ORDER BY event_id LIMIT #{limit}
+        ), related AS (
+            SELECT event_id,attempt_id FROM scoped
+            UNION ALL
+            SELECT a.event_id,a.attempt_id FROM mk_release_operation_audit a
+            WHERE a.tenant_id=#{tenant} AND a.campaign_id=#{campaign} AND a.version_no=#{version}
+              AND a.recorded_at&lt;=#{cutoff} AND a.stage_code='ACCEPTED'
+              AND a.resource_id IN(SELECT resource_id FROM scoped WHERE resource_id IS NOT NULL)
+        ), picked AS (
+            SELECT event_id FROM related
+            UNION
+            SELECT entry.event_id FROM (
+                SELECT DISTINCT attempt_id FROM related WHERE attempt_id IS NOT NULL
+            ) scope_attempts JOIN mk_release_operation_audit entry
+              ON entry.tenant_id=#{tenant} AND entry.attempt_id=scope_attempts.attempt_id
+            WHERE entry.stage_code='ATTEMPT' AND entry.recorded_at&lt;=#{cutoff}
+        )
+        SELECT CAST(e.event_id AS CHAR) AS id,e.recorded_at,
+            JSON_OBJECT('attemptId',e.attempt_id,'actorId',e.actor_id,'traceId',e.trace_id,'action',e.action_code,
+                'stage',e.stage_code,'campaignId',#{campaign},'versionNo',CAST(#{version} AS CHAR),
+                'resourceId',e.resource_id,'businessNo',e.business_no,'activationSequence',CAST(e.activation_sequence AS CHAR),
+                'beforeState',e.before_state,'afterState',e.after_state,'reasonCode',e.reason_code,'chainAuditId',e.chain_audit_id,
+                'originalEventId',CAST(e.original_event_id AS CHAR),'observedAt',e.observed_at) AS fact
+        FROM picked p JOIN mk_release_operation_audit e ON e.tenant_id=#{tenant} AND e.event_id=p.event_id
+        ORDER BY e.event_id LIMIT #{limit}
+    </select>
+</mapper>

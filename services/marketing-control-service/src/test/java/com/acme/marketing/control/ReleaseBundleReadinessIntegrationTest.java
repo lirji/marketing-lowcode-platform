@@ -86,6 +86,8 @@ class ReleaseBundleReadinessIntegrationTest {
     @LocalServerPort int port;
     @Autowired JdbcTemplate jdbc;
     @Autowired ControlRepository repository;
+    @Autowired org.mybatis.spring.SqlSessionTemplate archiveSession;
+    @Autowired org.springframework.transaction.PlatformTransactionManager archiveTransactions;
     @Autowired ObjectMapper mapper;
     @Autowired SigningKeyRing releaseKeys;
     @Autowired MutableClock clock;
@@ -267,6 +269,15 @@ class ReleaseBundleReadinessIntegrationTest {
         var confirmed = send(request(endpoint + "/" + pending.operationId()).GET());
         assertEquals("APPLIED", mapper.readTree(confirmed.body()).path("state").asString());
         assertEquals("APPLIED", command(endpoint, "publish-v1", request).state());
+        String archiveEndpoint = System.getenv("MKT_AUDIT_ARCHIVE_TEST_ENDPOINT");
+        boolean testArchive = archiveEndpoint != null && archiveEndpoint.matches("http://127[.]0[.]0[.]1:[0-9]+");
+        String initialBatch = null;
+        if (testArchive) {
+            try (var fixture = releaseArchiveFixture(archiveEndpoint, bundle.campaignId())) {
+                initialBatch = fixture.workflow().verify(bundle.campaignId() + "@1");
+                assertNotNull(initialBatch);
+            }
+        }
         verify(bundleRuntime, times(1)).apply(any(), anyLong(), any(), any());
         assertCode(409, ReleaseBundleError.OPERATION_KEY_CONFLICT.code(), send(raw(endpoint, mapper.writeValueAsString(
                 new BundleReleaseOperations.Request(2, "ACTIVATE", 1))).header("Idempotency-Key", "publish-v1")));
@@ -300,6 +311,61 @@ class ReleaseBundleReadinessIntegrationTest {
                 SELECT COUNT(*) FROM mk_release_operation_audit WHERE tenant_id=?
                 AND stage_code='DENIED' AND campaign_id IS NULL AND action_code IN ('release.publish','release.retry')
                 """, Integer.class, tenant));
+        if (testArchive) {
+            verifyReleaseArchive(archiveEndpoint, bundle.campaignId(), pending.businessNo(), rolled.businessNo(), initialBatch);
+        }
+    }
+
+    private ReleaseArchiveFixture releaseArchiveFixture(String endpoint, String campaign) {
+        var scope = new TenantId(tenant);
+        var kind = com.acme.marketing.platform.web.archive.AuditArchiveWorkflow.Source.RELEASE;
+        var source = archiveSession.getMapper(com.acme.marketing.control.infrastructure.persistence.mapper.ReleaseAuditArchiveMapper.class);
+        var manifest = archiveSession.getMapper(com.acme.marketing.platform.web.archive.persistence.AuditArchiveManifestMapper.class);
+        var store = new com.acme.marketing.platform.web.archive.S3AuditArchiveStorage(URI.create(endpoint), "us-east-1",
+                "mkt-release-audit-verification", kind.prefix(scope),
+                System.getenv("MKT_RELEASE_ARCHIVE_WRITE_KEY"), System.getenv("MKT_RELEASE_ARCHIVE_WRITE_SECRET"),
+                System.getenv("MKT_RELEASE_ARCHIVE_RESTORE_KEY"), System.getenv("MKT_RELEASE_ARCHIVE_RESTORE_SECRET"));
+        var archive = new com.acme.marketing.platform.web.archive.AuditArchiveWorkflow(kind, scope, Duration.ofDays(1),
+                java.time.Clock.offset(java.time.Clock.systemUTC(), Duration.ofDays(3)), manifest,
+                (owner, resource, cutoff, limit) -> source.eligible(owner, campaign, 1, cutoff, limit), store, archiveTransactions);
+        return new ReleaseArchiveFixture(store, archive);
+    }
+
+    private void verifyReleaseArchive(String endpoint, String campaign, String publishNo, String rollbackNo, String initialBatch) {
+        try (var fixture = releaseArchiveFixture(endpoint, campaign)) {
+            var archive = fixture.workflow();
+            String id = archive.verify(campaign + "@1");
+            assertNotNull(id);
+            assertNotEquals(initialBatch, id);
+            var old = archive.verifiedSnapshot(initialBatch);
+            assertEquals(List.of(publishNo), old.events().stream().map(row -> row.fact())
+                    .filter(fact -> "CONFIRMED".equals(fact.path("stage").asString()))
+                    .map(fact -> fact.path("businessNo").asString()).toList());
+            assertEquals(id, archive.verify(campaign + "@1"));
+            String ticket = "isolated-release-archive";
+            jdbc.update("""
+                    INSERT INTO mk_operation_audit_archive_grant(tenant_id,ticket_id,batch_id,actor_id,approved_by,expires_at)
+                    VALUES(?,?,?,'release-recovery','archive-reviewer',UTC_TIMESTAMP(3)+INTERVAL 1 HOUR)
+                    """, tenant, ticket, id);
+            var restored = archive.restore(tenant, ticket, "release-recovery", resource -> assertEquals(campaign + "@1", resource));
+            assertEquals(restored, archive.restored(tenant, ticket, "release-recovery", ignored -> {}));
+            var terminals = restored.events().stream().map(row -> row.fact())
+                    .filter(fact -> "CONFIRMED".equals(fact.path("stage").asString())).toList();
+            assertEquals(2, terminals.size());
+            assertEquals(java.util.Set.of(publishNo, rollbackNo), terminals.stream().map(value -> value.path("businessNo").asString())
+                    .collect(java.util.stream.Collectors.toSet()));
+            assertTrue(terminals.stream().allMatch(fact -> "1".equals(fact.path("versionNo").asString())
+                    && !fact.path("observedAt").asString().isEmpty() && !fact.path("chainAuditId").asString().isEmpty()));
+            assertTrue(restored.events().stream().anyMatch(row -> "ATTEMPT".equals(row.fact().path("stage").asString())));
+            assertEquals(3, count("mk_bundle_release_operation"));
+            assertThrows(com.acme.marketing.platform.error.NotFoundException.class,
+                    () -> archive.restored(tenant, ticket, "archive-reviewer", ignored -> {}));
+        }
+    }
+
+    private record ReleaseArchiveFixture(com.acme.marketing.platform.web.archive.S3AuditArchiveStorage store,
+            com.acme.marketing.platform.web.archive.AuditArchiveWorkflow workflow) implements AutoCloseable {
+        @Override public void close() { store.close(); }
     }
 
     /** 到期查询不会重新发送；未签发前的确定性拒绝释放位置给后续有效命令。 */

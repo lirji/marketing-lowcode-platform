@@ -8,6 +8,10 @@
   </parent>
   <artifactId>platform-web</artifactId>
   <dependencies>
+    <!-- 仅归档来源服务显式启用，其他营销服务无对象存储运行依赖。 -->
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId><artifactId>s3</artifactId><optional>true</optional>
+    </dependency>
     <dependency><groupId>com.acme.marketing</groupId><artifactId>platform-common</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-security</artifactId></dependency>

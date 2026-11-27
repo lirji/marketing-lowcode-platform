@@ -636,9 +636,15 @@
         SELECT id FROM mk_funding_audit_result WHERE tenant_id=#{tenantId} AND attempt_id=#{attemptId}
     </select>
     <select id="originalAuditEffect" resultType="java.lang.Long">
-        SELECT id FROM mk_funding_audit_result
-        WHERE tenant_id=#{tenantId} AND application_id=#{applicationId} AND action_code=#{actionCode}
-          AND command_hash=#{commandHash} AND result_code='SUCCEEDED' ORDER BY id DESC LIMIT 1 FOR SHARE
+        SELECT fact.id FROM (
+            (SELECT id FROM mk_funding_audit_result
+             WHERE tenant_id=#{tenantId} AND application_id=#{applicationId} AND action_code=#{actionCode}
+               AND command_hash=#{commandHash} AND result_code='SUCCEEDED' ORDER BY id DESC LIMIT 1 FOR SHARE)
+            UNION ALL
+            (SELECT effect_id AS id FROM mk_funding_archive_effect_locator
+             WHERE tenant_id=#{tenantId} AND application_id=#{applicationId} AND action_code=#{actionCode}
+               AND command_hash=#{commandHash} ORDER BY effect_id DESC LIMIT 1 FOR SHARE)
+        ) fact ORDER BY fact.id DESC LIMIT 1
     </select>
     <select id="tradeAuditBinding" resultType="com.acme.marketing.benefit.application.BenefitFundingRepository$TradeAuditBinding">
         SELECT application_id, generation_no AS generation, checkout_ref

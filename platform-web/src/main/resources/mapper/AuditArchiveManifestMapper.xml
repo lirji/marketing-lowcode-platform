@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.platform.web.archive.persistence.AuditArchiveManifestMapper">
+    <resultMap id="batch" type="com.acme.marketing.platform.web.archive.AuditArchiveWorkflow$Batch">
+        <constructor>
+            <arg column="tenant_id" javaType="java.lang.String"/>
+            <arg column="batch_id" javaType="java.lang.String"/>
+            <arg column="resource_id" javaType="java.lang.String"/>
+            <arg column="facts_from" javaType="java.time.Instant"/>
+            <arg column="facts_until" javaType="java.time.Instant"/>
+            <arg column="row_count" javaType="_int"/>
+            <arg column="object_key" javaType="java.lang.String"/>
+            <arg column="object_version" javaType="java.lang.String"/>
+            <arg column="sha256" javaType="java.lang.String"/>
+            <arg column="payload_bytes" javaType="_int"/>
+            <arg column="payload" javaType="_byte[]"/>
+            <arg column="state" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="grant" type="com.acme.marketing.platform.web.archive.AuditArchiveWorkflow$Grant">
+        <constructor>
+            <arg column="ticket_id" javaType="java.lang.String"/>
+            <arg column="batch_id" javaType="java.lang.String"/>
+            <arg column="expires_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+    <sql id="batchFields">
+        tenant_id,batch_id,resource_id,facts_from,facts_until,row_count,object_key,object_version,sha256,payload_bytes,payload,state
+    </sql>
+    <insert id="claim">
+        INSERT INTO mk_operation_audit_archive_batch(<include refid="batchFields"/>)
+        VALUES(#{batch.tenantId},#{batch.batchId},#{batch.resourceId},#{batch.factsFrom},#{batch.factsUntil},#{batch.rowCount},
+          #{batch.objectKey},#{batch.objectVersion},#{batch.sha256},#{batch.payloadBytes},#{batch.payload},#{batch.state})
+        ON DUPLICATE KEY UPDATE batch_id=mk_operation_audit_archive_batch.batch_id
+    </insert>
+    <select id="byDigest" resultMap="batch" useCache="false">
+        SELECT <include refid="batchFields"/> FROM mk_operation_audit_archive_batch
+        WHERE tenant_id=#{tenant} AND resource_id=#{resourceId} AND sha256=#{digest} FOR UPDATE
+    </select>
+    <select id="batch" resultMap="batch" useCache="false">
+        SELECT <include refid="batchFields"/> FROM mk_operation_audit_archive_batch WHERE tenant_id=#{tenant} AND batch_id=#{batchId}
+    </select>
+    <select id="pending" resultMap="batch" useCache="false">
+        SELECT <include refid="batchFields"/> FROM mk_operation_audit_archive_batch WHERE pending_tenant=#{tenant}
+    </select>
+    <update id="uploaded">
+        UPDATE mk_operation_audit_archive_batch SET state='UPLOADED',object_version=#{version}
+        WHERE tenant_id=#{tenant} AND batch_id=#{batchId} AND state='CLAIMED'
+    </update>
+    <update id="verified">
+        UPDATE mk_operation_audit_archive_batch SET state='VERIFIED',payload=NULL
+        WHERE tenant_id=#{tenant} AND batch_id=#{batchId} AND state='UPLOADED' AND object_version=#{version}
+    </update>
+    <select id="grant" resultMap="grant" useCache="false">
+        SELECT g.ticket_id,g.batch_id,g.expires_at FROM mk_operation_audit_archive_grant g
+        JOIN mk_operation_audit_archive_batch b ON b.tenant_id=g.tenant_id AND b.batch_id=g.batch_id
+        WHERE g.tenant_id=#{tenant} AND g.ticket_id=#{ticket} AND g.actor_id=#{actor}
+          AND g.revoked_at IS NULL AND g.expires_at&gt;UTC_TIMESTAMP(3) AND b.state IN('VERIFIED','ONLINE_PURGED')
+        <if test="lock">FOR UPDATE</if>
+    </select>
+    <insert id="storeRestored">
+        INSERT INTO mk_operation_audit_archive_restored(tenant_id,ticket_id,batch_id,payload,expires_at)
+        VALUES(#{tenant},#{grant.ticketId},#{grant.batchId},#{payload},LEAST(#{grant.expiresAt},UTC_TIMESTAMP(3)+INTERVAL 7 DAY)) AS incoming
+        ON DUPLICATE KEY UPDATE batch_id=incoming.batch_id,payload=incoming.payload,expires_at=incoming.expires_at
+    </insert>
+    <select id="restored" resultType="java.lang.String" useCache="false">
+        SELECT r.payload FROM mk_operation_audit_archive_restored r
+        JOIN mk_operation_audit_archive_grant g ON g.tenant_id=r.tenant_id AND g.ticket_id=r.ticket_id AND r.batch_id=g.batch_id
+        JOIN mk_operation_audit_archive_batch b ON b.tenant_id=g.tenant_id AND b.batch_id=g.batch_id
+        WHERE r.tenant_id=#{tenant} AND r.ticket_id=#{ticket} AND r.batch_id=#{batchId} AND g.actor_id=#{actor}
+          AND g.revoked_at IS NULL AND LEAST(r.expires_at,g.expires_at)&gt;UTC_TIMESTAMP(3)
+          AND b.state IN('VERIFIED','ONLINE_PURGED')
+    </select>
+    <delete id="cleanupRestored">
+        DELETE FROM mk_operation_audit_archive_restored
+        WHERE tenant_id=#{tenant} AND expires_at&lt;=UTC_TIMESTAMP(3) ORDER BY expires_at,ticket_id LIMIT 200
+    </delete>
+</mapper>

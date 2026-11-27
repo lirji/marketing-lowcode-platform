@@ -25,6 +25,8 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
+      - name: Create isolated versioned archive storage
+        run: python3 scripts/ci-audit-archive.py
       - name: Verify reactor
         run: ./mvnw --batch-mode --no-transfer-progress clean verify
       - name: Validate machine contracts
@@ -38,6 +40,13 @@ jobs:
             **/target/site/jacoco/**
           if-no-files-found: ignore
           retention-days: 14
+
+      - name: Stop the ephemeral archive storage
+        if: always()
+        run: |
+          if [[ "${AUDIT_ARCHIVE_CI_CONTAINER:-}" == "marketing-ci-audit-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" ]]; then
+            docker rm -f "$AUDIT_ARCHIVE_CI_CONTAINER"
+          fi
 
   journey-checkpoint:
     name: Journey Flink checkpoint

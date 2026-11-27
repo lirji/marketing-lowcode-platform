@@ -114,3 +114,22 @@ management.opentelemetry.tracing.export.max-batch-size: 256
 marketing.expiration:
   enabled: ${MARKETING_EXPIRATION_ENABLED:true}
   fixed-delay-ms: ${MARKETING_EXPIRATION_FIXED_DELAY_MS:1000}
+
+marketing.funding-audit-archive:
+  enabled: ${FUNDING_AUDIT_ARCHIVE_ENABLED:false}
+  recovery-enabled: ${FUNDING_AUDIT_ARCHIVE_RECOVERY_ENABLED:false}
+  online-cutover-enabled: ${FUNDING_AUDIT_ARCHIVE_ONLINE_CUTOVER_ENABLED:false}
+  recovery-replay-enabled: ${FUNDING_AUDIT_ARCHIVE_RECOVERY_REPLAY_ENABLED:false}
+  scheduler-enabled: ${FUNDING_AUDIT_ARCHIVE_SCHEDULER_ENABLED:false}
+  tenant: ${FUNDING_AUDIT_ARCHIVE_TENANT:}
+  minimum-age: ${FUNDING_AUDIT_ARCHIVE_MINIMUM_AGE:P90D}
+  endpoint: ${FUNDING_AUDIT_ARCHIVE_ENDPOINT:}
+  bucket: ${FUNDING_AUDIT_ARCHIVE_BUCKET:}
+  region: ${FUNDING_AUDIT_ARCHIVE_REGION:us-east-1}
+  write-key: ${FUNDING_AUDIT_ARCHIVE_WRITE_KEY:}
+  write-secret: ${FUNDING_AUDIT_ARCHIVE_WRITE_SECRET:}
+  restore-key: ${FUNDING_AUDIT_ARCHIVE_RESTORE_KEY:}
+  restore-secret: ${FUNDING_AUDIT_ARCHIVE_RESTORE_SECRET:}
+  scheduler-admin: ${FUNDING_AUDIT_ARCHIVE_SCHEDULER_ADMIN:}
+  scheduler-token: ${FUNDING_AUDIT_ARCHIVE_SCHEDULER_TOKEN:}
+  scheduler-port: ${FUNDING_AUDIT_ARCHIVE_SCHEDULER_PORT:10085}

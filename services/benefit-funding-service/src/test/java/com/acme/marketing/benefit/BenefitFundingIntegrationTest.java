@@ -2,6 +2,8 @@ package com.acme.marketing.benefit;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -98,6 +100,7 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
     @LocalServerPort private int port;
     @Autowired private ObjectMapper mapper;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private org.springframework.context.ApplicationContext context;
     @Autowired private BenefitFundingService service;
     @Autowired private BenefitSkuCatalog benefitSkuCatalog;
     @Autowired private AwardIntentRelay awardIntentRelay;
@@ -140,6 +143,18 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
                 () -> "tenant-a=CENTER,tenant-shadow=SHADOW,tenant-coupon=SHADOW");
         registry.add("marketing.award.relay-enabled", () -> "true");
         registry.add("marketing.award.relay-initial-delay-ms", () -> "3600000");
+        String archive = System.getenv("MKT_AUDIT_ARCHIVE_TEST_ENDPOINT");
+        if (archive != null && archive.matches("http://127[.]0[.]0[.]1:[0-9]+")) {
+            registry.add("marketing.funding-audit-archive.enabled", () -> true);
+            registry.add("marketing.funding-audit-archive.recovery-enabled", () -> true);
+            registry.add("marketing.funding-audit-archive.tenant", () -> CHECKOUT_TENANT);
+            registry.add("marketing.funding-audit-archive.endpoint", () -> archive);
+            registry.add("marketing.funding-audit-archive.bucket", () -> "mkt-funding-audit-verification");
+            registry.add("marketing.funding-audit-archive.write-key", () -> System.getenv("MKT_FUNDING_ARCHIVE_WRITE_KEY"));
+            registry.add("marketing.funding-audit-archive.write-secret", () -> System.getenv("MKT_FUNDING_ARCHIVE_WRITE_SECRET"));
+            registry.add("marketing.funding-audit-archive.restore-key", () -> System.getenv("MKT_FUNDING_ARCHIVE_RESTORE_KEY"));
+            registry.add("marketing.funding-audit-archive.restore-secret", () -> System.getenv("MKT_FUNDING_ARCHIVE_RESTORE_SECRET"));
+        }
         registry.add("marketing.checkout-funding.enabled", () -> "true");
         registry.add("marketing.checkout-funding.trade-base-url", () -> "http://127.0.0.1:" + CHECKOUT_TRADE.getAddress().getPort());
         registry.add("marketing.checkout-funding.trade-token", () -> CHECKOUT_BEARER);
@@ -254,6 +269,149 @@ class BenefitFundingIntegrationTest extends MySqlIntegrationTest {
                 + "/operation-audits", CHECKOUT_TENANT).path("items");
         assertEquals("funding.release", releaseEffects.get(0).path("action").asString());
         assertEquals("1000", releaseEffects.get(0).path("amountMinor").asString());
+        String endpoint = System.getenv("MKT_AUDIT_ARCHIVE_TEST_ENDPOINT");
+        if (endpoint != null && endpoint.matches("http://127[.]0[.]0[.]1:[0-9]+")) {
+            verifyFundingArchive(first.path("applicationId").asString(), readableOrder, one, effects);
+        }
+    }
+
+    private void verifyFundingArchive(String application, String order, String checkoutReference, JsonNode online)
+            throws Exception {
+        var scope = new com.acme.marketing.platform.identity.TenantId(CHECKOUT_TENANT);
+        var source = context.getBean(com.acme.marketing.benefit.infrastructure.persistence.mapper.FundingAuditArchiveMapper.class);
+        var manifest = context.getBean(com.acme.marketing.platform.web.archive.persistence.AuditArchiveManifestMapper.class);
+        var storage = context.getBean(com.acme.marketing.platform.web.archive.S3AuditArchiveStorage.class);
+        var manager = context.getBean(org.springframework.transaction.PlatformTransactionManager.class);
+        var workflow = new com.acme.marketing.platform.web.archive.AuditArchiveWorkflow(
+                com.acme.marketing.platform.web.archive.AuditArchiveWorkflow.Source.FUNDING, scope, Duration.ofDays(1),
+                java.time.Clock.offset(java.time.Clock.systemUTC(), Duration.ofDays(3)), manifest, source::eligible, storage, manager);
+        String id = workflow.verify(application);
+        assertNotNull(id);
+        assertEquals(id, workflow.verify(application));
+        String ticket = "isolated-funding-archive";
+        jdbc.update("""
+                INSERT INTO mk_operation_audit_archive_grant(tenant_id,ticket_id,batch_id,actor_id,approved_by,expires_at)
+                VALUES(?,?,?,'benefit-test','archive-reviewer',UTC_TIMESTAMP(3)+INTERVAL 1 HOUR)
+                """, CHECKOUT_TENANT, ticket, id);
+        String route = "/api/v1/funding/audit-archives/" + ticket;
+        var restore = client.send(base(route + "/restore", CHECKOUT_TENANT)
+                .setHeader("X-Dev-Permissions", "funding:audit-archive-restore")
+                .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, restore.statusCode(), restore.body());
+        assertEquals(online.size(), mapper.readTree(restore.body()).path("factCount").asInt());
+        var read = client.send(base(route, CHECKOUT_TENANT).setHeader("X-Dev-Permissions", "funding:audit-archive-read")
+                .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, read.statusCode(), read.body());
+        var facts = mapper.readTree(read.body()).path("events");
+        assertEquals(online.size(), facts.size());
+        assertTrue(facts.valueStream().allMatch(row -> checkoutReference.equals(row.path("fact").path("checkoutReference").asString())));
+        assertTrue(facts.valueStream().anyMatch(row -> order.equals(row.path("fact").path("orderNo").asString())
+                && "1000".equals(row.path("fact").path("amountMinor").asString())));
+        assertEquals(404, client.send(base(route, "another-archive-tenant")
+                .setHeader("X-Dev-Permissions", "funding:audit-archive-read").GET().build(),
+                HttpResponse.BodyHandlers.ofString()).statusCode());
+        assertEquals(400, client.send(base(route, CHECKOUT_TENANT).setHeader("X-Dev-Shop-Ids", "shop-other")
+                .setHeader("X-Dev-Permissions", "funding:audit-archive-read").GET().build(),
+                HttpResponse.BodyHandlers.ofString()).statusCode());
+        assertEquals(1000L, checkoutBucketTotal("consumed_amount"));
+        assertEquals(1000L, checkoutBucketTotal("available_amount"));
+        verifyFundingOnlineMove(id, application, checkoutReference, online);
+    }
+
+    private void verifyFundingOnlineMove(String id, String application, String checkoutReference, JsonNode online)
+            throws Exception {
+        var cutover = context.getBean(com.acme.marketing.benefit.application.FundingAuditArchiveCutover.class);
+        assertEquals(com.acme.marketing.benefit.application.FundingAuditArchiveCutover.Outcome.NOT_APPROVED, cutover.move(id));
+        jdbc.update("""
+                INSERT INTO mk_funding_archive_cutover_grant(tenant_id,batch_id,approval_reference,approved_by,
+                    reviewed_through,effective_at,expires_at)
+                VALUES(?,?, 'isolated-change', 'retention-reviewer',UTC_TIMESTAMP(6)+INTERVAL 1 SECOND,
+                    UTC_TIMESTAMP(3)-INTERVAL 1 MINUTE,UTC_TIMESTAMP(3)+INTERVAL 1 HOUR)
+                """, CHECKOUT_TENANT, id);
+        jdbc.update("""
+                INSERT INTO mk_funding_archive_hold(tenant_id,case_reference,application_id,created_by)
+                VALUES(?,'isolated-funding-hold',?,'investigator')
+                """, CHECKOUT_TENANT, application);
+        assertEquals(com.acme.marketing.benefit.application.FundingAuditArchiveCutover.Outcome.HELD, cutover.move(id));
+        assertTrue(cutover.inventory(null).unresolved().contains(id));
+        jdbc.update("""
+                UPDATE mk_funding_archive_hold SET released_at=UTC_TIMESTAMP(3), released_by='independent-reviewer'
+                WHERE tenant_id=? AND case_reference='isolated-funding-hold'
+                """, CHECKOUT_TENANT);
+
+        var backup = takeFundingAuditBackup();
+        String effect = online.valueStream().filter(row -> "SUCCEEDED".equals(row.path("result").asString()))
+                .findFirst().orElseThrow().path("effectId").asString();
+        int ledgerBefore = jdbc.queryForObject("SELECT COUNT(*) FROM mk_funding_ledger WHERE tenant_id=?", Integer.class, CHECKOUT_TENANT);
+        assertEquals(com.acme.marketing.benefit.application.FundingAuditArchiveCutover.Outcome.MOVED, cutover.move(id));
+        assertEquals(com.acme.marketing.benefit.application.FundingAuditArchiveCutover.Outcome.ALREADY_MOVED, cutover.move(id));
+        assertEquals(0, jdbc.queryForObject("""
+                SELECT COUNT(*) FROM mk_funding_audit_result WHERE tenant_id=? AND application_id=?
+                  AND action_code IN('funding.confirm','funding.release','funding.refund','funding.reverse')
+                """, Integer.class, CHECKOUT_TENANT, application));
+        assertEquals("CONFIRMED", checkoutCall("/api/v1/promotion-applications/checkout-pilot/" + checkoutReference + ":reconcile",
+                Map.of(), CHECKOUT_ACTOR, 200).path("state").asString());
+        var replayed = getTenant("/api/v1/promotion-applications/" + application + "/operation-audits", CHECKOUT_TENANT).path("items");
+        assertEquals(1, replayed.size());
+        assertEquals(effect, replayed.get(0).path("originalEffectId").asString());
+        assertEquals(ledgerBefore, jdbc.queryForObject("SELECT COUNT(*) FROM mk_funding_ledger WHERE tenant_id=?", Integer.class, CHECKOUT_TENANT));
+        assertEquals(1000L, checkoutBucketTotal("consumed_amount"));
+        assertEquals(1000L, checkoutBucketTotal("available_amount"));
+        var proof = cutover.inventory(null).committed().stream().filter(item -> id.equals(item.batchId())).findFirst().orElseThrow();
+        verifyFundingRecovery(backup, application, proof, online.size(), Long.parseLong(effect));
+    }
+
+    private Map<String, List<Map<String, Object>>> takeFundingAuditBackup() {
+        var snapshot = new java.util.LinkedHashMap<String, List<Map<String, Object>>>();
+        for (String table : List.of("mk_promotion_application", "mk_funding_audit_attempt", "mk_funding_audit_result")) {
+            snapshot.put(table, jdbc.queryForList("SELECT * FROM " + table + " WHERE tenant_id=?", CHECKOUT_TENANT));
+        }
+        return snapshot;
+    }
+
+    private void verifyFundingRecovery(Map<String, List<Map<String, Object>>> snapshot, String application,
+            com.acme.marketing.benefit.application.FundingAuditArchiveCutover.Reference proof, int expected, long effect)
+            throws Exception {
+        try (var db = new org.testcontainers.mysql.MySQLContainer("mysql:8.4.11")
+                .withDatabaseName("funding_audit_recovery_test").withUsername("test").withPassword("test")
+                .withTmpFs(Map.of("/var/lib/mysql", "rw")).withStartupTimeout(Duration.ofMinutes(5))) {
+            db.start();
+            var data = new org.springframework.jdbc.datasource.DriverManagerDataSource(db.getJdbcUrl(), db.getUsername(), db.getPassword());
+            org.flywaydb.core.Flyway.configure().dataSource(data).locations("classpath:db/migration").load().migrate();
+            var older = new JdbcTemplate(data);
+            for (var table : snapshot.entrySet()) {
+                for (var row : table.getValue()) {
+                    String columns = String.join(",", row.keySet());
+                    String bindings = String.join(",", java.util.Collections.nCopies(row.size(), "?"));
+                    older.update("INSERT INTO " + table.getKey() + "(" + columns + ") VALUES(" + bindings + ")", row.values().toArray());
+                }
+            }
+            var factory = new org.mybatis.spring.SqlSessionFactoryBean();
+            factory.setDataSource(data);
+            var mapperFiles = new org.springframework.core.io.support.PathMatchingResourcePatternResolver();
+            factory.setMapperLocations(mapperFiles.getResources("classpath*:mapper/*AuditArchive*Mapper.xml"));
+            var session = new org.mybatis.spring.SqlSessionTemplate(java.util.Objects.requireNonNull(factory.getObject()));
+            var source = session.getMapper(com.acme.marketing.benefit.infrastructure.persistence.mapper.FundingAuditArchiveMapper.class);
+            var manifest = session.getMapper(com.acme.marketing.platform.web.archive.persistence.AuditArchiveManifestMapper.class);
+            var scope = new com.acme.marketing.platform.identity.TenantId(CHECKOUT_TENANT);
+            var store = context.getBean(com.acme.marketing.platform.web.archive.S3AuditArchiveStorage.class);
+            var manager = new org.springframework.jdbc.datasource.DataSourceTransactionManager(data);
+            var workflow = new com.acme.marketing.platform.web.archive.AuditArchiveWorkflow(
+                    com.acme.marketing.platform.web.archive.AuditArchiveWorkflow.Source.FUNDING, scope, Duration.ofDays(1),
+                    java.time.Clock.systemUTC(), manifest, source::eligible, store, manager);
+            var replay = new com.acme.marketing.benefit.application.FundingAuditArchiveCutover(scope, workflow, manifest, source, store, manager);
+            int totalBefore = older.queryForObject("SELECT COUNT(*) FROM mk_funding_audit_result", Integer.class);
+            older.update("UPDATE mk_funding_audit_result SET amount_minor=900 WHERE tenant_id=? AND id=?", CHECKOUT_TENANT, effect);
+            assertThrows(com.acme.marketing.platform.error.DependencyUnavailableException.class, () -> replay.replay(proof));
+            assertEquals(0, older.queryForObject("SELECT COUNT(*) FROM mk_operation_audit_archive_batch", Integer.class));
+            assertEquals(totalBefore, older.queryForObject("SELECT COUNT(*) FROM mk_funding_audit_result", Integer.class));
+            older.update("UPDATE mk_funding_audit_result SET amount_minor=1000 WHERE tenant_id=? AND id=?", CHECKOUT_TENANT, effect);
+            assertEquals(expected, replay.replay(proof).removedRows());
+            assertEquals(0, replay.replay(proof).removedRows());
+            assertEquals(totalBefore - expected, older.queryForObject("SELECT COUNT(*) FROM mk_funding_audit_result", Integer.class));
+            assertEquals("ONLINE_PURGED", manifest.batch(CHECKOUT_TENANT, proof.batchId()).state());
+            assertEquals(application, source.restoredEffects(CHECKOUT_TENANT, List.of(effect)).getFirst().applicationId());
+        }
     }
 
     private long checkoutBucketTotal(String column) {

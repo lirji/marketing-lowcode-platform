@@ -37,7 +37,7 @@ public class ReleaseOperationAudit {
     enum Action {
         PUBLISH("release.publish"), ROLLBACK("release.rollback"), RETRY("release.retry"),
         PAUSE_SCHEDULE("release.schedule.pause"), RESUME_SCHEDULE("release.schedule.resume"),
-        READ("release.audit.read");
+        READ("release.audit.read"), ARCHIVE_RESTORE("release.archive.restore"), ARCHIVE_READ("release.archive.read");
 
         final String code;
         Action(String code) { this.code = code; }
@@ -103,6 +103,19 @@ public class ReleaseOperationAudit {
             independent.executeWithoutResult(tx -> append(attempt, Action.READ, "SUCCEEDED", verified,
                     null, null, null, null, null, null));
             return new History(items, rows.size() > PAGE_SIZE ? String.valueOf(items.getLast().eventId()) : null);
+        });
+    }
+
+    /** 恢复与查询都记录工单引用及结果，不把档案正文写入审计。 */
+    <T> T archiveAccess(String ticket, boolean restore, java.util.function.Supplier<T> supplier) {
+        Action action = restore ? Action.ARCHIVE_RESTORE : Action.ARCHIVE_READ;
+        String reference = ticket != null && ticket.matches("[A-Za-z0-9_-]{1,64}") ? ticket : null;
+        return capture(action, attempt -> {
+            T result = supplier.get();
+            var target = new Target(null, null, null, reference, null, null, null);
+            independent.executeWithoutResult(tx -> append(attempt, action, "SUCCEEDED", target,
+                    null, null, null, null, null, null));
+            return result;
         });
     }
 

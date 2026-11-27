@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.acme.marketing.benefit.infrastructure.persistence.mapper.FundingAuditArchiveMapper">
+    <resultMap id="event" type="com.acme.marketing.platform.web.archive.AuditArchiveWorkflow$Event">
+        <constructor>
+            <idArg column="id" javaType="java.lang.String"/>
+            <arg column="recorded_at" javaType="java.time.Instant"/>
+            <arg column="fact" javaType="tools.jackson.databind.JsonNode"
+                 typeHandler="com.acme.marketing.platform.web.archive.persistence.AuditArchiveFactJsonHandler"/>
+        </constructor>
+    </resultMap>
+    <!-- 资金申请、原生交易订单和命令效果三个引用由已提交的记录核对。 -->
+    <sql id="evidence">
+        SELECT CAST(r.id AS CHAR) AS id,GREATEST(r.recorded_at,a.occurred_at) AS recorded_at,
+            JSON_OBJECT('attemptId',CAST(a.id AS CHAR),'requestId',a.request_id,'traceId',a.trace_id,
+                'actorId',a.actor_id,'occurredAt',DATE_FORMAT(a.occurred_at,'%Y-%m-%dT%H:%i:%s.%fZ'),
+                'policyVersion',a.policy_version,'action',r.action_code,'result',r.result_code,'errorCode',r.error_code,
+                'applicationId',r.application_id,'applicationNo',r.application_no,'orderId',r.order_id,'orderNo',r.order_no,
+                'tradeTenant',p.checkout_trade_tenant,'checkoutReference',p.checkout_ref,'campaignId',r.campaign_id,
+                'originalEffectId',CAST(r.original_effect_id AS CHAR),'commandHash',r.command_hash,'beforeState',r.before_state,'afterState',r.after_state,
+                'amountMinor',CAST(r.amount_minor AS CHAR),'currency',r.currency) AS fact
+        FROM mk_funding_audit_result r
+        JOIN mk_funding_audit_attempt a ON a.tenant_id=r.tenant_id AND a.id=r.attempt_id
+        JOIN mk_promotion_application p ON p.tenant_id=r.tenant_id AND p.application_id=r.application_id AND p.order_id=r.order_id
+    </sql>
+    <select id="eligible" resultMap="event" useCache="false">
+        <include refid="evidence"/>
+        WHERE r.tenant_id=#{tenant} AND r.application_id=#{applicationId}
+          AND r.action_code IN('funding.confirm','funding.release','funding.refund','funding.reverse')
+          AND r.result_code&lt;&gt;'UNKNOWN' AND r.recorded_at&lt;=#{cutoff} AND a.occurred_at&lt;=#{cutoff}
+        ORDER BY r.id LIMIT #{limit}
+    </select>
+    <select id="lockedEvidence" resultMap="event" useCache="false">
+        <include refid="evidence"/>
+        WHERE r.tenant_id=#{tenant} AND r.application_id=#{applicationId}
+          AND r.id IN <foreach collection="resultIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY r.id FOR UPDATE OF r,a
+    </select>
+    <select id="lockBatchState" resultType="java.lang.String" useCache="false">
+        SELECT state FROM mk_operation_audit_archive_batch WHERE tenant_id=#{tenant} AND batch_id=#{batchId} FOR UPDATE
+    </select>
+    <select id="cutoverGrant" resultType="com.acme.marketing.benefit.infrastructure.persistence.mapper.FundingAuditArchiveMapper$Grant" useCache="false">
+        SELECT approval_reference AS approvalReference,reviewed_through AS reviewedThrough
+        FROM mk_funding_archive_cutover_grant WHERE tenant_id=#{tenant} AND batch_id=#{batchId}
+          AND revoked_at IS NULL AND effective_at&lt;=UTC_TIMESTAMP(3) AND expires_at&gt;UTC_TIMESTAMP(3)
+        <if test="lock">FOR UPDATE</if>
+    </select>
+    <select id="lockHolds" resultType="java.lang.String" useCache="false">
+        SELECT case_reference FROM mk_funding_archive_hold FORCE INDEX(ix_funding_archive_hold)
+        WHERE tenant_id=#{tenant} AND released_at IS NULL
+          AND (application_id IS NULL OR application_id=#{applicationId}) FOR UPDATE
+    </select>
+    <insert id="retainEffects">
+        INSERT INTO mk_funding_archive_effect_locator(tenant_id,effect_id,application_id,action_code,command_hash,batch_id)
+        SELECT tenant_id,id,application_id,action_code,command_hash,#{batchId}
+        FROM mk_funding_audit_result
+        WHERE tenant_id=#{tenant} AND application_id=#{applicationId} AND result_code='SUCCEEDED' AND command_hash IS NOT NULL
+          AND id IN <foreach collection="resultIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </insert>
+    <delete id="removeResults">
+        DELETE FROM mk_funding_audit_result WHERE tenant_id=#{tenant} AND application_id=#{applicationId}
+          AND id IN <foreach collection="resultIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </delete>
+    <delete id="removeAttempts">
+        DELETE FROM mk_funding_audit_attempt WHERE tenant_id=#{tenant}
+          AND id IN <foreach collection="attemptIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </delete>
+    <update id="markOnlinePurged">
+        UPDATE mk_operation_audit_archive_batch SET state='ONLINE_PURGED'
+        WHERE tenant_id=#{tenant} AND batch_id=#{batchId} AND object_version=#{version} AND state='VERIFIED'
+    </update>
+    <insert id="recordCutover">
+        INSERT INTO mk_funding_archive_cutover_receipt(tenant_id,batch_id,approval_reference,moved_count)
+        VALUES(#{tenant},#{batchId},#{approval},#{count})
+    </insert>
+    <select id="receipt" resultType="com.acme.marketing.benefit.infrastructure.persistence.mapper.FundingAuditArchiveMapper$Receipt" useCache="false">
+        SELECT approval_reference AS approvalReference,moved_count AS movedCount,moved_at AS movedAt,
+          recovery_version AS recoveryVersion,recovery_sha256 AS recoverySha256,recovery_bytes AS recoveryBytes
+        FROM mk_funding_archive_cutover_receipt WHERE tenant_id=#{tenant} AND batch_id=#{batchId}
+    </select>
+    <select id="pendingProof" resultType="java.lang.String" useCache="false">
+        SELECT batch_id FROM mk_funding_archive_cutover_receipt
+        WHERE tenant_id=#{tenant} AND recovery_version IS NULL ORDER BY batch_id LIMIT 1
+    </select>
+    <update id="sealProof">
+        UPDATE mk_funding_archive_cutover_receipt
+        SET recovery_version=#{version},recovery_sha256=#{sha256},recovery_bytes=#{bytes}
+        WHERE tenant_id=#{tenant} AND batch_id=#{batchId} AND recovery_version IS NULL
+    </update>
+    <select id="lockExistingResults" resultType="java.lang.Long" useCache="false">
+        SELECT id FROM mk_funding_audit_result WHERE tenant_id=#{tenant}
+          AND id IN <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY id FOR UPDATE
+    </select>
+    <select id="lockExistingAttempts" resultType="java.lang.Long" useCache="false">
+        SELECT id FROM mk_funding_audit_attempt WHERE tenant_id=#{tenant}
+          AND id IN <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY id FOR UPDATE
+    </select>
+    <insert id="restoreBatch">
+        INSERT INTO mk_operation_audit_archive_batch(tenant_id,batch_id,resource_id,facts_from,facts_until,row_count,
+          object_key,object_version,sha256,payload_bytes,state)
+        VALUES(#{tenant},#{batch.batchId},#{batch.resourceId},#{batch.factsFrom},#{batch.factsUntil},#{batch.rowCount},
+          #{batch.objectKey},#{batch.objectVersion},#{batch.sha256},#{batch.payloadBytes},'ONLINE_PURGED')
+    </insert>
+    <update id="closeRestoredBatch">
+        UPDATE mk_operation_audit_archive_batch
+        SET state='ONLINE_PURGED',object_version=#{batch.objectVersion},payload=NULL
+        WHERE tenant_id=#{tenant} AND batch_id=#{batch.batchId} AND sha256=#{batch.sha256}
+          AND (object_version IS NULL OR object_version=#{batch.objectVersion}) AND state&lt;&gt;'ONLINE_PURGED'
+    </update>
+    <insert id="restoreEffects">
+        INSERT INTO mk_funding_archive_effect_locator(tenant_id,effect_id,application_id,action_code,command_hash,batch_id)
+        VALUES <foreach collection="effects" item="effect" separator=",">
+            (#{tenant},#{effect.effectId},#{effect.applicationId},#{effect.actionCode},#{effect.commandHash},#{effect.batchId})
+        </foreach>
+        ON DUPLICATE KEY UPDATE effect_id=mk_funding_archive_effect_locator.effect_id
+    </insert>
+    <select id="restoredEffects" resultType="com.acme.marketing.benefit.infrastructure.persistence.mapper.FundingAuditArchiveMapper$EffectLocator" useCache="false">
+        SELECT effect_id AS effectId,application_id AS applicationId,action_code AS actionCode,command_hash AS commandHash,
+          batch_id AS batchId FROM mk_funding_archive_effect_locator
+        WHERE tenant_id=#{tenant} AND effect_id IN <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY effect_id FOR UPDATE
+    </select>
+    <insert id="restoreReceipt">
+        INSERT INTO mk_funding_archive_cutover_receipt(tenant_id,batch_id,approval_reference,moved_count,moved_at,
+          recovery_version,recovery_sha256,recovery_bytes)
+        VALUES(#{tenant},#{batchId},#{receipt.approvalReference},#{receipt.movedCount},#{receipt.movedAt},
+          #{receipt.recoveryVersion},#{receipt.recoverySha256},#{receipt.recoveryBytes})
+    </insert>
+</mapper>
