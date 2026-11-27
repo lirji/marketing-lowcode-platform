@@ -205,6 +205,9 @@ public class MybatisBenefitFundingRepository implements BenefitFundingRepository
     @Override public Long originalAuditEffect(String tenantId, String applicationId, String actionCode, String commandHash) {
         return mapper.originalAuditEffect(tenantId, applicationId, actionCode, commandHash);
     }
+    @Override public Optional<TradeAuditBinding> tradeAuditBinding(String tenantId, String tradeTenant, String orderId) {
+        return Optional.ofNullable(mapper.tradeAuditBinding(tenantId, tradeTenant, orderId));
+    }
     @Override public Optional<AuditTarget> auditTarget(String tenantId, String applicationId) {
         return Optional.ofNullable(mapper.auditTarget(tenantId, applicationId));
     }

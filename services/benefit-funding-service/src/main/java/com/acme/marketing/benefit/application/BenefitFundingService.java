@@ -514,6 +514,24 @@ public class BenefitFundingService {
         return fundingAudit.history(scope, authorizedAuditTarget(scope, applicationId), cursor);
     }
 
+    /** 原生交易号只作检索键，调用者仍须能访问查到的营销组织和全部门店。 */
+    public TradeOrderAudit tradeOrderAudits(String tradeTenant, String nativeOrderId, String cursor) {
+        var scope = TenantContextHolder.requireCurrent();
+        scope.requirePermission(RECONCILE_PERMISSION);
+        if (!tradeTenant.matches("[1-9][0-9]{0,18}") || !nativeOrderId.matches("[1-9][0-9]{0,18}")) {
+            throw new IllegalArgumentException("原生订单审计查询条件无效");
+        }
+        var binding = repository.tradeAuditBinding(scope.tenantId().value(), tradeTenant, nativeOrderId)
+                .orElseThrow(() -> new NotFoundException("APPLICATION_NOT_FOUND", "promotion application not found"));
+        var target = authorizedAuditTarget(scope, binding.applicationId());
+        return new TradeOrderAudit(binding.checkoutRef(), target.orderNo(), target.applicationNo(),
+                target.campaignId(), binding.generation(), fundingAudit.history(scope, target, cursor));
+    }
+
+    /** 运行代次直接来自申请；服务端不把它当成发布组合版本。 */
+    public record TradeOrderAudit(String checkoutReference, String orderNo, String applicationNo,
+                                  String campaignId, long generation, FundingOperationAudit.History history) { }
+
     private ApplicationView auditedFunding(TenantScope scope, Action action, String applicationId, String commandId,
             String permission, BiFunction<Attempt, AuditTarget, ApplicationView> operation) {
         AuditTarget target;

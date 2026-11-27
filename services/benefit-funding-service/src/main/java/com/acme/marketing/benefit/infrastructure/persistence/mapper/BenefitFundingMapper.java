@@ -129,6 +129,8 @@ public interface BenefitFundingMapper {
     Long auditResultId(@Param("tenantId") String tenantId, @Param("attemptId") long attemptId);
     Long originalAuditEffect(@Param("tenantId") String tenantId, @Param("applicationId") String applicationId,
             @Param("actionCode") String actionCode, @Param("commandHash") String commandHash);
+    BenefitFundingRepository.TradeAuditBinding tradeAuditBinding(@Param("tenantId") String tenantId,
+            @Param("tradeTenant") String tradeTenant, @Param("orderId") String orderId);
     BenefitFundingRepository.AuditTarget auditTarget(@Param("tenantId") String tenantId, @Param("applicationId") String applicationId);
     List<BenefitFundingRepository.AuditEntry> auditHistory(@Param("tenantId") String tenantId,
             @Param("applicationId") String applicationId, @Param("beforeId") Long beforeId, @Param("limit") int limit);

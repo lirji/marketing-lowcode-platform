@@ -203,9 +203,12 @@ public interface BenefitFundingRepository {
     int appendAudit(AuditResult result);
     Long auditResultId(String tenantId, long attemptId);
     Long originalAuditEffect(String tenantId, String applicationId, String actionCode, String commandHash);
+    /** 只按已持久化的原生订单关联查询营销申请。 */
+    Optional<TradeAuditBinding> tradeAuditBinding(String tenantId, String tradeTenant, String orderId);
     Optional<AuditTarget> auditTarget(String tenantId, String applicationId);
     List<AuditEntry> auditHistory(String tenantId, String applicationId, Long beforeId, int limit);
 
+    record TradeAuditBinding(String applicationId, long generation, String checkoutRef) { }
     record AuditAttempt(String tenantId, String requestId, String actorId, String actionCode, String traceId) { }
     record AuditTarget(String applicationId, String applicationNo, String orderId, String orderNo,
                        String organizationId, String shopIdsJson, String campaignId, String currency) { }

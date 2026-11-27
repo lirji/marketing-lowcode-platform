@@ -1027,6 +1027,31 @@ paths:
                   state: {type: string, enum: [RESERVED, CONFIRMED, CANCELLED]}
                   fundingReceipt: {type: [string, 'null'], maxLength: 4096}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/promotion-applications/{applicationId}/operation-audits:
+    get:
+      operationId: fundingApplicationOperationAudits
+      description: Read authorized funding operations by funding application number or original ID.
+      x-required-permission: funding:reconcile
+      parameters:
+        - {name: applicationId, in: path, required: true, schema: {type: string, maxLength: 64}}
+        - {name: cursor, in: query, schema: {type: string, pattern: '^[1-9][0-9]{0,18}$'}}
+      responses:
+        '200': {description: Funding operation evidence and its continuation cursor.}
+        '403': {description: Missing funding reconciliation permission.}
+        '404': {description: Unknown application in this tenant.}
+  /api/v1/funding/trade-orders/{tradeTenant}/{nativeOrderId}/operation-audits:
+    get:
+      operationId: fundingOperationAuditsByNativeOrder
+      description: Reads the application cryptographically bound during checkout. The native tenant and order are lookup keys and the application organization and shops remain enforced.
+      x-required-permission: funding:reconcile
+      parameters:
+        - {name: tradeTenant, in: path, required: true, schema: {type: string, pattern: '^[1-9][0-9]{0,18}$'}}
+        - {name: nativeOrderId, in: path, required: true, schema: {type: string, pattern: '^[1-9][0-9]{0,18}$'}}
+        - {name: cursor, in: query, schema: {type: string, pattern: '^[1-9][0-9]{0,18}$'}}
+      responses:
+        '200': {description: Checkout reference, order and application numbers, campaign, decision generation and paged funding history.}
+        '403': {description: Missing funding reconciliation permission.}
+        '404': {description: Unknown trusted order binding in this tenant.}
   /api/v1/promotion-applications/checkout-pilot/{reference}:reconcile:
     post:
       tags: [Benefit]

@@ -82,6 +82,13 @@ public class BenefitController {
         return service.advanceFence(resourceKey, request);
     }
 
+    /** 精确读取原生交易和营销申请的可信关联以及资金留痕。 */
+    @GetMapping("/funding/trade-orders/{tradeTenant}/{nativeOrderId}/operation-audits")
+    public BenefitFundingService.TradeOrderAudit tradeOrderAudits(@PathVariable String tradeTenant,
+            @PathVariable String nativeOrderId, @RequestParam(required = false) String cursor) {
+        return service.tradeOrderAudits(tradeTenant, nativeOrderId, cursor);
+    }
+
     @PostMapping("/promotion-applications")
     @ResponseStatus(HttpStatus.CREATED)
     public BenefitFundingService.ApplicationView reserve(@RequestHeader("Idempotency-Key") String commandId,

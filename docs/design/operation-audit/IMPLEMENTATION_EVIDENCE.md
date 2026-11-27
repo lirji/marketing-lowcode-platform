@@ -12,3 +12,7 @@
 - `GET /api/v1/campaigns/{campaignId}/release-bundles/operation-audits` 需要 `release:read`，并按当前组织、门店与活动隔离。可查可读业务编号、版本、运行序号、实际确认时间、链节点及重放关联。
 - 已有排期暂停与恢复记录状态变化。已上线活动的独立暂停端点在当前控制面尚无生效闭环，后续接线需提供运行端确认时点。现有排期暂停事件仅表明排期状态。
 - 真实 MySQL 验证命令为 `./mvnw -B -pl services/marketing-control-service -am -Dtest=ReleaseBundleReadinessIntegrationTest,ReleaseBundleIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test`。
+
+## OA-07 营销资金来源
+
+`GET /api/v1/funding/trade-orders/{tradeTenant}/{nativeOrderId}/operation-audits` 从原生交易编号及交易租户查找已经冻结的资金申请，授权继续校验本地营销组织和全部门店。响应包含原试点交易报价引用、资金申请号、活动与实际决策代次，以及资金证据分页。MySQL 验证包含同一原生订单对应资金确认、重复回执、其他交易租户无匹配、其他门店拒绝。
